@@ -1,0 +1,29 @@
+# Julia
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+*.jl.*.mem
+
+# System
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Build artifacts
+build/
+deps/
+
+# Simulation Outputs
+*.csv
+*.png
+*.svg
+*.pdf
+
+# Local history
+.history/
