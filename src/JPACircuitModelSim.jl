@@ -1,17 +1,10 @@
-module JPACircuitModelSim
+module SuperconductingCircuitsTutorial
 
-using JosephsonCircuits
+# 這個模組提供共用的繪圖工具
+# 主要用途是 include 各個 Julia 腳本時使用
 
-include("components.jl")
-include("parameters.jl")
-include("results.jl")
-include("simulation.jl")
 include("plotting.jl")
 
-export Circuit, add_component!, to_josephson_circuit
-export Capacitor, Inductor, Resistor, JosephsonJunction, Port
-export Sweep, SimulationConfig
-export SimulationResult, simulate
-export plot_result
+export ili_plot, unwrap_phase, format_value_with_unit
 
 end

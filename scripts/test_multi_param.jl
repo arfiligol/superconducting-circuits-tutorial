@@ -1,6 +1,6 @@
 # scripts/test_multi_param.jl
 
-include("../src/JPACircuitModelSim.jl")
+# include("../src/JPACircuitModelSim.jl")
 using JPACircuitModelSim
 using JosephsonCircuits
 using PlotlyJS

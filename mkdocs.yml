@@ -1,0 +1,124 @@
+site_name: Superconducting Circuits Tutorial
+site_url: https://arfiligol.github.io/superconducting-circuits-tutorial/
+repo_url: https://github.com/arfiligol/superconducting-circuits-tutorial
+repo_name: arfiligol/superconducting-circuits-tutorial
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - content.code.annotate
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search:
+      lang: en
+  - glightbox
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: false
+      languages:
+        - locale: zh
+          default: true
+          name: 繁體中文
+          build: true
+          site_name: 超導電路模擬教學
+          nav_translations:
+            Home: 首頁
+            Getting Started: 入門
+            Installation: 安裝環境
+            First Simulation: 第一次模擬
+            Understanding hbsolve: 理解 hbsolve
+            Tutorials: 教學
+            LC Resonator: LC 共振器
+            Parameter Sweep: 參數掃描
+            Concepts: 物理概念
+            Harmonic Balance: Harmonic Balance
+            S/Z/Y Parameters: S/Z/Y 參數
+            Reference: 工具參考
+            Plotting Utilities: 繪圖工具 ili_plot
+            Notebooks: 研究筆記
+            Floating Qubit Study: Floating Qubit 研究
+        - locale: en
+          name: English
+          build: true
+          site_name: Superconducting Circuits Tutorial
+          theme:
+            palette:
+              - scheme: default
+                toggle:
+                  name: Switch to dark mode
+              - scheme: slate
+                toggle:
+                  name: Switch to light mode
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.arithmatex:
+      generic: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/arfiligol
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - First Simulation: getting-started/first-simulation.md
+      - Understanding hbsolve: getting-started/understanding-hbsolve.md
+  - Tutorials:
+      - LC Resonator: tutorials/lc-resonator.md
+      - Parameter Sweep: tutorials/parameter-sweep.md
+  - Concepts:
+      - Harmonic Balance: concepts/harmonic-balance.md
+      - S/Z/Y Parameters: concepts/s-parameters.md
+  - Reference:
+      - Plotting Utilities: reference/utilities.md
+  - Notebooks:
+      - Floating Qubit Study: notebooks/floating-qubit-study.md

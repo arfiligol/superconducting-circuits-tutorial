@@ -19,11 +19,24 @@
 build/
 deps/
 
-# Simulation Outputs
-*.csv
+# MkDocs build output
+site/
+
+# Simulation Outputs (keep in data/ only)
 *.png
 *.svg
 *.pdf
 
+# Sandbox - 實驗區不進版控
+sandbox/*.jl
+sandbox/**/*.jl
+!sandbox/README.md
+
 # Local history
 .history/
+
+# Python (for MkDocs)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
