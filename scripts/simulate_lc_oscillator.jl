@@ -42,7 +42,7 @@ function find_resonance(freqs, s11_complex)
     # Calculate Group Delay: -d(Phase)/d(omega)
     # We can approximate derivative with finite difference
     # But since we just want the peak, d(Phase)/df is sufficient (max slope)
-    # Note: Resonance is usually where phase change is sharpest. 
+    # Note: Resonance is usually where phase change is sharpest.
     # For a reflection notch (undercoupled/critically coupled), slope is steepest.
 
     # Using central difference for better accuracy
@@ -95,7 +95,7 @@ add_component!(ckt, Capacitor("C_tank", "2", "0", :C_tank))
 
 # --- 3. 定義參數與掃描 (Define Parameters & Sweep) ---
 # 設定元件數值
-# L = 12 nH, C = 112 fF -> 共振頻率 f0 = 1 / (2*pi*sqrt(LC)) 
+# L = 12 nH, C = 112 fF -> 共振頻率 f0 = 1 / (2*pi*sqrt(LC))
 # L = 12e-9, C = 112e-15
 # f0 = 1/(2*pi*sqrt(1344e-24)) = 1/(2*pi*36.66e-12) = 1/2.3e-10 ≈ 4.34 GHz
 circuit_defs = Dict(
@@ -135,7 +135,7 @@ p_phase = plot_result(results, type=:phase)
 
 # 遍歷每個 Sweep 點計算共振頻率
 # S11 array dimensions: [freq, sweep_param_index]
-# results.S11 
+# results.S11
 # results.freqs 是 GHz
 
 sweep_param_name = results.parameter_names[1]
