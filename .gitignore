@@ -1,42 +1,112 @@
-# Julia
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / Packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Unit Test / Coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Documentation
+site/
+mkdocs_structure.txt
+
+# --- Julia ---
 *.jl.cov
 *.jl.*.cov
 *.jl.mem
 *.jl.*.mem
+*.ji
+*.zwc
 
-# System
+# --- System / OS ---
 .DS_Store
-.AppleDouble
-.LSOverride
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# Editors
-.vscode/
+# --- IDEs / Editors ---
 .idea/
+.vscode/
 *.swp
+*.swo
 *~
+*.sublime-project
+*.sublime-workspace
 
-# Build artifacts
-build/
-deps/
-
-# MkDocs build output
-site/
-
-# Simulation Outputs (keep in data/ only)
+# --- Project Specific ---
+# Simulation Outputs (don't track generated plots in root-ish dirs)
+# Keep them in specific output folders if needed, or track them if they are assets.
+# But generally avoid tracking temporary simulation results.
 *.png
 *.svg
 *.pdf
 
-# Sandbox - 實驗區不進版控
-sandbox/*.jl
-sandbox/**/*.jl
+# Exception for documentation assets (if you want to strictly track doc images)
+!docs/assets/*.png
+!docs/assets/*.svg
+
+# Sandbox - Experiments
+sandbox/*
 !sandbox/README.md
 
 # Local history
 .history/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
-# Python (for MkDocs)
-__pycache__/
-*.py[cod]
-.venv/
-venv/
+# --- Data ---
+# Preprocessed or raw data that shouldn't be committed
+data/processed/
+data/raw/
+# Keep gitkeep or README if they exist to guard structure, but ignore files
+# data/*
+# !data/.gitkeep
