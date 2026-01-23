@@ -157,8 +157,8 @@ display(p1)
 # 6. 切片分析 (Slicing Analysis)
 # ==========================================
 # 設定想要切片的目標值
-target_freq_cut = 6.0   # GHz 
-target_flux_cut = 0.25  # Phi0 
+target_freq_cut = 6.0   # GHz
+target_flux_cut = 0.25  # Phi0
 
 println("正在繪製切片圖 (Target Freq: $target_freq_cut GHz, Target Flux: $target_flux_cut Phi0)...")
 

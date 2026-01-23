@@ -42,10 +42,10 @@ traces = []
 for L_val in L_values
     defs = merge(base_defs, Dict(L => L_val))
     sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, defs)
-    
+
     freqs = sol.linearized.w / (2π * GHz)
     S11 = sol.linearized.S(outputmode=(0,), outputport=1, inputmode=(0,), inputport=1, freqindex=:)
-    
+
     push!(traces, scatter(
         x=freqs,
         y=rad2deg.(angle.(S11)),
@@ -82,7 +82,7 @@ for L_val in L_values
     for C_val in C_values
         # Theoretical resonance frequency
         f0 = 1 / (2π * sqrt(L_val * C_val)) / GHz
-        
+
         push!(results, (L_val/nH, C_val/pF, f0))
     end
 end

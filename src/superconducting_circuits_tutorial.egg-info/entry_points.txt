@@ -1,0 +1,4 @@
+[console_scripts]
+sc-fit-squid = scripts.analysis.squid_fit:main
+sc-preprocess-admittance = scripts.preprocessing.convert_hfss_admittance:main
+sc-preprocess-phase = scripts.preprocessing.convert_hfss_phase:main

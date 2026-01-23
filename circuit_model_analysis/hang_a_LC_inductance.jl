@@ -40,7 +40,7 @@ circuitdefs = Dict(
     k => k_val,                         # 2%：直線 CPW 常見 0.5–5%
     Lr_cpl => Lr_cpl_val,
     Cr => Cr_val,         # 你的值
-    Lr => Lr_uncpl_val,          # 
+    Lr => Lr_uncpl_val,          #
 )
 
 # 掃頻與求解

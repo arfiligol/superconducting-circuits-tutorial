@@ -108,8 +108,8 @@ for k in 1:Nf
 end
 
 Ycc = Ycm[1, 1, :]  # 共模导纳
-Ycd = Ycm[1, 2, :]  # 
-Ydc = Ycm[2, 1, :]  # 
+Ycd = Ycm[1, 2, :]  #
+Ydc = Ycm[2, 1, :]  #
 Ydd = Ycm[2, 2, :]  # 差模导纳
 
 Zcc = Zcm[1, 1, :]  # 共模阻抗

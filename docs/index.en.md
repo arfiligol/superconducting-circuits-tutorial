@@ -31,10 +31,18 @@ This is a combined **learning** and **research** resource:
 
 ## Project Structure
 
-```
-superconducting-circuits-tutorial/
-├── docs/          # Documentation (this website)
-├── examples/      # Executable Julia examples
-├── sandbox/       # Experimental area (not version controlled)
-└── src/           # Shared utilities (ili_plot, etc.)
-```
+This project uses an **App-Centric Hybrid Architecture**. All core source code resides in `src/`.
+
+### 1. Source Root (`src/`)
+The polyglot source center:
+
+- **`sc_analysis/`** (Python): Core analysis logic (Clean Architecture).
+- **`sc_app/`** (Python): NiceGUI application interface.
+- **`plotting.jl`** (Julia): Shared plotting utilities.
+
+### 2. Interfaces
+- **`scripts/`**: Python CLI scripts (invoke `src/sc_analysis`).
+- **`examples/`**: Julia simulation and tutorial examples.
+
+### 3. Documentation
+- **`docs/`**: Documentation site (MkDocs).

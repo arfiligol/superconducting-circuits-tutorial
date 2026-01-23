@@ -45,12 +45,15 @@ plugins:
           name: 繁體中文
           build: true
           site_name: 超導電路模擬教學
+          theme:
+            language: zh-TW
           nav_translations:
             Home: 首頁
             Getting Started: 入門
             Installation: 安裝環境
             First Simulation: 第一次模擬
             Understanding hbsolve: 理解 hbsolve
+            How-to Guides: 操作指南
             Tutorials: 教學
             LC Resonator: LC 共振器
             Parameter Sweep: 參數掃描
@@ -112,13 +115,58 @@ nav:
       - Installation: getting-started/installation.md
       - First Simulation: getting-started/first-simulation.md
       - Understanding hbsolve: getting-started/understanding-hbsolve.md
+  - How-to Guides:
+      - Contributing:
+          - Workflow: how-to/contributing.md
+          - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
+      - Preprocessing:
+          - HFSS Admittance: how-to/preprocess/hfss-admittance.md
+          - HFSS Phase: how-to/preprocess/hfss-phase.md
+          - Flux Dependence: how-to/preprocess/flux-dependence.md
+      - Analysis:
+          - Admittance Fit: how-to/analysis/admittance-fit.md
+          - Flux Plot: how-to/analysis/flux-dependence-plot.md
+          - Effective Capacitance: how-to/analysis/effective-capacitance.md
+      - Extending:
+          - Add Data Source: how-to/extend/add-data-source.md
   - Tutorials:
+      - Simulation Workflow: tutorials/simulation-workflow.md
       - LC Resonator: tutorials/lc-resonator.md
       - Parameter Sweep: tutorials/parameter-sweep.md
+      - Resonance Fitting: tutorials/resonance-fitting.md
+      - Flux Analysis: tutorials/flux-analysis.md
   - Concepts:
       - Harmonic Balance: concepts/harmonic-balance.md
       - S/Z/Y Parameters: concepts/s-parameters.md
+      - Physics:
+          - SQUID JPA Basics: concepts/physics/squid-jpa-basics.md
+          - LC Resonance Model: concepts/physics/lc-resonance-model.md
+          - Resonance Extraction: concepts/physics/resonance-extraction.md
+      - Pipeline:
+          - Data Flow: concepts/pipeline/data-flow.md
+          - Preprocessing Rationale: concepts/pipeline/preprocessing-rationale.md
+      - Design Decisions:
+          - Schema Design: concepts/design-decisions/schema-design.md
+          - Visualization Backend: concepts/design-decisions/visualization-backend.md
   - Reference:
+      - CLI Options:
+          - Convert HFSS Admittance: reference/cli/convert-hfss-admittance.md
+          - Convert HFSS Phase: reference/cli/convert-hfss-phase.md
+          - SQUID Model Fit: reference/cli/squid-model-fit.md
+          - Convert Flux Dependence: reference/cli/convert-flux-dependence.md
+          - Plot Admittance: reference/cli/plot-admittance.md
+          - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
+      - Data Formats:
+          - Component Record: reference/data-formats/component-record.md
+          - Raw Data Layout: reference/data-formats/raw-data-layout.md
+          - Analysis Result: reference/data-formats/analysis-result.md
+      - Guardrails:
+          - Script Authoring: reference/guardrails/script-authoring.md
+          - Data Handling: reference/guardrails/data-handling.md
+          - Type Checking: reference/guardrails/type-checking.md
+          - Linting & Formatting: reference/guardrails/linting.md
+          - Code Style: reference/guardrails/code-style.md
+          - Documentation Standards: reference/guardrails/documentation.md
       - Plotting Utilities: reference/utilities.md
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md
