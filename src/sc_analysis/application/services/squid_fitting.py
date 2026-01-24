@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from sc_analysis.application.analysis.extraction import extract_modes_from_dataframe
+from sc_analysis.application.analysis.extraction.admittance import extract_modes_from_dataframe
 from sc_analysis.application.analysis.extraction.cleaning import normalize_mode_columns
 from sc_analysis.application.analysis.fitting.modes import (
     fit_squid_model,

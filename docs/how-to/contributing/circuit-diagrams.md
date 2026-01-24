@@ -76,3 +76,20 @@ uv run scripts/docs/generate_lc_schematic.py
 *   **一致性**：所有圖表風格統一。
 *   **Vector Graphics**：SVG 在任何解析度下都清晰。
 *   **可維護性**：未來的貢獻者可以直接複製代碼來修改電路（例如更改數值），而不需要重畫。
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Circuit Diagrams
+- **Tool**: Schemdraw (Python)
+- **Workflow**: 
+    1. Create script in `scripts/docs/` (e.g., `generate_lc.py`).
+    2. Run with `uv run`.
+    3. Output SVG to `docs/assets/`.
+- **Markdown Embedding**:
+    - MUST use `![Alt](../assets/file.svg)`.
+    - MUST include source code in `??? quote "Source Code"`.
+- **Pattern**: See "範例樣板" in doc for boilerplate.
+```

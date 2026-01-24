@@ -1,6 +1,6 @@
 # Superconducting Circuits Tutorial
 
-歡迎來到超導電路模擬教學！本站使用 [JosephsonCircuits.jl](https://github.com/QICKLab/JosephsonCircuits.jl) 進行電路模擬。
+歡迎來到超導電路教學！本站使用 [JosephsonCircuits.jl](https://github.com/QICKLab/JosephsonCircuits.jl) 進行電路模擬。
 
 ## 這是什麼？
 

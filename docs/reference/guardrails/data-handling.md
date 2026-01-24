@@ -40,6 +40,7 @@ data/
 ### 1. Raw Data is Read-Only
 
 `data/raw/` 下的所有檔案視為不可變：
+
 - 不修改原始檔案
 - 不刪除原始檔案
 - 轉換結果寫入 `data/preprocessed/`
@@ -76,3 +77,17 @@ output_path = Path("data/processed/reports/result.json")
 
 - [[../data-formats/raw-data-layout.md|Raw Data Layout]] - 目錄結構詳情
 - [[./script-authoring.md|Script Authoring]] - 腳本撰寫規範
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Data Handling
+- **Immutable**: `data/raw/` is READ-ONLY.
+- **Paths**: NEVER hardcode paths.
+    - **MUST** import from `src.utils.paths`.
+    - Keywords: `RAW_*_DIR`, `PREPROCESSED_DATA_DIR`, `PROCESSED_REPORTS_DIR`.
+- **Flow**: Raw -> Preprocessing Script -> Preprocessed (JSON) -> Analysis Script -> Processed (Reports).
+- **Format**: Prefer **JSON** for light data, **CSV** for tabular data.
+```

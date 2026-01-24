@@ -70,3 +70,19 @@ parser = argparse.ArgumentParser(
 
 - [[./data-handling.md|Data Handling]] - 輸出路徑規範
 - [[../cli/index.md|CLI Reference]] - 指令參考
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Script Authoring
+- **Location**: `src/scripts/`
+- **Naming**: `kebab-case` (e.g. `sc-convert-hfss`).
+- **Structure**:
+    - MUST have `def main():`.
+    - MUST use `argparse` for arguments.
+    - MUST use `if __name__ == "__main__": main()`.
+- **Logic**: CLI scripts should be minimal wrappers around `sc_analysis` logic.
+- **I/O**: Print to stdout is allowed here (and only here).
+```

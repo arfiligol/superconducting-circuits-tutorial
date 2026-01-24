@@ -53,4 +53,4 @@ updated_by: docs-team
 
 ## Next Steps
 
-- [[../analysis/admittance-fit.md|Run Admittance Fit]] - 執行擬合分析
+- [Run Admittance Fit](../analysis/admittance-fit.md) - 執行擬合分析

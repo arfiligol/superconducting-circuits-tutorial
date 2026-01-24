@@ -7,11 +7,22 @@ from typing import NamedTuple
 
 from sc_analysis.application.services.hfss_processing import process_and_write_hfss_file
 
-DEFAULT_FILES = [
+# ==========================================
+#           USER CONFIGURATION
+# ==========================================
+# List of HFSS CSV files to process if no command line arguments are provided
+DEFAULT_INPUT_FILES = [
     "PF6FQ_Q0_Readout_Im_Y11.csv",
     "PF6FQ_Q0_XY_and_Readout_Im_Y11.csv",
     "PF6FQ_Q0_XY_Im_Y11.csv",
 ]
+
+# Override the component ID (e.g., "MyComponent"). Set to None to use filename.
+DEFAULT_COMPONENT_ID: str | None = None
+
+# Custom output path (e.g., "data/my_preprocessed.json"). Set to None for default.
+DEFAULT_OUTPUT_PATH: str | None = None
+# ==========================================
 
 
 class ProgramArgs(NamedTuple):
@@ -30,11 +41,16 @@ def parse_args() -> ProgramArgs:
         type=Path,
         help="Path(s) to HFSS admittance CSV.",
     )
-    parser.add_argument("--component-id", help="Override component identifier")
+    parser.add_argument(
+        "--component-id",
+        help="Override component identifier",
+        default=DEFAULT_COMPONENT_ID,
+    )
     parser.add_argument(
         "--output",
         type=Path,
         help="Destination JSON file (defaults to data/preprocessed/<component_id>.json)",
+        default=DEFAULT_OUTPUT_PATH,
     )
     args = parser.parse_args()
     return ProgramArgs(csv=args.csv, component_id=args.component_id, output=args.output)
@@ -42,10 +58,11 @@ def parse_args() -> ProgramArgs:
 
 def main() -> None:
     args = parse_args()
-    input_files = args.csv if args.csv else [Path(f) for f in DEFAULT_FILES]
+    # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
+    input_files = args.csv if args.csv else [Path(f) for f in DEFAULT_INPUT_FILES]
 
     if not input_files:
-        print("No input files specified or default files found.")
+        print("No input files specified in CLI arguments or USER CONFIGURATION.")
         return
 
     for raw_path in input_files:

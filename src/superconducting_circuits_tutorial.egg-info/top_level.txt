@@ -1,2 +1,3 @@
 sc_analysis
 sc_app
+scripts

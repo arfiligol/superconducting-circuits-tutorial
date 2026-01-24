@@ -13,6 +13,7 @@ src/sc_analysis/application/preprocessing/__init__.py
 src/sc_analysis/application/preprocessing/admittance.py
 src/sc_analysis/application/preprocessing/naming.py
 src/sc_analysis/application/preprocessing/phase.py
+src/sc_analysis/application/services/hfss_processing.py
 src/sc_analysis/application/services/squid_fitting.py
 src/sc_analysis/domain/__init__.py
 src/sc_analysis/domain/interfaces/__init__.py
@@ -29,6 +30,12 @@ src/sc_analysis/infrastructure/visualization/common.py
 src/sc_analysis/infrastructure/visualization/dataframe_display.py
 src/sc_analysis/infrastructure/visualization/plot_utils.py
 src/sc_app/__init__.py
+src/scripts/__init__.py
+src/scripts/analysis/__init__.py
+src/scripts/analysis/squid_fit.py
+src/scripts/preprocessing/__init__.py
+src/scripts/preprocessing/convert_hfss_admittance.py
+src/scripts/preprocessing/convert_hfss_phase.py
 src/superconducting_circuits_tutorial.egg-info/PKG-INFO
 src/superconducting_circuits_tutorial.egg-info/SOURCES.txt
 src/superconducting_circuits_tutorial.egg-info/dependency_links.txt

@@ -23,7 +23,6 @@ theme:
     - content.code.annotate
     - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
     - search.highlight
     - search.suggest
@@ -33,6 +32,7 @@ theme:
 plugins:
   - search:
       lang: en
+  - roamlinks
   - glightbox
   - i18n:
       docs_structure: suffix
@@ -44,7 +44,7 @@ plugins:
           default: true
           name: 繁體中文
           build: true
-          site_name: 超導電路模擬教學
+          site_name: 超導電路教學
           theme:
             language: zh-TW
           nav_translations:
@@ -150,23 +150,39 @@ nav:
           - Visualization Backend: concepts/design-decisions/visualization-backend.md
   - Reference:
       - CLI Options:
-          - Convert HFSS Admittance: reference/cli/convert-hfss-admittance.md
-          - Convert HFSS Phase: reference/cli/convert-hfss-phase.md
-          - SQUID Model Fit: reference/cli/squid-model-fit.md
-          - Convert Flux Dependence: reference/cli/convert-flux-dependence.md
-          - Plot Admittance: reference/cli/plot-admittance.md
-          - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
+          - Data Conversion:
+              - Convert HFSS Admittance: reference/cli/convert-hfss-admittance.md
+              - Convert HFSS Phase: reference/cli/convert-hfss-phase.md
+              - Convert Flux Dependence: reference/cli/convert-flux-dependence.md
+          - Data Fitting:
+              - SQUID Model Fit: reference/cli/squid-model-fit.md
+          - Data Plotting:
+              - Plot Admittance: reference/cli/plot-admittance.md
+              - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
       - Data Formats:
           - Component Record: reference/data-formats/component-record.md
           - Raw Data Layout: reference/data-formats/raw-data-layout.md
           - Analysis Result: reference/data-formats/analysis-result.md
       - Guardrails:
-          - Script Authoring: reference/guardrails/script-authoring.md
-          - Data Handling: reference/guardrails/data-handling.md
-          - Type Checking: reference/guardrails/type-checking.md
-          - Linting & Formatting: reference/guardrails/linting.md
-          - Code Style: reference/guardrails/code-style.md
-          - Documentation Standards: reference/guardrails/documentation.md
+          - Project Basics:
+              - Overview: reference/guardrails/index.md
+              - Project Overview: reference/guardrails/project-overview.md
+              - Tech Stack: reference/guardrails/tech-stack.md
+              - Folder Structure: reference/guardrails/folder-structure.md
+          - Execution & Verification:
+              - Build Commands: reference/guardrails/build-commands.md
+              - Linting & Formatting: reference/guardrails/linting.md
+              - Testing: reference/guardrails/testing.md
+              - CI Gates: reference/guardrails/ci-gates.md
+          - Code Quality:
+              - Code Style: reference/guardrails/code-style.md
+              - Type Checking: reference/guardrails/type-checking.md
+              - Script Authoring: reference/guardrails/script-authoring.md
+              - Data Handling: reference/guardrails/data-handling.md
+          - Documentation Design:
+              - Documentation Standards: reference/guardrails/documentation.md
+              - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
       - Plotting Utilities: reference/utilities.md
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md
+

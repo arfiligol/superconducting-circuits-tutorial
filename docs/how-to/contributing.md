@@ -1,8 +1,8 @@
 # 如何參與貢獻 (Contributing)
 
-感謝您有興趣參與 **超導電路模擬教學** 專案的開發！
+感謝您有興趣參與 **超導電路教學** 專案的開發！
 
-本指南將協助您建立開發環境並了解我們的協作流程。我們先採用 **Fork & Pull Request** 的模式進行協作。
+本指南將協助您建立開發環境並了解我們的協作流程。我們採用 **Fork & Pull Request** 的模式進行協作。
 
 ## 1. 環境建置
 
@@ -72,17 +72,32 @@ uv run mkdocs serve
 
 ### 提交前檢查 (Pre-commit Checks)
 在提交 Pull Request 之前，請確保：
+
 1.  **Typing**: 通過型別檢查（我們使用 Python 3.12+ 語法）。
 2.  **Formatting**: 程式碼已格式化（遵循 PEP 8，透過 Ruff 檢查）。
 3.  **Tests**: 所有測試皆通過。
 
 > 詳細的程式碼品質規範請參考 [Code Style Guardrails](../reference/guardrails/code-style.md)。
 
-## 3. 開發規範 (Standards)
+## 3. 開發規範 (Guardrails)
 
-請務必閱讀以下規範，以確保程式碼風格一致：
+所有開發規範統一放在 **[Guardrails](../reference/guardrails/index.md)** 區塊。
 
-- 👉 [Code Style & Principles (代碼風格)](../reference/guardrails/code-style.md) - Clean Code, Clean Arch
-- 👉 [Documentation Standards (文檔規範)](../reference/guardrails/documentation.md) - **包含電路圖繪製教學**
-- 👉 [Type Checking (型別檢查)](../reference/guardrails/type-checking.md)
-- 👉 [Circuit Diagram Guide (電路圖詳細教學)](./contributing/circuit-diagrams.md)
+!!! tip "AI 助手設定"
+    如果您使用 AI 輔助工具（如 Cursor, Windsurf），請前往各規範頁面，複製底部的 **[#agent-rule](../reference/guardrails/index.md)** 區塊貼入您的 System Prompt。
+
+### 快速連結
+
+| 類別 | 規範 | Agent Rule |
+|---|---|---|
+| **專案基礎** | [專案概述](../reference/guardrails/project-overview.md) | [#agent-rule](../reference/guardrails/project-overview.md#agent-rule) |
+| | [技術堆疊](../reference/guardrails/tech-stack.md) | [#agent-rule](../reference/guardrails/tech-stack.md#agent-rule) |
+| | [目錄結構](../reference/guardrails/folder-structure.md) | [#agent-rule](../reference/guardrails/folder-structure.md#agent-rule) |
+| **執行驗證** | [執行指令](../reference/guardrails/build-commands.md) | [#agent-rule](../reference/guardrails/build-commands.md#agent-rule) |
+| | [Linting](../reference/guardrails/linting.md) | [#agent-rule](../reference/guardrails/linting.md#agent-rule) |
+| | [測試](../reference/guardrails/testing.md) | [#agent-rule](../reference/guardrails/testing.md#agent-rule) |
+| **程式品質** | [程式碼風格](../reference/guardrails/code-style.md) | [#agent-rule](../reference/guardrails/code-style.md#agent-rule) |
+| | [類型檢查](../reference/guardrails/type-checking.md) | [#agent-rule](../reference/guardrails/type-checking.md#agent-rule) |
+| | [腳本撰寫](../reference/guardrails/script-authoring.md) | [#agent-rule](../reference/guardrails/script-authoring.md#agent-rule) |
+| **文件設計** | [文件撰寫](../reference/guardrails/documentation.md) | [#agent-rule](../reference/guardrails/documentation.md#agent-rule) |
+| | [電路繪圖](./contributing/circuit-diagrams.md) | [#agent-rule](./contributing/circuit-diagrams.md#agent-rule) |

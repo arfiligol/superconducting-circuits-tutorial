@@ -11,17 +11,42 @@ from sc_analysis.application.services.squid_fitting import (
 )
 from sc_analysis.infrastructure.visualization.plot_utils import plot_json_results
 
-DEFAULT_COMPONENT_IDS = [
+# ==========================================
+#           USER CONFIGURATION
+# ==========================================
+# List of Component IDs or JSON paths to analyze if no CLI arguments are provided
+DEFAULT_COMPONENTS = [
     "PF6FQ_Q0_Readout",
     "PF6FQ_Q0_XY",
 ]
-DEFAULT_MODES_TO_PLOT = ["Mode 1"]
-DEFAULT_PLOT_TITLE = "Q0 Mode Fits (by Admittance)"
+
+# List of modes to fit/plot (e.g. ["Mode 1", "Mode 2"]). Set to None for all.
+DEFAULT_MODES: list[str] | None = ["Mode 1"]
+
+# Plot title
+DEFAULT_TITLE = "Q0 Mode Fits (by Admittance)"
+
+# Fitting Bounds (set to None for unbounded/default)
+DEFAULT_LS_MIN: float | None = 0.0
+DEFAULT_LS_MAX: float | None = None
+DEFAULT_C_MIN: float | None = 0.0
+DEFAULT_C_MAX: float | None = None
+
+# Fixed Capacitance Value (pF). If set, forces 'fixed_c' model.
+DEFAULT_FIXED_C_VALUE: float | None = None
+
+# Fit Window (GHz)
+DEFAULT_FIT_WINDOW_MIN: float = 15.0
+DEFAULT_FIT_WINDOW_MAX: float = 30.0
+
+# General Options
+DEFAULT_USE_MATPLOTLIB = False
+# ==========================================
+
 DEFAULT_FIT_BOUNDS = {
     "Ls_nH": (0.0, None),
     "C_pF": (0.0, None),
 }
-DEFAULT_FIT_WINDOW = (15.0, 30.0)
 
 
 class AdmittanceFitArgs(NamedTuple):
@@ -40,17 +65,30 @@ class AdmittanceFitArgs(NamedTuple):
 
 def parse_args() -> AdmittanceFitArgs:
     parser = argparse.ArgumentParser(description="Batch analysis of admittance datasets.")
-    parser.add_argument("components", nargs="*", help="Component IDs matching preprocessed JSONs.")
-    parser.add_argument("--modes", nargs="+", help="Modes to fit/plot (e.g. 'Mode 1').")
-    parser.add_argument("--title", default=DEFAULT_PLOT_TITLE)
-    parser.add_argument("--ls-min", type=float)
-    parser.add_argument("--ls-max", type=float)
-    parser.add_argument("--c-min", type=float)
-    parser.add_argument("--c-max", type=float)
-    parser.add_argument("--fixed-c", type=float)
-    parser.add_argument("--fit-min", type=float, default=DEFAULT_FIT_WINDOW[0])
-    parser.add_argument("--fit-max", type=float, default=DEFAULT_FIT_WINDOW[1])
-    parser.add_argument("--matplotlib", action="store_true")
+    parser.add_argument(
+        "components",
+        nargs="*",
+        help="Component IDs matching preprocessed JSONs.",
+    )
+    parser.add_argument(
+        "--modes",
+        nargs="+",
+        help="Modes to fit/plot (e.g. 'Mode 1').",
+        default=DEFAULT_MODES,
+    )
+    parser.add_argument("--title", default=DEFAULT_TITLE)
+    parser.add_argument("--ls-min", type=float, default=DEFAULT_LS_MIN)
+    parser.add_argument("--ls-max", type=float, default=DEFAULT_LS_MAX)
+    parser.add_argument("--c-min", type=float, default=DEFAULT_C_MIN)
+    parser.add_argument("--c-max", type=float, default=DEFAULT_C_MAX)
+    parser.add_argument("--fixed-c", type=float, default=DEFAULT_FIXED_C_VALUE)
+    parser.add_argument("--fit-min", type=float, default=DEFAULT_FIT_WINDOW_MIN)
+    parser.add_argument("--fit-max", type=float, default=DEFAULT_FIT_WINDOW_MAX)
+    parser.add_argument(
+        "--matplotlib",
+        action="store_true",
+        default=DEFAULT_USE_MATPLOTLIB,
+    )
 
     args = parser.parse_args()
     return AdmittanceFitArgs(
@@ -88,7 +126,9 @@ def build_bounds(args: AdmittanceFitArgs) -> dict[str, tuple[float | None, float
 
 def main():
     args = parse_args()
-    file_list = args.components if args.components else DEFAULT_COMPONENT_IDS
+    # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
+    file_list = args.components if args.components else DEFAULT_COMPONENTS
+
     fit_model = FitModel.FIXED_C if args.fixed_c is not None else FitModel.WITH_LS
 
     entries = []
@@ -111,7 +151,7 @@ def main():
     if entries:
         plot_json_results(
             entries,
-            target_modes=args.modes or DEFAULT_MODES_TO_PLOT,
+            target_modes=args.modes,  # parse_args already handles the default
             title=args.title,
             use_matplotlib=args.matplotlib,
         )
