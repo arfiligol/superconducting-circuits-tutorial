@@ -61,11 +61,27 @@ parser = argparse.ArgumentParser(
 ## Documentation
 
 When adding a new script:
-1. Add a corresponding page in [[../cli/index.md|CLI Reference]]
-2. Add a user guide in the corresponding [[../../how-to/index.md|How-to]] section
+1. Add a page in [CLI Reference](../cli/index.md)
+2. Add a guide in [How-to](../../how-to/index.md) section
 3. Update README.md (if necessary)
 
 ## Related
 
-- [[./data-handling.md|Data Handling]] - Output path rules
-- [[../cli/index.md|CLI Reference]] - command reference
+- [Data Handling](data-handling.md) - Output path rules
+- [CLI Reference](../cli/index.md) - Command reference
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Script Authoring
+- **Location**: `src/scripts/`
+- **Naming**: `kebab-case` (e.g. `sc-convert-hfss`).
+- **Structure**:
+    - MUST have `def main():`.
+    - MUST use `argparse` for arguments.
+    - MUST use `if __name__ == "__main__": main()`.
+- **Logic**: CLI scripts should be minimal wrappers around `sc_analysis` logic.
+- **I/O**: Print to stdout is allowed here (and only here).
+```

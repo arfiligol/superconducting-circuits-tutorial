@@ -20,10 +20,10 @@ updated_by: docs-team
 
 ## Topics
 
-- [[./schema-design.md|Schema Design]] - Pydantic Schema 設計理由
-- [[./visualization-backend.md|Visualization Backend]] - Plotly vs Matplotlib 選擇
+- [Schema Design](schema-design.md) - Pydantic Schema 設計理由
+- [Visualization Backend](visualization-backend.md) - Plotly vs Matplotlib 選擇
 
 ## Related
 
-- [[../pipeline/index.md|Pipeline]] - 管線設計概念
-- [[../../reference/guardrails/index.md|Guardrails]] - 開發規範
+- [Pipeline](../pipeline/index.md) - 管線設計概念
+- [Guardrails](../../../reference/guardrails/index.md) - 開發規範

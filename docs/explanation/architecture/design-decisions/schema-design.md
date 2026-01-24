@@ -54,4 +54,4 @@ class ComponentRecord(BaseModel):
 
 ## Related
 
-- [[../../reference/data-formats/component-record.md|Component Record Reference]] - 完整欄位說明
+- [Component Record Reference](../../../reference/data-formats/component-record.md) - 完整欄位說明

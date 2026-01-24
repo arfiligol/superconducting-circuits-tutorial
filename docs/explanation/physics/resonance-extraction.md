@@ -56,5 +56,5 @@ $$ \tau_g = -\frac{d\phi}{d\omega} $$
 
 ## Related
 
-- [[./lc-resonance-model.md|LC Resonance Model]] - 提取後的頻率用於模型擬合
-- [[../../how-to/analysis/admittance-fit.md|Admittance Fit Guide]] - 實際操作指南
+- [LC Resonance Model](lc-resonance-model.md) - 提取後的頻率用於模型擬合
+- [Admittance Fit Guide](../../how-to/analysis/admittance-fit.md) - 實際操作指南

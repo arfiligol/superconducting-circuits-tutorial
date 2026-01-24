@@ -75,8 +75,8 @@ output_path = Path("data/processed/reports/result.json")
 
 ## Related
 
-- [[../data-formats/raw-data-layout.md|Raw Data Layout]] - 目錄結構詳情
-- [[./script-authoring.md|Script Authoring]] - 腳本撰寫規範
+- [Raw Data Layout](../data-formats/raw-data-layout.md) - 目錄結構詳情
+- [Script Authoring](script-authoring.md) - 腳本撰寫規範
 
 ---
 

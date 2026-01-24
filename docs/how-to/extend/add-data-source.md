@@ -20,7 +20,7 @@ updated_by: docs-team
 
 ## Strategy
 
-不需要修改分析核心，只需撰寫一個新的 `convert-*` 腳本，將新格式轉換為 [[../../reference/data-formats/component-record.md|ComponentRecord]] JSON。
+不需要修改分析核心，只需撰寫一個新的 `convert-*` 腳本，將新格式轉換為 [ComponentRecord](../../reference/data-formats/component-record.md) JSON。
 
 ## Steps
 
@@ -66,5 +66,5 @@ updated_by: docs-team
 
 ## Related
 
-- [[../../explanation/pipeline/preprocessing-rationale.md|Preprocessing Rationale]] - 為什麼要這樣做
-- [[../../reference/guardrails/script-authoring.md|Script Authoring]] - 腳本規範
+- [Preprocessing Rationale](../../explanation/architecture/pipeline/preprocessing-rationale.md) - 為什麼要這樣做
+- [Script Authoring](../../reference/guardrails/script-authoring.md) - 腳本規範

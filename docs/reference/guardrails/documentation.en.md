@@ -14,3 +14,27 @@ We use **Schemdraw** (Python) to generate all circuit diagrams, ensuring consist
 For a complete guide on creating circuit diagrams, see:
 
 👉 **[Circuit Diagram Contributing Guide](../../how-to/contributing/circuit-diagrams.md)**
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Docs Rules
+- **Architecture (Diataxis)**:
+    - `tutorials/`: Learning-oriented (Step-by-step).
+    - `how-to/`: Problem-oriented (Recipes).
+    - `reference/`: Information-oriented (Specs).
+    - `explanation/`: Understanding-oriented (Concepts).
+- **Style**:
+    - Language: Tranditional Chinese (zh-TW).
+    - Keep technical terms in English (e.g., SQUID, Admittance).
+- **Formatting**:
+    - Frontmatter: Required (aliases, tags, owner).
+    - Links: Use Standard Markdown `[Label](path)`.
+    - Math: Use `$$ ... $$` for blocks.
+    - Code: Always specify language (e.g., `python`, `julia`).
+- **Visuals**:
+    - Circuits: Use Schemdraw (Python) SVG only.
+    - Flows: Use Mermaid.
+```

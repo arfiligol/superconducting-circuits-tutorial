@@ -39,5 +39,5 @@ JPA 的核心是一個可調變的 LC 共振電路：
 
 ## Related
 
-- [[./lc-resonance-model.md|LC Resonance Model]] - 詳細的電路模型公式
-- [[./resonance-extraction.md|Resonance Extraction]] - 如何從數據中找到共振頻率
+- [LC Resonance Model](lc-resonance-model.md) - 詳細的電路模型公式
+- [Resonance Extraction](resonance-extraction.md) - 如何從數據中找到共振頻率

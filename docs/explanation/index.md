@@ -20,16 +20,16 @@ updated_by: docs-team
 
 ## Categories
 
-### [[./physics/index.md|Physics]]
+### [Physics](physics/index.md)
 SQUID JPA 物理模型、共振頻率公式、擷取方法。
 
-### [[./pipeline/index.md|Pipeline]]
+### [Pipeline](architecture/pipeline/index.md)
 數據管線設計、資料流程、前處理邏輯。
 
-### [[./design-decisions/index.md|Design Decisions]]
+### [Design Decisions](architecture/design-decisions/index.md)
 架構決策、技術選型理由。
 
 ## Related
 
-- [[../reference/data-formats/index.md|Data Formats]] - Schema 技術規格
-- [[../tutorials/index.md|Tutorials]] - 從實作中學習
+- [Data Formats](../reference/data-formats/index.md) - Schema 技術規格
+- [Tutorials](../tutorials/index.md) - 從實作中學習

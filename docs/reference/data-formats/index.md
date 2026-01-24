@@ -20,11 +20,11 @@ updated_by: docs-team
 
 ## Topics
 
-- [[./raw-data-layout.md|Raw Data Layout]] - `data/raw/` 目錄結構
-- [[./component-record.md|Component Record]] - `ComponentRecord` Pydantic Schema
-- [[./analysis-result.md|Analysis Result]] - 分析結果 TypedDict 格式
+- [Raw Data Layout](raw-data-layout.md) - `data/raw/` 目錄結構
+- [Component Record](component-record.md) - `ComponentRecord` Pydantic Schema
+- [Analysis Result](analysis-result.md) - 分析結果 TypedDict 格式
 
 ## Related
 
-- [[../../explanation/pipeline/index.md|Pipeline]] - 理解數據流程
-- [[../guardrails/data-handling.md|Data Handling]] - 數據處理規範
+- [Pipeline](../../explanation/architecture/pipeline/data-flow.md) - 理解數據流程
+- [Data Handling](../guardrails/data-handling.md) - 處理原則數據處理規範

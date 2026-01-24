@@ -73,5 +73,19 @@ output_path = Path("data/processed/reports/result.json")
 
 ## Related
 
-- [[../data-formats/raw-data-layout.md|Raw Data Layout]] - Directory structure details
-- [[./script-authoring.md|Script Authoring]] - Script authoring rules
+- [Raw Data Layout](../data-formats/raw-data-layout.md) - Directory structure details
+- [Script Authoring](script-authoring.md) - Script writing rules
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Data Handling
+- **Immutable**: `data/raw/` is READ-ONLY.
+- **Paths**: NEVER hardcode paths.
+    - **MUST** import from `src.utils.paths`.
+    - Keywords: `RAW_*_DIR`, `PREPROCESSED_DATA_DIR`, `PROCESSED_REPORTS_DIR`.
+- **Flow**: Raw -> Preprocessing Script -> Preprocessed (JSON) -> Analysis Script -> Processed (Reports).
+- **Format**: Prefer **JSON** for light data, **CSV** for tabular data.
+```

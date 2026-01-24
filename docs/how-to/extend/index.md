@@ -20,9 +20,9 @@ updated_by: docs-team
 
 ## Guides
 
-- [[./add-data-source.md|Add Data Source]] - 新增數據來源支援
+- [Add Data Source](add-data-source.md) - 新增數據來源支援
 
 ## Related
 
-- [[../../explanation/pipeline/index.md|Pipeline]] - 理解管線架構
-- [[../../reference/guardrails/index.md|Guardrails]] - 開發規範
+- [Pipeline](../../explanation/architecture/pipeline/index.md) - 理解管線架構
+- [Guardrails](../../reference/guardrails/index.md) - 開發規範

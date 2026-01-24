@@ -80,4 +80,4 @@ updated_by: docs-team
 
 ## Related
 
-- [[../../explanation/design-decisions/schema-design.md|Schema Design Rationale]]
+- [Schema Design](../../explanation/architecture/design-decisions/schema-design.md) - 架構設計決策Rationale]]

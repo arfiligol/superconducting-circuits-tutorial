@@ -19,7 +19,7 @@ updated_by: docs-team
 本教程涵蓋從 ANSYS HFSS 模擬到 SQUID 參數提取的**完整流程**。
 
 > [!TIP]
-> 如果你已經有 CSV 數據，可以直接跳到 [[./resonance-fitting.md|Resonance Fitting]]。
+> 如果你已經有 CSV 數據，可以直接跳到 [Resonance Fitting](resonance-fitting.md)。
 
 ## Overview
 
@@ -69,7 +69,7 @@ flowchart LR
 
 ## Step 2: Resonance Extraction (Im(Y) Method)
 
-這是主要的共振頻率提取方法。詳細操作見 [[./resonance-fitting.md|Resonance Fitting Tutorial]]。
+這是主要的共振頻率提取方法。詳細操作見 [Resonance Fitting Tutorial](resonance-fitting.md)。
 
 ```bash
 # 轉換 CSV → JSON
@@ -183,5 +183,5 @@ uv run effective-capacitance-fit MyChip_NoL
 
 ## Next Steps
 
-- [[./resonance-fitting.md|Resonance Fitting]] - 完整 LC 模型擬合 (有 $L_s$)
-- [[../how-to/analysis/admittance-fit.md|Admittance Fit How-to]] - CLI 參數詳解
+- [Resonance Fitting](resonance-fitting.md) - 完整 LC 模型擬合 (有 $L_s$)
+- [Admittance Fit How-to](../how-to/analysis/admittance-fit.md) - CLI 參數詳解

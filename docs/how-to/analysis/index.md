@@ -20,11 +20,11 @@ updated_by: docs-team
 
 ## Guides
 
-- [[./admittance-fit.md|Admittance Fit]] - 執行 SQUID LC 模型擬合
-- [[./effective-capacitance.md|Effective Capacitance]] - 有效電容擬合
-- [[./flux-dependence-plot.md|Flux Dependence Plot]] - 繪製磁通依賴熱圖
+- [Admittance Fit](admittance-fit.md) - 執行 SQUID LC 模型擬合
+- [Effective Capacitance](effective-capacitance.md) - 有效電容擬合
+- [Flux Dependence Plot](flux-dependence-plot.md) - 繪製磁通依賴熱圖
 
 ## Related
 
-- [[../../explanation/physics/index.md|Physics]] - 理解擬合模型
-- [[../../reference/cli/index.md|CLI Reference]] - 分析指令詳細參數
+- [Physics](../../explanation/physics/index.md) - 理解擬合模型
+- [CLI Reference](../../reference/cli/index.md) - 分析指令詳細參數

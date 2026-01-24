@@ -6,7 +6,7 @@
 
 我們遵循 **[PEP 8](https://peps.python.org/pep-0008/)** 作為 Python 程式碼風格標準。
 
-> **PEP 8** 是 Python 官方的風格指南（**規範標準**），而 **Ruff** 是我們用來自動檢查與強制執行這些規範的**工具**。詳見 [工具鏈章節](#工具鏈-toolchain)。
+> **PEP 8** 是 Python 官方的風格指南（**規範標準**），而 **Ruff** 是我們用來自動檢查與強制執行這些規範的**工具**。詳見 [工具鏈章節](#toolchain)。
 
 ## Clean Code 原則
 
@@ -42,7 +42,7 @@
 - 使用 `|` 來表示 Union（例如：用 `int | None` 取代 `Optional[int]`）。
 - 使用標準集合型別 (`list`, `dict`, `tuple`) 取代 `typing` 模組的對應項目。
 
-## 工具鏈 (Toolchain)
+## 工具鏈 (Toolchain) { #toolchain }
 
 專案使用自動化工具來確保程式碼一致性與品質。詳細說明請參考：
 

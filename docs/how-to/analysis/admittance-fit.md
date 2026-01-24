@@ -20,7 +20,7 @@ updated_by: docs-team
 
 ## Prerequisites
 
-- 已完成 [[../preprocess/hfss-admittance.md|前處理]]，並有 `data/preprocessed/*.json` 檔案。
+- 已完成 [前處理](../preprocess/hfss-admittance.md)，並有 `data/preprocessed/*.json` 檔案。
 
 ## Steps
 
@@ -54,5 +54,5 @@ updated_by: docs-team
 
 ## Related
 
-- [[../../explanation/physics/lc-resonance-model.md|LC Model Theory]] - 理解參數意義
-- [[../../reference/cli/squid-model-fit.md|CLI Reference]] - 完整參數表
+- [LC Model Theory](../../explanation/physics/lc-resonance-model.md) - 理解參數意義
+- [CLI Reference](../../reference/cli/squid-model-fit.md) - 完整參數表

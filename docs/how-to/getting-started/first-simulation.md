@@ -8,7 +8,7 @@
 
 ## 電路結構
 
-![LC Circuit](../assets/first_simulation_lc.svg)
+![LC Circuit](../../assets/first_simulation_lc.svg)
 
 ??? quote "繪製此圖的程式碼（Schemdraw）"
     ```python
@@ -74,4 +74,4 @@ $$f_0 = \frac{1}{2\pi\sqrt{LC}} \approx 1.59 \text{ GHz}$$
 ## 下一步
 
 - 👉 [理解 hbsolve](understanding-hbsolve.md) — 深入了解模擬函式
-- 👉 [LC 共振器教學](../tutorials/lc-resonator.md) — 更詳細的範例
+- 👉 [LC 共振器教學](../../tutorials/lc-resonator.md) — 更詳細的範例

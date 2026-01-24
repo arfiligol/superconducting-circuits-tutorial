@@ -76,3 +76,15 @@ Use the following format in your Markdown file. We use `??? quote` to create a c
 *   **Consistency**: Unified style for all diagrams.
 *   **Vector Graphics**: SVGs look crisp at any resolution.
 *   **Maintainability**: Future contributors can copy the code to modify the circuit (e.g., changing values) without redrawing from scratch.
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## Circuit Diagrams
+- **Tool**: Schemdraw (Python).
+- **Format**: SVG.
+- **Location**: Scripts in `scripts/docs/`, Images in `docs/assets/`.
+- **Constraint**: All diagrams MUST be generated via code (No manual drawing tools).
+```

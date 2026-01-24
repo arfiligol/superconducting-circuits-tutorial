@@ -20,16 +20,16 @@ updated_by: docs-team
 
 ## Categories
 
-### [[./preprocess/index.md|Preprocess]]
+### [Preprocess](preprocess/index.md)
 數據前處理，將 HFSS/VNA 數據轉換為標準格式。
 
-### [[./analysis/index.md|Analysis]]
+### [Analysis](analysis/index.md)
 執行分析，包括擬合與視覺化。
 
-### [[./extend/index.md|Extend]]
+### [Extend](extend/index.md)
 擴展管線，新增數據來源或分析方法。
 
 ## Related
 
-- [[../tutorials/index.md|Tutorials]] - 從零開始學習
-- [[../reference/cli/index.md|CLI Reference]] - 指令詳細參數
+- [Tutorials](../tutorials/index.md) - 從零開始學習
+- [CLI Reference](../reference/cli/index.md) - 指令詳細參數

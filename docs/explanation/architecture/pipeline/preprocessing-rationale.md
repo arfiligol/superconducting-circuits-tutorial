@@ -56,5 +56,5 @@ updated_by: docs-team
 
 ## Related
 
-- [[../../reference/data-formats/component-record.md|Component Record Schema]] - Schema 定義
-- [[./data-flow.md|Data Flow]] - 整體流程
+- [Component Record Schema](../../../reference/data-formats/component-record.md) - Schema 定義
+- [Data Flow](data-flow.md) - 整體流程

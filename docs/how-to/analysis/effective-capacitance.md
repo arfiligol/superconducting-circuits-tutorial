@@ -19,11 +19,11 @@ updated_by: docs-team
 本指南說明如何使用 `effective-capacitance-fit` 工具。
 
 > [!NOTE]
-> 這是一個舊版工具，主要用於比較不同設計版本的有效電容。新版建議使用 [[./admittance-fit.md|squid-model-fit]]。
+> 這是一個舊版工具，主要用於比較不同設計版本的有效電容。新版建議使用 [squid-model-fit](admittance-fit.md)。
 
 ## Steps
 
-1. **準備前處理數據** (同 [[../preprocess/hfss-admittance.md|HFSS Admittance]]).
+1. **準備前處理數據** (同 [HFSS Admittance](../preprocess/hfss-admittance.md)).
 
 2. **執行指令**
    ```bash
@@ -35,4 +35,4 @@ updated_by: docs-team
 
 ## Related
 
-- [[./admittance-fit.md|Admittance Fit]] - 更完整的擬合方法
+- [Admittance Fit](admittance-fit.md) - 更完整的擬合方法

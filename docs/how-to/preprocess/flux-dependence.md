@@ -40,8 +40,8 @@ updated_by: docs-team
 
 ## Next Steps
 
-- [[../analysis/flux-dependence-plot.md|Plot Flux Dependence]] - 繪製熱圖
+- [Plot Flux Dependence](../analysis/flux-dependence-plot.md) - 繪製熱圖
 
 ## Related
 
-- [[../../reference/cli/convert-flux-dependence.md|CLI Reference]]
+- [CLI Reference](../../reference/cli/convert-flux-dependence.md)

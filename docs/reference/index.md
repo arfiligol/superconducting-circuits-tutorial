@@ -20,16 +20,11 @@ updated_by: docs-team
 
 ## Categories
 
-### [[./cli/index.md|CLI Commands]]
-命令列工具參考，包括所有參數說明。
-
-### [[./data-formats/index.md|Data Formats]]
-數據格式規格，包括 Schema 定義。
-
-### [[./guardrails/index.md|Guardrails]]
-開發規範，類型檢查、程式風格、數據處理規則。
+- [CLI Reference](cli/index.md) - 命令列工具
+- [Data Formats](data-formats/index.md) - 數據格式與 Schema
+- [Guardrails](guardrails/index.md) - 開發規範與指引，類型檢查、程式風格、數據處理規則。
 
 ## Related
 
-- [[../explanation/index.md|Explanation]] - 理解設計理由
-- [[../how-to/index.md|How-to Guides]] - 實際操作指南
+- [Explanation](../explanation/index.md) - 核心概念
+- [How-to Guides](../how-to/index.md) - 操作指南

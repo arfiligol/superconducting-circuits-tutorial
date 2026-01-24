@@ -20,10 +20,10 @@ updated_by: docs-team
 
 ## Topics
 
-- [[./data-flow.md|Data Flow]] - 數據流程：Raw → Preprocessed → Analyzed
-- [[./preprocessing-rationale.md|Preprocessing Rationale]] - 前處理設計理由
+- [Data Flow](data-flow.md) - 數據流程：Raw → Preprocessed → Analyzed
+- [Preprocessing Rationale](preprocessing-rationale.md) - 前處理設計理由
 
 ## Related
 
-- [[../design-decisions/index.md|Design Decisions]] - 架構決策
-- [[../../reference/data-formats/index.md|Data Formats]] - Schema 規格
+- [Design Decisions](../design-decisions/index.md) - 架構決策
+- [Data Formats](../../../reference/data-formats/index.md) - Schema 規格

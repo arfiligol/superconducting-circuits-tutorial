@@ -16,11 +16,11 @@ This is a combined **learning** and **research** resource:
 - Researchers using JosephsonCircuits.jl
 - Anyone interested in JPA (Josephson Parametric Amplifier) and Qubit simulation
 
-## Quick Start
+## Getting Started
 
-1. [Installation](getting-started/installation.md) — Set up Julia and dependencies
-2. [First Simulation](getting-started/first-simulation.md) — Run your first circuit simulation
-3. [Understanding hbsolve](getting-started/understanding-hbsolve.md) — Learn the core function
+1. [Installation](how-to/getting-started/installation.md) — Set up Julia and dependencies
+2. [First Simulation](how-to/getting-started/first-simulation.md) — Run your first circuit simulation
+3. [Understanding hbsolve](how-to/getting-started/understanding-hbsolve.md) — Learn the core function
 
 ## Tutorial Topics
 

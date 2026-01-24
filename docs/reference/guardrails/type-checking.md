@@ -66,8 +66,8 @@ def parse_args() -> Args:
 
 ## Related
 
-- [[./code-style.md|Code Style]] - 程式風格規範
-- [[./index.md|Guardrails]] - 規範總覽
+- [Code Style](code-style.md) - 程式風格規範
+- [Guardrails](index.md) - 規範總覽
 
 ---
 

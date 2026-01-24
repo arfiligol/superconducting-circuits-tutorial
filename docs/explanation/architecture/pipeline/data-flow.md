@@ -53,5 +53,5 @@ graph LR
 
 ## Related
 
-- [[../../reference/data-formats/raw-data-layout.md|Raw Data Layout]] - 目錄結構
-- [[./preprocessing-rationale.md|Preprocessing Rationale]] - 為什麼需要中間層
+- [Raw Data Layout](../../../reference/data-formats/raw-data-layout.md) - 目錄結構
+- [Preprocessing Rationale](preprocessing-rationale.md) - 為什麼需要中間層

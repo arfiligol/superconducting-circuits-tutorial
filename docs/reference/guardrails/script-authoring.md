@@ -62,14 +62,14 @@ parser = argparse.ArgumentParser(
 ## Documentation
 
 新增腳本時：
-1. 在 [[../cli/index.md|CLI Reference]] 新增對應頁面
-2. 在對應的 [[../../how-to/index.md|How-to]] 新增使用指南
+1. 在 [CLI Reference](../cli/index.md) 新增對應頁面
+2. 在對應的 [How-to](../../how-to/index.md) 新增使用指南
 3. 更新 README.md（如有必要）
 
 ## Related
 
-- [[./data-handling.md|Data Handling]] - 輸出路徑規範
-- [[../cli/index.md|CLI Reference]] - 指令參考
+- [Data Handling](data-handling.md) - 輸出路徑規範
+- [CLI Reference](../cli/index.md) - 指令參考
 
 ---
 

@@ -39,4 +39,4 @@ updated_by: docs-team
 
 ## Related
 
-- [[../../explanation/physics/resonance-extraction.md#2-phase-group-delay-method|Resonance Extraction]] - 相位法原理
+- [Resonance Extraction](../../explanation/physics/resonance-extraction.md#2-phase-group-delay-method) - 相位法原理

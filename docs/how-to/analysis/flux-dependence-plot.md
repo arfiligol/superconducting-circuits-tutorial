@@ -20,7 +20,7 @@ updated_by: docs-team
 
 ## Prerequisites
 
-- 已完成 [[../preprocess/flux-dependence.md|Flux Dependence 前處理]]。
+- 已完成 [Flux Dependence 前處理](../preprocess/flux-dependence.md)。
 
 ## Steps
 
@@ -47,4 +47,4 @@ updated_by: docs-team
 
 ## Related
 
-- [[../../reference/cli/flux-dependence-plot.md|CLI Reference]] - 完整參數
+- [CLI Reference](../../reference/cli/flux-dependence-plot.md) - 完整參數

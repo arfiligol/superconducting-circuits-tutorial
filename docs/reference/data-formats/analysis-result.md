@@ -58,4 +58,4 @@ class AnalysisEntry(TypedDict):
 
 ## Related
 
-- [[../../how-to/analysis/admittance-fit.md|Admittance Fit]]
+- [Admittance Fit](../../how-to/analysis/admittance-fit.md) - 產生 Report 的工具

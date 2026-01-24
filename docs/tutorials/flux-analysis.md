@@ -28,7 +28,7 @@ updated_by: docs-team
    $$ L_{jun}(\Phi) = \frac{\Phi_0}{2\pi I_c |\cos(\pi \Phi/\Phi_0)|} $$
 2. **共振頻率變化**
    因為 $f_0 \propto 1/\sqrt{L_{jun}}$，當我們掃描磁通（改變偏壓電流）時，共振頻率會呈現週期性的震盪圖形（通常像拱門形狀）。
-   > 深入閱讀：[[../explanation/physics/squid-jpa-basics.md|SQUID JPA Basics]]
+   > 深入閱讀：[SQUID JPA Basics](../explanation/physics/squid-jpa-basics.md)
 
 ## 2. Step-by-Step Analysis
 

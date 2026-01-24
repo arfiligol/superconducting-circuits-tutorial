@@ -60,7 +60,7 @@ owner: docs-team
 
 ### Links
 
-- **內部連結**: 使用 Wiki-Links 語法 `[[path/to/file.md|顯示文字]]`。
+- **內部連結**: 使用標準 Markdown 語法 `[顯示文字](path/to/file.md)`。
 - **外部連結**: 使用標準 Markdown `[顯示文字](url)`。
 - **引用圖片**: 使用 `![Alt](../assets/image.png)` (圖片存放在 `docs/assets/`)。
 
@@ -83,7 +83,7 @@ owner: docs-team
 ## 4. 視覺與圖表 (Visuals)
 
 - **電路圖**: 必須使用 **Schemdraw** (Python) 生成 SVG。
-    - 詳見: [[../../how-to/contributing/circuit-diagrams.md|Circuit Diagram Guide]]
+    - 詳見: [Circuit Diagram Guide](../../how-to/contributing/circuit-diagrams.md)
 - **流程圖**: 使用 Mermaid。
     ```mermaid
     graph TD;
@@ -106,7 +106,7 @@ owner: docs-team
     - Keep technical terms in English (e.g., SQUID, Admittance).
 - **Formatting**:
     - Frontmatter: Required (aliases, tags, owner).
-    - Links: Use Wiki-Links `[[path|Label]]`.
+    - Links: Use Standard Markdown `[Label](path)`.
     - Math: Use `$$ ... $$` for blocks.
     - Code: Always specify language (e.g., `python`, `julia`).
 - **Visuals**:

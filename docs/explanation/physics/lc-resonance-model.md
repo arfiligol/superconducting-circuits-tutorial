@@ -54,5 +54,5 @@ $$ f = \frac{1}{2\pi\sqrt{ (L_{jun}/2 + L_s) C_{eff} }} $$
 
 ## Related
 
-- [[../../reference/cli/squid-model-fit.md|squid-model-fit]] - 執行此模型擬合的指令
-- [[./squid-jpa-basics.md|SQUID JPA Basics]] - 基礎物理背景
+- [squid-model-fit](../../reference/cli/squid-model-fit.md) - 執行此模型擬合的指令
+- [SQUID JPA Basics](squid-jpa-basics.md) - 基礎物理背景
