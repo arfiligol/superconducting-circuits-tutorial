@@ -22,8 +22,8 @@ updated_by: docs-team
 
 ## 0. End-to-End Simulation Workflow (NEW)
 
-> [!TIP]
-> 如果你想學習**從 HFSS 模擬到參數提取的完整流程**，請先閱讀 [Simulation Workflow](simulation-workflow.md)。
+!!! tip
+    如果你想學習**從 HFSS 模擬到參數提取的完整流程**，請先閱讀 [Simulation Workflow](simulation-workflow.md)。
 
 ## 1. Core Workflow (SQUID Characterization)
 

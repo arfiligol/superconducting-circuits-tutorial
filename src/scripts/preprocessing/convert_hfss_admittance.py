@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 from typing import NamedTuple
 
-from sc_analysis.application.services.hfss_processing import process_and_write_hfss_file
+from core.analysis.application.services.hfss_processing import process_and_write_hfss_file
 
 # ==========================================
 #           USER CONFIGURATION

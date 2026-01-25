@@ -10,8 +10,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CLI 腳本撰寫規範：位置、入口、文件"
-version: v0.1.0
-last_updated: 2026-01-12
+version: v0.2.0
+last_updated: 2026-01-24
 updated_by: docs-team
 ---
 
@@ -21,13 +21,15 @@ CLI 腳本撰寫規範。
 
 ## Location
 
-將工具腳本放在 `src/scripts/`：
+將工具腳本放在 `src/scripts/`，並依功能分類：
 
 ```
 src/scripts/
-├── admittance_fit.py
-├── flux_dependence_plot.py
-└── ...
+├── analysis/              # 分析相關腳本
+│   ├── admittance_fit.py
+│   └── flux_dependence_plot.py
+└── simulation/            # 模擬相關腳本
+    └── run_lc.py
 ```
 
 ## Entry Points
@@ -36,8 +38,12 @@ src/scripts/
 
 ```toml
 [project.scripts]
-squid-model-fit = "src.scripts.admittance_fit:run_no_ls"
-flux-dependence-plot = "src.scripts.flux_dependence_plot:run"
+# Analysis
+sc-fit-squid = "scripts.analysis.admittance_fit:run_no_ls"
+flux-dependence-plot = "scripts.analysis.flux_dependence_plot:run"
+
+# Simulation
+sc-simulate-lc = "scripts.simulation.run_lc:main"
 ```
 
 ## Execution
@@ -45,7 +51,8 @@ flux-dependence-plot = "src.scripts.flux_dependence_plot:run"
 腳本必須可透過模組方式執行：
 
 ```bash
-uv run python -m src.scripts.admittance_fit
+uv run python -m scripts.analysis.admittance_fit
+uv run python -m scripts.simulation.run_lc
 ```
 
 ## Help Message
@@ -70,6 +77,7 @@ parser = argparse.ArgumentParser(
 
 - [Data Handling](data-handling.md) - 輸出路徑規範
 - [CLI Reference](../cli/index.md) - 指令參考
+- [Folder Structure](folder-structure.md) - 目錄結構
 
 ---
 
@@ -77,12 +85,17 @@ parser = argparse.ArgumentParser(
 
 ```markdown
 ## Script Authoring
-- **Location**: `src/scripts/`
-- **Naming**: `kebab-case` (e.g. `sc-convert-hfss`).
+- **Location**: 
+    - Analysis scripts: `src/scripts/analysis/`
+    - Simulation scripts: `src/scripts/simulation/`
+- **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
 - **Structure**:
     - MUST have `def main():`.
     - MUST use `argparse` for arguments.
     - MUST use `if __name__ == "__main__": main()`.
-- **Logic**: CLI scripts should be minimal wrappers around `sc_analysis` logic.
+- **Logic**: 
+    - Analysis CLI: minimal wrappers around `core/analysis` logic.
+    - Simulation CLI: minimal wrappers around `core/simulation` logic.
 - **I/O**: Print to stdout is allowed here (and only here).
 ```
+

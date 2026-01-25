@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CLI Script Authoring Rules: Location, Entry Points, Documentation"
-version: v0.1.0
-last_updated: 2026-01-12
+version: v0.2.0
+last_updated: 2026-01-24
 updated_by: docs-team
 ---
 
@@ -20,13 +20,15 @@ CLI script authoring standards.
 
 ## Location
 
-Place tool scripts in `src/scripts/`:
+Place tool scripts in `src/scripts/`, organized by function:
 
 ```
 src/scripts/
-├── admittance_fit.py
-├── flux_dependence_plot.py
-└── ...
+├── analysis/              # Analysis scripts
+│   ├── admittance_fit.py
+│   └── flux_dependence_plot.py
+└── simulation/            # Simulation scripts
+    └── run_lc.py
 ```
 
 ## Entry Points
@@ -35,8 +37,12 @@ Register entry points in `pyproject.toml`:
 
 ```toml
 [project.scripts]
-squid-model-fit = "src.scripts.admittance_fit:run_no_ls"
-flux-dependence-plot = "src.scripts.flux_dependence_plot:run"
+# Analysis
+sc-fit-squid = "scripts.analysis.admittance_fit:run_no_ls"
+flux-dependence-plot = "scripts.analysis.flux_dependence_plot:run"
+
+# Simulation
+sc-simulate-lc = "scripts.simulation.run_lc:main"
 ```
 
 ## Execution
@@ -44,7 +50,8 @@ flux-dependence-plot = "src.scripts.flux_dependence_plot:run"
 Scripts must be executable as modules:
 
 ```bash
-uv run python -m src.scripts.admittance_fit
+uv run python -m scripts.analysis.admittance_fit
+uv run python -m scripts.simulation.run_lc
 ```
 
 ## Help Message
@@ -69,6 +76,7 @@ When adding a new script:
 
 - [Data Handling](data-handling.md) - Output path rules
 - [CLI Reference](../cli/index.md) - Command reference
+- [Folder Structure](folder-structure.md) - Directory structure
 
 ---
 
@@ -76,12 +84,17 @@ When adding a new script:
 
 ```markdown
 ## Script Authoring
-- **Location**: `src/scripts/`
-- **Naming**: `kebab-case` (e.g. `sc-convert-hfss`).
+- **Location**: 
+    - Analysis scripts: `src/scripts/analysis/`
+    - Simulation scripts: `src/scripts/simulation/`
+- **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
 - **Structure**:
     - MUST have `def main():`.
     - MUST use `argparse` for arguments.
     - MUST use `if __name__ == "__main__": main()`.
-- **Logic**: CLI scripts should be minimal wrappers around `sc_analysis` logic.
+- **Logic**: 
+    - Analysis CLI: minimal wrappers around `core/analysis` logic.
+    - Simulation CLI: minimal wrappers around `core/simulation` logic.
 - **I/O**: Print to stdout is allowed here (and only here).
 ```
+

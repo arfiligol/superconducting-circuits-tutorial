@@ -13,31 +13,69 @@
 ```bash
 git clone https://github.com/arfiligol/superconducting-circuits-tutorial.git
 cd superconducting-circuits-tutorial
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+
+# Python 環境 (使用 uv)
+uv sync
+
+# Julia 依賴會在首次執行時自動安裝 (透過 juliapkg)
 ```
 
-### 2. 執行範例
+### 2. 本地預覽文件
 
 ```bash
-julia --project=. examples/01_simple_lc/lc_resonator.jl
-```
-
-### 3. 本地預覽文件
-
-```bash
-pip install mkdocs-material mkdocs-glightbox
-mkdocs serve
+uv run mkdocs serve
 ```
 
 ## 📁 專案結構
 
 ```
 superconducting-circuits-tutorial/
-├── docs/          # MkDocs 教學文件
-├── examples/      # 可執行的 Julia 範例
-├── sandbox/       # 實驗區 (不進版控)
-└── src/           # 共用工具 (ili_plot 等)
+├── src/
+│   ├── core/                 # 核心邏輯 (Clean Architecture)
+│   │   ├── analysis/         # 數據分析 (Fitting, Extraction)
+│   │   ├── simulation/       # 電路模擬 (JuliaCall ↔ Julia)
+│   │   └── shared/           # 共用工具 (visualization, utils)
+│   └── scripts/              # CLI 入口點
+├── data/                     # 數據生命週期
+│   ├── raw/                  # 原始數據 (HFSS/VNA)
+│   ├── preprocessed/         # 中間 JSON
+│   └── processed/            # 分析結果
+├── docs/                     # MkDocs 教學文件
+├── examples/                 # 可執行範例
+├── pyproject.toml            # Python 依賴 (uv)
+├── juliapkg.json             # Julia 依賴 (JosephsonCircuits.jl)
+└── Project.toml              # Julia 專案設定
 ```
+
+## 🔬 模擬工具 (Simulation)
+
+使用 JosephsonCircuits.jl 進行電路模擬：
+
+```bash
+# LC 共振器模擬
+uv run sc-simulate-lc -L 10 -C 1 --start 0.1 --stop 5 --points 100
+```
+
+| 指令 | 說明 |
+|------|------|
+| `sc-simulate-lc` | LC 共振器 S 參數模擬 |
+
+## 📊 分析工具 (Analysis)
+
+Python CLI 工具進行數據分析：
+
+```bash
+# SQUID 模型擬合
+uv run sc-fit-squid data/preprocessed/sample.json
+
+# Flux 依賴性繪圖
+uv run flux-dependence-plot data/preprocessed/flux_sweep.json
+```
+
+| 指令 | 說明 |
+|------|------|
+| `sc-fit-squid` | SQUID 導納模型擬合 |
+| `flux-dependence-plot` | Flux 依賴性分析繪圖 |
 
 ## 🎯 適合誰？
 
@@ -54,10 +92,7 @@ superconducting-circuits-tutorial/
 | Harmonic Balance | 核心模擬方法 |
 | S/Z/Y 參數 | 網路參數分析 |
 
-## 🛠️ 工具
-
-- `src/plotting.jl` — PlotlyJS 繪圖封裝 (`ili_plot`)
-
 ## 📜 License
 
 MIT
+

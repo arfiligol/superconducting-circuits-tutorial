@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ipython>=9.7.0",
+    "juliacall>=0.9.31",
     "lmfit>=1.3.1",
     "matplotlib>=3.10.7",
     "mkdocs-roamlinks-plugin>=0.3.2",
@@ -22,13 +23,14 @@ dependencies = [
 sc-preprocess-admittance = "scripts.preprocessing.convert_hfss_admittance:main"
 sc-preprocess-phase = "scripts.preprocessing.convert_hfss_phase:main"
 sc-fit-squid = "scripts.analysis.squid_fit:main"
+sc-simulate-lc = "scripts.simulation.run_lc:main"
 
 [tool.uv]
 package = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["sc_analysis*", "sc_app*", "scripts*"]
+include = ["core*", "scripts*"]
 
 [tool.basedpyright]
 typeCheckingMode = "basic"

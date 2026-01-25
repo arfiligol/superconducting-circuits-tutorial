@@ -4,12 +4,12 @@
 import argparse
 from typing import NamedTuple
 
-from sc_analysis.application.services.squid_fitting import (
+from core.analysis.application.services.squid_fitting import (
     FitModel,
     analyze_file,
     resolve_component_path,
 )
-from sc_analysis.infrastructure.visualization.plot_utils import plot_json_results
+from core.analysis.infrastructure.visualization.plot_utils import plot_json_results
 
 # ==========================================
 #           USER CONFIGURATION

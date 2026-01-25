@@ -66,11 +66,37 @@ owner: docs-team
 
 ### 排版元素
 
-- **Admonitions**: 善用 MkDocs Material 的提示區塊。
-    - `!!! note`: 一般註記
-    - `!!! tip`: 技巧與捷徑
-    - `!!! warning`: 潛在風險
-    - `!!! important`: 關鍵資訊
+- **Admonitions (提示區塊)**: 使用 MkDocs Material 語法。
+
+    !!! warning "語法注意"
+        **不要使用** GitHub 風格 `> [!NOTE]`，MkDocs 無法正確渲染。
+
+    **正確語法**:
+    
+    ```markdown
+    !!! note "標題（可選）"
+        內容必須縮排 4 個空格。
+        可以有多行。
+    ```
+
+    **可摺疊版本** (使用 `???`):
+    
+    ```markdown
+    ??? tip "點擊展開"
+        隱藏的內容。
+    ```
+
+    **支援的類型**:
+    
+    | 類型 | 用途 |
+    |------|------|
+    | `note` | 一般註記、補充說明 |
+    | `tip` | 技巧、捷徑、最佳實踐 |
+    | `warning` | 潛在風險、注意事項 |
+    | `danger` | 危險操作、可能造成資料遺失 |
+    | `info` | 背景資訊 |
+    | `example` | 範例說明 |
+
 - **數學公式**: 使用 MathJax 區塊。
     - 行內: `$E = mc^2$`
     - 區塊: `$$ \Phi_0 = \frac{h}{2e} $$`
@@ -102,14 +128,19 @@ owner: docs-team
     - `reference/`: Information-oriented (Specs).
     - `explanation/`: Understanding-oriented (Concepts).
 - **Style**:
-    - Language: Tranditional Chinese (zh-TW).
+    - Language: Traditional Chinese (zh-TW).
     - Keep technical terms in English (e.g., SQUID, Admittance).
 - **Formatting**:
     - Frontmatter: Required (aliases, tags, owner).
     - Links: Use Standard Markdown `[Label](path)`.
     - Math: Use `$$ ... $$` for blocks.
     - Code: Always specify language (e.g., `python`, `julia`).
+    - **Admonitions**: Use MkDocs Material syntax only.
+        - Correct: `!!! note "Title"` with 4-space indented content.
+        - WRONG: `> [!NOTE]` (GitHub style, not supported).
+        - Types: `note`, `tip`, `warning`, `danger`, `info`, `example`.
 - **Visuals**:
     - Circuits: Use Schemdraw (Python) SVG only.
     - Flows: Use Mermaid.
 ```
+

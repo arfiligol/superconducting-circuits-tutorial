@@ -7,11 +7,16 @@
 ```
 superconducting-circuits-tutorial/
 ├── src/
-│   ├── scripts/              # CLI Scripts (Entry Points)
-│   ├── sc_analysis/          # Core Logic (Clean Architecture)
-│   └── sc_app/               # [Planned] NiceGUI Native App
+│   ├── core/                 # Domain & Application Logic
+│   │   ├── analysis/         # 數據分析 (Clean Architecture)
+│   │   ├── simulation/       # 電路模擬 (JuliaCall ↔ Julia)
+│   │   └── shared/           # 共用工具 (visualization, utils)
+│   ├── app/                  # [Planned] NiceGUI App
+│   └── scripts/              # CLI Entry Points
+│       ├── analysis/         # 分析腳本 (admittance_fit.py 等)
+│       └── simulation/       # 模擬腳本 (run_lc.py 等)
 ├── data/                     # Data Lifecycle
-│   ├── raw/                  # Read-Only Input (HFSS/Maxwell)
+│   ├── raw/                  # Read-Only Input (HFSS/VNA)
 │   ├── preprocessed/         # Intermediate JSON
 │   └── processed/            # Analysis Results & Reports
 ├── docs/                     # Documentation (MkDocs)
@@ -20,7 +25,8 @@ superconducting-circuits-tutorial/
 ├── sandbox/                  # Experimental / Legacy Code
 ├── pyproject.toml            # Python Dependencies (uv)
 ├── uv.lock                   # Python Lock File
-├── Project.toml              # Julia Dependencies
+├── juliapkg.json             # Julia Dependencies (JosephsonCircuits.jl)
+├── Project.toml              # Julia Project Settings
 ├── Manifest.toml             # Julia Lock File
 └── .gitignore                # Git Ignore Rules
 ```
@@ -40,17 +46,26 @@ superconducting-circuits-tutorial/
 ```markdown
 ## Folder Structure
 - **Source Code (`src/`)**:
-    - `sc_analysis/`: **Core Domain Logic** (Pydantic models, Algorithms). NO Print/Plot here.
-    - `sc_app/`: **NiceGUI Native App**.
-    - `scripts/`: **CLI Entry Points**. Use `argparse`. ONLY layer allowed to `print()`.
+    - `core/analysis/`: **Data Analysis** (Pydantic models, Fitting, Extraction). NO Print/Plot here.
+    - `core/simulation/`: **Circuit Simulation** (JuliaCall adapter to JosephsonCircuits.jl).
+    - `core/shared/`: **Shared Utilities** (visualization, units).
+    - `app/`: **NiceGUI Native App**.
+    - `scripts/analysis/`: **Analysis CLI Entry Points**. Use `argparse`. ONLY layer allowed to `print()`.
+    - `scripts/simulation/`: **Simulation CLI Entry Points**.
 - **Data (`data/`)**:
     - `raw/`: **READ-ONLY**. HFSS/VNA files.
     - `preprocessed/`: Intermediate JSON.
     - `processed/`: Final Reports/Plots.
-- **Config**: `pyproject.toml` (Python), `Project.toml` (Julia) in Root.
+- **Config** (Root):
+    - `pyproject.toml`: Python Dependencies (uv).
+    - `juliapkg.json`: Julia Dependencies (JosephsonCircuits.jl).
+    - `Project.toml`: Julia Project Settings.
 - **Decision Tree**:
-    - IF "script to run from terminal" -> `src/scripts/`
-    - IF "reusable logic" -> `src/sc_analysis/`
-    - IF "simulation engine" -> `src/sc_analysis/infrastructure/simulation/`
-    - IF "UI" -> `src/sc_app/`
+    - IF "simulation CLI" -> `src/scripts/simulation/`
+    - IF "analysis CLI" -> `src/scripts/analysis/`
+    - IF "reusable analysis logic" -> `src/core/analysis/`
+    - IF "simulation interop" -> `src/core/simulation/`
+    - IF "shared plotting/utils" -> `src/core/shared/`
+    - IF "UI" -> `src/app/`
 ```
+

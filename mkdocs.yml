@@ -127,6 +127,10 @@ nav:
       - Contributing:
           - Workflow: how-to/contributing.md
           - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
+          - Extending:
+              - Overview: how-to/extend/index.md
+              - Add Data Source: how-to/extend/add-data-source.md
+              - Extend Julia Functions: how-to/extend/extend-julia-functions.md
       - Preprocessing:
           - Overview: how-to/preprocess/index.md
           - HFSS Admittance: how-to/preprocess/hfss-admittance.md
@@ -137,9 +141,11 @@ nav:
           - Admittance Fit: how-to/analysis/admittance-fit.md
           - Flux Plot: how-to/analysis/flux-dependence-plot.md
           - Effective Capacitance: how-to/analysis/effective-capacitance.md
-      - Extending:
-          - Overview: how-to/extend/index.md
-          - Add Data Source: how-to/extend/add-data-source.md
+      - Simulation:
+          - Overview: how-to/simulation/index.md
+          - LC Resonator: how-to/simulation/lc-resonator.md
+          - Python API: how-to/simulation/python-api.md
+          - Native Julia: how-to/simulation/native-julia.md
   - Tutorials:
       - Overview: tutorials/index.md
       - Simulation Workflow: tutorials/simulation-workflow.md
@@ -169,6 +175,8 @@ nav:
       - Overview: reference/index.md
       - CLI Options:
           - Overview: reference/cli/index.md
+          - Simulation:
+              - LC Resonator: reference/cli/sc-simulate-lc.md
           - Data Conversion:
               - Convert HFSS Admittance: reference/cli/convert-hfss-admittance.md
               - Convert HFSS Phase: reference/cli/convert-hfss-phase.md

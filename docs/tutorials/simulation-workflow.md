@@ -18,8 +18,8 @@ updated_by: docs-team
 
 本教程涵蓋從 ANSYS HFSS 模擬到 SQUID 參數提取的**完整流程**。
 
-> [!TIP]
-> 如果你已經有 CSV 數據，可以直接跳到 [Resonance Fitting](resonance-fitting.md)。
+!!! tip
+    如果你已經有 CSV 數據，可以直接跳到 [Resonance Fitting](resonance-fitting.md)。
 
 ## Overview
 
@@ -53,8 +53,8 @@ flowchart LR
 | JPA Mode (低頻) | 1 ~ 12 GHz |
 | SRF Mode (高頻) | 8 ~ 20 GHz |
 
-> [!NOTE]
-> 確保頻率範圍涵蓋預期的共振頻率，否則後續擬合會失敗。
+!!! note
+    確保頻率範圍涵蓋預期的共振頻率，否則後續擬合會失敗。
 
 ### 1.3 What to Export
 
@@ -93,8 +93,8 @@ uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --component-id MyC
 
 ### 3.2 Extraction (Manual)
 
-> [!WARNING]
-> 目前 Phase 方法尚未整合至 CLI 工具，需手動分析。
+!!! warning
+    目前 Phase 方法尚未整合至 CLI 工具，需手動分析。
 
 **原理**：共振點會造成相位的 $180°$ 突變 (Group Delay 峰值)。
 
@@ -118,8 +118,8 @@ uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --component-id MyC
 - $\Delta f < 0.01$ GHz：一致性良好
 - $\Delta f > 0.05$ GHz：需檢查模擬設定或 Port 阻抗
 
-> [!NOTE]
-> 差異來源：S-parameter 會受到 Port Impedance ($Z_0$) 影響，而 Y-parameter 是純元件特性。
+!!! note
+    差異來源：S-parameter 會受到 Port Impedance ($Z_0$) 影響，而 Y-parameter 是純元件特性。
 
 ---
 
@@ -143,8 +143,8 @@ uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --component-id MyC
 
 ## Step 6: Re{Y_in} from S (HFSS 內部操作)
 
-> [!IMPORTANT]
-> 此步驟在 HFSS 內完成，非本專案工具。
+!!! important
+    此步驟在 HFSS 內完成，非本專案工具。
 
 在 HFSS 的 **Results > Create Report** 中：
 
@@ -160,8 +160,8 @@ uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --component-id MyC
 
 當您有一組**不包含 Lumped L 設定**的 Y-parameter 數據時，可以直接提取有效電容 $C_{eff}$。
 
-> [!CAUTION]
-> 使用此方法前，**請手動確認**您的 HFSS 模型中沒有設定 Lumped Element 的電感。
+!!! danger
+    使用此方法前，**請手動確認**您的 HFSS 模型中沒有設定 Lumped Element 的電感。
 
 ### 原理
 

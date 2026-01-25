@@ -1,0 +1,8 @@
+{
+    "julia": "1.10",
+    "packages": {
+        "JosephsonCircuits": {
+            "uuid": "23a5dba6-321f-4fcf-be1e-689e290df087"
+        }
+    }
+}
