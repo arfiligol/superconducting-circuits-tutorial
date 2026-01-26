@@ -34,7 +34,7 @@ updated_by: docs-team
 
    ```python
    from src.preprocess.schema import ComponentRecord, ParameterDataset, ...
-   
+
    def main():
        # 1. Read CSV/TXT
        # 2. Extract Values

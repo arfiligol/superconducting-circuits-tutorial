@@ -32,7 +32,7 @@ updated_by: docs-team
 
 ## 2. 寫作風格 (Style Guide)
 
-- **語言**: 
+- **語言**:
     - 核心內容使用 **繁體中文 (zh-TW)**。
     - 專有名詞保留英文或使用括號標註，例如：`SQUID`、`導納 (Admittance)`。
     - 避免使用中國用語 (例如：避免「視圖」、「項目」，使用「View」、「專案」)。
@@ -72,7 +72,7 @@ owner: docs-team
         **不要使用** GitHub 風格 `> [!NOTE]`，MkDocs 無法正確渲染。
 
     **正確語法**:
-    
+
     ```markdown
     !!! note "標題（可選）"
         內容必須縮排 4 個空格。
@@ -80,14 +80,14 @@ owner: docs-team
     ```
 
     **可摺疊版本** (使用 `???`):
-    
+
     ```markdown
     ??? tip "點擊展開"
         隱藏的內容。
     ```
 
     **支援的類型**:
-    
+
     | 類型 | 用途 |
     |------|------|
     | `note` | 一般註記、補充說明 |
@@ -143,4 +143,3 @@ owner: docs-team
     - Circuits: Use Schemdraw (Python) SVG only.
     - Flows: Use Mermaid.
 ```
-

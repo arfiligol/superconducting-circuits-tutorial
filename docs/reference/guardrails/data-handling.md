@@ -9,9 +9,9 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "數據處理規範：原始數據唯讀、路徑常數使用"
-version: v0.1.0
-last_updated: 2026-01-12
+scope: "數據處理規範：原始數據唯讀、路徑常數、資料庫存取"
+version: v1.1.0
+last_updated: 2026-01-26
 updated_by: docs-team
 ---
 
@@ -30,9 +30,10 @@ data/
 │   └── layout_simulation/
 │       ├── admittance/
 │       └── phase/
-├── preprocessed/           # 轉換後的 JSON
-└── processed/
-    └── reports/            # 分析輸出
+├── preprocessed/           # 轉換後的 JSON (Legacy)
+├── processed/
+│   └── reports/            # 分析輸出
+└── database.db             # SQLite 資料庫
 ```
 
 ## Rules
@@ -43,38 +44,51 @@ data/
 
 - 不修改原始檔案
 - 不刪除原始檔案
-- 轉換結果寫入 `data/preprocessed/`
+- 轉換結果寫入資料庫或 `data/preprocessed/`
 
 ### 2. Use Path Helpers
 
-使用 `src/utils/paths.py` 提供的常數：
+使用 `src/core/shared/persistence/database.py` 提供的常數：
 
 ```python
-from src.utils import (
+from core.shared.persistence.database import DATABASE_PATH
+
+# 或使用舊版路徑 (Legacy)
+from core.analysis.infrastructure.paths import (
     RAW_LAYOUT_ADMITTANCE_DIR,
-    RAW_LAYOUT_PHASE_DIR,
-    RAW_MEASUREMENT_FLUX_DEPENDENCE_DIR,
     PREPROCESSED_DATA_DIR,
-    PROCESSED_REPORTS_DIR,
 )
-
-# ✅ 正確
-output_path = PROCESSED_REPORTS_DIR / "result.json"
-
-# ❌ 錯誤
-output_path = Path("data/processed/reports/result.json")
 ```
 
-### 3. Output Locations
+### 3. Database Access (Unit of Work)
 
-| 類型 | 目標目錄 |
+所有資料庫存取必須透過 Unit of Work 模式：
+
+```python
+from core.shared.persistence import get_unit_of_work
+
+# ✅ 正確：使用 UoW
+with get_unit_of_work() as uow:
+    dataset = uow.datasets.get_by_name("PF6FQ_Q0_XY")
+    uow.datasets.add(new_dataset)
+    uow.commit()
+
+# ❌ 錯誤：直接操作 Session
+session = get_session()
+session.query(DatasetRecord).filter_by(...)
+```
+
+### 4. Output Locations
+
+| 類型 | 目標位置 |
 |------|----------|
-| 前處理 JSON | `data/preprocessed/` |
+| 數據紀錄 | `data/database.db` (SQLite) |
 | 分析報告 | `data/processed/reports/` |
 | 圖表 | `data/processed/reports/` |
 
 ## Related
 
+- [Dataset Record Schema](../data-formats/dataset-record.md) - 資料庫 Schema
 - [Raw Data Layout](../data-formats/raw-data-layout.md) - 目錄結構詳情
 - [Script Authoring](script-authoring.md) - 腳本撰寫規範
 
@@ -86,8 +100,11 @@ output_path = Path("data/processed/reports/result.json")
 ## Data Handling
 - **Immutable**: `data/raw/` is READ-ONLY.
 - **Paths**: NEVER hardcode paths.
-    - **MUST** import from `src.utils.paths`.
-    - Keywords: `RAW_*_DIR`, `PREPROCESSED_DATA_DIR`, `PROCESSED_REPORTS_DIR`.
-- **Flow**: Raw -> Preprocessing Script -> Preprocessed (JSON) -> Analysis Script -> Processed (Reports).
-- **Format**: Prefer **JSON** for light data, **CSV** for tabular data.
+    - **MUST** import from `core.shared.persistence.database` or `core.analysis.infrastructure.paths`.
+- **Database**: Use Unit of Work pattern.
+    - **MUST** use `with get_unit_of_work() as uow:` for all DB operations.
+    - **NEVER** access Session directly in CLI/UI code.
+    - **MUST** call `uow.commit()` explicitly.
+- **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
+- **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
 ```

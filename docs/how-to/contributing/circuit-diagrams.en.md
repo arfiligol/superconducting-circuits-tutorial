@@ -29,13 +29,13 @@ OUTPUT_PATH = 'docs/assets/my_circuit.svg'
 
 def draw():
     d = schemdraw.Drawing()
-    
+
     # Draw your circuit here
     d += elm.SourceSin().up().label('Port')
     d += elm.Inductor().right().label('L')
     d += elm.Capacitor().down().label('C')
     d += elm.Ground()
-    
+
     # Save file
     d.save(OUTPUT_PATH)
     print(f"Saved to {OUTPUT_PATH}")

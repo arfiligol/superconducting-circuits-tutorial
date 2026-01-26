@@ -188,6 +188,7 @@ nav:
               - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
       - Data Formats:
           - Overview: reference/data-formats/index.md
+          - Dataset Record: reference/data-formats/dataset-record.md
           - Component Record: reference/data-formats/component-record.md
           - Raw Data Layout: reference/data-formats/raw-data-layout.md
           - Analysis Result: reference/data-formats/analysis-result.md
@@ -201,10 +202,12 @@ nav:
               - Build Commands: reference/guardrails/build-commands.md
               - Linting & Formatting: reference/guardrails/linting.md
               - Testing: reference/guardrails/testing.md
+              - Commit Standards: reference/guardrails/commit-standards.md
               - CI Gates: reference/guardrails/ci-gates.md
           - Code Quality:
               - Code Style: reference/guardrails/code-style.md
               - Type Checking: reference/guardrails/type-checking.md
+              - Logging: reference/guardrails/logging.md
               - Script Authoring: reference/guardrails/script-authoring.md
               - Data Handling: reference/guardrails/data-handling.md
           - Documentation Design:
@@ -213,4 +216,3 @@ nav:
       - Plotting Utilities: reference/utilities.md
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md
-

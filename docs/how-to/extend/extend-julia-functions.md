@@ -58,38 +58,38 @@ function run_my_simulation(param1::Float64, param2::Float64)
     nH = 1e-9
     pF = 1e-12
     GHz = 1e9
-    
+
     # 定義電路
     @variables L C R50
     circuit = [
         ("P1", "1", "0", 1),
         # ... 電路定義
     ]
-    
+
     circuitdefs = Dict(
         L => param1 * nH,
         C => param2 * pF,
         R50 => 50.0,
     )
-    
+
     # 頻率設定
     frequencies = range(0.1, 10, length=100) .* GHz
     ws = 2π .* frequencies
-    
+
     # Pump 設定
     wp = (2π * 5GHz,)
     sources = [(mode=(1,), port=1, current=0.0)]
-    
+
     # 執行模擬
     sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, circuitdefs)
-    
+
     # 提取 S11
     S11 = sol.linearized.S(
-        outputmode=(0,), outputport=1, 
-        inputmode=(0,), inputport=1, 
+        outputmode=(0,), outputport=1,
+        inputmode=(0,), inputport=1,
         freqindex=:
     )
-    
+
     # 返回 Dict（會被轉換為 Python dict）
     return Dict(
         :frequencies_ghz => collect(frequencies ./ GHz),
@@ -113,14 +113,14 @@ from pydantic import BaseModel
 
 class MySimulationConfig(BaseModel):
     """新模擬配置。"""
-    
+
     param1: float
     param2: float
     # ... 其他參數
-    
+
 class MySimulationResult(BaseModel):
     """新模擬結果。"""
-    
+
     frequencies_ghz: list[float]
     s11_real: list[float]
     s11_imag: list[float]
@@ -140,7 +140,7 @@ from core.simulation.domain.circuit import (
 
 class JuliaSimulator:
     # ... 現有方法 ...
-    
+
     def run_my_simulation(
         self,
         config: MySimulationConfig,
@@ -148,23 +148,23 @@ class JuliaSimulator:
     ) -> SimulationResult:
         """
         執行自定義模擬。
-        
+
         Args:
             config: 模擬配置。
             freq_range: 頻率範圍。
-            
+
         Returns:
             SimulationResult with S11 data.
         """
         self._ensure_initialized()
         assert self._jl is not None
-        
+
         # 呼叫 Julia 函數
         result = self._jl.run_my_simulation(
             float(config.param1),
             float(config.param2),
         )
-        
+
         # 轉換結果
         return SimulationResult(
             frequencies_ghz=list(result["frequencies_ghz"]),
@@ -200,18 +200,18 @@ def main() -> None:
     parser.add_argument("--start", type=float, default=0.1)
     parser.add_argument("--stop", type=float, default=10.0)
     parser.add_argument("--points", type=int, default=100)
-    
+
     args = parser.parse_args()
-    
+
     print(f"Running simulation: param1={args.param1}, param2={args.param2}")
-    
+
     simulator = JuliaSimulator()
     freq_range = FrequencyRange(
         start_ghz=args.start,
         stop_ghz=args.stop,
         points=args.points,
     )
-    
+
     # 使用新函數
     result = simulator.run_my_simulation(
         config=MySimulationConfig(
@@ -220,7 +220,7 @@ def main() -> None:
         ),
         freq_range=freq_range,
     )
-    
+
     print(f"Simulation complete: {len(result.frequencies_ghz)} points")
 
 

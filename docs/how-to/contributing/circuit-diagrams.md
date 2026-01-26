@@ -29,13 +29,13 @@ OUTPUT_PATH = 'docs/assets/my_circuit.svg'
 
 def draw():
     d = schemdraw.Drawing()
-    
+
     #在此繪製你的電路
     d += elm.SourceSin().up().label('Port')
     d += elm.Inductor().right().label('L')
     d += elm.Capacitor().down().label('C')
     d += elm.Ground()
-    
+
     # 儲存檔案
     d.save(OUTPUT_PATH)
     print(f"Saved to {OUTPUT_PATH}")
@@ -84,7 +84,7 @@ uv run scripts/docs/generate_lc_schematic.py
 ```markdown
 ## Circuit Diagrams
 - **Tool**: Schemdraw (Python)
-- **Workflow**: 
+- **Workflow**:
     1. Create script in `scripts/docs/` (e.g., `generate_lc.py`).
     2. Run with `uv run`.
     3. Output SVG to `docs/assets/`.
