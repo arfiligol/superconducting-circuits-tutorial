@@ -29,11 +29,13 @@ class ProgramArgs(NamedTuple):
     csv: list[Path]
     component_id: str | None
     output: Path | None
+    db: bool
+    tags: list[str]
 
 
 def parse_args() -> ProgramArgs:
     parser = argparse.ArgumentParser(
-        description="Convert HFSS admittance CSV to preprocessed JSON."
+        description="Convert HFSS admittance CSV to preprocessed JSON or SQLite database."
     )
     parser.add_argument(
         "csv",
@@ -52,8 +54,26 @@ def parse_args() -> ProgramArgs:
         help="Destination JSON file (defaults to data/preprocessed/<component_id>.json)",
         default=DEFAULT_OUTPUT_PATH,
     )
+    parser.add_argument(
+        "--db",
+        action="store_true",
+        help="Save to SQLite database instead of JSON file",
+    )
+    parser.add_argument(
+        "--tags",
+        type=str,
+        help="Comma-separated tags for database record (requires --db)",
+        default="",
+    )
     args = parser.parse_args()
-    return ProgramArgs(csv=args.csv, component_id=args.component_id, output=args.output)
+    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
+    return ProgramArgs(
+        csv=args.csv,
+        component_id=args.component_id,
+        output=args.output,
+        db=args.db,
+        tags=tags,
+    )
 
 
 def main() -> None:
@@ -65,13 +85,28 @@ def main() -> None:
         print("No input files specified in CLI arguments or USER CONFIGURATION.")
         return
 
-    for raw_path in input_files:
-        process_and_write_hfss_file(
-            file_path=raw_path,
-            file_type="admittance",
-            component_id=args.component_id,
-            output_path=args.output,
+    if args.db:
+        # Database mode
+        from core.analysis.application.services.database_import import (
+            import_hfss_to_database,
         )
+
+        for raw_path in input_files:
+            import_hfss_to_database(
+                file_path=raw_path,
+                file_type="admittance",
+                dataset_name=args.component_id,
+                tags=args.tags if args.tags else None,
+            )
+    else:
+        # Legacy JSON mode
+        for raw_path in input_files:
+            process_and_write_hfss_file(
+                file_path=raw_path,
+                file_type="admittance",
+                component_id=args.component_id,
+                output_path=args.output,
+            )
 
 
 if __name__ == "__main__":

@@ -15,8 +15,10 @@ dependencies = [
     "pandas-stubs>=2.3.3.251201",
     "plotly>=5.22.0",
     "pydantic>=2.12.5",
+    "rich>=14.3.1",
     "schemdraw>=0.22",
     "scipy>=1.16.3",
+    "sqlmodel>=0.0.31",
 ]
 
 [project.scripts]
@@ -24,6 +26,7 @@ sc-preprocess-admittance = "scripts.preprocessing.convert_hfss_admittance:main"
 sc-preprocess-phase = "scripts.preprocessing.convert_hfss_phase:main"
 sc-fit-squid = "scripts.analysis.squid_fit:main"
 sc-simulate-lc = "scripts.simulation.run_lc:main"
+sc-list-datasets = "scripts.database.list_datasets:main"
 
 [tool.uv]
 package = true
@@ -35,7 +38,7 @@ include = ["core*", "scripts*"]
 [tool.basedpyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.12"
-include = ["src", "scripts"]
+include = ["src"]
 exclude = ["**/__pycache__", ".venv", "data"]
 extraPaths = ["src"]
 # Basic presence checks only, as requested
@@ -63,6 +66,8 @@ ignore = [
     "N802", # Function name should be lowercase (Physics: T_c, I_c)
     "N803", # Argument name should be lowercase (Physics: L_jun, C_pF)
     "N806", # Variable in function should be lowercase (Physics: L_tot)
+    "N813", # Camelcase imported as lowercase (juliacall Main as jl)
+    "N816", # Variable in global scope mixedCase (Physics units: nH, pF)
 ]
 
 [tool.ruff.format]
