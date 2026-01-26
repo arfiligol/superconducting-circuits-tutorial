@@ -1,3 +1,11 @@
+---
+aliases:
+  - "如何參與貢獻 (Contributing)"
+tags:
+  - diataxis/how-to
+  - status/draft
+---
+
 # 如何參與貢獻 (Contributing)
 
 感謝您有興趣參與 **超導電路教學** 專案的開發！

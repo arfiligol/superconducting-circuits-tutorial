@@ -1,12 +1,20 @@
 ---
 aliases:
+  - "Python API 詳解"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
   - "Python Simulation API"
   - "Python 模擬 API"
 tags:
-  - how-to
-  - simulation
-  - python
-  - api
+  - topic/simulation
+  - topic/python
+  - topic/api
 status: stable
 owner: docs-team
 audience: user

@@ -1,3 +1,11 @@
+---
+aliases:
+  - "Superconducting Circuits: Simulation & Analysis"
+tags:
+  - diataxis/reference
+  - status/draft
+---
+
 # Superconducting Circuits: Simulation & Analysis
 
 歡迎來到超導電路模擬與分析教學！

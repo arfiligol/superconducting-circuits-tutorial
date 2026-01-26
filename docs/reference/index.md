@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Reference"
-  - "技術參考"
+- Reference
+- 技術參考
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: draft
 owner: docs-team
 audience: team
-scope: "技術規格索引，涵蓋 CLI、Schema、開發規範"
+scope: 技術規格索引，涵蓋 CLI、Schema、開發規範
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

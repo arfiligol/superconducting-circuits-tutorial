@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Raw Data Layout"
-  - "原始數據結構"
+- Raw Data Layout
+- 原始數據結構
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "data/raw 目錄結構定義"
+scope: data/raw 目錄結構定義
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

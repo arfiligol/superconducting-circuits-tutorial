@@ -1,3 +1,12 @@
+---
+aliases:
+  - "理解 hbsolve"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/getting-started
+---
+
 # 理解 hbsolve
 
 `hbsolve` 是 JosephsonCircuits.jl 的核心函式，使用 **Harmonic Balance** 方法求解非線性電路。

@@ -1,3 +1,12 @@
+---
+aliases:
+  - "第一次模擬"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/getting-started
+---
+
 # 第一次模擬
 
 讓我們執行第一個超導電路模擬！

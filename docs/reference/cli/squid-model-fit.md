@@ -1,15 +1,14 @@
 ---
 aliases:
-  - "squid-model-fit"
-  - "squid-model-with-Ls-fit"
-  - "squid-model-with-Ls-fixed-C-fit"
+- squid-model-fit
+- squid-model-with-Ls-fit
+- squid-model-with-Ls-fixed-C-fit
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "SQUID LC 模型擬合指令說明"
+scope: SQUID LC 模型擬合指令說明
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

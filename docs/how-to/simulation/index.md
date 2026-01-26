@@ -1,10 +1,18 @@
 ---
 aliases:
+  - "電路模擬 (Simulation)"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
   - "Simulation Guide"
   - "模擬指南"
 tags:
-  - how-to
-  - simulation
+  - topic/simulation
 status: stable
 owner: docs-team
 audience: user

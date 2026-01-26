@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Linting & Formatting Guardrails"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # Linting & Formatting Guardrails
 
 We use industry-standard tools to enforce code quality and style.

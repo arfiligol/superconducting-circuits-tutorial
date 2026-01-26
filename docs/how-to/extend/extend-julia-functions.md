@@ -1,12 +1,20 @@
 ---
 aliases:
+  - "擴充 Julia 函數"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/extension
+---
+
+---
+aliases:
   - "Extend Julia Functions"
   - "擴充 Julia 函數"
 tags:
-  - how-to
-  - extend
-  - contributing
-  - julia
+  - topic/extend
+  - topic/contributing
+  - topic/julia
 status: stable
 owner: docs-team
 audience: contributor

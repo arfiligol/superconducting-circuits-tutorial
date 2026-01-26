@@ -1,3 +1,11 @@
+---
+aliases:
+  - "繪圖工具 ili_plot"
+tags:
+  - diataxis/reference
+  - status/draft
+---
+
 # 繪圖工具 ili_plot
 
 `ili_plot` 是專案提供的 PlotlyJS 繪圖封裝，簡化繪圖流程。

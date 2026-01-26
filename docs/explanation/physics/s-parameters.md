@@ -1,3 +1,12 @@
+---
+aliases:
+  - "S/Z/Y 參數"
+tags:
+  - diataxis/explanation
+  - status/draft
+  - topic/physics
+---
+
 # S/Z/Y 參數
 
 理解散射參數 (S)、阻抗參數 (Z)、導納參數 (Y) 是分析電路的基礎。

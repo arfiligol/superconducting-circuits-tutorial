@@ -1,3 +1,12 @@
+---
+aliases:
+  - "技術堆疊 (Tech Stack)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # 技術堆疊 (Tech Stack)
 
 本專案採用 **Python + Julia** 雙語言架構，各有明確分工。

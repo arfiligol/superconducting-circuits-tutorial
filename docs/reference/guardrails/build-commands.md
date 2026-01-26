@@ -1,3 +1,12 @@
+---
+aliases:
+  - "執行指令 (Build Commands)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # 執行指令 (Build Commands)
 
 本文件列出所有常用的建置與執行指令。

@@ -1,3 +1,11 @@
+---
+aliases:
+  - "Harmonic Balance Method"
+tags:
+  - diataxis/explanation
+  - status/draft
+---
+
 # Harmonic Balance Method
 
 Harmonic Balance is a numerical method for solving the steady-state response of nonlinear circuits.

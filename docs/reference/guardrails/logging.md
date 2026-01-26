@@ -3,9 +3,8 @@ aliases:
   - "Logging Rules"
   - "日誌規範"
 tags:
-  - boundary/system
   - audience/team
-  - sot
+  - sot/true
 status: stable
 owner: docs-team
 audience: team

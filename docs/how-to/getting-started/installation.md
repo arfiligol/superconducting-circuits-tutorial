@@ -1,3 +1,12 @@
+---
+aliases:
+  - "安裝環境"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/getting-started
+---
+
 # 安裝環境
 
 本教學結合了 **Python** (數據分析/CLI) 與 **Julia** (核心模擬) 兩種語言。

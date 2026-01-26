@@ -1,3 +1,12 @@
+---
+aliases:
+  - "目錄結構 (Folder Structure)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # 目錄結構 (Folder Structure)
 
 本專案採用 **Clean Architecture** 原則進行目錄規劃。

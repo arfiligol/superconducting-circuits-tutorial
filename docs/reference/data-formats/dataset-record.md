@@ -3,9 +3,8 @@ aliases:
   - "Dataset Record Schema"
   - "DatasetRecord 格式"
 tags:
-  - boundary/system
   - audience/team
-  - sot
+  - sot/true
 status: stable
 owner: docs-team
 audience: team

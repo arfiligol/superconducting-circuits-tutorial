@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Schema Design"
-  - "Schema 設計"
+- Schema Design
+- Schema 設計
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "Pydantic Schema 設計細節"
+scope: Pydantic Schema 設計細節
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

@@ -1,11 +1,19 @@
 ---
 aliases:
+  - "Python API Guide"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
   - "Python Simulation API"
 tags:
-  - how-to
-  - simulation
-  - python
-  - api
+  - topic/simulation
+  - topic/python
+  - topic/api
 status: stable
 owner: docs-team
 audience: user

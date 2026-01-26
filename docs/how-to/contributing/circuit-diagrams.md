@@ -1,3 +1,12 @@
+---
+aliases:
+  - "貢獻指南：繪製電路圖 (Contributing Circuit Diagrams)"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/contributing
+---
+
 # 貢獻指南：繪製電路圖 (Contributing Circuit Diagrams)
 
 本指南說明如何為專案新增或修改電路圖。我們使用 **Schemdraw** (Python) 來確保電路圖風格一致且可維護。

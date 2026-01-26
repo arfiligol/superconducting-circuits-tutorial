@@ -2,9 +2,8 @@
 aliases:
   - "CI Gates"
 tags:
-  - boundary/system
   - audience/team
-  - sot
+  - sot/true
 status: stable
 owner: docs-team
 audience: team

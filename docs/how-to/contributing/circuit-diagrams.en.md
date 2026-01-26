@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Contributing: Circuit Diagrams"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/contributing
+---
+
 # Contributing: Circuit Diagrams
 
 This guide explains how to add or modify circuit diagrams in the project. We use **Schemdraw** (Python) to ensure consistent style and maintainability.

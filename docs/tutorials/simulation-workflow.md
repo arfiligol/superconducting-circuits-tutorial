@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Simulation Workflow"
-  - "模擬分析工作流"
+- Simulation Workflow
+- 模擬分析工作流
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: draft
 owner: docs-team
 audience: team
-scope: "完整 HFSS 模擬到參數提取的端到端流程"
+scope: 完整 HFSS 模擬到參數提取的端到端流程
 version: v0.1.0
 last_updated: 2026-01-13
 updated_by: docs-team

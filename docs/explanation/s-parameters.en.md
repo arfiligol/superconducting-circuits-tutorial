@@ -1,3 +1,11 @@
+---
+aliases:
+  - "S/Z/Y Parameters"
+tags:
+  - diataxis/explanation
+  - status/draft
+---
+
 # S/Z/Y Parameters
 
 Understanding scattering (S), impedance (Z), and admittance (Y) parameters is fundamental to circuit analysis.

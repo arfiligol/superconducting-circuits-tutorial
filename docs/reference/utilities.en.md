@@ -1,3 +1,11 @@
+---
+aliases:
+  - "Plotting Utilities ili_plot"
+tags:
+  - diataxis/reference
+  - status/draft
+---
+
 # Plotting Utilities ili_plot
 
 `ili_plot` is the project's PlotlyJS plotting wrapper that simplifies the plotting workflow.

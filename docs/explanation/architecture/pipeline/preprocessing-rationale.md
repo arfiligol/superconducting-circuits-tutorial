@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Preprocessing Rationale"
-  - "前處理設計理由"
+- Preprocessing Rationale
+- 前處理設計理由
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "為什麼引入 ComponentRecord 中間層"
+scope: 為什麼引入 ComponentRecord 中間層
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

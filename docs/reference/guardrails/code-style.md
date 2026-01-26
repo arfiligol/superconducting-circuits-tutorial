@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Guardrails: 程式碼風格與品質 (Code Style)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # Guardrails: 程式碼風格與品質 (Code Style)
 
 本文檔概述了專案的程式碼撰寫標準與最佳實踐。

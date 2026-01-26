@@ -1,3 +1,11 @@
+---
+aliases:
+  - "How to Contribute"
+tags:
+  - diataxis/how-to
+  - status/draft
+---
+
 # How to Contribute
 
 Thank you for your interest in contributing to the Superconducting Circuits Tutorial!

@@ -2,9 +2,17 @@
 aliases:
   - "LC Resonator Simulation"
 tags:
-  - how-to
-  - simulation
-  - tutorial
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
+  - "LC Resonator Simulation"
+tags:
+  - topic/simulation
+  - diataxis/tutorial
 status: stable
 owner: docs-team
 audience: user

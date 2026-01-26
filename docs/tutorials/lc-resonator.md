@@ -1,3 +1,11 @@
+---
+aliases:
+  - "LC 共振器"
+tags:
+  - diataxis/tutorial
+  - status/draft
+---
+
 # LC 共振器
 
 LC 共振器是最基本的超導電路模型，理解它是學習更複雜電路的基礎。

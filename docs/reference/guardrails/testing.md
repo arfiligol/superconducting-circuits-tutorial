@@ -1,3 +1,12 @@
+---
+aliases:
+  - "測試規範 (Testing)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # 測試規範 (Testing)
 
 本文件說明專案的自動化測試方法與執行指令。

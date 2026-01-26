@@ -1,9 +1,17 @@
 ---
 aliases:
+  - "Circuit Simulation"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
   - "Simulation Guide"
 tags:
-  - how-to
-  - simulation
+  - topic/simulation
 status: stable
 owner: docs-team
 audience: user

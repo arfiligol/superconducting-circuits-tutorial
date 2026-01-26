@@ -1,3 +1,11 @@
+---
+aliases:
+  - "Floating Qubit Study"
+tags:
+  - diataxis/reference
+  - status/draft
+---
+
 # Floating Qubit Study
 
 !!! note "Research Notebook"

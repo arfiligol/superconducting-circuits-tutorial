@@ -1,3 +1,12 @@
+---
+aliases:
+  - "CI 品質關卡 (CI Gates)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # CI 品質關卡 (CI Gates)
 
 本文件說明程式碼合併前必須通過的品質檢查。

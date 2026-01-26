@@ -1,3 +1,11 @@
+---
+aliases:
+  - "參數掃描"
+tags:
+  - diataxis/tutorial
+  - status/draft
+---
+
 # 參數掃描
 
 學習如何對電路參數進行系統性掃描，這是分析電路行為的重要技術。

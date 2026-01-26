@@ -1,3 +1,12 @@
+---
+aliases:
+  - "專案概述 (Project Overview)"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # 專案概述 (Project Overview)
 
 本文件說明專案的核心目標、範疇與目標受眾。

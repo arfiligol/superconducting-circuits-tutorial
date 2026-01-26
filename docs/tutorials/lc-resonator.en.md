@@ -1,3 +1,11 @@
+---
+aliases:
+  - "LC Resonator"
+tags:
+  - diataxis/tutorial
+  - status/draft
+---
+
 # LC Resonator
 
 The LC resonator is the most basic superconducting circuit model. Understanding it is fundamental to learning more complex circuits.

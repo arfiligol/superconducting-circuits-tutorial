@@ -3,9 +3,8 @@ aliases:
   - "Documentation Rules"
   - "文件撰寫規範"
 tags:
-  - boundary/system
   - audience/team
-  - sot
+  - sot/true
 status: stable
 owner: docs-team
 audience: team
@@ -44,25 +43,65 @@ updated_by: docs-team
 
 ## 3. 維護規範 (Maintenance)
 
-- **Guardrails Sync**: 當更動到 `docs/reference/guardrails/` 下的文件時，必須同步更新 `.agent/rules/` 對應的 Agent Rule。
+- **Guardrails as Single Source of Truth**: `docs/reference/guardrails/` 目錄下的文件是人類開發者與 AI Agent 共同遵循的**唯一真理來源**。不需要額外維護 `.agent/rules/` 目錄。
+- **雙語同步 (Bilingual Sync)**: 修改任何 `.md` 文件時，**必須同步更新對應的 `.en.md` 檔案**，確保中英文版本內容一致。
 - **Commit**: 文件更新應使用 `docs:` type。
 
 ## 4. 格式規範 (Formatting)
 
-### Frontmatter (必要)
+### Frontmatter Schema
 
-所有 `.md` 檔案必須包含 YAML frontmatter：
+所有 `.md` 檔案必須包含符合以下規範的 YAML frontmatter。
+
+#### 必填欄位 (Required)
+
+| 欄位 | 類型 | 說明 | 範例 |
+|------|------|------|------|
+| `aliases` | `list[str]` | 文件的替代名稱，用於搜尋與連結跳轉。至少需一個描述性名稱。 | `["LC 諧振器教學", "LC Resonator Tutorial"]` |
+| `tags` | `list[str]` | 分類標籤，用於管理與篩選。必須遵循下方 **Tags Taxonomy**。 | `["diataxis/tutorial", "status/stable"]` |
+
+#### 可選欄位 (Optional / Automation)
+
+| 欄位 | 類型 | 說明 | 範例 |
+|------|------|------|------|
+| `owner` | `str` | 文件負責人或團隊。預設由 Git History 判斷。 | `"docs-team"` |
+| `last_updated_by` | `str` | 最後修改者 (建議由 CI 自動更新)。 | `"arfiligol"` |
+| `last_updated` | `str` | 最後更新日期 `YYYY-MM-DD` (建議由 CI 自動更新)。 | `"2026-01-27"` |
+
+!!! warning "人名驗證規則"
+    `owner` 和 `last_updated_by` 中提及的**所有人名必須存在於 [貢獻者名錄](../contributors.md)**。新增貢獻者時，請先更新名錄再引用。
+
+#### Tags Taxonomy (標籤分類體系)
+
+所有 Tags 採用 `namespace/value` 格式，確保一致性與可管理性。
+
+| Namespace | 說明 | 有效值 |
+|-----------|------|--------|
+| `diataxis` | 文件類型 (按 Diataxis 框架) | `tutorial`, `how-to`, `reference`, `explanation` |
+| `status` | 文件成熟度狀態 | `draft` (草稿), `incubating` (開發中), `stable` (穩定), `deprecated` (棄用) |
+| `audience` | 目標讀者 | `user` (使用者), `contributor` (貢獻者), `maintainer` (維護者) |
+| `sot` | Source of Truth 標記 | `true` (此文件為該主題的權威來源) |
+| `topic` | 主題領域 (自由定義，但建議統一) | `simulation`, `analysis`, `physics`, `cli`, `data-format`, ... |
+
+**範例 Frontmatter**:
 
 ```yaml
 ---
 aliases:
-  - "Alternative Title"
+  - "LC 共振器模擬教學"
+  - "LC Resonator Simulation Tutorial"
 tags:
-  - boundary/system
-  - status/draft
-owner: docs-team
+  - diataxis/tutorial
+  - status/stable
+  - audience/user
+  - topic/simulation
 ---
 ```
+
+!!! tip "Tag 使用原則"
+    - 每個文件至少需要 `diataxis/*` 和 `status/*` 兩個 Tag。
+    - `topic/*` 可依內容自由添加，但盡量使用已存在的 topic 值以保持一致。
+
 
 ### Links
 
@@ -138,7 +177,8 @@ owner: docs-team
     - **Bilingual**: Ensure all docs have both zh and en versions.
     - Keep technical terms in English (e.g., SQUID, Admittance).
 - **Maintenance**:
-    - **Sync**: Update Human Readable Doc -> MUST Update `.agent/rules/`.
+    - **Single Source of Truth**: `docs/reference/guardrails/` is the only source for both human devs and AI agents. No separate `.agent/rules/` sync needed.
+    - **Bilingual Sync**: When modifying `.md`, MUST update corresponding `.en.md` (and vice versa).
 - **Formatting**:
     - Frontmatter: Required (aliases, tags, owner).
     - Links: Use Standard Markdown `[Label](path)`.

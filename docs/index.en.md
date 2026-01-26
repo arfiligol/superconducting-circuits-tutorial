@@ -1,3 +1,11 @@
+---
+aliases:
+  - "Superconducting Circuits Tutorial"
+tags:
+  - diataxis/reference
+  - status/draft
+---
+
 # Superconducting Circuits Tutorial
 
 Welcome to the Superconducting Circuits Simulation Tutorial! This site uses [JosephsonCircuits.jl](https://github.com/QICKLab/JosephsonCircuits.jl) for circuit simulation.

@@ -2,10 +2,18 @@
 aliases:
   - "Extend Julia Functions"
 tags:
-  - how-to
-  - extend
-  - contributing
-  - julia
+  - diataxis/how-to
+  - status/draft
+  - topic/extension
+---
+
+---
+aliases:
+  - "Extend Julia Functions"
+tags:
+  - topic/extend
+  - topic/contributing
+  - topic/julia
 status: stable
 owner: docs-team
 audience: contributor

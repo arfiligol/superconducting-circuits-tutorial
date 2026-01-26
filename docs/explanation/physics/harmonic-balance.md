@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Harmonic Balance 方法"
+tags:
+  - diataxis/explanation
+  - status/draft
+  - topic/physics
+---
+
 # Harmonic Balance 方法
 
 Harmonic Balance 是求解非線性電路穩態響應的數值方法。

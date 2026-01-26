@@ -1,12 +1,20 @@
 ---
 aliases:
+  - "原生 Julia 模擬"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
   - "Native Julia Simulation"
   - "原生 Julia 模擬"
 tags:
-  - how-to
-  - simulation
-  - julia
-  - advanced
+  - topic/simulation
+  - topic/julia
+  - topic/advanced
 status: stable
 owner: docs-team
 audience: user

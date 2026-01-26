@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Effective Capacitance Fit"
-  - "有效電容擬合"
+- Effective Capacitance Fit
+- 有效電容擬合
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "如何執行有效電容擬合分析"
+scope: 如何執行有效電容擬合分析
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

@@ -1,11 +1,19 @@
 ---
 aliases:
   - "sc-simulate-lc"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/cli
+---
+
+---
+aliases:
+  - "sc-simulate-lc"
   - "LC 共振器模擬指令"
 tags:
-  - reference
-  - cli
-  - simulation
+  - topic/cli
+  - topic/simulation
 status: stable
 owner: docs-team
 audience: user

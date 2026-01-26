@@ -1,3 +1,11 @@
+---
+aliases:
+  - "Parameter Sweep"
+tags:
+  - diataxis/tutorial
+  - status/draft
+---
+
 # Parameter Sweep
 
 Learn how to systematically sweep circuit parameters — an important technique for analyzing circuit behavior.

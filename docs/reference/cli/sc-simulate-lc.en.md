@@ -1,10 +1,18 @@
 ---
 aliases:
+  - "sc-simulate-lc"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/cli
+---
+
+---
+aliases:
   - "sc-simulate-lc CLI"
 tags:
-  - reference
-  - cli
-  - simulation
+  - topic/cli
+  - topic/simulation
 status: stable
 owner: docs-team
 audience: user

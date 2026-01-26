@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Guardrails"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # Guardrails
 
 開發規範，確保程式碼品質與一致性。

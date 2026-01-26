@@ -1,3 +1,12 @@
+---
+aliases:
+  - "First Simulation"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/getting-started
+---
+
 # First Simulation
 
 Let's run your first superconducting circuit simulation!

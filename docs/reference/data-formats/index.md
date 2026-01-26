@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Data Formats Reference"
-  - "數據格式參考"
+- Data Formats Reference
+- 數據格式參考
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "數據格式規格，包括目錄結構與 Schema 定義"
+scope: 數據格式規格，包括目錄結構與 Schema 定義
 version: v1.1.0
 last_updated: 2026-01-26
 updated_by: docs-team

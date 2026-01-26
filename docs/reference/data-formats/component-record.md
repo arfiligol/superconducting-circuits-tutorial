@@ -1,14 +1,13 @@
 ---
 aliases:
-  - "Component Record Schema"
-  - "ComponentRecord 格式"
+- Component Record Schema
+- ComponentRecord 格式
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "ComponentRecord JSON 格式詳細定義"
+scope: ComponentRecord JSON 格式詳細定義
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team

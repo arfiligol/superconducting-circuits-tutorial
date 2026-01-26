@@ -1,11 +1,19 @@
 ---
 aliases:
+  - "LC 共振器模擬"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/simulation
+---
+
+---
+aliases:
   - "LC Resonator Simulation"
   - "LC 共振器模擬"
 tags:
-  - how-to
-  - simulation
-  - tutorial
+  - topic/simulation
+  - diataxis/tutorial
 status: stable
 owner: docs-team
 audience: user

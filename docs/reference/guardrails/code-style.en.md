@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Guardrails: Code Style & Quality"
+tags:
+  - diataxis/reference
+  - status/draft
+  - topic/governance
+---
+
 # Guardrails: Code Style & Quality
 
 This document outlines the coding standards and best practices for the project.

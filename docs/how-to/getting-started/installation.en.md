@@ -1,3 +1,12 @@
+---
+aliases:
+  - "Installation"
+tags:
+  - diataxis/how-to
+  - status/draft
+  - topic/getting-started
+---
+
 # Installation
 
 This tutorial uses Julia and the JosephsonCircuits.jl package.

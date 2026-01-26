@@ -1,13 +1,12 @@
 ---
 aliases:
-  - "convert-flux-dependence"
+- convert-flux-dependence
 tags:
-  - boundary/system
-  - audience/team
+- audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: "Flux Dependence 轉換指令說明"
+scope: Flux Dependence 轉換指令說明
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team
