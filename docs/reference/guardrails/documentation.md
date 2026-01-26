@@ -32,8 +32,9 @@ updated_by: docs-team
 
 ## 2. 寫作風格 (Style Guide)
 
-- **語言**:
-    - 核心內容使用 **繁體中文 (zh-TW)**。
+- **語言 (双語政策)**:
+    - **確保文件都有雙語產生** (透過 i18n 插件)。
+    - 核心內容寫作時優先使用 **繁體中文 (zh-TW)**，並同步維護 `.en.md`。
     - 專有名詞保留英文或使用括號標註，例如：`SQUID`、`導納 (Admittance)`。
     - 避免使用中國用語 (例如：避免「視圖」、「項目」，使用「View」、「專案」)。
 - **語氣**:
@@ -41,7 +42,12 @@ updated_by: docs-team
     - **Reference**: 客觀、中立 (如：「此參數控制...」)。
     - **How-to**: 直接、命令式 (如：「執行以下指令...」)。
 
-## 3. 格式規範 (Formatting)
+## 3. 維護規範 (Maintenance)
+
+- **Guardrails Sync**: 當更動到 `docs/reference/guardrails/` 下的文件時，必須同步更新 `.agent/rules/` 對應的 Agent Rule。
+- **Commit**: 文件更新應使用 `docs:` type。
+
+## 4. 格式規範 (Formatting)
 
 ### Frontmatter (必要)
 
@@ -129,7 +135,10 @@ owner: docs-team
     - `explanation/`: Understanding-oriented (Concepts).
 - **Style**:
     - Language: Traditional Chinese (zh-TW).
+    - **Bilingual**: Ensure all docs have both zh and en versions.
     - Keep technical terms in English (e.g., SQUID, Admittance).
+- **Maintenance**:
+    - **Sync**: Update Human Readable Doc -> MUST Update `.agent/rules/`.
 - **Formatting**:
     - Frontmatter: Required (aliases, tags, owner).
     - Links: Use Standard Markdown `[Label](path)`.

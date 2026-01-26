@@ -11,7 +11,10 @@ description: When we are discussing or handling about docs.
     - `explanation/`: Understanding-oriented (Concepts).
 - **Style**:
     - Language: Traditional Chinese (zh-TW).
+    - **Bilingual**: Ensure all docs have both zh and en versions.
     - Keep technical terms in English (e.g., SQUID, Admittance).
+- **Maintenance**:
+    - **Sync**: Update Human Readable Doc -> MUST Update `.agent/rules/`.
 - **Formatting**:
     - Frontmatter: Required (aliases, tags, owner).
     - Links: Use Standard Markdown `[Label](path)`.
