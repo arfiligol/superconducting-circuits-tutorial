@@ -71,11 +71,14 @@ class SimulationResult(BaseModel):
         """Calculate |S11| magnitude."""
         import math
 
-        return [math.sqrt(r**2 + i**2) for r, i in zip(self.s11_real, self.s11_imag)]
+        return [math.sqrt(r**2 + i**2) for r, i in zip(self.s11_real, self.s11_imag, strict=False)]
 
     @property
     def s11_phase_deg(self) -> list[float]:
         """Calculate S11 phase in degrees."""
         import math
 
-        return [math.degrees(math.atan2(i, r)) for r, i in zip(self.s11_real, self.s11_imag)]
+        return [
+            math.degrees(math.atan2(i, r))
+            for r, i in zip(self.s11_real, self.s11_imag, strict=False)
+        ]

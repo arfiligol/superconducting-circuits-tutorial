@@ -14,6 +14,8 @@ src/core/analysis/application/preprocessing/__init__.py
 src/core/analysis/application/preprocessing/admittance.py
 src/core/analysis/application/preprocessing/naming.py
 src/core/analysis/application/preprocessing/phase.py
+src/core/analysis/application/services/database_import.py
+src/core/analysis/application/services/database_service.py
 src/core/analysis/application/services/hfss_processing.py
 src/core/analysis/application/services/squid_fitting.py
 src/core/analysis/domain/__init__.py
@@ -31,6 +33,16 @@ src/core/analysis/infrastructure/visualization/common.py
 src/core/analysis/infrastructure/visualization/dataframe_display.py
 src/core/analysis/infrastructure/visualization/plot_utils.py
 src/core/shared/__init__.py
+src/core/shared/logging.py
+src/core/shared/persistence/__init__.py
+src/core/shared/persistence/database.py
+src/core/shared/persistence/models.py
+src/core/shared/persistence/unit_of_work.py
+src/core/shared/persistence/repositories/__init__.py
+src/core/shared/persistence/repositories/data_record_repository.py
+src/core/shared/persistence/repositories/dataset_repository.py
+src/core/shared/persistence/repositories/derived_parameter_repository.py
+src/core/shared/persistence/repositories/tag_repository.py
 src/core/shared/utils/__init__.py
 src/core/shared/utils/units.py
 src/core/shared/visualization/__init__.py
@@ -45,6 +57,8 @@ src/sc_app/__init__.py
 src/scripts/__init__.py
 src/scripts/analysis/__init__.py
 src/scripts/analysis/squid_fit.py
+src/scripts/database/__init__.py
+src/scripts/database/list_datasets.py
 src/scripts/preprocessing/__init__.py
 src/scripts/preprocessing/convert_hfss_admittance.py
 src/scripts/preprocessing/convert_hfss_phase.py

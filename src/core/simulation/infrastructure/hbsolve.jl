@@ -14,7 +14,7 @@ Simulate a simple LC resonator and return S11 data.
 
 # Arguments
 - `L_nH`: Inductance in nanohenries
-- `C_pF`: Capacitance in picofarads  
+- `C_pF`: Capacitance in picofarads
 - `f_start_GHz`: Start frequency in GHz
 - `f_stop_GHz`: Stop frequency in GHz
 - `n_points`: Number of frequency points
@@ -73,7 +73,7 @@ end
 
 Simulate a custom circuit topology.
 
-# Arguments  
+# Arguments
 - `topology`: Vector of tuples (name, node1, node2, value_key)
 - `component_values`: Dict mapping value keys to actual values (with units)
 - `f_start_GHz`, `f_stop_GHz`, `n_points`: Frequency sweep parameters
@@ -121,7 +121,7 @@ Uses multithreading for parallel execution.
 
 # Arguments
 - `L_values_nH`: Vector of inductance values in nH
-- `C_values_pF`: Vector of capacitance values in pF  
+- `C_values_pF`: Vector of capacitance values in pF
 - `f_start_GHz`, `f_stop_GHz`, `n_points`: Frequency sweep parameters
 
 # Returns
