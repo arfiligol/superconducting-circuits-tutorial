@@ -29,7 +29,7 @@ def parse_contributors():
         print(f"Warning: Contributors file not found: {CONTRIBUTORS_FILE}")
         return valid_names
 
-    with open(CONTRIBUTORS_FILE, "r", encoding="utf-8") as f:
+    with open(CONTRIBUTORS_FILE, encoding="utf-8") as f:
         content = f.read()
 
     # Parse markdown tables - look for | Name | GitHub ID | patterns
@@ -51,9 +51,9 @@ def parse_contributors():
     return valid_names
 
 
-def get_frontmatter(file_path):
+def get_frontmatter(file_path: str):
     """Extract YAML frontmatter from a markdown file."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
     match = re.search(r"^---\n(.*?)\n---", content, re.DOTALL)
     if match:
@@ -64,7 +64,7 @@ def get_frontmatter(file_path):
     return None
 
 
-def check_file(file_path, valid_contributors):
+def check_file(file_path: str, valid_contributors: set[str]):
     """Check a single file for compliance issues."""
     issues = []
 
@@ -97,7 +97,8 @@ def check_file(file_path, valid_contributors):
                     namespace = str(tag).split("/")[0]
                     if namespace not in VALID_TAG_NAMESPACES:
                         issues.append(
-                            f"Invalid tag namespace: '{namespace}' (must be one of {VALID_TAG_NAMESPACES})"
+                            f"Invalid tag namespace: '{namespace}' "
+                            f"(must be one of {VALID_TAG_NAMESPACES})"
                         )
 
     # Check Bilingual Sync
@@ -119,7 +120,7 @@ def main():
     file_count = 0
     issue_count = 0
 
-    for root, dirs, files in os.walk(DOCS_DIR):
+    for root, _, files in os.walk(DOCS_DIR):
         for file in files:
             if file.endswith(".md"):
                 file_path = os.path.join(root, file)

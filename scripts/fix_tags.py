@@ -17,7 +17,7 @@ def get_frontmatter(content):
 
 
 def remove_boundary_tags(file_path):
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     frontmatter, span = get_frontmatter(content)
@@ -56,7 +56,7 @@ def remove_boundary_tags(file_path):
 
 def main():
     modified_count = 0
-    for root, dirs, files in os.walk(DOCS_DIR):
+    for root, _, files in os.walk(DOCS_DIR):
         for file in files:
             if file.endswith(".md"):
                 file_path = os.path.join(root, file)

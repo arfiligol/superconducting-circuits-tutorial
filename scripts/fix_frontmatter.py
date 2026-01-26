@@ -105,7 +105,7 @@ tags:
 
 def fix_frontmatter_in_file(file_path):
     """Add frontmatter to a file if missing."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     # Check if file already has frontmatter
@@ -129,7 +129,7 @@ def main():
     fixed_count = 0
     skipped_count = 0
 
-    for root, dirs, files in os.walk(DOCS_DIR):
+    for root, _, files in os.walk(DOCS_DIR):
         for file in files:
             if file.endswith(".md"):
                 file_path = os.path.join(root, file)

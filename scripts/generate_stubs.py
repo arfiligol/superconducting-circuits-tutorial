@@ -10,18 +10,18 @@ import re
 
 DOCS_DIR = "docs"
 
-STUB_CONTENT_TEMPLATE = """
-> **Note**: This document is pending translation. Please refer to the [Traditional Chinese version]({zh_filename}).
-
----
-
-{original_title}
-"""
+STUB_CONTENT_TEMPLATE = (
+    "> **Note**: This document is pending translation. "
+    "Please refer to the\n"
+    "> [Traditional Chinese version]({zh_filename}).\n\n"
+    "---\n\n"
+    "{original_title}\n"
+)
 
 
 def get_frontmatter_and_title(file_path):
     """Extract frontmatter and title from source file."""
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         content = f.read()
 
     frontmatter = ""
@@ -54,10 +54,7 @@ def generate_stub(source_path, target_path):
     stub_content = STUB_CONTENT_TEMPLATE.format(zh_filename=zh_filename, original_title=title)
 
     # Combine frontmatter and stub content
-    if frontmatter:
-        full_content = frontmatter + "\n" + stub_content
-    else:
-        full_content = stub_content
+    full_content = (frontmatter + "\n" + stub_content) if frontmatter else stub_content
 
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(full_content)
@@ -69,7 +66,7 @@ def main():
     created_count = 0
     skipped_count = 0
 
-    for root, dirs, files in os.walk(DOCS_DIR):
+    for root, _, files in os.walk(DOCS_DIR):
         for file in files:
             # Only process Chinese source files (not .en.md)
             if file.endswith(".md") and not file.endswith(".en.md"):
