@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from core.shared.logging import get_logger
+
 CsvPath = str | Path
+logger = get_logger(__name__)
 
 
 def extract_mode_from_admittance(csv_file_path: CsvPath) -> pd.DataFrame | None:
@@ -15,7 +18,7 @@ def extract_mode_from_admittance(csv_file_path: CsvPath) -> pd.DataFrame | None:
         csv_path = Path(csv_file_path)
         df = pd.read_csv(csv_path)
     except Exception as e:
-        print(f"[Error] Failed to read file {csv_file_path}: {e}")
+        logger.error("Failed to read file %s: %s", csv_file_path, e)
         return None
 
     return extract_modes_from_dataframe(df)
@@ -31,7 +34,7 @@ def extract_modes_from_dataframe(df: pd.DataFrame) -> pd.DataFrame | None:
 
     freq_cols = [c for c in df.columns if "Freq" in c]
     if not freq_cols:
-        print("[Error] Frequency column (Freq) not found.")
+        logger.error("Frequency column (Freq) not found.")
         return None
     freq_col = freq_cols[0]
 
@@ -43,7 +46,7 @@ def extract_modes_from_dataframe(df: pd.DataFrame) -> pd.DataFrame | None:
         elif "im(Y) []" in df.columns:
             y_col = "im(Y) []"
         else:
-            print("[Error] Admittance/Impedance Imaginary part column not found.")
+            logger.error("Admittance/Impedance Imaginary part column not found.")
             return None
     else:
         y_col = y_cols[0]

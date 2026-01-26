@@ -16,6 +16,9 @@ from core.analysis.infrastructure.repositories.component_repository import (
     upsert_component_record,
     write_component_record,
 )
+from core.shared.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def determine_component_id(path: Path, explicit: str | None = None) -> str:
@@ -62,7 +65,7 @@ def process_and_write_hfss_file(
     # Resolve file path
     resolved_path = resolve_input_path(file_path, search_dir)
     if not resolved_path:
-        print(f"[Warning] File not found: {file_path}")
+        logger.warning("File not found: %s", file_path)
         return
 
     # Determine component ID
@@ -86,10 +89,8 @@ def process_and_write_hfss_file(
 
         # Write to disk
         write_component_record(merged, final_output)
-        print(f"[OK] Wrote preprocessed record -> {final_output}")
+        logger.info("Wrote preprocessed record -> %s", final_output)
 
     except Exception as e:
-        print(f"[Error] Failed to process {resolved_path}: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error("Failed to process %s: %s", resolved_path, e)
+        logger.debug("Traceback:", exc_info=True)

@@ -10,6 +10,9 @@ from core.analysis.infrastructure.paths import (
     RAW_LAYOUT_ADMITTANCE_DIR,
     RAW_LAYOUT_PHASE_DIR,
 )
+from core.shared.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def resolve_input_path(raw_path: Path, search_dir: Path) -> Path | None:
@@ -50,7 +53,7 @@ def import_hfss_to_database(
     # Resolve file path
     resolved_path = resolve_input_path(file_path, search_dir)
     if not resolved_path:
-        print(f"[Warning] File not found: {file_path}")
+        logger.warning("File not found: %s", file_path)
         return
 
     # Determine dataset name
@@ -68,7 +71,5 @@ def import_hfss_to_database(
         )
 
     except Exception as e:
-        print(f"[Error] Failed to import {resolved_path}: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error("Failed to import %s: %s", resolved_path, e)
+        logger.debug("Traceback:", exc_info=True)

@@ -15,6 +15,9 @@ from core.analysis.domain.schemas.fitting import (
     ModeFitSeries,
     ModeFitSuccess,
 )
+from core.shared.logging import get_logger
+
+logger = get_logger(__name__)
 
 ParameterBounds = dict[str, tuple[float | None, float | None]]
 
@@ -75,14 +78,14 @@ def _fit_resonant_modes(
     fit_window: tuple[float | None, float | None] = (None, None),
 ) -> FitResultsByMode:
     if df_modes is None or df_modes.empty:
-        print("[Error] Input DataFrame is empty.")
+        logger.error("Input DataFrame is empty.")
         return {}
 
     results: FitResultsByMode = {}
     mode_cols: list[str] = [c for c in df_modes.columns if "Mode" in c]
 
     if not mode_cols:
-        print("[Warning] No Mode columns found.")
+        logger.warning("No Mode columns found.")
         return {}
 
     suffix_parts = []
@@ -92,13 +95,13 @@ def _fit_resonant_modes(
         suffix_parts.append(f"Ls={fixed_Ls_nH:.4f} nH")
 
     suffix = f" ({', '.join(suffix_parts)})" if suffix_parts else ""
-    print(f"Starting fitting analysis for {len(mode_cols)} modes{suffix}...")
+    logger.info("Starting fitting analysis for %d modes%s...", len(mode_cols), suffix)
 
     min_l, max_l = fit_window
     if min_l is not None:
-        print(f"  > Fit Window Min: {min_l} nH")
+        logger.debug("Fit Window Min: %s nH", min_l)
     if max_l is not None:
-        print(f"  > Fit Window Max: {max_l} nH")
+        logger.debug("Fit Window Max: %s nH", max_l)
 
     for mode_name in mode_cols:
         # Base filtering: keep only valid L_jun (> 1 fH) and valid Freq (> 1 MHz)
@@ -184,11 +187,11 @@ def _fit_resonant_modes(
                 caption += " (C fixed)"
             if fixed_Ls_nH is not None:
                 caption += " (Ls fixed)"
-            print(caption)
+            logger.info(caption)
 
         except Exception as exc:
             results[mode_name] = ModeFitFailure(status="failed", reason=str(exc))
-            print(f"  > {mode_name}: Fitting failed ({exc})")
+            logger.error("%s: Fitting failed (%s)", mode_name, exc)
 
     return results
 

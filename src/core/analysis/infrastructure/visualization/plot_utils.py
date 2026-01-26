@@ -54,7 +54,8 @@ def _plot_json_results_plotly(
             # Access Pydantic model fields (support dict access too if needed but prefer attribute)
             # Assuming mode_data is ModeFitResult (Union[ModeFitSuccess, ModeFitFailure])
             # Check status
-            if getattr(mode_data, "status", "failed") != "success":
+            # Check status
+            if mode_data.status != "success":
                 continue
 
             # It's a success, safe to access strict fields
@@ -117,7 +118,7 @@ def _plot_json_results_matplotlib(
         for mode_name, mode_data in res_obj.fits.items():
             if target_modes and mode_name not in target_modes:
                 continue
-            if getattr(mode_data, "status", "failed") != "success":
+            if mode_data.status != "success":
                 continue
 
             raw = mode_data.raw_data

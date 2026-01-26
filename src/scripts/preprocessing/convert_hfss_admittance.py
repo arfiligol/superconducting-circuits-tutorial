@@ -77,6 +77,10 @@ def parse_args() -> ProgramArgs:
 
 
 def main() -> None:
+    from core.shared.logging import setup_logging
+
+    setup_logging(level="INFO")
+
     args = parse_args()
     # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
     input_files = args.csv if args.csv else [Path(f) for f in DEFAULT_INPUT_FILES]

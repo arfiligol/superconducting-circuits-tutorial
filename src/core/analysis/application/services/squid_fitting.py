@@ -14,12 +14,20 @@ from core.analysis.application.analysis.fitting.modes import (
     fit_squid_model_with_Ls,
     fit_squid_model_with_Ls_fixed_C,
 )
-from core.analysis.domain.schemas.components import ParameterFamily, ParameterRepresentation
+from core.analysis.domain.schemas.components import (
+    ComponentRecord,
+    ParameterDataset,
+    ParameterFamily,
+    ParameterRepresentation,
+)
 from core.analysis.domain.schemas.fitting import AnalysisEntry
 from core.analysis.domain.services.data_conversion import convert_dataset_to_dataframe
 from core.analysis.infrastructure.paths import PREPROCESSED_DATA_DIR
 from core.analysis.infrastructure.repositories.component_repository import load_component_record
 from core.analysis.infrastructure.visualization.dataframe_display import print_dataframe_table
+from core.shared.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class FitModel(Enum):
@@ -38,11 +46,16 @@ def resolve_component_path(candidate: str) -> Path | None:
     fallback = PREPROCESSED_DATA_DIR / f"{candidate}.json"
     if fallback.exists():
         return fallback
-    print(f"[Warning] Component record not found: {candidate}")
+    logger.warning("Component record not found: %s", candidate)
     return None
 
 
-def find_dataset(record, family, parameter, representation):
+def find_dataset(
+    record: ComponentRecord,
+    family: ParameterFamily,
+    parameter: str,
+    representation: ParameterRepresentation,
+) -> ParameterDataset | None:
     """Find a dataset in a component record matching specific criteria."""
     p_upper = parameter.upper()
     for ds in record.datasets:
@@ -65,7 +78,7 @@ def extract_modes(component_path: Path) -> pd.DataFrame | None:
         representation=ParameterRepresentation.imaginary,
     )
     if not dataset:
-        print(f"[Error] Y11 imaginary dataset not found in {component_path}")
+        logger.error("Y11 imaginary dataset not found in %s", component_path)
         return None
 
     df_raw = convert_dataset_to_dataframe(dataset, value_label="im(Y) []")
@@ -85,10 +98,10 @@ def analyze_file(
     fit_window: tuple[float | None, float | None],
 ) -> AnalysisEntry | None:
     """Execute the full SQUID fitting workflow for a single component file."""
-    print(f"\n=== Processing {component_path.stem} ===")
+    logger.info("Processing %s", component_path.stem)
     df_modes = extract_modes(component_path)
     if df_modes is None or df_modes.empty:
-        print(f"  > Extraction failed for {component_path.stem}")
+        logger.warning("Extraction failed for %s", component_path.stem)
         return None
 
     print_dataframe_table("Extracted Resonant Modes", df_modes)
@@ -99,7 +112,7 @@ def analyze_file(
         fit_results = fit_squid_model_with_Ls(df_modes, parameter_bounds, fit_window)
     elif fit_model == FitModel.FIXED_C:
         if fixed_c is None:
-            print("[Error] fixed_c required for fixed-c model")
+            logger.error("fixed_c required for fixed-c model")
             return None
         fit_results = fit_squid_model_with_Ls_fixed_C(
             df_modes, fixed_c, parameter_bounds, fit_window

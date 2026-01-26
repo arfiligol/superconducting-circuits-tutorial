@@ -1,7 +1,10 @@
 """Service for saving ComponentRecord data to SQLite database."""
 
 from core.analysis.domain.schemas.components import ComponentRecord, ParameterDataset
+from core.shared.logging import get_logger
 from core.shared.persistence import DataRecord, DatasetRecord, get_unit_of_work
+
+logger = get_logger(__name__)
 
 
 def dataset_to_data_records(
@@ -45,7 +48,7 @@ def save_component_record_to_db(
         # Check if dataset already exists
         existing = uow.datasets.get_by_name(dataset_name)
         if existing:
-            print(f"[Info] Dataset '{dataset_name}' already exists, updating...")
+            logger.info("Dataset '%s' already exists, updating...", dataset_name)
             uow.datasets.delete(existing)
             uow.commit()
 
@@ -81,5 +84,5 @@ def save_component_record_to_db(
 
         uow.commit()
 
-        print(f"[OK] Saved to database: {dataset_name}")
+        logger.info("Saved to database: %s", dataset_name)
         return dataset_record

@@ -2,7 +2,6 @@
 """CLI for listing datasets in SQLite database."""
 
 import argparse
-from datetime import datetime
 
 
 def main() -> None:
@@ -30,10 +29,7 @@ def main() -> None:
             datasets = None
             for tag_name in args.tags:
                 tag_datasets = set(d.name for d in uow.datasets.list_by_tag(tag_name))
-                if datasets is None:
-                    datasets = tag_datasets
-                else:
-                    datasets = datasets & tag_datasets
+                datasets = tag_datasets if datasets is None else datasets & tag_datasets
             # Fetch full objects
             datasets_list = [uow.datasets.get_by_name(name) for name in (datasets or [])]
             datasets_list = [d for d in datasets_list if d is not None]
