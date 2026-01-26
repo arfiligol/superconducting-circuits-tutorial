@@ -5,7 +5,7 @@ description: When you are handling things with circuit diagrams especially when 
 
 ## Circuit Diagrams
 - **Tool**: Schemdraw (Python)
-- **Workflow**: 
+- **Workflow**:
     1. Create script in `scripts/docs/` (e.g., `generate_lc.py`).
     2. Run with `uv run`.
     3. Output SVG to `docs/assets/`.

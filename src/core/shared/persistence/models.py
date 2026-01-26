@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
@@ -39,11 +39,11 @@ class Tag(SQLModel, table=True):
 
     __tablename__ = "tags"  # type: ignore[assignment]
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
 
     # Relationships
-    datasets: List["DatasetRecord"] = Relationship(back_populates="tags", link_model=DatasetTagLink)
+    datasets: list["DatasetRecord"] = Relationship(back_populates="tags", link_model=DatasetTagLink)
 
 
 # ===================
@@ -54,7 +54,7 @@ class DatasetRecord(SQLModel, table=True):
 
     __tablename__ = "dataset_records"  # type: ignore[assignment]
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
 
     # Source metadata
@@ -68,9 +68,9 @@ class DatasetRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationships
-    tags: List["Tag"] = Relationship(back_populates="datasets", link_model=DatasetTagLink)
-    data_records: List["DataRecord"] = Relationship(back_populates="dataset")
-    derived_params: List["DerivedParameter"] = Relationship(back_populates="dataset")
+    tags: list["Tag"] = Relationship(back_populates="datasets", link_model=DatasetTagLink)
+    data_records: list["DataRecord"] = Relationship(back_populates="dataset")
+    derived_params: list["DerivedParameter"] = Relationship(back_populates="dataset")
 
 
 # ===================
@@ -81,7 +81,7 @@ class DataRecord(SQLModel, table=True):
 
     __tablename__ = "data_records"  # type: ignore[assignment]
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
 
     # Data type and parameter
@@ -108,7 +108,7 @@ class DerivedParameter(SQLModel, table=True):
 
     __tablename__ = "derived_parameters"  # type: ignore[assignment]
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
 
     # Device type
@@ -117,10 +117,10 @@ class DerivedParameter(SQLModel, table=True):
     # Parameter info
     name: str  # f_resonance, Q_factor, g_coupling
     value: float
-    unit: Optional[str] = None
+    unit: str | None = None
 
     # Extraction method
-    method: Optional[str] = None  # "S11_min", "model_fit", "manual"
+    method: str | None = None  # "S11_min", "model_fit", "manual"
 
     # Extra metadata
     extra: dict = Field(default_factory=dict, sa_column=Column(JSON))

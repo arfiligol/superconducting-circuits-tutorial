@@ -111,3 +111,8 @@ data/raw/
 # Keep gitkeep or README if they exist to guard structure, but ignore files
 # data/*
 # !data/.gitkeep
+
+# Persistence
+*.db
+*.sqlite
+*.sqlite3

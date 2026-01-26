@@ -1,7 +1,6 @@
 ---
 aliases:
   - "Logging Rules"
-  - "日誌規範"
 tags:
   - boundary/system
   - audience/team
@@ -9,7 +8,7 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "日誌記錄規範：分級、顏色、使用方式"
+scope: "Logging standards: levels, colors, usage"
 version: v1.0.0
 last_updated: 2026-01-27
 updated_by: docs-team
@@ -17,27 +16,27 @@ updated_by: docs-team
 
 # Logging Standards
 
-本專案使用 Python 標準 `logging` 模組搭配 **Rich** 進行彩色輸出。
+This project uses the standard Python `logging` module combined with **Rich** for colored output.
 
-## 原則
+## Principles
 
-1. **`core/` 層禁止 `print()`** - 只有 `scripts/` 層可以直接輸出
-2. **所有 `core/` 層使用 `logging`** - 讓呼叫者決定如何處理日誌
-3. **彩色分級** - 使用 Rich 的 Console 輸出
+1.  **No `print()` in `core/`** - Only `scripts/` layer can perform direct output.
+2.  **Use `logging` in `core/`** - Let the caller decide how to handle logs.
+3.  **Colored Levels** - Use Rich Console output.
 
-## 日誌等級
+## Log Levels
 
-| Level | 用途 | 顏色 |
-|-------|------|------|
-| `DEBUG` | 開發調試資訊 | 灰色 |
-| `INFO` | 正常流程資訊 | 綠色 |
-| `WARNING` | 潛在問題 | 黃色 |
-| `ERROR` | 錯誤但可繼續 | 紅色 |
-| `CRITICAL` | 嚴重錯誤 | 粗體紅色 |
+| Level | Usage | Color |
+| :--- | :--- | :--- |
+| `DEBUG` | Development details | Gray |
+| `INFO` | Normal flow information | Green |
+| `WARNING` | Potential issues | Yellow |
+| `ERROR` | Errors allowing continuation | Red |
+| `CRITICAL` | Fatal errors | Bold Red |
 
-## 使用方式
+## Usage
 
-### 在 `core/` 層
+### In `core/` Layer
 
 ```python
 import logging
@@ -60,24 +59,24 @@ def process_data(path: Path) -> Result:
         raise
 ```
 
-### 在 `scripts/` 層 (CLI Entry Point)
+### In `scripts/` Layer (CLI Entry Point)
 
 ```python
 from core.shared.logging import setup_logging
 
 def main() -> None:
-    setup_logging(level="INFO")  # 或 DEBUG for verbose
+    setup_logging(level="INFO")  # or DEBUG for verbose
 
-    # 現在所有 core/ 層的 logging 會顯示彩色輸出
+    # Now all core/ logging will be colored
     result = process_data(path)
 
-    # CLI 層可以用 print() 做最終輸出
+    # CLI layer can use print() for final output
     print(f"Result: {result}")
 ```
 
-## 配置
+## Configuration
 
-### 預設 Logger Setup (`core/shared/logging.py`)
+### Default Logger Setup (`core/shared/logging.py`)
 
 ```python
 from rich.logging import RichHandler
@@ -90,12 +89,12 @@ def setup_logging(level: str = "INFO") -> None:
     )
 ```
 
-## 遷移指南
+## Migration Guide
 
-將現有 `print()` 替換為 `logging`：
+Replace existing `print()` calls with `logging`:
 
-| 原本 | 替換為 |
-|------|--------|
+| Original | Replacement |
+| :--- | :--- |
 | `print(f"[Info] ...")` | `logger.info("...")` |
 | `print(f"[Warning] ...")` | `logger.warning("...")` |
 | `print(f"[Error] ...")` | `logger.error("...")` |
