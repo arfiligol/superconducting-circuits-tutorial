@@ -26,8 +26,8 @@ superconducting-circuits-tutorial/
 │       └── simulation/       # 模擬腳本 (run_lc.py 等)
 ├── data/                     # Data Lifecycle
 │   ├── raw/                  # Read-Only Input (HFSS/VNA)
-│   ├── preprocessed/         # Intermediate JSON
 │   └── processed/            # Analysis Results & Reports
+│   └── database.db           # SQLite Database
 ├── docs/                     # Documentation (MkDocs)
 ├── examples/                 # Usage Examples
 ├── tests/                    # Tests
@@ -64,7 +64,6 @@ superconducting-circuits-tutorial/
     - `scripts/database/`: **Database CLI Entry Points**.
 - **Data (`data/`)**:
     - `raw/`: **READ-ONLY**. HFSS/VNA files.
-    - `preprocessed/`: Intermediate JSON (Legacy).
     - `processed/`: Final Reports/Plots.
     - `database.db`: SQLite database.
 - **Config** (Root):

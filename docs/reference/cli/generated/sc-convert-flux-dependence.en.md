@@ -24,7 +24,7 @@ Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...
 │   txt      [TXT]...  Path(s) to Flux Dependence TXT file.                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier                    │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

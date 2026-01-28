@@ -8,13 +8,13 @@ owner: docs-team
 audience: team
 scope: Admittance plotting command
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # plot-admittance
 
-Plot preprocessed admittance ($Im(Y)$) data to inspect resonance extraction quality.
+Plot admittance ($Im(Y)$) datasets to inspect resonance extraction quality.
 
 ## Usage
 
@@ -26,7 +26,7 @@ uv run plot-admittance [OPTIONS] [components ...]
 
 | Argument | Description | Default |
 |---|---|---|
-| `components` | Component IDs or JSON paths under `data/preprocessed/` | - |
+| `components` | Dataset names or IDs | - |
 
 ## Options
 

@@ -3,7 +3,6 @@
 
 from collections.abc import Sequence
 from enum import Enum
-from pathlib import Path
 
 import pandas as pd
 
@@ -14,18 +13,11 @@ from core.analysis.application.analysis.fitting.modes import (
     fit_squid_model_with_Ls,
     fit_squid_model_with_Ls_fixed_C,
 )
-from core.analysis.domain.schemas.components import (
-    ComponentRecord,
-    ParameterDataset,
-    ParameterFamily,
-    ParameterRepresentation,
-)
 from core.analysis.domain.schemas.fitting import AnalysisEntry
-from core.analysis.domain.services.data_conversion import convert_dataset_to_dataframe
-from core.analysis.infrastructure.paths import PREPROCESSED_DATA_DIR
-from core.analysis.infrastructure.repositories.component_repository import load_component_record
+from core.analysis.domain.services.data_conversion import convert_data_record_to_dataframe
 from core.analysis.infrastructure.visualization.dataframe_display import print_dataframe_table
 from core.shared.logging import get_logger
+from core.shared.persistence import DataRecord, DatasetRecord, get_unit_of_work
 
 logger = get_logger(__name__)
 
@@ -38,50 +30,42 @@ class FitModel(Enum):
     FIXED_C = "fixed_c"
 
 
-def resolve_component_path(candidate: str) -> Path | None:
-    """Resolve a component ID or path to an actual JSON file path."""
-    path = Path(candidate)
-    if path.exists():
-        return path
-    fallback = PREPROCESSED_DATA_DIR / f"{candidate}.json"
-    if fallback.exists():
-        return fallback
-    logger.warning("Component record not found: %s", candidate)
-    return None
+def resolve_dataset(candidate: str) -> DatasetRecord | None:
+    """Resolve dataset by ID or name."""
+    with get_unit_of_work() as uow:
+        dataset = None
+        if candidate.isdigit():
+            dataset = uow.datasets.get(int(candidate))
+        if dataset is None:
+            dataset = uow.datasets.get_by_name(candidate)
+        if dataset is None:
+            logger.warning("Dataset not found: %s", candidate)
+        return dataset
 
 
-def find_dataset(
-    record: ComponentRecord,
-    family: ParameterFamily,
-    parameter: str,
-    representation: ParameterRepresentation,
-) -> ParameterDataset | None:
-    """Find a dataset in a component record matching specific criteria."""
-    p_upper = parameter.upper()
-    for ds in record.datasets:
+def find_data_record(records: list[DataRecord]) -> DataRecord | None:
+    """Find Y11 imaginary data record for fitting."""
+    for record in records:
         if (
-            ds.family == family
-            and ds.representation == representation
-            and ds.parameter.upper() == p_upper
+            record.data_type.lower() == "y_parameters"
+            and record.parameter.upper() == "Y11"
+            and record.representation.lower() == "imaginary"
         ):
-            return ds
+            return record
     return None
 
 
-def extract_modes(component_path: Path) -> pd.DataFrame | None:
-    """Load component data and extract resonant modes."""
-    record = load_component_record(component_path)
-    dataset = find_dataset(
-        record,
-        family=ParameterFamily.y_parameters,
-        parameter="Y11",
-        representation=ParameterRepresentation.imaginary,
-    )
-    if not dataset:
-        logger.error("Y11 imaginary dataset not found in %s", component_path)
+def extract_modes(dataset: DatasetRecord) -> pd.DataFrame | None:
+    """Load dataset from DB and extract resonant modes."""
+    with get_unit_of_work() as uow:
+        records = uow.data_records.list_by_dataset(dataset.id) if dataset.id else []
+
+    data_record = find_data_record(records)
+    if not data_record:
+        logger.error("Y11 imaginary data record not found in %s", dataset.name)
         return None
 
-    df_raw = convert_dataset_to_dataframe(dataset, value_label="im(Y) []")
+    df_raw = convert_data_record_to_dataframe(data_record, value_label="im(Y) []")
     df_modes = extract_modes_from_dataframe(df_raw)
     if df_modes is None:
         return None
@@ -90,18 +74,18 @@ def extract_modes(component_path: Path) -> pd.DataFrame | None:
 
 
 def analyze_file(
-    component_path: Path,
+    dataset: DatasetRecord,
     modes_to_highlight: Sequence[str] | None,
     parameter_bounds: dict[str, tuple[float | None, float | None]],
     fit_model: FitModel,
     fixed_c: float | None,
     fit_window: tuple[float | None, float | None],
 ) -> AnalysisEntry | None:
-    """Execute the full SQUID fitting workflow for a single component file."""
-    logger.info("Processing %s", component_path.stem)
-    df_modes = extract_modes(component_path)
+    """Execute the full SQUID fitting workflow for a single dataset."""
+    logger.info("Processing %s", dataset.name)
+    df_modes = extract_modes(dataset)
     if df_modes is None or df_modes.empty:
-        logger.warning("Extraction failed for %s", component_path.stem)
+        logger.warning("Extraction failed for %s", dataset.name)
         return None
 
     print_dataframe_table("Extracted Resonant Modes", df_modes)
@@ -120,4 +104,4 @@ def analyze_file(
     else:
         raise ValueError("Unknown fit model")
 
-    return AnalysisEntry(filename=component_path.stem, fits=fit_results)
+    return AnalysisEntry(filename=dataset.name, fits=fit_results)

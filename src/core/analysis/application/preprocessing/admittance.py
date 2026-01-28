@@ -4,14 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.analysis.domain.schemas.components import (
-    ComponentRecord,
-    ParameterAxis,
-    ParameterDataset,
-    ParameterFamily,
-    ParameterRepresentation,
-    RawFileMeta,
-    SourceType,
+from core.analysis.application.preprocessing.dataset_payload import (
+    AxisPayload,
+    DataPayload,
+    DatasetPayload,
 )
 
 
@@ -48,47 +44,35 @@ def derive_parameter_name(column: str) -> str:
     return "Y"
 
 
-def build_component_record(
-    component_id: str,
+def build_dataset_payload(
     pivot: pd.DataFrame,
-    raw_path: str,  # Path string
+    raw_path: str,
     parameter_name: str,
-) -> ComponentRecord:
-    frequency_axis = ParameterAxis(name="Freq", unit="GHz", values=pivot.index.tolist())
-    # Columns are strings/floats from pivot, convert to float
-    bias_axis = ParameterAxis(name="L_jun", unit="nH", values=[float(x) for x in pivot.columns])
-
-    # pivot.values is numpy array, convert to list of lists
+) -> DatasetPayload:
+    frequency_axis = AxisPayload(name="Freq", unit="GHz", values=pivot.index.tolist())
+    bias_axis = AxisPayload(name="L_jun", unit="nH", values=[float(x) for x in pivot.columns])
     values = pivot.values.tolist()
 
-    dataset = ParameterDataset(
-        dataset_id=f"{component_id}-{parameter_name}-imag",
-        family=ParameterFamily.y_parameters,
+    data_record = DataPayload(
+        data_type="y_parameters",
         parameter=parameter_name,
-        representation=ParameterRepresentation.imaginary,
-        ports=["port1"],
+        representation="imaginary",
         axes=[frequency_axis, bias_axis],
         values=values,
-        metadata={},
     )
 
-    record = ComponentRecord(
-        component_id=component_id,
-        source_type=SourceType.measurement,
-        datasets=[dataset],
-        raw_files=[RawFileMeta(path=raw_path)],
+    return DatasetPayload(
+        source_meta={"origin": "layout_simulation"},
+        parameters={},
+        data_records=[data_record],
+        raw_files=[raw_path],
     )
-    return record
 
 
-def process_hfss_admittance_file(raw_path: Path, component_id: str) -> ComponentRecord:
-    """
-    Orchestrate the processing of a single HFSS CSV file into a ComponentRecord.
-    """
+def process_hfss_admittance_file(raw_path: Path) -> DatasetPayload:
+    """Orchestrate the processing of a single HFSS CSV file into a dataset payload."""
     df = pd.read_csv(raw_path)
     l_col, freq_col, y_col = detect_columns(df)
     pivot = reshape_matrix(df, l_col, freq_col, y_col)
     parameter_name = derive_parameter_name(y_col)
-
-    record = build_component_record(component_id, pivot, str(raw_path.resolve()), parameter_name)
-    return record
+    return build_dataset_payload(pivot, str(raw_path.resolve()), parameter_name)

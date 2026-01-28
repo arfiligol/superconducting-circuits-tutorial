@@ -8,7 +8,7 @@ owner: docs-team
 audience: team
 scope: 磁通依賴熱圖繪製指令說明
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -26,7 +26,7 @@ uv run flux-dependence-plot [OPTIONS] [components ...]
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `components` | `data/preprocessed/` 下的組件 ID 或 JSON 路徑 | 內建預設清單 |
+| `components` | Dataset 名稱或 ID | 內建預設清單 |
 
 ## Options
 
@@ -38,7 +38,7 @@ uv run flux-dependence-plot [OPTIONS] [components ...]
 | `--wrap-phase` | 是否將相位包裹在 $\pm\pi$ 或 $\pm 180^\circ$ | False |
 | `--slice-frequency` | 擷取特定頻率 (GHz) 的 Bias 切片 | |
 | `--slice-bias` | 擷取特定 Bias (mA) 的頻率切片 | |
-| `--device` | 自訂圖表中的 Device 標籤 | Component ID |
+| `--device` | 自訂圖表中的 Device 標籤 | Dataset 名稱 |
 | `--matplotlib` | 使用 Matplotlib 渲染 (預設: Plotly) | False |
 
 ## Examples

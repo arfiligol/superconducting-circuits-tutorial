@@ -37,10 +37,10 @@ This guide explains how to import HFSS-exported Im(Y) CSV data directly into the
    uv run sc-preprocess-admittance data/raw/layout_simulation/admittance/MyChip_Im_Y11.csv
    ```
 
-3. **(Optional) Specify Component ID & Tags**
+3. **(Optional) Specify Dataset Name & Tags**
    ```bash
    uv run sc-preprocess-admittance \
-       --component-id "LJPAL658_v1" \
+       --dataset-name "LJPAL658_v1" \
        --tags "chip/PF6FQ,experiment/2026Q1" \
        data/raw/layout_simulation/admittance/MyChip_Im_Y11.csv
    ```

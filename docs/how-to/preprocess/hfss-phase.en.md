@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 如何處理 HFSS S-parameter Phase CSV
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 

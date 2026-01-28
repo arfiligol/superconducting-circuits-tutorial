@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 完整磁通掃描分析流程：原理、操作與解讀
 version: v0.1.0
-last_updated: 2026-01-13
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -21,22 +21,27 @@ updated_by: docs-team
 
 **目標**：視覺化 JPA 共振頻率隨外加磁通 (Bias Current/Flux) 的變化情形 (Flux Tuning Curve)。
 
-**背後原理**：
-1. **SQUID 調變**
-   SQUID 的電感 $L_{jun}$ 是磁通 $\Phi$ 的週期函數：
-   $$ L_{jun}(\Phi) = \frac{\Phi_0}{2\pi I_c |\cos(\pi \Phi/\Phi_0)|} $$
-2. **共振頻率變化**
-   因為 $f_0 \propto 1/\sqrt{L_{jun}}$，當我們掃描磁通（改變偏壓電流）時，共振頻率會呈現週期性的震盪圖形（通常像拱門形狀）。
-   > 深入閱讀：[SQUID JPA Basics](../explanation/physics/squid-jpa-basics.md)
+**1. SQUID 調變**
+
+SQUID 的電感 $L_{jun}$ 是磁通 $\Phi$ 的週期函數：
+
+$$ L_{jun}(\Phi) = \frac{\Phi_0}{2\pi I_c |\cos(\pi \Phi/\Phi_0)|} $$
+
+**2. 共振頻率變化**
+
+因為 $f_0 \propto 1/\sqrt{L_{jun}}$，當我們掃描磁通（改變偏壓電流）時，共振頻率會呈現週期性的震盪圖形（通常像拱門形狀）。
+
+> 深入閱讀：[SQUID JPA Basics](../explanation/physics/squid-jpa-basics.md)
+
 
 ## 2. Step-by-Step Analysis
 
 ### Step 1: Preprocess
 
-將 VNA 的 TXT 掃描檔轉換為 JSON。這通常包含兩個維度：Bias Current (mA) x Frequency (GHz)。
+將 VNA 的 TXT 掃描檔匯入資料庫。這通常包含兩個維度：Bias Current (mA) x Frequency (GHz)。
 
 ```bash
-uv run convert-flux-dependence data/raw/measurement/flux_dependence/Biasing_Sweep.txt --component-id Meas_JPA_1
+uv run convert-flux-dependence data/raw/measurement/flux_dependence/Biasing_Sweep.txt --dataset-name Meas_JPA_1
 ```
 
 ### Step 2: Full Map Visualization

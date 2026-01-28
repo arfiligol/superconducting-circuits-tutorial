@@ -21,8 +21,7 @@ Usage: sc-fit-squid [OPTIONS] [COMPONENTS]...
  Batch analysis of admittance datasets.                                         
                                                                                 
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│   components      [COMPONENTS]...  Component IDs matching preprocessed       │
-│                                    JSONs.                                    │
+│   components      [COMPONENTS]...  Dataset names or IDs.                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --modes                            TEXT   Modes to fit/plot (e.g. 'Mode 1'). │

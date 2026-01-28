@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 如何執行 SQUID LC 模型擬合
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -19,7 +19,7 @@ updated_by: docs-team
 
 ## Prerequisites
 
-- 已完成 [前處理](../preprocess/hfss-admittance.md)，並有 `data/preprocessed/*.json` 檔案。
+- 已完成 [前處理](../preprocess/hfss-admittance.md)，並已匯入 `data/database.db`。
 
 ## Steps
 
@@ -28,7 +28,7 @@ updated_by: docs-team
    ```bash
    uv run squid-model-fit LJPAL658_v1
    ```
-   > 註：`LJPAL658_v1` 是 Component ID (對應 `data/preprocessed/LJPAL658_v1.json`)。
+   > 註：`LJPAL658_v1` 為 Dataset 名稱。
 
 2. **檢視結果**
    - 終端機會顯示擬合參數 ($C$, RMSE)。

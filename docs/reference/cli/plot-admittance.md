@@ -8,7 +8,7 @@ owner: docs-team
 audience: team
 scope: 虛阻納繪圖指令說明
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -26,7 +26,7 @@ uv run plot-admittance [OPTIONS] [components ...]
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `components` | `data/preprocessed/` 下的組件 ID 或 JSON 路徑 | |
+| `components` | Dataset 名稱或 ID | |
 
 ## Options
 

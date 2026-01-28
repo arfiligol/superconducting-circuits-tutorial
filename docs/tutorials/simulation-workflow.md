@@ -78,7 +78,7 @@ flowchart TB
 
 ```bash
 # 轉換 CSV → JSON
-uv run convert-hfss-admittance data/raw/admittance/MyChip_Im_Y11.csv --component-id MyChip
+uv run convert-hfss-admittance data/raw/admittance/MyChip_Im_Y11.csv --dataset-name MyChip
 
 # 視覺化並標示共振點
 uv run plot-admittance --show-zeros MyChip
@@ -93,7 +93,7 @@ uv run plot-admittance --show-zeros MyChip
 ### 3.1 Preprocess
 
 ```bash
-uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --component-id MyChip_Phase
+uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --dataset-name MyChip_Phase
 ```
 
 ### 3.2 Extraction (Manual)

@@ -38,8 +38,8 @@ superconducting-circuits-tutorial/
 │   └── scripts/              # CLI 入口點
 ├── data/                     # 數據生命週期
 │   ├── raw/                  # 原始數據 (HFSS/VNA)
-│   ├── preprocessed/         # 中間 JSON
 │   └── processed/            # 分析結果
+│   └── database.db           # SQLite 資料庫
 ├── docs/                     # MkDocs 教學文件
 ├── examples/                 # 可執行範例
 ├── pyproject.toml            # Python 依賴 (uv)
@@ -66,10 +66,10 @@ Python CLI 工具進行數據分析：
 
 ```bash
 # SQUID 模型擬合
-uv run sc-fit-squid data/preprocessed/sample.json
+uv run sc-fit-squid SampleDataset
 
 # Flux 依賴性繪圖
-uv run flux-dependence-plot data/preprocessed/flux_sweep.json
+uv run flux-dependence-plot FluxSweepDataset
 ```
 
 | 指令 | 說明 |

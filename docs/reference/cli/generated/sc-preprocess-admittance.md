@@ -24,7 +24,7 @@ Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
 │   csv      [CSV]...  Path(s) to HFSS admittance CSV.                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier (dataset name)     │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

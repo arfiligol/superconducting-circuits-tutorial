@@ -8,7 +8,7 @@ owner: docs-team
 audience: team
 scope: HFSS Admittance conversion command
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -32,7 +32,7 @@ uv run convert-hfss-admittance [OPTIONS] [csv ...]
 
 | Option | Description | Default |
 |---|---|---|
-| `--component-id` | Override component ID | - |
+| `--dataset-name` | Override dataset name | - |
 | `--tags` | Comma-separated tags | - |
 
 ## Examples
@@ -42,9 +42,9 @@ uv run convert-hfss-admittance [OPTIONS] [csv ...]
 uv run convert-hfss-admittance data/raw/layout_simulation/admittance/MyChip_Im_Y11.csv
 ```
 
-**Specify component ID**
+**Specify dataset name**
 ```bash
-uv run convert-hfss-admittance --component-id MyJPA_v2 data/raw/layout_simulation/admittance/raw_export.csv
+uv run convert-hfss-admittance --dataset-name MyJPA_v2 data/raw/layout_simulation/admittance/raw_export.csv
 ```
 
 ## Notes
@@ -68,11 +68,13 @@ Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
 │   csv      [CSV]...  Path(s) to HFSS admittance CSV.                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier (dataset name)     │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 <!-- CLI-HELP-END -->
+
+
 

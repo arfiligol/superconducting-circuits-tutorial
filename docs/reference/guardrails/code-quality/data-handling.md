@@ -10,7 +10,7 @@ owner: docs-team
 audience: team
 scope: "數據處理規範：原始數據唯讀、路徑常數、資料庫存取"
 version: v1.1.0
-last_updated: 2026-01-26
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -29,7 +29,6 @@ data/
 │   └── layout_simulation/
 │       ├── admittance/
 │       └── phase/
-├── preprocessed/           # Legacy JSON Archive (唯讀/棄用)
 ├── processed/
 │   └── reports/            # 分析輸出
 └── database.db             # SQLite 資料庫
@@ -100,5 +99,5 @@ session.query(DatasetRecord).filter_by(...)
     - **MUST** call `uow.commit()` explicitly.
 - **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
 - **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
-- **Legacy**: `data/preprocessed/` is ARCHIVED. Do not write new JSON files there.
+- **Legacy**: JSON-based intermediate storage is removed. Do not create new JSON pipelines.
 ```

@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 數據格式規格，包括目錄結構與 Schema 定義
 version: v1.1.0
-last_updated: 2026-01-26
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 

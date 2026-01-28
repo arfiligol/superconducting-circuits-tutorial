@@ -84,7 +84,22 @@ uv run sc-db tag update "NewTag" "RenamedTag"
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-(placeholder)
+Usage: sc-db [OPTIONS] COMMAND [ARGS]...                                       
+                                                                                
+ Manage SQLite database entities.                                               
+                                                                                
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────╮
+│ dataset-record     Manage Datasets                                           │
+│ tag                Manage Tags                                               │
+│ data-record        Manage Data Records                                       │
+│ derived-parameter  Manage Derived Parameters                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 <!-- CLI-HELP-END -->
+
+
+

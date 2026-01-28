@@ -8,13 +8,13 @@ owner: docs-team
 audience: team
 scope: HFSS Phase 轉換指令說明
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # convert-hfss-phase
 
-將 HFSS 匯出的 S-parameter Phase CSV 檔案轉換為標準 `ComponentRecord` JSON 格式。
+將 HFSS 匯出的 S-parameter Phase CSV 檔案匯入 SQLite Dataset。
 
 ## Usage
 
@@ -32,8 +32,7 @@ uv run convert-hfss-phase [OPTIONS] [csv ...]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--component-id` | 強制指定 Component ID (預設使用檔名) | |
-| `--output` | 輸出 JSON 路徑 | `data/preprocessed/<id>.json` |
+| `--dataset-name` | 強制指定 Dataset 名稱 (預設使用檔名) | |
 
 ## Examples
 
@@ -63,7 +62,7 @@ Usage: sc-preprocess-phase [OPTIONS] [CSV]...
 │   csv      [CSV]...  Path(s) to HFSS phase CSV.                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier                    │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

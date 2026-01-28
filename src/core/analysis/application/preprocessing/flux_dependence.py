@@ -2,17 +2,10 @@
 
 from pathlib import Path
 
-from core.analysis.domain.schemas.components import (
-    ComponentRecord,
-    ParameterAxis,
-    ParameterDataset,
-    ParameterFamily,
-    ParameterRepresentation,
-    SourceType,
-)
+from core.analysis.application.preprocessing.dataset_payload import DatasetPayload
 
 
-def parse_flux_dependence_txt(file_path: Path, name: str) -> ComponentRecord:
+def parse_flux_dependence_txt(file_path: Path, name: str) -> DatasetPayload:
     """
     Parse Linköping VNA Flux Dependence TXT file.
 
@@ -24,7 +17,7 @@ def parse_flux_dependence_txt(file_path: Path, name: str) -> ComponentRecord:
         name: Name of the component/dataset.
 
     Returns:
-        ComponentRecord containing the parsed data.
+        DatasetPayload containing the parsed data.
     """
     # TODO: Implement actual parsing logic when sample data is available.
     # TODO: Implement actual parsing logic when sample data is available.

@@ -3,19 +3,23 @@ aliases:
 - Preprocessing Rationale
 - 前處理設計理由
 tags:
-- audience/team
+  - diataxis/explanation
+  - status/stable
+  - topic/architecture
+  - topic/pipeline
+  - audience/team
 status: stable
 owner: docs-team
 audience: team
-scope: 為什麼引入 ComponentRecord 中間層
+scope: 為什麼使用 SQLite Dataset 作為中間層
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # Preprocessing Rationale
 
-為什麼我們不直接讀取 CSV 進行分析，而要多此一舉建立 `data/preprocessed/*.json`？
+為什麼我們不直接讀取 CSV 進行分析，而要多此一舉建立 SQLite Dataset？
 
 ## 問題：數據來源的多樣性
 
@@ -31,29 +35,33 @@ updated_by: docs-team
 - 矩陣排列不同 (Pivot vs Long format)
 - 單位不同 (Hz vs GHz, Rad vs Deg)
 
-## 解法：標準化中間層 (`ComponentRecord`)
+## 解法：標準化中間層（SQLite Dataset）
 
-我們引入 `ComponentRecord` (Pydantic Model) 作為統一的中間交換格式。
+我們以 SQLite Dataset 作為統一的中間交換層，集中管理資料與 metadata。
 
 ### 優點
 
-1. **解耦分析與 I/O**
-   - 分析邏輯 (`squid-model-fit`) 不需要知道數據來自 HFSS 還是 VNA。
-   - 它只需要知道：「這是一個 Component，它有一組頻率 vs 數值」。
+**1. 解耦分析與 I/O**
 
-2. **Schema Validation**
-   - 轉換階段就會檢查數據完整性 (例如是否缺失軸數據)。
-   - 避免分析跑到一半才因為 `KeyError` 崩潰。
+- 分析邏輯 (`squid-model-fit`) 不需要知道數據來自 HFSS 還是 VNA。
+- 它只需要知道：「這是一個 Dataset，它有一組頻率 vs 數值」。
 
-3. **Metadata 管理**
-   - JSON 可以攜帶額外資訊 (Attenuator 設定、溫度、模擬版本)。
-   - 原始 CSV 通常會丟失這些 Context。
+**2. Schema Validation**
 
-4. **快取與效能**
-   - 解析大型 TXT 可能很慢。
-   - 讀取優化過的 JSON 結構更快。
+- 轉換階段就會檢查數據完整性 (例如是否缺失軸數據)。
+- 避免分析跑到一半才因為 `KeyError` 崩潰。
+
+**3. Metadata 管理**
+
+- Dataset 可攜帶額外資訊 (Attenuator 設定、溫度、模擬版本)。
+- 原始 CSV 通常會丟失這些 Context。
+
+**4. 快取與效能**
+
+- 解析大型 TXT 可能很慢。
+- 讀取資料庫結構更快，也更容易查詢與索引。
 
 ## Related
 
-- [Component Record Schema](../../../reference/data-formats/component-record.md) - Schema 定義
+- [Dataset Record Schema](../../../reference/data-formats/dataset-record.md) - Schema 定義
 - [Data Flow](data-flow.md) - 整體流程

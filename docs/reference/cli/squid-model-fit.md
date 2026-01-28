@@ -10,7 +10,7 @@ owner: docs-team
 audience: team
 scope: SQUID LC 模型擬合指令說明
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -34,7 +34,7 @@ uv run squid-model-fit [OPTIONS] [components ...]
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `components` | `data/preprocessed/` 下的組件 ID 或 JSON 路徑 | 內建預設清單 |
+| `components` | Dataset 名稱或 ID | 內建預設清單 |
 
 ## Options
 
@@ -84,8 +84,7 @@ Usage: sc-fit-squid [OPTIONS] [COMPONENTS]...
  Batch analysis of admittance datasets.                                         
                                                                                 
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
-│   components      [COMPONENTS]...  Component IDs matching preprocessed       │
-│                                    JSONs.                                    │
+│   components      [COMPONENTS]...  Dataset names or IDs.                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --modes                            TEXT   Modes to fit/plot (e.g. 'Mode 1'). │
@@ -109,6 +108,7 @@ Usage: sc-fit-squid [OPTIONS] [COMPONENTS]...
 ```
 
 <!-- CLI-HELP-END -->
+
 
 
 

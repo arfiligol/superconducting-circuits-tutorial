@@ -3,54 +3,36 @@ aliases:
 - Schema Design
 - Schema 設計
 tags:
-- audience/team
+  - diataxis/explanation
+  - status/stable
+  - topic/architecture
+  - topic/data-format
+  - audience/team
 status: stable
 owner: docs-team
 audience: team
 scope: Pydantic Schema 設計細節
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # Schema Design
 
-我們使用 Pydantic 來定義 `ComponentRecord`。
+目前的標準資料格式以 **SQLite Dataset** 為核心，使用 `DatasetRecord`/`DataRecord` 存放資料與關聯資訊。
 
-## 核心實體
+## 核心概念
 
-### `ParameterAxis`
-定義掃描軸 (Sweep Axis)。
-```python
-class ParameterAxis(BaseModel):
-    name: str          # e.g., "frequency", "flux_bias"
-    unit: str          # e.g., "GHz", "mA"
-    values: list[float]
-```
-
-### `ParameterDataset`
-定義一組數據。支援多維矩陣。
-```python
-class ParameterDataset(BaseModel):
-    family: ParameterFamily         # S, Y, Z
-    representation: ParameterRepresentation # amplitude, phase, real, imag
-    axes: list[ParameterAxis]       # [freq_axis, bias_axis]
-    values: list[list[float]]       # 2D Matrix
-```
-
-### `ComponentRecord`
-聚合一個元件的所有數據。
-```python
-class ComponentRecord(BaseModel):
-    component_id: str
-    datasets: list[ParameterDataset]
-```
+- **DatasetRecord**：描述一組資料的 metadata（名稱、來源、標籤、建立時間）。
+- **DataRecord**：存放實際量測/模擬數據與軸資訊（頻率、偏壓等）。
+- **DerivedParameter**：分析後的參數結果（例如擬合得到的 $L_s, C$）。
 
 ## 擴展性考量
 
-- **多軸支援**：`datasets` 設計允許 1D (頻率掃描) 或 2D (Flux + 頻率) 甚至更高維度。
-- **多參數**：一個 Component 可以同時包含 S11, S21, Y11 等多組數據。
+- **多軸支援**：同一 Dataset 可包含多維掃描資料。
+- **多參數**：一個 Dataset 可以同時包含多個參數族（S/Y/Z）或不同表示法。
+- **可追溯**：資料來源與標籤集中管理，方便回溯與查詢。
 
 ## Related
 
-- [Component Record Reference](../../../reference/data-formats/component-record.md) - 完整欄位說明
+- [Dataset Record Reference](../../../reference/data-formats/dataset-record.md) - 完整欄位說明

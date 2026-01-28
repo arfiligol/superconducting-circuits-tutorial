@@ -8,13 +8,13 @@ owner: docs-team
 audience: team
 scope: HFSS Admittance 轉換指令說明
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # convert-hfss-admittance
 
-將 HFSS 匯出的 Admittance CSV 檔案轉換為標準 `ComponentRecord` JSON 格式。
+將 HFSS 匯出的 Admittance CSV 檔案匯入 SQLite Dataset。
 
 ## Usage
 
@@ -32,8 +32,7 @@ uv run convert-hfss-admittance [OPTIONS] [csv ...]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--component-id` | 強制指定 Component ID (預設使用檔名) | |
-| `--output` | 輸出 JSON 路徑 | `data/preprocessed/<id>.json` |
+| `--dataset-name` | 強制指定 Dataset 名稱 (預設使用檔名) | |
 
 ## Examples
 
@@ -42,17 +41,17 @@ uv run convert-hfss-admittance [OPTIONS] [csv ...]
 uv run convert-hfss-admittance data/raw/admittance/LJPAL658_v1_Im_Y11.csv
 ```
 
-**指定 Component ID**
+**指定 Dataset 名稱**
 ```bash
 uv run convert-hfss-admittance \
-    --component-id MyJPA_v2 \
+    --dataset-name MyJPA_v2 \
     data/raw/admittance/raw_export_final.csv
 ```
 
 ## Notes
 
 !!! note "資料庫匯入"
-    目前指令會將資料匯入 SQLite 資料庫，而非輸出 JSON。
+    目前指令會將資料匯入 SQLite 資料庫，不再產生 JSON。
 
 <!-- CLI-HELP-START -->
 
@@ -70,7 +69,7 @@ Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
 │   csv      [CSV]...  Path(s) to HFSS admittance CSV.                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier (dataset name)     │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

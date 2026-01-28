@@ -8,7 +8,7 @@ owner: docs-team
 audience: team
 scope: Flux Dependence conversion command
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -32,7 +32,7 @@ uv run convert-flux-dependence [OPTIONS] [txt ...]
 
 | Option | Description | Default |
 |---|---|---|
-| `--component-id` | Override component ID | - |
+| `--dataset-name` | Override dataset name | - |
 | `--tags` | Comma-separated tags | - |
 
 ## Examples
@@ -63,11 +63,13 @@ Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...
 │   txt      [TXT]...  Path(s) to Flux Dependence TXT file.                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier                    │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 <!-- CLI-HELP-END -->
+
+
 

@@ -8,13 +8,13 @@ owner: docs-team
 audience: team
 scope: Flux Dependence 轉換指令說明
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # convert-flux-dependence
 
-將 VNA 測量的 Flux Dependence TXT 掃描檔案轉換為標準 `ComponentRecord` JSON 格式。
+將 VNA 測量的 Flux Dependence TXT 掃描檔案匯入 SQLite Dataset。
 
 此工具會解析 TXT 檔案中的 `Frequency`, `Bias`, `Amplitude`, `Phase` 矩陣。
 
@@ -34,8 +34,7 @@ uv run convert-flux-dependence [OPTIONS] [txt ...]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--component-id` | 強制指定 Component ID | |
-| `--output` | 輸出 JSON 路徑 | `data/preprocessed/<id>.json` |
+| `--dataset-name` | 強制指定 Dataset 名稱 | |
 | `--parameter` | 測量參數名稱 (例如 `S11`, `S21`) | `S11` |
 
 ## Examples
@@ -66,7 +65,7 @@ Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...
 │   txt      [TXT]...  Path(s) to Flux Dependence TXT file.                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --component-id        TEXT  Override component identifier                    │
+│ --dataset-name        TEXT  Override dataset name                            │
 │ --tags                TEXT  Comma-separated tags for database record         │
 │ --help                      Show this message and exit.                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

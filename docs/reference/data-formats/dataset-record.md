@@ -10,16 +10,13 @@ owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema 詳細定義與使用規範"
 version: v1.0.0
-last_updated: 2026-01-26
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # Dataset Record Schema
 
 `DatasetRecord` 是本專案的核心數據儲存格式，用於管理模擬與量測數據。
-
-!!! note "取代 ComponentRecord"
-    此 Schema 取代舊版 `ComponentRecord`，改用 SQLite 儲存並支援 Tag 系統。
 
 ## 概念
 

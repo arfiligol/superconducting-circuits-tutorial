@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: "Data handling rules: read-only raw data, path constants, database access"
 version: v1.1.0
-last_updated: 2026-01-26
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -28,7 +28,6 @@ data/
 │   └── layout_simulation/
 │       ├── admittance/
 │       └── phase/
-├── preprocessed/           # Legacy JSON archive (read-only/deprecated)
 ├── processed/
 │   └── reports/            # Analysis outputs
 └── database.db             # SQLite database
@@ -99,5 +98,5 @@ session.query(DatasetRecord).filter_by(...)
     - **MUST** call `uow.commit()` explicitly.
 - **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
 - **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
-- **Legacy**: `data/preprocessed/` is ARCHIVED. Do not write new JSON files there.
+- **Legacy**: JSON-based intermediate storage is removed. Do not create new JSON pipelines.
 ```

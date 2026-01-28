@@ -27,9 +27,6 @@ RAW_LAYOUT_ADMITTANCE_DIR: Path = RAW_LAYOUT_SIMULATION_DIR / "admittance"
 RAW_LAYOUT_PHASE_DIR: Path = RAW_LAYOUT_SIMULATION_DIR / "phase"
 RAW_MEASUREMENT_FLUX_DEPENDENCE_DIR: Path = RAW_MEASUREMENT_DIR / "flux_dependence"
 
-# Preprocessed Data (Intermediate)
-PREPROCESSED_DATA_DIR: Path = DATA_DIR / "preprocessed"
-
 # Processed Data (Final results)
 PROCESSED_DATA_DIR: Path = DATA_DIR / "processed"
 PROCESSED_REPORTS_DIR: Path = PROCESSED_DATA_DIR / "reports"
@@ -47,7 +44,6 @@ def ensure_project_directories():
         RAW_LAYOUT_ADMITTANCE_DIR,
         RAW_LAYOUT_PHASE_DIR,
         RAW_MEASUREMENT_FLUX_DEPENDENCE_DIR,
-        PREPROCESSED_DATA_DIR,
         PROCESSED_REPORTS_DIR,
         SANDBOX_DIR,
     ):

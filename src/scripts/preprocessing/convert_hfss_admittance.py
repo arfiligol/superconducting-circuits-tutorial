@@ -19,8 +19,8 @@ DEFAULT_INPUT_FILES = [
     "PF6FQ_Q0_XY_Im_Y11.csv",
 ]
 
-# Override the component ID (e.g., "MyComponent"). Set to None to use filename.
-DEFAULT_COMPONENT_ID: str | None = None
+# Override the dataset name (e.g., "MyDataset"). Set to None to use filename.
+DEFAULT_DATASET_NAME: str | None = None
 # ==========================================
 
 app = typer.Typer(add_completion=False)
@@ -32,10 +32,10 @@ def main(
         Optional[list[Path]],
         typer.Argument(help="Path(s) to HFSS admittance CSV."),
     ] = None,
-    component_id: Annotated[
+    dataset_name: Annotated[
         Optional[str],
-        typer.Option(help="Override component identifier (dataset name)"),
-    ] = DEFAULT_COMPONENT_ID,
+        typer.Option("--dataset-name", help="Override dataset name"),
+    ] = DEFAULT_DATASET_NAME,
     tags: Annotated[
         str,
         typer.Option(help="Comma-separated tags for database record"),
@@ -59,7 +59,7 @@ def main(
         import_hfss_to_database(
             file_path=raw_path,
             file_type="admittance",
-            dataset_name=component_id,
+            dataset_name=dataset_name,
             tags=tag_list,
         )
 

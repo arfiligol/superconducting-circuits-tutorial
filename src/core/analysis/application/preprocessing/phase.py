@@ -5,14 +5,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from core.analysis.domain.schemas.components import (
-    ComponentRecord,
-    ParameterAxis,
-    ParameterDataset,
-    ParameterFamily,
-    ParameterRepresentation,
-    RawFileMeta,
-    SourceType,
+from core.analysis.application.preprocessing.dataset_payload import (
+    AxisPayload,
+    DataPayload,
+    DatasetPayload,
 )
 
 
@@ -41,47 +37,36 @@ def convert_to_radians(matrix: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(np.deg2rad(matrix), index=matrix.index, columns=matrix.columns)
 
 
-def build_component_record(
-    component_id: str,
+def build_dataset_payload(
     pivot_rad: pd.DataFrame,
     raw_path: str,
     parameter_name: str,
-) -> ComponentRecord:
-    freq_axis = ParameterAxis(name="Freq", unit="GHz", values=pivot_rad.index.tolist())
-    bias_axis = ParameterAxis(
+) -> DatasetPayload:
+    freq_axis = AxisPayload(name="Freq", unit="GHz", values=pivot_rad.index.tolist())
+    bias_axis = AxisPayload(
         name="L_jun", unit="nH", values=pivot_rad.columns.astype(float).tolist()
     )
 
-    dataset_phase = ParameterDataset(
-        dataset_id=f"{component_id}-{parameter_name}-phase",
-        family=ParameterFamily.s_parameters,
+    dataset_phase = DataPayload(
+        data_type="s_parameters",
         parameter=parameter_name,
-        representation=ParameterRepresentation.phase,
-        ports=["port1"],
+        representation="phase",
         axes=[freq_axis, bias_axis],
         values=pivot_rad.values.tolist(),
-        metadata={},
     )
 
-    record = ComponentRecord(
-        component_id=component_id,
-        source_type=SourceType.measurement,
-        datasets=[dataset_phase],
-        raw_files=[RawFileMeta(path=raw_path)],
+    return DatasetPayload(
+        source_meta={"origin": "layout_simulation"},
+        parameters={},
+        data_records=[dataset_phase],
+        raw_files=[raw_path],
     )
-    return record
 
 
-def process_hfss_phase_file(raw_path: Path, component_id: str) -> ComponentRecord:
-    """
-    Orchestrate the processing of a single HFSS Phase CSV file into a ComponentRecord.
-    """
+def process_hfss_phase_file(raw_path: Path) -> DatasetPayload:
+    """Orchestrate the processing of a single HFSS Phase CSV file into a dataset payload."""
     df = pd.read_csv(raw_path)
     l_col, freq_col, phase_col = detect_columns(df)
     pivot_deg = reshape_matrix(df, l_col, freq_col, phase_col)
     pivot_rad = convert_to_radians(pivot_deg)
-
-    record = build_component_record(
-        component_id, pivot_rad, str(raw_path.resolve()), parameter_name="S11"
-    )
-    return record
+    return build_dataset_payload(pivot_rad, str(raw_path.resolve()), parameter_name="S11")

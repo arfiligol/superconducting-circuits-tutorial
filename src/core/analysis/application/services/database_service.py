@@ -1,43 +1,41 @@
-"""Service for saving ComponentRecord data to SQLite database."""
+"""Service for saving dataset payloads to SQLite database."""
 
-from core.analysis.domain.schemas.components import ComponentRecord, ParameterDataset
+from core.analysis.application.preprocessing.dataset_payload import DataPayload, DatasetPayload
 from core.shared.logging import get_logger
 from core.shared.persistence import DataRecord, DatasetRecord, get_unit_of_work
 
 logger = get_logger(__name__)
 
 
-def dataset_to_data_records(
-    pydantic_dataset: ParameterDataset,
-) -> list[DataRecord]:
-    """Convert a ParameterDataset to DataRecord list."""
+def dataset_to_data_records(payload: DataPayload) -> list[DataRecord]:
+    """Convert a DataPayload to DataRecord list."""
     axes_list = [
         {"name": axis.name, "unit": axis.unit, "values": list(axis.values)}
-        for axis in pydantic_dataset.axes
+        for axis in payload.axes
     ]
 
     return [
         DataRecord(
             dataset_id=0,  # Will be set later
-            data_type=pydantic_dataset.family.value,
-            parameter=pydantic_dataset.parameter,
-            representation=pydantic_dataset.representation.value,
+            data_type=payload.data_type,
+            parameter=payload.parameter,
+            representation=payload.representation,
             axes=axes_list,
-            values=list(pydantic_dataset.values),
+            values=list(payload.values),
         )
     ]
 
 
-def save_component_record_to_db(
-    record: ComponentRecord,
+def save_dataset_payload_to_db(
+    payload: DatasetPayload,
     dataset_name: str,
     tags: list[str] | None = None,
 ) -> DatasetRecord:
     """
-    Save a ComponentRecord to SQLite database.
+    Save a dataset payload to SQLite database.
 
     Args:
-        record: The ComponentRecord from preprocessing
+        payload: DatasetPayload from preprocessing
         dataset_name: Unique name for the dataset (e.g., "PF6FQ_Q0_XY_Y11")
         tags: Optional list of tags to attach
 
@@ -53,17 +51,15 @@ def save_component_record_to_db(
             uow.commit()
 
         # Build source metadata
-        source_meta: dict = {
-            "origin": record.source_type.value,
-        }
-        if record.raw_files:
-            source_meta["raw_files"] = [rf.path for rf in record.raw_files]
+        source_meta: dict = dict(payload.source_meta)
+        if payload.raw_files:
+            source_meta["raw_files"] = list(payload.raw_files)
 
         # Create DatasetRecord
         dataset_record = DatasetRecord(
             name=dataset_name,
             source_meta=source_meta,
-            parameters=dict(record.sweep_parameters),
+            parameters=dict(payload.parameters),
         )
 
         # Add tags
@@ -77,8 +73,8 @@ def save_component_record_to_db(
         uow.commit()
 
         # Add data records
-        for pydantic_ds in record.datasets:
-            for data_rec in dataset_to_data_records(pydantic_ds):
+        for payload_ds in payload.data_records:
+            for data_rec in dataset_to_data_records(payload_ds):
                 data_rec.dataset_id = dataset_record.id  # type: ignore[assignment]
                 uow.data_records.add(data_rec)
 

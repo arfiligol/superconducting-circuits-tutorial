@@ -8,7 +8,7 @@ owner: docs-team
 audience: team
 scope: Flux dependence heatmap plotting command
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -26,7 +26,7 @@ uv run flux-dependence-plot [OPTIONS] [components ...]
 
 | Argument | Description | Default |
 |---|---|---|
-| `components` | Component IDs or JSON paths under `data/preprocessed/` | Built-in defaults |
+| `components` | Dataset names or IDs | Built-in defaults |
 
 ## Options
 
@@ -38,7 +38,7 @@ uv run flux-dependence-plot [OPTIONS] [components ...]
 | `--wrap-phase` | Wrap phase to ±π or ±180° | False |
 | `--slice-frequency` | Slice at frequency (GHz) | - |
 | `--slice-bias` | Slice at bias (mA) | - |
-| `--device` | Device label in plots | Component ID |
+| `--device` | Device label in plots | Dataset name |
 | `--matplotlib` | Use Matplotlib backend (default: Plotly) | False |
 
 ## Examples

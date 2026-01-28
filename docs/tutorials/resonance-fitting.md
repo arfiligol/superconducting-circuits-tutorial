@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 完整 SQUID 參數提取流程：原理、操作與解讀
 version: v0.1.0
-last_updated: 2026-01-13
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -39,9 +39,9 @@ updated_by: docs-team
 
 ```bash
 # 假設原始檔位於 data/raw/admittance/
-uv run convert-hfss-admittance data/raw/admittance/MyChip_Y11.csv --component-id MyChip
+uv run convert-hfss-admittance data/raw/admittance/MyChip_Y11.csv --dataset-name MyChip
 ```
-這建立了 `data/preprocessed/MyChip.json`，包含了標準化的頻率掃描矩陣。
+這會在 `data/database.db` 中建立對應的 Dataset，包含標準化的頻率掃描資料。
 
 ### Step 2: Visualization (Sanity Check)
 

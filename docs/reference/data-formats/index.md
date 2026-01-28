@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 數據格式規格，包括目錄結構與 Schema 定義
 version: v1.1.0
-last_updated: 2026-01-26
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -22,10 +22,6 @@ updated_by: docs-team
 - [Raw Data Layout](raw-data-layout.md) - `data/raw/` 目錄結構
 - [Dataset Record](dataset-record.md) - `DatasetRecord` SQLite Schema (**推薦**)
 - [Analysis Result](analysis-result.md) - 分析結果 TypedDict 格式
-
-### Legacy
-
-- [Component Record](component-record.md) - `ComponentRecord` Pydantic Schema (舊版，已被 `DatasetRecord` 取代)
 
 ## Related
 

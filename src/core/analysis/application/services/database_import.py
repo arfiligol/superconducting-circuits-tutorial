@@ -5,7 +5,7 @@ from pathlib import Path
 from core.analysis.application.preprocessing.admittance import process_hfss_admittance_file
 from core.analysis.application.preprocessing.naming import strip_component_suffix
 from core.analysis.application.preprocessing.phase import process_hfss_phase_file
-from core.analysis.application.services.database_service import save_component_record_to_db
+from core.analysis.application.services.database_service import save_dataset_payload_to_db
 from core.analysis.infrastructure.paths import (
     RAW_LAYOUT_ADMITTANCE_DIR,
     RAW_LAYOUT_PHASE_DIR,
@@ -60,12 +60,12 @@ def import_hfss_to_database(
     name = dataset_name or strip_component_suffix(resolved_path.stem)
 
     try:
-        # Process the file to ComponentRecord
-        record = processor(resolved_path, name)
+        # Process the file to dataset payload
+        payload = processor(resolved_path)
 
         # Save to database
-        save_component_record_to_db(
-            record=record,
+        save_dataset_payload_to_db(
+            payload=payload,
             dataset_name=name,
             tags=tags,
         )

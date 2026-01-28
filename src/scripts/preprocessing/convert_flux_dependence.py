@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 import typer
 
 from core.analysis.application.preprocessing.flux_dependence import parse_flux_dependence_txt
-from core.analysis.application.services.database_service import save_component_record_to_db
+from core.analysis.application.services.database_service import save_dataset_payload_to_db
 from core.shared.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
@@ -20,9 +20,9 @@ def main(
         Optional[list[Path]],
         typer.Argument(help="Path(s) to Flux Dependence TXT file."),
     ] = None,
-    component_id: Annotated[
+    dataset_name: Annotated[
         Optional[str],
-        typer.Option(help="Override component identifier"),
+        typer.Option("--dataset-name", help="Override dataset name"),
     ] = None,
     tags: Annotated[
         str,
@@ -43,14 +43,14 @@ def main(
             logger.error("File not found: %s", txt_path)
             continue
 
-        name = component_id or txt_path.stem
+        name = dataset_name or txt_path.stem
 
         try:
             # Parse
-            record = parse_flux_dependence_txt(txt_path, name)
+            payload = parse_flux_dependence_txt(txt_path, name)
 
             # Save to DB
-            save_component_record_to_db(record, name, tag_list)
+            save_dataset_payload_to_db(payload, name, tag_list)
 
         except Exception as e:
             logger.error("Failed to process %s: %s", txt_path, e)

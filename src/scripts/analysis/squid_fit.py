@@ -8,14 +8,14 @@ import typer
 from core.analysis.application.services.squid_fitting import (
     FitModel,
     analyze_file,
-    resolve_component_path,
+    resolve_dataset,
 )
 from core.analysis.infrastructure.visualization.plot_utils import plot_json_results
 
 # ==========================================
 #           USER CONFIGURATION
 # ==========================================
-# List of Component IDs or JSON paths to analyze if no CLI arguments are provided
+# List of dataset names or IDs to analyze if no CLI arguments are provided
 DEFAULT_COMPONENTS = [
     "PF6FQ_Q0_Readout",
     "PF6FQ_Q0_XY",
@@ -79,7 +79,7 @@ def build_bounds(
 def main(
     components: Annotated[
         Optional[list[str]],
-        typer.Argument(help="Component IDs matching preprocessed JSONs."),
+        typer.Argument(help="Dataset names or IDs."),
     ] = None,
     modes: Annotated[
         Optional[list[str]],
@@ -105,12 +105,12 @@ def main(
 
     entries = []
     for comp in file_list:
-        path = resolve_component_path(comp)
-        if not path:
+        dataset = resolve_dataset(comp)
+        if not dataset:
             continue
 
         entry = analyze_file(
-            path,
+            dataset,
             modes,
             build_bounds(ls_min, ls_max, c_min, c_max),
             fit_model,

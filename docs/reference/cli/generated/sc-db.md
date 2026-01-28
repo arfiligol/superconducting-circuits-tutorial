@@ -18,12 +18,15 @@ owner: I-LI CHIU
 ```text
 Usage: sc-db [OPTIONS] COMMAND [ARGS]...                                       
                                                                                 
+ Manage SQLite database entities.                                               
+                                                                                
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────╮
-│ list    Handle 'list' subcommand.                                            │
-│ info    Handle 'info' subcommand.                                            │
-│ delete  Handle 'delete' subcommand.                                          │
+│ dataset-record     Manage Datasets                                           │
+│ tag                Manage Tags                                               │
+│ data-record        Manage Data Records                                       │
+│ derived-parameter  Manage Derived Parameters                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```

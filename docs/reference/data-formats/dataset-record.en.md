@@ -9,16 +9,13 @@ owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema definition and usage"
 version: v1.0.0
-last_updated: 2026-01-26
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
 # Dataset Record Schema
 
 `DatasetRecord` is the core data storage format for managing simulation and measurement data.
-
-!!! note "Replaces ComponentRecord"
-    This schema replaces the legacy `ComponentRecord` format, using SQLite storage with Tag system support.
 
 ## Concept
 

@@ -32,8 +32,8 @@ superconducting-circuits-tutorial/
 │       └── simulation/       # Simulation Scripts (run_lc.py etc)
 ├── data/                     # Data Lifecycle
 │   ├── raw/                  # Read-Only Input (HFSS/VNA)
-│   ├── preprocessed/         # Intermediate JSON
 │   └── processed/            # Analysis Results & Reports
+│   └── database.db           # SQLite Database
 ├── docs/                     # Documentation (MkDocs)
 ├── examples/                 # Usage Examples
 ├── tests/                    # Tests
@@ -70,7 +70,6 @@ Dependency direction is always **Inward**.
     - `scripts/database/`: **Database CLI Entry Points**.
 - **Data (`data/`)**:
     - `raw/`: **READ-ONLY**. HFSS/VNA files.
-    - `preprocessed/`: Intermediate JSON (Legacy).
     - `processed/`: Final Reports/Plots.
     - `database.db`: SQLite database.
 - **Config** (Root):

@@ -173,6 +173,7 @@ nav:
               - Preprocessing Rationale: explanation/architecture/pipeline/preprocessing-rationale.md
           - Design Decisions:
               - Overview: explanation/architecture/design-decisions/index.md
+              - Clean Architecture: explanation/architecture/design-decisions/clean-architecture.md
               - Schema Design: explanation/architecture/design-decisions/schema-design.md
               - Visualization Backend: explanation/architecture/design-decisions/visualization-backend.md
   - Reference:
@@ -199,7 +200,6 @@ nav:
       - Data Formats:
           - Overview: reference/data-formats/index.md
           - Dataset Record: reference/data-formats/dataset-record.md
-          - Component Record: reference/data-formats/component-record.md
           - Raw Data Layout: reference/data-formats/raw-data-layout.md
           - Analysis Result: reference/data-formats/analysis-result.md
       - Guardrails:
