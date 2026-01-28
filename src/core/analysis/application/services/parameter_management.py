@@ -1,0 +1,75 @@
+"""Service for managing DerivedParameters."""
+
+from typing import cast
+
+from core.analysis.application.dto.parameter_dtos import (
+    DerivedParameterDetailDTO,
+    DerivedParameterSummaryDTO,
+)
+from core.shared.persistence import get_unit_of_work
+from core.shared.persistence.models import DerivedParameter
+
+
+class ParameterManagementService:
+    """Service to manage derived parameters."""
+
+    def list_params(self) -> list[DerivedParameterSummaryDTO]:
+        """List all parameters."""
+        with get_unit_of_work() as uow:
+            params = uow.derived_params.list_all()
+            return [self._to_summary(p) for p in params]
+
+    def get_param(self, id: int) -> DerivedParameterDetailDTO | None:
+        """Get parameter details."""
+        with get_unit_of_work() as uow:
+            param = uow.derived_params.get(id)
+            return self._to_detail(param) if param else None
+
+    def delete_param(self, id: int) -> bool:
+        """Delete a parameter."""
+        with get_unit_of_work() as uow:
+            param = uow.derived_params.get(id)
+            if not param:
+                return False
+
+            uow.derived_params.delete(param)
+            uow.commit()
+            return True
+
+    def auto_reorder(self) -> int:
+        """Automatically reorder IDs to be sequential (1..N)."""
+        count = 0
+        with get_unit_of_work() as uow:
+            params = sorted(uow.derived_params.list_all(), key=lambda x: x.id)
+            for idx, param in enumerate(params, start=1):
+                if param.id != idx:
+                    try:
+                        uow.derived_params.reorder_id(param.id, idx)
+                        count += 1
+                    except ValueError:
+                        pass
+            uow.commit()
+            return count
+
+    def _to_summary(self, param: DerivedParameter) -> DerivedParameterSummaryDTO:
+        return DerivedParameterSummaryDTO(
+            id=cast(int, param.id),
+            dataset_id=param.dataset_id,
+            name=param.name,
+            value=param.value,
+            unit=param.unit,
+            device_type=param.device_type,
+        )
+
+    def _to_detail(self, param: DerivedParameter) -> DerivedParameterDetailDTO:
+        return DerivedParameterDetailDTO(
+            id=cast(int, param.id),
+            dataset_id=param.dataset_id,
+            name=param.name,
+            value=param.value,
+            unit=param.unit,
+            device_type=param.device_type,
+            method=param.method,
+            extra=param.extra or {},
+            created_at=param.created_at,
+        )

@@ -21,7 +21,6 @@ updated_by: docs-team
 
 - [HFSS Admittance](hfss-admittance.md) - 轉換 HFSS 虛阻納數據
 - [HFSS Phase](hfss-phase.md) - 轉換 HFSS S11 相位數據
-- [Flux Dependence](flux-dependence.md) - 轉換 VNA 磁通依賴掃描數據
 
 ## Related
 

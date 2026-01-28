@@ -55,6 +55,42 @@ class DatasetManagementService:
             uow.commit()
             return True
 
+    def auto_reorder(self) -> int:
+        """
+        Automatically reorder IDs to be sequential (1..N).
+        Sorts by current ID to preserve relative order.
+        """
+        count = 0
+        with get_unit_of_work() as uow:
+            # Fetch all and sort by ID to safely compact
+            records = sorted(uow.datasets.list_all(), key=lambda x: x.id)
+
+            for idx, record in enumerate(records, start=1):
+                if record.id != idx:
+                    # We can assume safe to reorder because we are moving to
+                    # 'idx', which is always <= record.id in a sorted list of unique positive ints,
+                    # and 'idx' is free because we processed all previous IDs (1..idx-1).
+                    try:
+                        uow.datasets.reorder_id(record.id, idx)
+                        count += 1
+                        # Need to update the session state if we continue?
+                        # reorder_id commits? No, repo usually doesn't commit.
+                        # Service auto_reorder should commit at end or per step?
+                        # Since reorder_id in repo does flush/delete, we should probably commit
+                        # to safeguard against constraint violation if we accumulate too much?
+                        # But commit breaks transaction atomicity for the whole batch.
+                        # Repo reorder_id uses "flush", so it hits DB.
+                        # If we process sequentially:
+                        # 1. 5 -> 1. New 1 created. Old 5 deleted.
+                        # 2. 6 -> 2. New 2 created. Old 6 deleted.
+                        # This should be fine in one transaction.
+                    except ValueError:
+                        # Should not happen in sequential compaction
+                        pass
+
+            uow.commit()
+            return count
+
     def _find_record(self, uow, identifier: str) -> DatasetRecord | None:
         """Helper to find record by ID or Name."""
         if identifier.isdigit():

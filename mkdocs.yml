@@ -139,12 +139,9 @@ nav:
           - Overview: how-to/preprocess/index.md
           - HFSS Admittance: how-to/preprocess/hfss-admittance.md
           - HFSS Phase: how-to/preprocess/hfss-phase.md
-          - Flux Dependence: how-to/preprocess/flux-dependence.md
       - Analysis:
           - Overview: how-to/analysis/index.md
           - Admittance Fit: how-to/analysis/admittance-fit.md
-          - Flux Plot: how-to/analysis/flux-dependence-plot.md
-          - Effective Capacitance: how-to/analysis/effective-capacitance.md
       - Database:
           - Overview: how-to/database/index.md
           - Manage Datasets (sc-db): how-to/database/manage-datasets.md
@@ -205,7 +202,6 @@ nav:
           - Component Record: reference/data-formats/component-record.md
           - Raw Data Layout: reference/data-formats/raw-data-layout.md
           - Analysis Result: reference/data-formats/analysis-result.md
-      - Contributors: reference/contributors.md
       - Guardrails:
           - Project Basics:
               - Overview: reference/guardrails/index.md
@@ -228,6 +224,7 @@ nav:
               - Documentation Standards: reference/guardrails/documentation-design/documentation.md
               - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
               - CLI Docs Automation: how-to/contributing/cli-docs-automation.md
+      - Contributors: reference/contributors.md
       - Plotting Utilities: reference/utilities.md
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md

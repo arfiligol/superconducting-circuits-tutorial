@@ -20,8 +20,6 @@ updated_by: docs-team
 ## Guides
 
 - [Admittance Fit](admittance-fit.md) - 執行 SQUID LC 模型擬合
-- [Effective Capacitance](effective-capacitance.md) - 有效電容擬合
-- [Flux Dependence Plot](flux-dependence-plot.md) - 繪製磁通依賴熱圖
 
 ## Related
 
