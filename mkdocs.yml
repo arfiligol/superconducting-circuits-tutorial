@@ -205,6 +205,7 @@ nav:
           - Component Record: reference/data-formats/component-record.md
           - Raw Data Layout: reference/data-formats/raw-data-layout.md
           - Analysis Result: reference/data-formats/analysis-result.md
+      - Contributors: reference/contributors.md
       - Guardrails:
           - Project Basics:
               - Overview: reference/guardrails/index.md
