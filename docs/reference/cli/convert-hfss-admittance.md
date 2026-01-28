@@ -48,3 +48,30 @@ uv run convert-hfss-admittance \
     --component-id MyJPA_v2 \
     data/raw/admittance/raw_export_final.csv
 ```
+
+<!-- CLI-HELP-START -->
+
+## CLI Help（自動生成）
+
+!!! note "自動生成"
+    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+
+```text
+Usage: sc-preprocess-admittance [OPTIONS] [CSV]...                             
+                                                                                
+ Import HFSS admittance CSV to SQLite database.                                 
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│   csv      [CSV]...  Path(s) to HFSS admittance CSV.                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --component-id        TEXT  Override component identifier (dataset name)     │
+│ --tags                TEXT  Comma-separated tags for database record         │
+│ --help                      Show this message and exit.                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+<!-- CLI-HELP-END -->
+
+
+

@@ -41,3 +41,30 @@ uv run convert-hfss-phase [OPTIONS] [csv ...]
 ```bash
 uv run convert-hfss-phase data/raw/phase/LJPAL658_S11_Phase.csv
 ```
+
+<!-- CLI-HELP-START -->
+
+## CLI Help（自動生成）
+
+!!! note "自動生成"
+    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+
+```text
+Usage: sc-preprocess-phase [OPTIONS] [CSV]...                                  
+                                                                                
+ Import HFSS phase CSV to SQLite database.                                      
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│   csv      [CSV]...  Path(s) to HFSS phase CSV.                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --component-id        TEXT  Override component identifier                    │
+│ --tags                TEXT  Comma-separated tags for database record         │
+│ --help                      Show this message and exit.                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+<!-- CLI-HELP-END -->
+
+
+

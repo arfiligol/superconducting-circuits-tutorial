@@ -17,29 +17,43 @@ owner: I-LI CHIU
 
 ## 現況
 
-目前 `docs/reference/cli/` 仍以人工維護為主。完成 Typer 遷移後，將改用自動生成流程以避免參數文件與實作不一致。
+`docs/reference/cli/` 採用 **手寫內容 + 自動生成區塊** 的混合模式。CLI Help 由自動化產生，並同步到手寫文件中，以避免參數與實作不一致。
 
 ## 目標
 
 - 以 CLI 的 help 輸出作為單一來源
-- 自動產生 `docs/reference/cli/*.md`
-- 取代手寫的 CLI Options 內容，僅保留額外說明與導覽頁
+- 自動產生 `docs/reference/cli/generated/*.md`（不加入導覽與渲染）
+- 將 help 區塊同步到手寫的 CLI Reference（保留人類可讀內容）
 
 ## 整合規則
 
-1. **產生來源**：從各 CLI 指令的 `--help` 輸出生成 Reference。
-2. **輸出位置**：`docs/reference/cli/`。
-3. **人工內容**：只保留導覽（如 `index.md`）與補充說明頁，不手改生成檔。
-4. **更新時機**：新增/變更 CLI 參數後必須重新生成。
+1. **產生來源**：從各 CLI 指令的 `--help` 輸出生成 help 區塊。
+2. **生成位置**：`docs/reference/cli/generated/`（不加入導航）。
+3. **同步方式**：將 generated 的 help 區塊寫入手寫文件中的 `CLI Help（自動生成）` 區段。
+4. **更新時機**：新增/變更 CLI 參數後必須重新生成並同步。
 
-## 後續動作（Typer 遷移完成後）
+## 使用方式
 
-- 建立 CLI 文件產生器（建議放在 `scripts/docs/`）。
-- 在 `pyproject.toml` 加入對應指令入口（例如 `sc-docs-cli`）。
-- 產生內容覆蓋現有 CLI Reference（或以「生成區塊」取代）。
+1. 產生 generated 檔案：
 
-!!! note "狀態提醒"
-    此流程尚未啟用，待 Typer 遷移完成後再落實自動生成。
+```bash
+uv run sc-docs-cli --output-dir docs/reference/cli/generated --overwrite
+```
+
+2. 同步 help 區塊到手寫文件：
+
+```bash
+uv run sc-docs-cli-sync
+```
+
+3. 檢查一致性（CI 可用）：
+
+```bash
+uv run sc-docs-cli-sync --check
+```
+
+!!! note "渲染規則"
+    `docs/reference/cli/generated/` 只作為自動生成來源，不納入導航與導覽頁。
 
 ## Related
 

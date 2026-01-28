@@ -64,6 +64,7 @@ src/scripts/database/list_datasets.py
 src/scripts/database/manage_db.py
 src/scripts/docs/__init__.py
 src/scripts/docs/generate_cli_reference.py
+src/scripts/docs/sync_cli_reference.py
 src/scripts/preprocessing/__init__.py
 src/scripts/preprocessing/convert_flux_dependence.py
 src/scripts/preprocessing/convert_hfss_admittance.py

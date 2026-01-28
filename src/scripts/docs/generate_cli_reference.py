@@ -127,7 +127,7 @@ def main(
     exclude: Annotated[
         list[str],
         typer.Option(help="Skip specified commands"),
-    ] = ["sc-docs-cli"],
+    ] = ["sc-docs-cli", "sc-docs-cli-sync"],
 ) -> None:
     """Generate CLI reference docs from `--help` output."""
     specs = load_project_scripts()

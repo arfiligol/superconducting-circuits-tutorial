@@ -65,3 +65,45 @@ uv run squid-model-with-Ls-fit --ls-max 0.2 LJPAL658_v1
 ```bash
 uv run squid-model-with-Ls-fixed-C-fit --fixed-c 1.45 LJPAL658_v1
 ```
+
+<!-- CLI-HELP-START -->
+
+## CLI Help（自動生成）
+
+!!! note "自動生成"
+    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+
+```text
+Usage: sc-fit-squid [OPTIONS] [COMPONENTS]...                                  
+                                                                                
+ Batch analysis of admittance datasets.                                         
+                                                                                
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│   components      [COMPONENTS]...  Component IDs matching preprocessed       │
+│                                    JSONs.                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --modes                            TEXT   Modes to fit/plot (e.g. 'Mode 1'). │
+│                                           [default: Mode 1]                  │
+│ --title                            TEXT   Plot title                         │
+│                                           [default: Q0 Mode Fits (by         │
+│                                           Admittance)]                       │
+│ --ls-min                           FLOAT  [default: 0.0]                     │
+│ --ls-max                           FLOAT                                     │
+│ --c-min                            FLOAT  [default: 0.0]                     │
+│ --c-max                            FLOAT                                     │
+│ --fixed-c                          FLOAT                                     │
+│ --fit-min                          FLOAT  Fit window min (GHz)               │
+│                                           [default: 15.0]                    │
+│ --fit-max                          FLOAT  Fit window max (GHz)               │
+│                                           [default: 30.0]                    │
+│ --matplotlib    --no-matplotlib           Use Matplotlib backend             │
+│                                           [default: no-matplotlib]           │
+│ --help                                    Show this message and exit.        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+```
+
+<!-- CLI-HELP-END -->
+
+
+
