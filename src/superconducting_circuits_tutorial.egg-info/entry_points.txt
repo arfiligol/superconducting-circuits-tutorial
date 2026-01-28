@@ -1,4 +1,6 @@
 [console_scripts]
+sc-convert-flux-dependence = scripts.preprocessing.convert_flux_dependence:main
+sc-db = scripts.database.manage_db:main
 sc-fit-squid = scripts.analysis.squid_fit:main
 sc-list-datasets = scripts.database.list_datasets:main
 sc-preprocess-admittance = scripts.preprocessing.convert_hfss_admittance:main

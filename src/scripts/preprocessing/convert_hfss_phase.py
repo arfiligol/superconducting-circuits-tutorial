@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""CLI wrapper for HFSS phase file conversion."""
+"""CLI wrapper for HFSS phase file conversion (DB Only)."""
 
 import argparse
 from pathlib import Path
 from typing import NamedTuple
 
-from core.analysis.application.services.hfss_processing import process_and_write_hfss_file
+from core.analysis.application.services.database_import import import_hfss_to_database
+from core.shared.logging import setup_logging
 
 # ==========================================
 #           USER CONFIGURATION
@@ -17,20 +18,17 @@ DEFAULT_INPUT_FILES = [
 
 # Override the component ID (e.g., "MyComponent"). Set to None to use filename.
 DEFAULT_COMPONENT_ID: str | None = None
-
-# Custom output path (e.g., "data/my_preprocessed.json"). Set to None for default.
-DEFAULT_OUTPUT_PATH: str | None = None
 # ==========================================
 
 
-class HFSSArgs(NamedTuple):
+class ProgramArgs(NamedTuple):
     csv: list[Path]
     component_id: str | None
-    output: Path | None
+    tags: list[str]
 
 
-def parse_args() -> HFSSArgs:
-    parser = argparse.ArgumentParser(description="Convert HFSS phase CSV to preprocessed JSON.")
+def parse_args() -> ProgramArgs:
+    parser = argparse.ArgumentParser(description="Import HFSS phase CSV to SQLite database.")
     parser.add_argument(
         "csv",
         nargs="*",
@@ -43,16 +41,19 @@ def parse_args() -> HFSSArgs:
         default=DEFAULT_COMPONENT_ID,
     )
     parser.add_argument(
-        "--output",
-        type=Path,
-        help="Destination JSON file (defaults to data/preprocessed/<component_id>.json)",
-        default=DEFAULT_OUTPUT_PATH,
+        "--tags",
+        type=str,
+        help="Comma-separated tags for database record",
+        default="",
     )
     args = parser.parse_args()
-    return HFSSArgs(csv=args.csv, component_id=args.component_id, output=args.output)
+    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
+    return ProgramArgs(csv=args.csv, component_id=args.component_id, tags=tags)
 
 
 def main() -> None:
+    setup_logging(level="INFO")
+
     args = parse_args()
     # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
     input_files = args.csv if args.csv else [Path(f) for f in DEFAULT_INPUT_FILES]
@@ -62,11 +63,11 @@ def main() -> None:
         return
 
     for raw_path in input_files:
-        process_and_write_hfss_file(
+        import_hfss_to_database(
             file_path=raw_path,
             file_type="phase",
-            component_id=args.component_id,
-            output_path=args.output,
+            dataset_name=args.component_id,
+            tags=args.tags,
         )
 
 

@@ -24,9 +24,11 @@ dependencies = [
 [project.scripts]
 sc-preprocess-admittance = "scripts.preprocessing.convert_hfss_admittance:main"
 sc-preprocess-phase = "scripts.preprocessing.convert_hfss_phase:main"
+sc-convert-flux-dependence = "scripts.preprocessing.convert_flux_dependence:main"
 sc-fit-squid = "scripts.analysis.squid_fit:main"
 sc-simulate-lc = "scripts.simulation.run_lc:main"
 sc-list-datasets = "scripts.database.list_datasets:main"
+sc-db = "scripts.database.manage_db:main"
 
 [tool.uv]
 package = true

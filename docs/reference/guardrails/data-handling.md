@@ -29,7 +29,7 @@ data/
 │   └── layout_simulation/
 │       ├── admittance/
 │       └── phase/
-├── preprocessed/           # 轉換後的 JSON (Legacy)
+├── preprocessed/           # Legacy JSON Archive (唯讀/棄用)
 ├── processed/
 │   └── reports/            # 分析輸出
 └── database.db             # SQLite 資料庫
@@ -43,7 +43,7 @@ data/
 
 - 不修改原始檔案
 - 不刪除原始檔案
-- 轉換結果寫入資料庫或 `data/preprocessed/`
+- 轉換結果必須寫入 **SQLite 資料庫**
 
 ### 2. Use Path Helpers
 
@@ -51,12 +51,6 @@ data/
 
 ```python
 from core.shared.persistence.database import DATABASE_PATH
-
-# 或使用舊版路徑 (Legacy)
-from core.analysis.infrastructure.paths import (
-    RAW_LAYOUT_ADMITTANCE_DIR,
-    PREPROCESSED_DATA_DIR,
-)
 ```
 
 ### 3. Database Access (Unit of Work)
@@ -99,11 +93,12 @@ session.query(DatasetRecord).filter_by(...)
 ## Data Handling
 - **Immutable**: `data/raw/` is READ-ONLY.
 - **Paths**: NEVER hardcode paths.
-    - **MUST** import from `core.shared.persistence.database` or `core.analysis.infrastructure.paths`.
+    - **MUST** import from `core.shared.persistence.database`.
 - **Database**: Use Unit of Work pattern.
     - **MUST** use `with get_unit_of_work() as uow:` for all DB operations.
     - **NEVER** access Session directly in CLI/UI code.
     - **MUST** call `uow.commit()` explicitly.
 - **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
 - **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
+- **Legacy**: `data/preprocessed/` is ARCHIVED. Do not write new JSON files there.
 ```

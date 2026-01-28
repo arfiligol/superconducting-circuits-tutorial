@@ -10,12 +10,15 @@ src/core/analysis/application/analysis/fitting/modes.py
 src/core/analysis/application/analysis/fitting/y11.py
 src/core/analysis/application/analysis/physics/admittance.py
 src/core/analysis/application/analysis/physics/squid.py
+src/core/analysis/application/dto/dataset_dtos.py
 src/core/analysis/application/preprocessing/__init__.py
 src/core/analysis/application/preprocessing/admittance.py
+src/core/analysis/application/preprocessing/flux_dependence.py
 src/core/analysis/application/preprocessing/naming.py
 src/core/analysis/application/preprocessing/phase.py
 src/core/analysis/application/services/database_import.py
 src/core/analysis/application/services/database_service.py
+src/core/analysis/application/services/dataset_management.py
 src/core/analysis/application/services/hfss_processing.py
 src/core/analysis/application/services/squid_fitting.py
 src/core/analysis/domain/__init__.py
@@ -59,7 +62,9 @@ src/scripts/analysis/__init__.py
 src/scripts/analysis/squid_fit.py
 src/scripts/database/__init__.py
 src/scripts/database/list_datasets.py
+src/scripts/database/manage_db.py
 src/scripts/preprocessing/__init__.py
+src/scripts/preprocessing/convert_flux_dependence.py
 src/scripts/preprocessing/convert_hfss_admittance.py
 src/scripts/preprocessing/convert_hfss_phase.py
 src/scripts/simulation/__init__.py

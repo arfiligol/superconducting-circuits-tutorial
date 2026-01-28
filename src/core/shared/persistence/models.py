@@ -69,8 +69,14 @@ class DatasetRecord(SQLModel, table=True):
 
     # Relationships
     tags: list["Tag"] = Relationship(back_populates="datasets", link_model=DatasetTagLink)
-    data_records: list["DataRecord"] = Relationship(back_populates="dataset")
-    derived_params: list["DerivedParameter"] = Relationship(back_populates="dataset")
+    data_records: list["DataRecord"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    derived_params: list["DerivedParameter"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 # ===================

@@ -7,9 +7,9 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "Data Handling Rules: Read-only Raw Data, Path Constants"
-version: v0.1.0
-last_updated: 2026-01-12
+scope: "Data handling rules: read-only raw data, path constants, database access"
+version: v1.1.0
+last_updated: 2026-01-26
 updated_by: docs-team
 ---
 
@@ -21,57 +21,66 @@ Data handling and path standards.
 
 ```
 data/
-├── raw/                    # Raw Data (Read-Only)
+├── raw/                    # Raw data (read-only)
 │   ├── measurement/
 │   │   └── flux_dependence/
 │   ├── circuit_simulation/
 │   └── layout_simulation/
 │       ├── admittance/
 │       └── phase/
-├── preprocessed/           # Transformed JSON
-└── processed/
-    └── reports/            # Analysis Outputs
+├── preprocessed/           # Legacy JSON archive (read-only/deprecated)
+├── processed/
+│   └── reports/            # Analysis outputs
+└── database.db             # SQLite database
 ```
 
 ## Rules
 
 ### 1. Raw Data is Read-Only
 
-All files under `data/raw/` are considered immutable:
+All files under `data/raw/` are immutable:
+
 - Do not modify raw files
 - Do not delete raw files
-- Write transformation results to `data/preprocessed/`
+- Transformation results **must** be written to **SQLite database**
 
 ### 2. Use Path Helpers
 
-Use constants provided by `src/utils/paths.py`:
+Use constants provided by `src/core/shared/persistence/database.py`:
 
 ```python
-from src.utils import (
-    RAW_LAYOUT_ADMITTANCE_DIR,
-    RAW_LAYOUT_PHASE_DIR,
-    RAW_MEASUREMENT_FLUX_DEPENDENCE_DIR,
-    PREPROCESSED_DATA_DIR,
-    PROCESSED_REPORTS_DIR,
-)
-
-# ✅ Correct
-output_path = PROCESSED_REPORTS_DIR / "result.json"
-
-# ❌ Incorrect
-output_path = Path("data/processed/reports/result.json")
+from core.shared.persistence.database import DATABASE_PATH
 ```
 
-### 3. Output Locations
+### 3. Database Access (Unit of Work)
+
+All database access must use the Unit of Work pattern:
+
+```python
+from core.shared.persistence import get_unit_of_work
+
+# ✅ Correct: use UoW
+with get_unit_of_work() as uow:
+    dataset = uow.datasets.get_by_name("PF6FQ_Q0_XY")
+    uow.datasets.add(new_dataset)
+    uow.commit()
+
+# ❌ Incorrect: direct session usage
+session = get_session()
+session.query(DatasetRecord).filter_by(...)
+```
+
+### 4. Output Locations
 
 | Type | Target Directory |
 |------|------------------|
-| Preprocessed JSON | `data/preprocessed/` |
-| Analysis Reports | `data/processed/reports/` |
+| Data records | `data/database.db` (SQLite) |
+| Analysis reports | `data/processed/reports/` |
 | Figures/Plots | `data/processed/reports/` |
 
 ## Related
 
+- [Dataset Record Schema](../data-formats/dataset-record.md) - Database schema
 - [Raw Data Layout](../data-formats/raw-data-layout.md) - Directory structure details
 - [Script Authoring](script-authoring.md) - Script writing rules
 
@@ -83,8 +92,12 @@ output_path = Path("data/processed/reports/result.json")
 ## Data Handling
 - **Immutable**: `data/raw/` is READ-ONLY.
 - **Paths**: NEVER hardcode paths.
-    - **MUST** import from `src.utils.paths`.
-    - Keywords: `RAW_*_DIR`, `PREPROCESSED_DATA_DIR`, `PROCESSED_REPORTS_DIR`.
-- **Flow**: Raw -> Preprocessing Script -> Preprocessed (JSON) -> Analysis Script -> Processed (Reports).
-- **Format**: Prefer **JSON** for light data, **CSV** for tabular data.
+    - **MUST** import from `core.shared.persistence.database`.
+- **Database**: Use Unit of Work pattern.
+    - **MUST** use `with get_unit_of_work() as uow:` for all DB operations.
+    - **NEVER** access Session directly in CLI/UI code.
+    - **MUST** call `uow.commit()` explicitly.
+- **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
+- **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
+- **Legacy**: `data/preprocessed/` is ARCHIVED. Do not write new JSON files there.
 ```
