@@ -14,7 +14,7 @@ owner: I-LI CHIU
 
 # sc-db
 
-管理資料庫中的 Dataset（列出、查看、刪除）。適合需要完整管理功能時使用。
+資料庫管理的單一入口，透過子指令操作各個模型。
 
 ## Model CRUD Scope
 
@@ -28,14 +28,15 @@ owner: I-LI CHIU
 ## Usage
 
 ```bash
-uv run sc-db <command> [args]
+uv run sc-db <model> <action> [args]
 ```
 
 ## Arguments
 
 | Argument | Description | Default |
 |---|---|---|
-| `<command>` | `list` / `info` / `delete` | - |
+| `<model>` | `dataset-record` / `data-record` / `derived-parameter` / `tag` | - |
+| `<action>` | 依 model 而定（見各子頁） | - |
 
 ## Options
 
@@ -45,25 +46,35 @@ uv run sc-db <command> [args]
 
 ## Examples
 
-**列出全部資料集**
+**列出 DatasetRecord**
 ```bash
-uv run sc-db list
+uv run sc-db dataset-record list
 ```
 
-**查看資料集詳情**
+**查詢 DatasetRecord**
 ```bash
-uv run sc-db info 3
+uv run sc-db dataset-record info <ID_OR_NAME>
 ```
 
-**刪除資料集**
+**刪除 DataRecord**
 ```bash
-uv run sc-db delete 3
+uv run sc-db data-record delete <ID>
+```
+
+**新增 Tag**
+```bash
+uv run sc-db tag create "NewTag"
+```
+
+**更名 Tag**
+```bash
+uv run sc-db tag update "NewTag" "RenamedTag"
 ```
 
 ## Notes
 
-!!! warning "危險操作"
-    `delete` 會刪除資料集與其關聯的 DataRecords，且不可復原。
+!!! note "舊指令已移除"
+    `sc-db list/info/delete` 已移除，請改用 `sc-db <model> <action>`。
 
 <!-- CLI-HELP-START -->
 
@@ -73,16 +84,7 @@ uv run sc-db delete 3
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-Usage: sc-db [OPTIONS] COMMAND [ARGS]...                                       
-                                                                                
-╭─ Options ────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                  │
-╰──────────────────────────────────────────────────────────────────────────────╯
-╭─ Commands ───────────────────────────────────────────────────────────────────╮
-│ list    Handle 'list' subcommand.                                            │
-│ info    Handle 'info' subcommand.                                            │
-│ delete  Handle 'delete' subcommand.                                          │
-╰──────────────────────────────────────────────────────────────────────────────╯
+(placeholder)
 ```
 
 <!-- CLI-HELP-END -->
