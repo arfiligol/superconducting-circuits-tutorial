@@ -25,8 +25,8 @@ updated_by: docs-team
 | 類別 | 目錄位置 | 目標 (Goal) | 導向 (Orientation) | 內容特徵 |
 |---|---|---|---|---|
 | **Tutorials** | `docs/tutorials/` | **學習 (Learning)** | 導師引導 (Detailed) | Step-by-step 教學，確保讀者能完成特定任務並獲得成就感。 |
-| **How-to** | `docs/how-to/` | **解決問題 (Problem)** | 任務導向 (Practical) | 針對特定問題的解決方案 (Recipes)。不解釋原理，只給步驟。 |
-| **Reference** | `docs/reference/` | **資訊 (Information)** | 資訊導向 (Technical) | API 規格、指令參數、數據格式。嚴謹、準確、無廢話。 |
+| **How-to** | `docs/how-to/` | **解決問題 (Problem)** | 任務導向 (Practical) | **只寫使用者常用的任務流程**。不解釋原理，只給步驟。 |
+| **Reference** | `docs/reference/` | **資訊 (Information)** | 資訊導向 (Technical) | **全面完整**的 API/指令/格式規格。嚴謹、準確、無廢話。 |
 | **Explanation** | `docs/explanation/` | **理解 (Understanding)** | 概念導向 (Theoretical)| 背景知識、設計決策、物理原理。解釋 "Why"。 |
 
 ## 2. 寫作風格 (Style Guide)

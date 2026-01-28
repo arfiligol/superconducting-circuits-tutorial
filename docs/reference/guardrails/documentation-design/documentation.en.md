@@ -18,8 +18,8 @@ We use the [Diataxis](https://diataxis.fr/) framework to categorize all document
 | Category | Directory | Goal | Orientation | Content |
 |----------|-----------|------|-------------|---------|
 | **Tutorials** | `docs/tutorials/` | Learning | Guided | Step-by-step teaching with achievable outcomes |
-| **How-to** | `docs/how-to/` | Problem-solving | Practical | Recipes for specific problems. Steps only, no theory. |
-| **Reference** | `docs/reference/` | Information | Technical | API specs, parameters, formats. Precise and concise. |
+| **How-to** | `docs/how-to/` | Problem-solving | Practical | **Only common user tasks**. Steps only, no theory. |
+| **Reference** | `docs/reference/` | Information | Technical | **Comprehensive** API/CLI/format specs. Precise and concise. |
 | **Explanation** | `docs/explanation/` | Understanding | Theoretical | Background, design decisions, physics. Explains "Why". |
 
 ## 2. Style Guide
