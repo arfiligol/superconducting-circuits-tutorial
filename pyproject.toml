@@ -19,16 +19,18 @@ dependencies = [
     "schemdraw>=0.22",
     "scipy>=1.16.3",
     "sqlmodel>=0.0.31",
+    "typer>=0.12.0",
 ]
 
 [project.scripts]
-sc-preprocess-admittance = "scripts.preprocessing.convert_hfss_admittance:main"
-sc-preprocess-phase = "scripts.preprocessing.convert_hfss_phase:main"
-sc-convert-flux-dependence = "scripts.preprocessing.convert_flux_dependence:main"
-sc-fit-squid = "scripts.analysis.squid_fit:main"
-sc-simulate-lc = "scripts.simulation.run_lc:main"
-sc-list-datasets = "scripts.database.list_datasets:main"
-sc-db = "scripts.database.manage_db:main"
+sc-preprocess-admittance = "scripts.preprocessing.convert_hfss_admittance:app"
+sc-preprocess-phase = "scripts.preprocessing.convert_hfss_phase:app"
+sc-convert-flux-dependence = "scripts.preprocessing.convert_flux_dependence:app"
+sc-fit-squid = "scripts.analysis.squid_fit:app"
+sc-simulate-lc = "scripts.simulation.run_lc:app"
+sc-list-datasets = "scripts.database.list_datasets:app"
+sc-db = "scripts.database.manage_db:app"
+sc-docs-cli = "scripts.docs.generate_cli_reference:app"
 
 [tool.uv]
 package = true

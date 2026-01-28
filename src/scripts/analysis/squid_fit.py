@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """CLI wrapper for SQUID model fitting."""
 
-import argparse
-from typing import NamedTuple
+from typing import Annotated, Optional
+
+import typer
 
 from core.analysis.application.services.squid_fitting import (
     FitModel,
@@ -48,66 +49,16 @@ DEFAULT_FIT_BOUNDS = {
     "C_pF": (0.0, None),
 }
 
-
-class AdmittanceFitArgs(NamedTuple):
-    components: list[str]
-    modes: list[str] | None
-    title: str
-    ls_min: float | None
-    ls_max: float | None
-    c_min: float | None
-    c_max: float | None
-    fixed_c: float | None
-    fit_min: float | None
-    fit_max: float | None
-    matplotlib: bool
+app = typer.Typer(add_completion=False)
 
 
-def parse_args() -> AdmittanceFitArgs:
-    parser = argparse.ArgumentParser(description="Batch analysis of admittance datasets.")
-    parser.add_argument(
-        "components",
-        nargs="*",
-        help="Component IDs matching preprocessed JSONs.",
-    )
-    parser.add_argument(
-        "--modes",
-        nargs="+",
-        help="Modes to fit/plot (e.g. 'Mode 1').",
-        default=DEFAULT_MODES,
-    )
-    parser.add_argument("--title", default=DEFAULT_TITLE)
-    parser.add_argument("--ls-min", type=float, default=DEFAULT_LS_MIN)
-    parser.add_argument("--ls-max", type=float, default=DEFAULT_LS_MAX)
-    parser.add_argument("--c-min", type=float, default=DEFAULT_C_MIN)
-    parser.add_argument("--c-max", type=float, default=DEFAULT_C_MAX)
-    parser.add_argument("--fixed-c", type=float, default=DEFAULT_FIXED_C_VALUE)
-    parser.add_argument("--fit-min", type=float, default=DEFAULT_FIT_WINDOW_MIN)
-    parser.add_argument("--fit-max", type=float, default=DEFAULT_FIT_WINDOW_MAX)
-    parser.add_argument(
-        "--matplotlib",
-        action="store_true",
-        default=DEFAULT_USE_MATPLOTLIB,
-    )
-
-    args = parser.parse_args()
-    return AdmittanceFitArgs(
-        components=args.components,
-        modes=args.modes,
-        title=args.title,
-        ls_min=args.ls_min,
-        ls_max=args.ls_max,
-        c_min=args.c_min,
-        c_max=args.c_max,
-        fixed_c=args.fixed_c,
-        fit_min=args.fit_min,
-        fit_max=args.fit_max,
-        matplotlib=args.matplotlib,
-    )
-
-
-def build_bounds(args: AdmittanceFitArgs) -> dict[str, tuple[float | None, float | None]]:
-    """Build parameter bounds dictionary from CLI args."""
+def build_bounds(
+    ls_min: float | None,
+    ls_max: float | None,
+    c_min: float | None,
+    c_max: float | None,
+) -> dict[str, tuple[float | None, float | None]]:
+    """Build parameter bounds dictionary from arguments."""
 
     def resolve(
         key: str, override_min: float | None, override_max: float | None
@@ -119,17 +70,38 @@ def build_bounds(args: AdmittanceFitArgs) -> dict[str, tuple[float | None, float
         )
 
     return {
-        "Ls_nH": resolve("Ls_nH", args.ls_min, args.ls_max),
-        "C_pF": resolve("C_pF", args.c_min, args.c_max),
+        "Ls_nH": resolve("Ls_nH", ls_min, ls_max),
+        "C_pF": resolve("C_pF", c_min, c_max),
     }
 
 
-def main():
-    args = parse_args()
+@app.command()
+def main(
+    components: Annotated[
+        Optional[list[str]],
+        typer.Argument(help="Component IDs matching preprocessed JSONs."),
+    ] = None,
+    modes: Annotated[
+        Optional[list[str]],
+        typer.Option(help="Modes to fit/plot (e.g. 'Mode 1')."),
+    ] = DEFAULT_MODES,
+    title: Annotated[str, typer.Option(help="Plot title")] = DEFAULT_TITLE,
+    ls_min: Annotated[Optional[float], typer.Option()] = DEFAULT_LS_MIN,
+    ls_max: Annotated[Optional[float], typer.Option()] = DEFAULT_LS_MAX,
+    c_min: Annotated[Optional[float], typer.Option()] = DEFAULT_C_MIN,
+    c_max: Annotated[Optional[float], typer.Option()] = DEFAULT_C_MAX,
+    fixed_c: Annotated[Optional[float], typer.Option()] = DEFAULT_FIXED_C_VALUE,
+    fit_min: Annotated[float, typer.Option(help="Fit window min (GHz)")] = DEFAULT_FIT_WINDOW_MIN,
+    fit_max: Annotated[float, typer.Option(help="Fit window max (GHz)")] = DEFAULT_FIT_WINDOW_MAX,
+    matplotlib: Annotated[
+        bool, typer.Option(help="Use Matplotlib backend")
+    ] = DEFAULT_USE_MATPLOTLIB,
+) -> None:
+    """Batch analysis of admittance datasets."""
     # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
-    file_list = args.components if args.components else DEFAULT_COMPONENTS
+    file_list = components if components else DEFAULT_COMPONENTS
 
-    fit_model = FitModel.FIXED_C if args.fixed_c is not None else FitModel.WITH_LS
+    fit_model = FitModel.FIXED_C if fixed_c is not None else FitModel.WITH_LS
 
     entries = []
     for comp in file_list:
@@ -139,11 +111,11 @@ def main():
 
         entry = analyze_file(
             path,
-            args.modes,
-            build_bounds(args),
+            modes,
+            build_bounds(ls_min, ls_max, c_min, c_max),
             fit_model,
-            args.fixed_c,
-            (args.fit_min, args.fit_max),
+            fixed_c,
+            (fit_min, fit_max),
         )
         if entry:
             entries.append(entry)
@@ -151,11 +123,11 @@ def main():
     if entries:
         plot_json_results(
             entries,
-            target_modes=args.modes,  # parse_args already handles the default
-            title=args.title,
-            use_matplotlib=args.matplotlib,
+            target_modes=modes,
+            title=title,
+            use_matplotlib=matplotlib,
         )
 
 
 if __name__ == "__main__":
-    main()
+    app()

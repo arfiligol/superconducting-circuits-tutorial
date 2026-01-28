@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """CLI wrapper for HFSS phase file conversion (DB Only)."""
 
-import argparse
 from pathlib import Path
-from typing import NamedTuple
+from typing import Annotated, Optional
+
+import typer
 
 from core.analysis.application.services.database_import import import_hfss_to_database
 from core.shared.logging import setup_logging
@@ -20,56 +21,44 @@ DEFAULT_INPUT_FILES = [
 DEFAULT_COMPONENT_ID: str | None = None
 # ==========================================
 
-
-class ProgramArgs(NamedTuple):
-    csv: list[Path]
-    component_id: str | None
-    tags: list[str]
+app = typer.Typer(add_completion=False)
 
 
-def parse_args() -> ProgramArgs:
-    parser = argparse.ArgumentParser(description="Import HFSS phase CSV to SQLite database.")
-    parser.add_argument(
-        "csv",
-        nargs="*",
-        type=Path,
-        help="Path(s) to HFSS phase CSV.",
-    )
-    parser.add_argument(
-        "--component-id",
-        help="Override component identifier",
-        default=DEFAULT_COMPONENT_ID,
-    )
-    parser.add_argument(
-        "--tags",
-        type=str,
-        help="Comma-separated tags for database record",
-        default="",
-    )
-    args = parser.parse_args()
-    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
-    return ProgramArgs(csv=args.csv, component_id=args.component_id, tags=tags)
-
-
-def main() -> None:
+@app.command()
+def main(
+    csv: Annotated[
+        Optional[list[Path]],
+        typer.Argument(help="Path(s) to HFSS phase CSV."),
+    ] = None,
+    component_id: Annotated[
+        Optional[str],
+        typer.Option(help="Override component identifier"),
+    ] = DEFAULT_COMPONENT_ID,
+    tags: Annotated[
+        str,
+        typer.Option(help="Comma-separated tags for database record"),
+    ] = "",
+) -> None:
+    """Import HFSS phase CSV to SQLite database."""
     setup_logging(level="INFO")
 
-    args = parse_args()
     # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
-    input_files = args.csv if args.csv else [Path(f) for f in DEFAULT_INPUT_FILES]
+    input_files = csv if csv else [Path(f) for f in DEFAULT_INPUT_FILES]
 
     if not input_files:
-        print("No input files specified in CLI arguments or USER CONFIGURATION.")
+        typer.echo("No input files specified in CLI arguments or USER CONFIGURATION.")
         return
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
 
     for raw_path in input_files:
         import_hfss_to_database(
             file_path=raw_path,
             file_type="phase",
-            dataset_name=args.component_id,
-            tags=args.tags,
+            dataset_name=component_id,
+            tags=tag_list,
         )
 
 
 if __name__ == "__main__":
-    main()
+    app()

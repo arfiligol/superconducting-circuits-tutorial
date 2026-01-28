@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """CLI for managing the SQLite database (List, Info, Delete)."""
 
-import argparse
 import sys
-from typing import NoReturn
+
+import typer
 
 from rich.console import Console
 from rich.table import Table
@@ -12,10 +12,13 @@ from core.analysis.application.services.dataset_management import DatasetManagem
 from core.shared.logging import setup_logging
 
 console = Console()
+app = typer.Typer(add_completion=False)
 
 
-def handle_list(service: DatasetManagementService) -> None:
+@app.command("list")
+def handle_list() -> None:
     """Handle 'list' subcommand."""
+    service = DatasetManagementService()
     datasets = service.list_datasets()
 
     if not datasets:
@@ -41,8 +44,12 @@ def handle_list(service: DatasetManagementService) -> None:
     console.print(table)
 
 
-def handle_info(service: DatasetManagementService, identifier: str) -> None:
+@app.command("info")
+def handle_info(
+    identifier: str = typer.Argument(..., help="Dataset ID or Name"),
+) -> None:
     """Handle 'info' subcommand."""
+    service = DatasetManagementService()
     dataset = service.get_dataset(identifier)
 
     if not dataset:
@@ -67,8 +74,12 @@ def handle_info(service: DatasetManagementService, identifier: str) -> None:
             console.print(f"  - {f}")
 
 
-def handle_delete(service: DatasetManagementService, identifier: str) -> None:
+@app.command("delete")
+def handle_delete(
+    identifier: str = typer.Argument(..., help="Dataset ID or Name"),
+) -> None:
     """Handle 'delete' subcommand."""
+    service = DatasetManagementService()
     # Confirm before deleting
     dataset = service.get_dataset(identifier)
     if not dataset:
@@ -89,36 +100,11 @@ def handle_delete(service: DatasetManagementService, identifier: str) -> None:
         console.print(f"[red]Failed to delete dataset[/red] {identifier}")
 
 
-def main() -> NoReturn:
+def main() -> None:
     setup_logging(level="WARNING")
 
-    parser = argparse.ArgumentParser(description="Manage SQLite database datasets.")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # list
-    subparsers.add_parser("list", help="List all datasets")
-
-    # info
-    info_parser = subparsers.add_parser("info", help="Show dataset details")
-    info_parser.add_argument("identifier", help="Dataset ID or Name")
-
-    # delete
-    delete_parser = subparsers.add_parser("delete", help="Delete a dataset")
-    delete_parser.add_argument("identifier", help="Dataset ID or Name")
-
-    args = parser.parse_args()
-    service = DatasetManagementService()
-
     try:
-        if args.command == "list":
-            handle_list(service)
-        elif args.command == "info":
-            handle_info(service, args.identifier)
-        elif args.command == "delete":
-            handle_delete(service, args.identifier)
-        else:
-            parser.print_help()
-            sys.exit(1)
+        app()
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         # import traceback; traceback.print_exc()

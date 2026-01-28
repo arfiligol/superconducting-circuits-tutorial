@@ -38,11 +38,11 @@ src/scripts/
 ```toml
 [project.scripts]
 # Analysis
-sc-fit-squid = "scripts.analysis.admittance_fit:run_no_ls"
-flux-dependence-plot = "scripts.analysis.flux_dependence_plot:run"
+sc-fit-squid = "scripts.analysis.admittance_fit:app"
+flux-dependence-plot = "scripts.analysis.flux_dependence_plot:app"
 
 # Simulation
-sc-simulate-lc = "scripts.simulation.run_lc:main"
+sc-simulate-lc = "scripts.simulation.run_lc:app"
 ```
 
 ## Execution
@@ -56,13 +56,17 @@ uv run python -m scripts.simulation.run_lc
 
 ## Help Message
 
-實作 `--help` 描述：
+實作 `--help` 描述（Typer 會自動產生）：
 
 ```python
-parser = argparse.ArgumentParser(
-    description="Fit SQUID LC model to admittance data",
-    formatter_class=argparse.RawDescriptionHelpFormatter,
-)
+import typer
+
+app = typer.Typer()
+
+@app.command()
+def main() -> None:
+    \"\"\"Fit SQUID LC model to admittance data.\"\"\"
+    ...
 ```
 
 ## Documentation
@@ -90,8 +94,8 @@ parser = argparse.ArgumentParser(
 - **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
 - **Structure**:
     - MUST have `def main():`.
-    - MUST use `argparse` for arguments.
-    - MUST use `if __name__ == "__main__": main()`.
+    - MUST use `typer` for arguments.
+    - MUST use `if __name__ == "__main__": app()`.
 - **Logic**:
     - Analysis CLI: minimal wrappers around `core/analysis` logic.
     - Simulation CLI: minimal wrappers around `core/simulation` logic.

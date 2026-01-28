@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
 """CLI for listing datasets in SQLite database."""
 
-import argparse
+from typing import Annotated, Optional
+
+import typer
+
+app = typer.Typer(add_completion=False)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="List datasets stored in SQLite database.")
-    parser.add_argument(
-        "--tag",
-        action="append",
-        dest="tags",
-        help="Filter by tag (can be specified multiple times)",
-    )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Show more details",
-    )
-    args = parser.parse_args()
-
+@app.command()
+def main(
+    tags: Annotated[
+        Optional[list[str]],
+        typer.Option("--tag", help="Filter by tag (can be specified multiple times)"),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", "-v", help="Show more details"),
+    ] = False,
+) -> None:
+    """List datasets stored in SQLite database."""
     from core.shared.persistence import get_unit_of_work
 
     with get_unit_of_work() as uow:
         # Get datasets
-        if args.tags:
+        if tags:
             # Filter by all specified tags
             datasets = None
-            for tag_name in args.tags:
+            for tag_name in tags:
                 tag_datasets = set(d.name for d in uow.datasets.list_by_tag(tag_name))
                 datasets = tag_datasets if datasets is None else datasets & tag_datasets
             # Fetch full objects
@@ -61,7 +61,7 @@ def main() -> None:
 
             print(f"{ds.name:<30} {type_str:<20} {tag_str:<25} {created_str:<20}")
 
-            if args.verbose:
+            if verbose:
                 print(f"    Source: {ds.source_meta.get('origin', '-')}")
                 print(f"    Params: {ds.parameters}")
                 print(f"    Records: {len(ds.data_records)}")
@@ -71,4 +71,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()

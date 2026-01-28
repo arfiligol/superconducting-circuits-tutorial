@@ -7,103 +7,66 @@ Usage:
     uv run sc-simulate-lc --inductance 10 --capacitance 1 --start 0.1 --stop 10
 """
 
-import argparse
-from typing import NamedTuple
+from typing import Annotated, Optional
+
+import typer
+
+app = typer.Typer(add_completion=False)
 
 
-class Args(NamedTuple):
-    inductance: float
-    capacitance: float
-    start: float
-    stop: float
-    points: int
-    output: str | None
+@app.command()
+def main(
+    inductance: Annotated[
+        float,
+        typer.Option("--inductance", "-L", help="Inductance in nH (default: 10)"),
+    ] = 10.0,
+    capacitance: Annotated[
+        float,
+        typer.Option("--capacitance", "-C", help="Capacitance in pF (default: 1)"),
+    ] = 1.0,
+    start: Annotated[
+        float,
+        typer.Option(help="Start frequency in GHz (default: 0.1)"),
+    ] = 0.1,
+    stop: Annotated[
+        float,
+        typer.Option(help="Stop frequency in GHz (default: 10)"),
+    ] = 10.0,
+    points: Annotated[
+        int,
+        typer.Option("--points", "-n", help="Number of frequency points (default: 1000)"),
+    ] = 1000,
+    output: Annotated[
+        Optional[str],
+        typer.Option("--output", "-o", help="Output JSON file path (optional)"),
+    ] = None,
+) -> None:
+    """Simulate an LC resonator and compute S11."""
 
-
-def parse_args() -> Args:
-    parser = argparse.ArgumentParser(
-        description="Simulate an LC resonator and compute S11.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument(
-        "--inductance",
-        "-L",
-        type=float,
-        default=10.0,
-        help="Inductance in nH (default: 10)",
-    )
-    parser.add_argument(
-        "--capacitance",
-        "-C",
-        type=float,
-        default=1.0,
-        help="Capacitance in pF (default: 1)",
-    )
-    parser.add_argument(
-        "--start",
-        type=float,
-        default=0.1,
-        help="Start frequency in GHz (default: 0.1)",
-    )
-    parser.add_argument(
-        "--stop",
-        type=float,
-        default=10.0,
-        help="Stop frequency in GHz (default: 10)",
-    )
-    parser.add_argument(
-        "--points",
-        "-n",
-        type=int,
-        default=1000,
-        help="Number of frequency points (default: 1000)",
-    )
-    parser.add_argument(
-        "--output",
-        "-o",
-        type=str,
-        default=None,
-        help="Output JSON file path (optional)",
-    )
-
-    ns = parser.parse_args()
-    return Args(
-        inductance=ns.inductance,
-        capacitance=ns.capacitance,
-        start=ns.start,
-        stop=ns.stop,
-        points=ns.points,
-        output=ns.output,
-    )
-
-
-def main() -> None:
-    args = parse_args()
-
-    print(f"Simulating LC resonator: L={args.inductance} nH, C={args.capacitance} pF")
-    print(f"Frequency range: {args.start} - {args.stop} GHz ({args.points} points)")
+    print(f"Simulating LC resonator: L={inductance} nH, C={capacitance} pF")
+    print(f"Frequency range: {start} - {stop} GHz ({points} points)")
 
     # Import here to allow --help without Julia startup
     from core.simulation.domain.circuit import FrequencyRange
     from core.simulation.infrastructure.julia_adapter import JuliaSimulator
 
     freq_range = FrequencyRange(
-        start_ghz=args.start,
-        stop_ghz=args.stop,
-        points=args.points,
+        start_ghz=start,
+        stop_ghz=stop,
+        points=points,
     )
 
     simulator = JuliaSimulator()
     result = simulator.run_lc_simulation(
-        inductance_nh=args.inductance,
-        capacitance_pf=args.capacitance,
+        inductance_nh=inductance,
+        capacitance_pf=capacitance,
         freq_range=freq_range,
     )
 
     # Calculate resonance frequency
     import math
 
-    f0_ghz = 1 / (2 * math.pi * math.sqrt(args.inductance * 1e-9 * args.capacitance * 1e-12)) / 1e9
+    f0_ghz = 1 / (2 * math.pi * math.sqrt(inductance * 1e-9 * capacitance * 1e-12)) / 1e9
     print(f"\nExpected resonance: {f0_ghz:.3f} GHz")
     print(f"Simulation complete: {len(result.frequencies_ghz)} points")
 
@@ -112,10 +75,10 @@ def main() -> None:
     min_idx = s11_mag.index(min(s11_mag))
     print(f"Resonance found at: {result.frequencies_ghz[min_idx]:.3f} GHz")
 
-    if args.output:
+    if output:
         import json
 
-        with open(args.output, "w") as f:
+        with open(output, "w") as f:
             json.dump(
                 {
                     "frequencies_ghz": result.frequencies_ghz,
@@ -123,15 +86,15 @@ def main() -> None:
                     "s11_imag": result.s11_imag,
                     "s11_magnitude": s11_mag,
                     "config": {
-                        "inductance_nh": args.inductance,
-                        "capacitance_pf": args.capacitance,
+                        "inductance_nh": inductance,
+                        "capacitance_pf": capacitance,
                     },
                 },
                 f,
                 indent=2,
             )
-        print(f"Results saved to: {args.output}")
+        print(f"Results saved to: {output}")
 
 
 if __name__ == "__main__":
-    main()
+    app()
