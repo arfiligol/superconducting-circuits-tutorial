@@ -9,11 +9,11 @@ owner: docs-team
 audience: team
 scope: 命令列工具參考，所有 CLI 指令與參數
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
-# index
+# CLI Reference
 
 Command-line tool reference.
 

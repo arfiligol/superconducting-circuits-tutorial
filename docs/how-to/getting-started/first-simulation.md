@@ -82,5 +82,5 @@ $$f_0 = \frac{1}{2\pi\sqrt{LC}} \approx 1.59 \text{ GHz}$$
 
 ## 下一步
 
-- 👉 [理解 hbsolve](understanding-hbsolve.md) — 深入了解模擬函式
+- 👉 [hbsolve 原理與參數](../../explanation/physics/understanding-hbsolve.md) — 深入了解模擬函式
 - 👉 [LC 共振器教學](../../tutorials/lc-resonator.md) — 更詳細的範例

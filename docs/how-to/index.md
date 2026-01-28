@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 目標導向的操作指南索引，涵蓋前處理、分析、擴展
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -40,8 +40,12 @@ CLI 指令使用與常見任務。
 ### [Extend](extend/index.md)
 擴展管線，新增數據來源或分析方法。
 
-### [Database](database/index.md)
+### Database
 管理專案資料庫中的 Dataset。
+ 
+- [Manage Datasets](database/manage-datasets.md)
+- [Manage Tags](database/manage-tags.md)
+- [Reorder Record IDs](database/reorder-record-ids.md)
 
 ## Related
 

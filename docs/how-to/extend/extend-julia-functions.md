@@ -1,17 +1,10 @@
 ---
 aliases:
-  - "擴充 Julia 函數"
-tags:
-  - diataxis/how-to
-  - status/draft
-  - topic/extension
----
-
----
-aliases:
   - "Extend Julia Functions"
   - "擴充 Julia 函數"
 tags:
+  - diataxis/how-to
+  - status/stable
   - topic/extend
   - topic/contributing
   - topic/julia
@@ -20,7 +13,7 @@ owner: docs-team
 audience: contributor
 scope: "貢獻者指南：擴充 Julia 模擬函數"
 version: v0.1.0
-last_updated: 2026-01-24
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 

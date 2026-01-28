@@ -124,7 +124,6 @@ nav:
       - Getting Started:
           - Installation: how-to/getting-started/installation.md
           - First Simulation: how-to/getting-started/first-simulation.md
-          - Understanding hbsolve: how-to/getting-started/understanding-hbsolve.md
       - CLI:
           - Overview: how-to/cli/index.md
       - Contributing:
@@ -143,11 +142,11 @@ nav:
           - Overview: how-to/analysis/index.md
           - Admittance Fit: how-to/analysis/admittance-fit.md
       - Database:
-          - Overview: how-to/database/index.md
           - Manage Datasets (sc-db): how-to/database/manage-datasets.md
+          - Manage Tags (sc-db): how-to/database/manage-tags.md
+          - Reorder Record IDs (sc-db): how-to/database/reorder-record-ids.md
       - Simulation:
           - Overview: how-to/simulation/index.md
-          - LC Resonator: how-to/simulation/lc-resonator.md
           - Python API: how-to/simulation/python-api.md
           - Native Julia: how-to/simulation/native-julia.md
   - Tutorials:
@@ -161,6 +160,7 @@ nav:
       - Overview: explanation/index.md
       - Physics:
           - Overview: explanation/physics/index.md
+          - hbsolve Concepts: explanation/physics/understanding-hbsolve.md
           - Harmonic Balance: explanation/physics/harmonic-balance.md
           - S/Z/Y Parameters: explanation/physics/s-parameters.md
           - SQUID JPA Basics: explanation/physics/squid-jpa-basics.md

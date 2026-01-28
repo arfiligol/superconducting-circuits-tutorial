@@ -1,16 +1,10 @@
 ---
 aliases:
+  - "Python Simulation API"
   - "Python API Guide"
 tags:
   - diataxis/how-to
-  - status/draft
-  - topic/simulation
----
-
----
-aliases:
-  - "Python Simulation API"
-tags:
+  - status/stable
   - topic/simulation
   - topic/python
   - topic/api
@@ -19,7 +13,7 @@ owner: docs-team
 audience: user
 scope: "Python simulation API usage guide"
 version: v0.1.0
-last_updated: 2026-01-24
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -177,6 +171,6 @@ except Exception as e:
 
 ## Related Resources
 
-- [LC Resonator Simulation](lc-resonator.md) - Getting started tutorial
+- [Tutorial: LC Resonator](../../tutorials/lc-resonator.md) - Starter tutorial
 - [Native Julia Simulation](native-julia.md) - Advanced techniques
 - [Extend Julia Functions](../extend/extend-julia-functions.md) - Add new simulation types

@@ -2,12 +2,20 @@
 aliases:
   - "Understanding hbsolve"
 tags:
-  - diataxis/how-to
-  - status/draft
-  - topic/getting-started
+  - diataxis/explanation
+  - status/stable
+  - topic/physics
+  - topic/simulation
+status: stable
+owner: docs-team
+audience: user
+scope: "hbsolve core concepts and parameter reference"
+version: v0.1.0
+last_updated: 2026-01-28
+updated_by: docs-team
 ---
 
-# Understanding hbsolve
+# hbsolve Concepts and Parameters
 
 `hbsolve` is the core function of JosephsonCircuits.jl, using the **Harmonic Balance** method to solve nonlinear circuits.
 

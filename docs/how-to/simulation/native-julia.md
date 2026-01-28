@@ -13,7 +13,7 @@ owner: docs-team
 audience: user
 scope: "原生 Julia 模擬進階教學"
 version: v0.1.0
-last_updated: 2026-01-24
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -205,5 +205,5 @@ julia --project=. --threads=auto
 ## 相關資源
 
 - [JosephsonCircuits.jl 文件](https://qicklab.github.io/JosephsonCircuits.jl/)
-- [LC 共振器模擬](lc-resonator.md) - 入門教學
+- [Tutorial: LC 共振器](../../tutorials/lc-resonator.md) - 入門案例
 - [擴充 Julia 函數](../extend/extend-julia-functions.md) - 貢獻者指南

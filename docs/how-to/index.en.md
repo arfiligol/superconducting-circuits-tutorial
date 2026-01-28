@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 目標導向的操作指南索引，涵蓋前處理、分析、擴展
 version: v0.1.0
-last_updated: 2026-01-12
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -40,8 +40,12 @@ Run simulations including LC, Python API, and native Julia workflows.
 ### [Extend](extend/index.md)
 Extend the pipeline with new data sources or methods.
 
-### [Database](database/index.md)
+### Database
 Manage Datasets in the project database.
+
+- [Manage Datasets](database/manage-datasets.md)
+- [Manage Tags](database/manage-tags.md)
+- [Reorder Record IDs](database/reorder-record-ids.md)
 
 ## Related
 

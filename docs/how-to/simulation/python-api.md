@@ -1,17 +1,11 @@
 ---
 aliases:
+  - "Python Simulation API"
+  - "Python 模擬 API"
   - "Python API 詳解"
 tags:
   - diataxis/how-to
-  - status/draft
-  - topic/simulation
----
-
----
-aliases:
-  - "Python Simulation API"
-  - "Python 模擬 API"
-tags:
+  - status/stable
   - topic/simulation
   - topic/python
   - topic/api
@@ -20,7 +14,7 @@ owner: docs-team
 audience: user
 scope: "Python 模擬 API 使用指南"
 version: v0.1.0
-last_updated: 2026-01-24
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -178,6 +172,6 @@ except Exception as e:
 
 ## 相關資源
 
-- [LC 共振器模擬](lc-resonator.md) - 入門教學
+- [Tutorial: LC 共振器](../../tutorials/lc-resonator.md) - 入門案例
 - [原生 Julia 模擬](native-julia.md) - 進階技巧
 - [擴充 Julia 函數](../extend/extend-julia-functions.md) - 新增模擬類型

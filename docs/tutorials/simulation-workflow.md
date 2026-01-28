@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 完整 HFSS 模擬到參數提取的端到端流程
 version: v0.1.0
-last_updated: 2026-01-13
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -22,16 +22,21 @@ updated_by: docs-team
 
 ## Overview
 
+<div align="center">
+
 ```mermaid
-flowchart LR
+flowchart TB
     A["HFSS Simulation"] --> B["Export CSV"]
     B --> C["Preprocess"]
     C --> D["Resonance Extraction"]
     D --> E{"Im(Y) vs Phase(S)<br/>Consistency Check"}
-    E -->|OK| F["Discrete Re-simulation"]
-    F --> G["High-Accuracy Data"]
+    E -->|OK| F["Discrete<br/>Re-simulation"]
+    F --> G["High-Accuracy<br/>Data"]
     G --> H["Parameter Fit"]
 ```
+
+</div>
+
 
 ---
 
@@ -42,6 +47,7 @@ flowchart LR
 在 HFSS 中設定一個 **Design Variable** `L_jun`，代表 Junction Inductance (單位: nH)。
 
 建議掃描範圍：
+
 - **Coarse Sweep**: `L_jun = 0.1 nH ~ 10 nH`，步長 `0.5 nH`
 - **Fine Sweep**: 根據初步結果縮小範圍
 

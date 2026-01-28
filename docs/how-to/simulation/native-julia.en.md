@@ -3,14 +3,7 @@ aliases:
   - "Native Julia Simulation"
 tags:
   - diataxis/how-to
-  - status/draft
-  - topic/simulation
----
-
----
-aliases:
-  - "Native Julia Simulation"
-tags:
+  - status/stable
   - topic/simulation
   - topic/julia
   - topic/advanced
@@ -19,7 +12,7 @@ owner: docs-team
 audience: user
 scope: "Native Julia simulation advanced tutorial"
 version: v0.1.0
-last_updated: 2026-01-24
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -211,5 +204,5 @@ julia --project=. --threads=auto
 ## Related Resources
 
 - [JosephsonCircuits.jl Documentation](https://qicklab.github.io/JosephsonCircuits.jl/)
-- [LC Resonator Simulation](lc-resonator.md) - Getting started tutorial
+- [Tutorial: LC Resonator](../../tutorials/lc-resonator.md) - Starter tutorial
 - [Extend Julia Functions](../extend/extend-julia-functions.md) - Contributor guide

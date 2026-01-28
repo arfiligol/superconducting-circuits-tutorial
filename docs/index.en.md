@@ -28,7 +28,7 @@ This is a combined **learning** and **research** resource:
 
 1. [Installation](how-to/getting-started/installation.md) — Set up Julia and dependencies
 2. [First Simulation](how-to/getting-started/first-simulation.md) — Run your first circuit simulation
-3. [Understanding hbsolve](how-to/getting-started/understanding-hbsolve.md) — Learn the core function
+3. [hbsolve Concepts and Parameters](explanation/physics/understanding-hbsolve.md) — Learn the core function
 
 ## Tutorial Topics
 

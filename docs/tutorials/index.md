@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 所有分析能力的導航中心，連接 docs 與 code
 version: v0.1.0
-last_updated: 2026-01-13
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -42,7 +42,7 @@ updated_by: docs-team
 
 | Feature | Description | Implementations (Code) | Documentation |
 |---------|-------------|------------------------|---------------|
-| **Visualization** | 繪製 Amplitude/Phase 熱圖 | `src/scripts/flux_dependence_plot.py` | [How-to: Plot Flux](../how-to/analysis/flux-dependence-plot.md) |
+| **Visualization** | 繪製 Amplitude/Phase 熱圖 | `src/scripts/flux_dependence_plot.py` | [CLI Reference](../reference/cli/flux-dependence-plot.md) |
 | **Phase Tuning** | 相位解包裹與單位轉換 | `src/visualization/flux_plots.py` | [CLI Reference](../reference/cli/flux-dependence-plot.md) |
 
 ## 3. Advanced / Experimental
@@ -51,7 +51,7 @@ updated_by: docs-team
 
 | Feature | Description | Implementations (Code) | Documentation |
 |---------|-------------|------------------------|---------------|
-| **Effective C Fit** | 假設 $L_s=0$，快速估算電容 | `src/scripts/effective_capacitance_fit.py` | [How-to: C_eff Fit](../how-to/analysis/effective-capacitance.md) |
+| **Effective C Fit** | 假設 $L_s=0$，快速估算電容 | `src/scripts/effective_capacitance_fit.py` | (尚無詳細文件) |
 | **Q-Factor** | 從相位群延遲估算 Q 值 | `src/scripts/q_factor_tool.py` | (尚無詳細文件) |
 | **Compare Fits** | 比較多次擬合結果 | `src/scripts/plot_comparison.py` | (尚無詳細文件) |
 

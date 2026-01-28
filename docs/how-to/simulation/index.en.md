@@ -1,23 +1,16 @@
 ---
 aliases:
-  - "Circuit Simulation"
-tags:
-  - diataxis/how-to
-  - status/draft
-  - topic/simulation
----
-
----
-aliases:
   - "Simulation Guide"
 tags:
+  - diataxis/how-to
+  - status/stable
   - topic/simulation
 status: stable
 owner: docs-team
 audience: user
 scope: "Circuit simulation tutorial index"
 version: v0.1.0
-last_updated: 2026-01-24
+last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
@@ -36,12 +29,6 @@ We provide **two main approaches** for simulation, with Python as the primary me
 
 ## Tutorial List
 
-### Getting Started
-
-| Tutorial | Description |
-|----------|-------------|
-| [LC Resonator Simulation](lc-resonator.md) | Basics: Simulate an LC resonator and analyze S-parameters |
-
 ### Python API
 
 | Tutorial | Description |
@@ -57,5 +44,6 @@ We provide **two main approaches** for simulation, with Python as the primary me
 ## Related Resources
 
 - [CLI Reference: sc-simulate-lc](../../reference/cli/sc-simulate-lc.md) - Command options
+- [Tutorial: LC Resonator](../../tutorials/lc-resonator.md) - End-to-end starter tutorial
 - [Harmonic Balance Explanation](../../explanation/physics/harmonic-balance.md) - Simulation principles
 - [Extend Julia Functions](../extend/extend-julia-functions.md) - Contributor guide
