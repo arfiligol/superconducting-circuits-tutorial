@@ -28,6 +28,9 @@ updated_by: docs-team
 ### [Extend](extend/index.md)
 擴展管線，新增數據來源或分析方法。
 
+### [Database](database/index.md)
+管理專案資料庫中的 Dataset。
+
 ## Related
 
 - [Tutorials](../tutorials/index.md) - 從零開始學習

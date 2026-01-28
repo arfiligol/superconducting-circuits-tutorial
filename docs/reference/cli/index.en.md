@@ -13,8 +13,27 @@ last_updated: 2026-01-12
 updated_by: docs-team
 ---
 
-> **Note**: This document is pending translation. Please refer to the [Traditional Chinese version](index.md).
-
----
-
 # index
+
+Command-line tool reference.
+
+## Data Conversion
+
+- [convert-hfss-admittance](convert-hfss-admittance.md) - Convert HFSS admittance data
+- [convert-hfss-phase](convert-hfss-phase.md) - Convert HFSS phase data
+- [convert-flux-dependence](convert-flux-dependence.md) - Convert VNA flux dependence data
+
+## Data Fitting
+
+- [convert-flux-dependence](convert-flux-dependence.md)
+- [squid-model-fit](squid-model-fit.md)
+- [plot-admittance](plot-admittance.md)
+- [flux-dependence-plot](flux-dependence-plot.md) - Flux dependence heatmap
+
+## Database
+
+- [sc-db](sc-db.md) - Dataset management (list/info/delete)
+
+## Related
+
+- [How-to Guides](../../how-to/index.md) - Task-oriented guides

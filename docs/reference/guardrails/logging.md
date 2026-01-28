@@ -23,6 +23,7 @@ updated_by: docs-team
 1. **`core/` 層禁止 `print()`** - 只有 `scripts/` 層可以直接輸出
 2. **所有 `core/` 層使用 `logging`** - 讓呼叫者決定如何處理日誌
 3. **彩色分級** - 使用 Rich 的 Console 輸出
+4. **Rich 為標準日誌輸出** - CLI 必須使用 `RichHandler`
 
 ## 日誌等級
 
@@ -111,6 +112,7 @@ def setup_logging(level: str = "INFO") -> None:
 - **Setup**:
     - Import: `import logging; logger = logging.getLogger(__name__)`
     - Configure in CLI: `from core.shared.logging import setup_logging`
+    - **Handler**: Use `RichHandler` for colored output in CLI.
 - **Levels**:
     - `logger.debug()`: Development details.
     - `logger.info()`: Normal flow (e.g., "Processing file...").

@@ -22,6 +22,7 @@ This project uses the standard Python `logging` module combined with **Rich** fo
 1.  **No `print()` in `core/`** - Only `scripts/` layer can perform direct output.
 2.  **Use `logging` in `core/`** - Let the caller decide how to handle logs.
 3.  **Colored Levels** - Use Rich Console output.
+4.  **Rich is the standard logger output** - CLI must use `RichHandler`.
 
 ## Log Levels
 
@@ -110,6 +111,7 @@ Replace existing `print()` calls with `logging`:
 - **Setup**:
     - Import: `import logging; logger = logging.getLogger(__name__)`
     - Configure in CLI: `from core.shared.logging import setup_logging`
+    - **Handler**: Use `RichHandler` for colored output in CLI.
 - **Levels**:
     - `logger.debug()`: Development details.
     - `logger.info()`: Normal flow (e.g., "Processing file...").

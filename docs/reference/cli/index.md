@@ -30,6 +30,10 @@ updated_by: docs-team
 - [plot-admittance](plot-admittance.md)
 - [flux-dependence-plot](flux-dependence-plot.md) - 磁通依賴熱圖
 
+## Database
+
+- [sc-db](sc-db.md) - Dataset 管理 (list/info/delete)
+
 ## Related
 
 - [How-to Guides](../../how-to/index.md) - 操作指南

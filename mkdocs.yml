@@ -141,6 +141,9 @@ nav:
           - Admittance Fit: how-to/analysis/admittance-fit.md
           - Flux Plot: how-to/analysis/flux-dependence-plot.md
           - Effective Capacitance: how-to/analysis/effective-capacitance.md
+      - Database:
+          - Overview: how-to/database/index.md
+          - Manage Datasets (sc-db): how-to/database/manage-datasets.md
       - Simulation:
           - Overview: how-to/simulation/index.md
           - LC Resonator: how-to/simulation/lc-resonator.md
@@ -186,6 +189,8 @@ nav:
           - Data Plotting:
               - Plot Admittance: reference/cli/plot-admittance.md
               - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
+          - Database:
+              - sc-db: reference/cli/sc-db.md
       - Data Formats:
           - Overview: reference/data-formats/index.md
           - Dataset Record: reference/data-formats/dataset-record.md
