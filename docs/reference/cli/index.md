@@ -33,6 +33,10 @@ updated_by: docs-team
 ## Database
 
 - [sc-db](sc-db.md) - Dataset 管理 (list/info/delete)
+- [sc-db dataset-record](sc-db-dataset-record.md) - DatasetRecord CRUD
+- [sc-db data-record](sc-db-data-record.md) - DataRecord CRUD
+- [sc-db derived-parameter](sc-db-derived-parameter.md) - DerivedParameter CRUD
+- [sc-db tag](sc-db-tag.md) - Tag CRUD
 
 ## Related
 

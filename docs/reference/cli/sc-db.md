@@ -7,12 +7,23 @@ tags:
   - status/draft
   - audience/user
   - topic/cli
+  - topic/database
+  - sot/true
 owner: I-LI CHIU
 ---
 
 # sc-db
 
 管理資料庫中的 Dataset（列出、查看、刪除）。適合需要完整管理功能時使用。
+
+## Model CRUD Scope
+
+| Model | List | Get | Create | Update | Delete | 備註 |
+|---|---|---|---|---|---|---|
+| DatasetRecord | ✅ | ✅ | ❌ | ❌ | ✅ | 由匯入流程產生 |
+| DataRecord | ✅ | ✅ | ❌ | ❌ | ✅ | 由匯入流程產生 |
+| DerivedParameter | ✅ | ✅ | ❌ | ❌ | ✅ | 由分析流程產生 |
+| Tag | ✅ | ✅ | ✅ | ✅ | ✅ | 允許手動維護與更名 |
 
 ## Usage
 
@@ -75,4 +86,3 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
-

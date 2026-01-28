@@ -7,12 +7,23 @@ tags:
   - status/draft
   - audience/user
   - topic/cli
+  - topic/database
+  - sot/true
 owner: I-LI CHIU
 ---
 
 # sc-db
 
 Manage Datasets in the database (list, inspect, delete). Use this for full dataset management.
+
+## Model CRUD Scope
+
+| Model | List | Get | Create | Update | Delete | Notes |
+|---|---|---|---|---|---|---|
+| DatasetRecord | ✅ | ✅ | ❌ | ❌ | ✅ | Created by import pipeline |
+| DataRecord | ✅ | ✅ | ❌ | ❌ | ✅ | Created by import pipeline |
+| DerivedParameter | ✅ | ✅ | ❌ | ❌ | ✅ | Created by analysis pipeline |
+| Tag | ✅ | ✅ | ✅ | ✅ | ✅ | Manual maintenance and rename allowed |
 
 ## Usage
 
@@ -75,4 +86,3 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
-
