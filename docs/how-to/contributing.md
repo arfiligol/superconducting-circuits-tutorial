@@ -109,3 +109,4 @@ uv run mkdocs serve
 | | [腳本撰寫](../reference/guardrails/code-quality/script-authoring.md) | [#agent-rule](../reference/guardrails/code-quality/script-authoring.md#agent-rule) |
 | **文件設計** | [文件撰寫](../reference/guardrails/documentation-design/documentation.md) | [#agent-rule](../reference/guardrails/documentation-design/documentation.md#agent-rule) |
 | | [電路繪圖](./contributing/circuit-diagrams.md) | [#agent-rule](./contributing/circuit-diagrams.md#agent-rule) |
+| | [CLI 文件自動生成](./contributing/cli-docs-automation.md) | [#agent-rule](./contributing/cli-docs-automation.md#agent-rule) |

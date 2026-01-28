@@ -155,5 +155,5 @@ Defined in `src/core/shared/persistence/models.py`.
 
 ## Related
 
-- [Data Handling](../guardrails/data-handling.md) - Data handling rules
+- [Data Handling](../guardrails/code-quality/data-handling.en.md) - Data handling rules
 - [Raw Data Layout](raw-data-layout.md) - Raw data directory structure

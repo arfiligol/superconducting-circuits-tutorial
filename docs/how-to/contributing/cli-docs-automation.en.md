@@ -3,11 +3,12 @@ aliases:
   - "CLI Docs Automation"
   - "CLI 文件自動生成"
 tags:
-  - diataxis/reference
+  - diataxis/how-to
   - status/draft
   - audience/contributor
   - topic/cli
   - topic/documentation
+  - sot/true
 owner: I-LI CHIU
 ---
 
@@ -57,4 +58,17 @@ uv run sc-docs-cli-sync --check
 
 ## Related
 
-- [CLI Reference](../../cli/index.md)
+- [CLI Reference](../../reference/cli/index.md)
+
+---
+
+## Agent Rule { #agent-rule }
+
+```markdown
+## CLI Docs Automation
+- **Hybrid Model**: Hand-written content + auto-generated help block.
+- **Generate**: `uv run sc-docs-cli --output-dir docs/reference/cli/generated --overwrite`
+- **Sync**: `uv run sc-docs-cli-sync`
+- **Check**: `uv run sc-docs-cli-sync --check`
+- **Rendered Docs**: Do not render `docs/reference/cli/generated/` in nav.
+```

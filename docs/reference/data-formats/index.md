@@ -30,4 +30,4 @@ updated_by: docs-team
 ## Related
 
 - [Pipeline](../../explanation/architecture/pipeline/data-flow.md) - 理解數據流程
-- [Data Handling](../guardrails/data-handling.md) - 數據處理規範
+- [Data Handling](../guardrails/code-quality/data-handling.md) - 數據處理規範

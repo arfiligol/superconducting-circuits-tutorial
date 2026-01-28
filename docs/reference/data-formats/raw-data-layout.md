@@ -48,5 +48,5 @@ data/raw/
 ## Related
 
 - [Preprocess Guide](../../how-to/preprocess/index.md) - 如何處理這些數據
-- [Data Handling](../guardrails/data-handling.md) - 一般處理原則
+- [Data Handling](../guardrails/code-quality/data-handling.md) - 一般處理原則
 - [Data Flow](../../explanation/architecture/pipeline/data-flow.md) - 數據流架構

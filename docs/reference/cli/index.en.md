@@ -33,6 +33,7 @@ Command-line tool reference.
 ## Database
 
 - [sc-db](sc-db.md) - Dataset management (list/info/delete)
+- [sc-list-datasets](sc-list-datasets.md) - Quick dataset listing
 
 ## Related
 

@@ -92,3 +92,4 @@ Please refer to our **Reference** section for detailed standards:
 - 👉 [Documentation Standards](../reference/guardrails/documentation-design/documentation.en.md) (Schemdraw, SVG)
 - 👉 [Type Checking](../reference/guardrails/code-quality/type-checking.en.md)
 - 👉 [Circuit Diagram Guide](./contributing/circuit-diagrams.md)
+- 👉 [CLI Docs Automation](./contributing/cli-docs-automation.en.md)

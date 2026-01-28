@@ -175,5 +175,5 @@ uv run sc-analyze PF6FQ_Q0_XY --data Y11:imag
 
 ## Related
 
-- [Data Handling](../guardrails/data-handling.md) - 數據處理規範
+- [Data Handling](../guardrails/code-quality/data-handling.md) - 數據處理規範
 - [Raw Data Layout](raw-data-layout.md) - 原始數據目錄結構

@@ -69,7 +69,7 @@ updated_by: docs-team
 | `last_updated` | `str` | 最後更新日期 `YYYY-MM-DD` (建議由 CI 自動更新)。 | `"2026-01-27"` |
 
 !!! warning "人名驗證規則"
-    `owner` 和 `last_updated_by` 中提及的**所有人名必須存在於 [貢獻者名錄](../contributors.md)**。新增貢獻者時，請先更新名錄再引用。
+    `owner` 和 `last_updated_by` 中提及的**所有人名必須存在於 [貢獻者名錄](../../contributors.md)**。新增貢獻者時，請先更新名錄再引用。
 
 #### Tags Taxonomy (標籤分類體系)
 
@@ -173,7 +173,7 @@ CLI 參考頁採用 **手寫內容 + 自動生成區塊** 的混合模式：
 - **自動生成**：由 `sc-docs-cli` 產生 help 區塊，再用 `sc-docs-cli-sync` 同步到手寫頁面。
 - **檢查一致性**：使用 `sc-docs-cli-sync --check` 比對 generated 與手寫文件。
 
-詳見：[CLI 文件自動生成](cli-docs-automation.md)
+詳見：[CLI 文件自動生成](../../../how-to/contributing/cli-docs-automation.md)
 
 ---
 

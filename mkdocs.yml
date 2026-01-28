@@ -40,7 +40,7 @@ plugins:
       reconfigure_material: true
       reconfigure_search: false
       languages:
-        - locale: zh
+        - locale: zh-TW
           default: true
           name: 繁體中文
           build: true
@@ -130,6 +130,7 @@ nav:
       - Contributing:
           - Workflow: how-to/contributing.md
           - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
+          - CLI Docs Automation: how-to/contributing/cli-docs-automation.md
           - Extending:
               - Overview: how-to/extend/index.md
               - Add Data Source: how-to/extend/add-data-source.md
@@ -194,8 +195,7 @@ nav:
               - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
           - Database:
               - sc-db: reference/cli/sc-db.md
-          - Automation:
-              - CLI Docs Automation: reference/cli/cli-docs-automation.md
+              - sc-list-datasets: reference/cli/sc-list-datasets.md
       - Data Formats:
           - Overview: reference/data-formats/index.md
           - Dataset Record: reference/data-formats/dataset-record.md
@@ -222,8 +222,8 @@ nav:
               - Data Handling: reference/guardrails/code-quality/data-handling.md
           - Documentation Design:
               - Documentation Standards: reference/guardrails/documentation-design/documentation.md
-              - CLI Docs Automation: reference/guardrails/documentation-design/cli-docs-automation.md
               - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
+              - CLI Docs Automation: how-to/contributing/cli-docs-automation.md
       - Plotting Utilities: reference/utilities.md
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md
