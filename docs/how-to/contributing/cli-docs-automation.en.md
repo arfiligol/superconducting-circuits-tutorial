@@ -33,6 +33,66 @@ This page defines how to **automatically generate CLI Reference docs** and how t
 3. **Sync**: Insert the help block into the `CLI Help (Auto-generated)` section in hand-written pages.
 4. **When to update**: Regenerate and sync after any CLI parameter changes.
 
+## Hand-written Page Format (Required)
+
+Hand-written pages must follow this structure (only the `CLI Help` block is auto-inserted):
+
+1. **Title**: `# <command>`
+2. **Intro**: one sentence describing purpose and scope
+3. **Usage**: minimal runnable example (single line)
+4. **Arguments**: required inputs (table)
+5. **Options**: optional flags (table)
+6. **Examples**: 2–3 common scenarios (may include options)
+7. **Notes / Warnings**: use `!!! note/warning` if needed
+8. **CLI Help (Auto-generated)**: inserted by `sc-docs-cli-sync`
+
+**Template**:
+
+```markdown
+# sc-xxxx
+
+One-line purpose statement.
+
+## Usage
+
+```bash
+uv run sc-xxxx <args>
+```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `arg` | Description | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--flag` | Description | - |
+
+## Examples
+
+**Basic**
+```bash
+uv run sc-xxxx ...
+```
+
+**Common scenario**
+```bash
+uv run sc-xxxx --option value ...
+```
+
+## Notes
+
+!!! note "Optional"
+    Extra notes or warnings.
+
+<!-- CLI-HELP-START -->
+... auto-generated block ...
+<!-- CLI-HELP-END -->
+```
+
 ## Usage
 
 1. Generate files under `generated/`:

@@ -7,26 +7,52 @@ tags:
   - status/draft
   - audience/user
   - topic/cli
-  - topic/generated
 owner: I-LI CHIU
 ---
 
 # sc-db
 
-This page is auto-generated. Do not edit manually.
+Manage Datasets in the database (list, inspect, delete). Use this for full dataset management.
 
-```text
-Usage: sc-db [OPTIONS] COMMAND [ARGS]...                                                          
-                                                                                                   
-╭─ Options ───────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                     │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─ Commands ──────────────────────────────────────────────────────────────────────────────────────╮
-│ list    Handle 'list' subcommand.                                                               │
-│ info    Handle 'info' subcommand.                                                               │
-│ delete  Handle 'delete' subcommand.                                                             │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────╯
+## Usage
+
+```bash
+uv run sc-db <command> [args]
 ```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `<command>` | `list` / `info` / `delete` | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--help` | Show help | - |
+
+## Examples
+
+**List all datasets**
+```bash
+uv run sc-db list
+```
+
+**Show dataset details**
+```bash
+uv run sc-db info 3
+```
+
+**Delete a dataset**
+```bash
+uv run sc-db delete 3
+```
+
+## Notes
+
+!!! warning "Destructive"
+    `delete` removes the dataset and its related DataRecords and cannot be undone.
 
 <!-- CLI-HELP-START -->
 
@@ -49,6 +75,4 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
 

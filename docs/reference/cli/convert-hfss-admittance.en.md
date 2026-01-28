@@ -6,17 +6,51 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: HFSS Admittance 轉換指令說明
+scope: HFSS Admittance conversion command
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team
 ---
 
-> **Note**: This document is pending translation. Please refer to the [Traditional Chinese version](convert-hfss-admittance.md).
-
----
-
 # convert-hfss-admittance
+
+Convert HFSS exported admittance CSV into the standard dataset format (DB import).
+
+## Usage
+
+```bash
+uv run convert-hfss-admittance [OPTIONS] [csv ...]
+```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `csv` | HFSS admittance CSV path(s) | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--component-id` | Override component ID | - |
+| `--tags` | Comma-separated tags | - |
+
+## Examples
+
+**Basic import**
+```bash
+uv run convert-hfss-admittance data/raw/layout_simulation/admittance/MyChip_Im_Y11.csv
+```
+
+**Specify component ID**
+```bash
+uv run convert-hfss-admittance --component-id MyJPA_v2 data/raw/layout_simulation/admittance/raw_export.csv
+```
+
+## Notes
+
+!!! note "Database import"
+    The current pipeline imports into SQLite; JSON output is deprecated.
 
 <!-- CLI-HELP-START -->
 
@@ -41,6 +75,4 @@ Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
 

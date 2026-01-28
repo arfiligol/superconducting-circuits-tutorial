@@ -60,7 +60,6 @@ src/scripts/__init__.py
 src/scripts/analysis/__init__.py
 src/scripts/analysis/squid_fit.py
 src/scripts/database/__init__.py
-src/scripts/database/list_datasets.py
 src/scripts/database/manage_db.py
 src/scripts/docs/__init__.py
 src/scripts/docs/generate_cli_reference.py

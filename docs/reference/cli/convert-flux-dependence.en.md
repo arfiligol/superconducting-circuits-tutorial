@@ -6,17 +6,46 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: Flux Dependence 轉換指令說明
+scope: Flux Dependence conversion command
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team
 ---
 
-> **Note**: This document is pending translation. Please refer to the [Traditional Chinese version](convert-flux-dependence.md).
-
----
-
 # convert-flux-dependence
+
+Convert VNA flux dependence TXT scans into the standard dataset format (DB import).
+
+## Usage
+
+```bash
+uv run convert-flux-dependence [OPTIONS] [txt ...]
+```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `txt` | Linköping VNA TXT scan path(s) | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--component-id` | Override component ID | - |
+| `--tags` | Comma-separated tags | - |
+
+## Examples
+
+**Basic import**
+```bash
+uv run convert-flux-dependence data/raw/measurement/flux_dependence/LJPAL6572_B44D1_FluxDep.txt
+```
+
+## Notes
+
+!!! warning "Parser limitations"
+    If your file format differs, provide a sample to update the parser.
 
 <!-- CLI-HELP-START -->
 
@@ -41,6 +70,4 @@ Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
 

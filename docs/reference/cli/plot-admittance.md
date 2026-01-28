@@ -50,3 +50,30 @@ uv run plot-admittance LJPAL658_v1
 ```bash
 uv run plot-admittance --show-zeros --freq-min 4.0 --freq-max 8.0 LJPAL658_v1
 ```
+
+## Notes
+
+!!! note "Legacy 指令"
+    此指令為舊版 CLI，若未在 `pyproject.toml` 註冊，請優先使用新版本對應指令。
+
+<!-- CLI-HELP-START -->
+
+## CLI Help（自動生成）
+
+!!! note "自動生成"
+    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+
+```text
+Usage: plot-admittance [OPTIONS] [COMPONENTS]...
+
+Options:
+  --mode TEXT          Visualization mode (lines/heatmap/both)
+  --show-zeros         Mark zero crossings
+  --freq-min FLOAT     Min frequency (GHz)
+  --freq-max FLOAT     Max frequency (GHz)
+  --title TEXT         Plot title
+  --matplotlib         Use Matplotlib backend
+  --help               Show this message and exit.
+```
+
+<!-- CLI-HELP-END -->

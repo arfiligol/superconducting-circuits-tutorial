@@ -158,10 +158,8 @@ data/database.db    # SQLite 資料庫檔案
 uv run sc-import-hfss data.csv --name PF6FQ_Q0_XY --tags PF6FQ,Q0
 
 # 列出所有 Dataset
-uv run sc-list-datasets
+uv run sc-db list
 
-# 依標籤過濾
-uv run sc-list-datasets --tag PF6FQ
 
 # 分析指定 Dataset
 uv run sc-analyze PF6FQ_Q0_XY --data Y11:imag

@@ -42,6 +42,11 @@ uv run convert-hfss-phase [OPTIONS] [csv ...]
 uv run convert-hfss-phase data/raw/phase/LJPAL658_S11_Phase.csv
 ```
 
+## Notes
+
+!!! note "資料庫匯入"
+    目前指令會將資料匯入 SQLite 資料庫，而非輸出 JSON。
+
 <!-- CLI-HELP-START -->
 
 ## CLI Help（自動生成）

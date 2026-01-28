@@ -66,6 +66,11 @@ uv run squid-model-with-Ls-fit --ls-max 0.2 LJPAL658_v1
 uv run squid-model-with-Ls-fixed-C-fit --fixed-c 1.45 LJPAL658_v1
 ```
 
+## Notes
+
+!!! note "模式對應"
+    實際指令入口為 `sc-fit-squid`，舊指令名稱僅保留於文件中作對應說明。
+
 <!-- CLI-HELP-START -->
 
 ## CLI Help（自動生成）

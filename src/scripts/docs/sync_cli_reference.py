@@ -31,7 +31,6 @@ DOC_SPECS = [
     DocSpec("sc-convert-flux-dependence", "convert-flux-dependence"),
     DocSpec("sc-fit-squid", "squid-model-fit"),
     DocSpec("sc-simulate-lc", "sc-simulate-lc"),
-    DocSpec("sc-list-datasets", "sc-list-datasets"),
     DocSpec("sc-db", "sc-db"),
 ]
 

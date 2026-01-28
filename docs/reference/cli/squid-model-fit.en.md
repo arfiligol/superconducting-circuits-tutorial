@@ -8,17 +8,61 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: SQUID LC 模型擬合指令說明
+scope: SQUID LC fitting command
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team
 ---
 
-> **Note**: This document is pending translation. Please refer to the [Traditional Chinese version](squid-model-fit.md).
-
----
-
 # squid-model-fit
+
+Run SQUID LC fitting. Supports No Ls, With Ls, and Fixed C modes.
+
+## Usage
+
+```bash
+uv run squid-model-fit [OPTIONS] [components ...]
+```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `components` | Component IDs or JSON paths under `data/preprocessed/` | Built-in defaults |
+
+## Options
+
+| Option | Description |
+|---|---|
+| `--modes` | Modes to fit/plot (e.g. `Mode 1`) |
+| `--title` | Plot title |
+| `--ls-min` / `--ls-max` | Ls bounds (nH) |
+| `--c-min` / `--c-max` | C bounds (pF) |
+| `--fixed-c` | Fixed capacitance value (pF) |
+| `--fit-min` / `--fit-max` | Fit window (GHz) |
+| `--matplotlib` | Use Matplotlib backend |
+
+## Examples
+
+**No Ls fit**
+```bash
+uv run squid-model-fit LJPAL658_v1
+```
+
+**With Ls and upper bound**
+```bash
+uv run squid-model-with-Ls-fit --ls-max 0.2 LJPAL658_v1
+```
+
+**Fixed C fit (C=1.45 pF)**
+```bash
+uv run squid-model-with-Ls-fixed-C-fit --fixed-c 1.45 LJPAL658_v1
+```
+
+## Notes
+
+!!! note "Entrypoint"
+    The current CLI entrypoint is `sc-fit-squid`.
 
 <!-- CLI-HELP-START -->
 
@@ -58,6 +102,4 @@ Usage: sc-fit-squid [OPTIONS] [COMPONENTS]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
 

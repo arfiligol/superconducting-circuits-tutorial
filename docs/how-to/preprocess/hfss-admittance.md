@@ -46,9 +46,9 @@ updated_by: docs-team
    ```
 
 4. **驗證匯入結果**
-   使用 `sc-list-datasets` 檢查：
+   使用 `sc-db list` 檢查：
    ```bash
-   uv run sc-list-datasets
+   uv run sc-db list
    ```
 
 ## Next Steps

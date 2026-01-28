@@ -6,17 +6,46 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: HFSS Phase 轉換指令說明
+scope: HFSS Phase conversion command
 version: v0.1.0
 last_updated: 2026-01-12
 updated_by: docs-team
 ---
 
-> **Note**: This document is pending translation. Please refer to the [Traditional Chinese version](convert-hfss-phase.md).
-
----
-
 # convert-hfss-phase
+
+Convert HFSS exported S-parameter phase CSV into the standard dataset format (DB import).
+
+## Usage
+
+```bash
+uv run convert-hfss-phase [OPTIONS] [csv ...]
+```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `csv` | HFSS phase CSV path(s) | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--component-id` | Override component ID | - |
+| `--tags` | Comma-separated tags | - |
+
+## Examples
+
+**Basic import**
+```bash
+uv run convert-hfss-phase data/raw/layout_simulation/phase/MyChip_Phase.csv
+```
+
+## Notes
+
+!!! note "Database import"
+    The current pipeline imports into SQLite; JSON output is deprecated.
 
 <!-- CLI-HELP-START -->
 
@@ -41,6 +70,4 @@ Usage: sc-preprocess-phase [OPTIONS] [CSV]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
 

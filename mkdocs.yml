@@ -195,7 +195,6 @@ nav:
               - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
           - Database:
               - sc-db: reference/cli/sc-db.md
-              - sc-list-datasets: reference/cli/sc-list-datasets.md
       - Data Formats:
           - Overview: reference/data-formats/index.md
           - Dataset Record: reference/data-formats/dataset-record.md

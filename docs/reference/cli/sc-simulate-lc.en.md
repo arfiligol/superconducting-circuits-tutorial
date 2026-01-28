@@ -12,7 +12,7 @@ owner: I-LI CHIU
 
 # sc-simulate-lc
 
-Simulate an LC resonator and compute S11. This command calls the Julia backend.
+Simulate an LC resonator and compute S11 for quick parameter validation.
 
 ## Usage
 
@@ -20,9 +20,39 @@ Simulate an LC resonator and compute S11. This command calls the Julia backend.
 uv run sc-simulate-lc --inductance 10 --capacitance 1 --start 0.1 --stop 10
 ```
 
-## Related
+## Arguments
 
-- [LC Resonator Tutorial](../../tutorials/lc-resonator.md)
+| Argument | Description | Default |
+|---|---|---|
+| - | None | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--inductance`, `-L` | Inductance (nH) | `10` |
+| `--capacitance`, `-C` | Capacitance (pF) | `1` |
+| `--start` | Start frequency (GHz) | `0.1` |
+| `--stop` | Stop frequency (GHz) | `10` |
+| `--points`, `-n` | Number of points | `1000` |
+| `--output`, `-o` | Output JSON path | - |
+
+## Examples
+
+**Basic simulation**
+```bash
+uv run sc-simulate-lc --inductance 8 --capacitance 1.2
+```
+
+**Write output to JSON**
+```bash
+uv run sc-simulate-lc --output data/processed/reports/lc.json
+```
+
+## Notes
+
+!!! note "Julia backend"
+    This command calls the Julia backend; the first run may take longer.
 
 <!-- CLI-HELP-START -->
 
@@ -53,5 +83,4 @@ Usage: sc-simulate-lc [OPTIONS]
 ```
 
 <!-- CLI-HELP-END -->
-
 

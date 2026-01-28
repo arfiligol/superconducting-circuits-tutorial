@@ -12,7 +12,7 @@ owner: I-LI CHIU
 
 # sc-simulate-lc
 
-使用 LC 模型模擬共振器並計算 S11。此指令會呼叫 Julia 模擬後端。
+使用 LC 模型模擬共振器並計算 S11，適合快速驗證參數趨勢。
 
 ## Usage
 
@@ -20,9 +20,39 @@ owner: I-LI CHIU
 uv run sc-simulate-lc --inductance 10 --capacitance 1 --start 0.1 --stop 10
 ```
 
-## Related
+## Arguments
 
-- [LC Resonator Tutorial](../../tutorials/lc-resonator.md)
+| Argument | Description | Default |
+|---|---|---|
+| - | 無 | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--inductance`, `-L` | Inductance (nH) | `10` |
+| `--capacitance`, `-C` | Capacitance (pF) | `1` |
+| `--start` | Start frequency (GHz) | `0.1` |
+| `--stop` | Stop frequency (GHz) | `10` |
+| `--points`, `-n` | Number of points | `1000` |
+| `--output`, `-o` | Output JSON path | - |
+
+## Examples
+
+**基本模擬**
+```bash
+uv run sc-simulate-lc --inductance 8 --capacitance 1.2
+```
+
+**輸出結果為 JSON**
+```bash
+uv run sc-simulate-lc --output data/processed/reports/lc.json
+```
+
+## Notes
+
+!!! note "Julia 後端"
+    本指令會呼叫 Julia 模擬後端，首次執行可能需要較久初始化時間。
 
 <!-- CLI-HELP-START -->
 
@@ -53,5 +83,4 @@ Usage: sc-simulate-lc [OPTIONS]
 ```
 
 <!-- CLI-HELP-END -->
-
 

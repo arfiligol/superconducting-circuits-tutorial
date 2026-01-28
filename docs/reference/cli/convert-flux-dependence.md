@@ -45,6 +45,11 @@ uv run convert-flux-dependence [OPTIONS] [txt ...]
 uv run convert-flux-dependence data/raw/measurement/flux_dependence/LJPAL6572_B44D1_FluxDep.txt
 ```
 
+## Notes
+
+!!! warning "解析限制"
+    若資料格式與預期不符，請提供樣本給開發團隊以更新解析器。
+
 <!-- CLI-HELP-START -->
 
 ## CLI Help（自動生成）

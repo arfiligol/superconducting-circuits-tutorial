@@ -4,7 +4,6 @@ sc-db = scripts.database.manage_db:app
 sc-docs-cli = scripts.docs.generate_cli_reference:app
 sc-docs-cli-sync = scripts.docs.sync_cli_reference:app
 sc-fit-squid = scripts.analysis.squid_fit:app
-sc-list-datasets = scripts.database.list_datasets:app
 sc-preprocess-admittance = scripts.preprocessing.convert_hfss_admittance:app
 sc-preprocess-phase = scripts.preprocessing.convert_hfss_phase:app
 sc-simulate-lc = scripts.simulation.run_lc:app

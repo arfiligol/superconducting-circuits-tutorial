@@ -60,3 +60,32 @@ uv run flux-dependence-plot \
     --slice-bias 0.0 \
     LJPAL6572_B44D1
 ```
+
+## Notes
+
+!!! note "Legacy 指令"
+    此指令為舊版 CLI，若未在 `pyproject.toml` 註冊，請優先使用新版本對應指令。
+
+<!-- CLI-HELP-START -->
+
+## CLI Help（自動生成）
+
+!!! note "自動生成"
+    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+
+```text
+Usage: flux-dependence-plot [OPTIONS] [COMPONENTS]...
+
+Options:
+  --parameter TEXT        Parameter name (e.g. S11)
+  --view TEXT             View mode (amplitude/phase/combined/all)
+  --phase-unit TEXT       Phase unit (rad/deg)
+  --wrap-phase            Wrap phase to ±π/±180°
+  --slice-frequency FLOAT Slice at frequency (GHz)
+  --slice-bias FLOAT      Slice at bias (mA)
+  --device TEXT           Device label
+  --matplotlib            Use Matplotlib backend
+  --help                  Show this message and exit.
+```
+
+<!-- CLI-HELP-END -->

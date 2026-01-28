@@ -33,6 +33,66 @@ owner: I-LI CHIU
 3. **同步方式**：將 generated 的 help 區塊寫入手寫文件中的 `CLI Help（自動生成）` 區段。
 4. **更新時機**：新增/變更 CLI 參數後必須重新生成並同步。
 
+## 手寫頁面格式（必須）
+
+手寫頁面維持以下固定結構（除 `CLI Help` 區塊由自動生成插入外，其餘皆手寫）：
+
+1. **標題**：`# <command>`
+2. **簡介**：一句話說明用途與適用情境
+3. **Usage**：最小可用範例（單行）
+4. **Arguments**：必要參數與說明（表格）
+5. **Options**：可選參數與說明（表格）
+6. **Examples**：2～3 個常見情境（可含參數）
+7. **Notes / Warnings**：必要時使用 `!!! note/warning`
+8. **CLI Help（自動生成）**：由 `sc-docs-cli-sync` 插入
+
+**標準模板**（供撰寫時對齊）：
+
+```markdown
+# sc-xxxx
+
+一句話用途說明。
+
+## Usage
+
+```bash
+uv run sc-xxxx <args>
+```
+
+## Arguments
+
+| Argument | Description | Default |
+|---|---|---|
+| `arg` | 說明 | - |
+
+## Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--flag` | 說明 | - |
+
+## Examples
+
+**基本用法**
+```bash
+uv run sc-xxxx ...
+```
+
+**常見情境**
+```bash
+uv run sc-xxxx --option value ...
+```
+
+## Notes
+
+!!! note "可選"
+    補充說明或注意事項。
+
+<!-- CLI-HELP-START -->
+... auto-generated block ...
+<!-- CLI-HELP-END -->
+```
+
 ## 使用方式
 
 1. 產生 generated 檔案：

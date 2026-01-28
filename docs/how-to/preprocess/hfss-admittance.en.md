@@ -46,9 +46,9 @@ This guide explains how to import HFSS-exported Im(Y) CSV data directly into the
    ```
 
 4. **Verify Import**
-   Use `sc-list-datasets` to check:
+   Use `sc-db list` to check:
    ```bash
-   uv run sc-list-datasets
+   uv run sc-db list
    ```
 
 ## Next Steps

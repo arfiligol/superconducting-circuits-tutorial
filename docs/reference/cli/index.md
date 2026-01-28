@@ -33,7 +33,6 @@ updated_by: docs-team
 ## Database
 
 - [sc-db](sc-db.md) - Dataset 管理 (list/info/delete)
-- [sc-list-datasets](sc-list-datasets.md) - 快速列出資料集
 
 ## Related
 

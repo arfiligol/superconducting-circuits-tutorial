@@ -49,6 +49,11 @@ uv run convert-hfss-admittance \
     data/raw/admittance/raw_export_final.csv
 ```
 
+## Notes
+
+!!! note "資料庫匯入"
+    目前指令會將資料匯入 SQLite 資料庫，而非輸出 JSON。
+
 <!-- CLI-HELP-START -->
 
 ## CLI Help（自動生成）

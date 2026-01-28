@@ -138,10 +138,8 @@ data/database.db    # SQLite database file
 uv run sc-import-hfss data.csv --name PF6FQ_Q0_XY --tags PF6FQ,Q0
 
 # List all datasets
-uv run sc-list-datasets
+uv run sc-db list
 
-# Filter by tag
-uv run sc-list-datasets --tag PF6FQ
 
 # Analyze specific dataset
 uv run sc-analyze PF6FQ_Q0_XY --data Y11:imag
