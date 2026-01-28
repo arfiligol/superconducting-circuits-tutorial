@@ -17,6 +17,12 @@ updated_by: docs-team
 
 Command-line tool reference.
 
+## Automation
+
+CLI Reference will be auto-generated after the Typer migration. See:
+
+- [CLI Docs Automation](cli-docs-automation.md)
+
 ## Data Conversion
 
 - [convert-hfss-admittance](convert-hfss-admittance.md) - Convert HFSS admittance data

@@ -27,6 +27,7 @@ The project uses a **Python + Julia** hybrid architecture.
 | `pandas`, `numpy` | Data processing & numerical analysis |
 | `plotly` | Interactive visualization |
 | `rich` | Colored logging & CLI output |
+| `typer` | CLI framework (built on Click) |
 | `mkdocs-material` | Documentation generation |
 | `ruff`, `basedpyright` | Linting, Formatting, Type Checking |
 | `pytest` | Automated testing |
@@ -52,7 +53,7 @@ The project uses a **Python + Julia** hybrid architecture.
 - **Python** (Managed by `uv`):
     - **Data**: `pandas`, `numpy` (Core).
     - **Vis**: `plotly` (Interactive), `matplotlib` (Static).
-    - **CLI**: `argparse` (Standard Lib).
+    - **CLI**: `typer` (Framework).
     - **Logging**: `rich` (Colored output).
     - **GUI**: `nicegui` (Native App).
 - **Julia** (Managed by `juliaup`):

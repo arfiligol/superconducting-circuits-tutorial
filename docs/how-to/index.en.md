@@ -19,11 +19,23 @@ Task-oriented guides for solving specific problems.
 
 ## Categories
 
+### [Getting Started](getting-started/installation.md)
+Environment setup and first simulation quickstart.
+
+### [CLI](cli/index.md)
+CLI usage and common tasks.
+
+### [Contributing](contributing.md)
+Contribution workflow and collaboration rules.
+
 ### [Preprocess](preprocess/index.md)
 Data preprocessing for converting HFSS/VNA data into standard formats.
 
 ### [Analysis](analysis/index.md)
 Run analysis workflows including fitting and visualization.
+
+### [Simulation](simulation/index.md)
+Run simulations including LC, Python API, and native Julia workflows.
 
 ### [Extend](extend/index.md)
 Extend the pipeline with new data sources or methods.

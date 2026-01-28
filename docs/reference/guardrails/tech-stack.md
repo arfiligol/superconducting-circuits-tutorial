@@ -21,6 +21,7 @@ tags:
 | `pandas`, `numpy` | 資料處理與數值計算 |
 | `plotly` | 互動式可視化 |
 | `rich` | 彩色日誌與 CLI 輸出 |
+| `typer` | CLI 框架 (基於 Click) |
 | `mkdocs-material` | 文檔生成 |
 | `ruff`, `basedpyright` | Lint, Format, Type Check |
 | `pytest` | 自動化測試 |
@@ -46,7 +47,7 @@ tags:
 - **Python** (Managed by `uv`):
     - **Data**: `pandas`, `numpy` (Core).
     - **Vis**: `plotly` (Interactive), `matplotlib` (Static).
-    - **CLI**: `argparse` (Standard Lib).
+    - **CLI**: `typer` (Framework).
     - **Logging**: `rich` (Colored output).
     - **GUI**: `nicegui` (Native App).
 - **Julia** (Managed by `juliaup`):
