@@ -25,7 +25,7 @@ uv run sc-db dataset-record <action> [args]
 
 | Argument | Description | Default |
 |---|---|---|
-| `<action>` | `list` / `info` / `delete` / `reorder-id` | - |
+| `<action>` | `list` / `info` / `delete` / `auto-reorder` | - |
 
 ## Options
 
@@ -52,13 +52,13 @@ uv run sc-db dataset-record delete <ID_OR_NAME>
 
 **重排 ID**
 ```bash
-uv run sc-db dataset-record reorder-id <OLD_ID> <NEW_ID>
+uv run sc-db dataset-record auto-reorder
 ```
 
 ## Notes
 
 !!! warning "危險操作"
-    `delete` 與 `reorder-id` 會影響關聯資料，請先備份。
+    `delete` 與 `auto-reorder` 會影響關聯資料，請先備份。
 
 <!-- CLI-HELP-START -->
 

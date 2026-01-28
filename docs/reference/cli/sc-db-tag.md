@@ -25,7 +25,7 @@ uv run sc-db tag <action> [args]
 
 | Argument | Description | Default |
 |---|---|---|
-| `<action>` | `list` / `create` / `update` / `delete` / `reorder-id` | - |
+| `<action>` | `list` / `create` / `update` / `delete` / `auto-reorder` | - |
 
 ## Options
 
@@ -57,7 +57,7 @@ uv run sc-db tag delete "RenamedTag"
 
 **重排 ID**
 ```bash
-uv run sc-db tag reorder-id <OLD_ID> <NEW_ID>
+uv run sc-db tag auto-reorder
 ```
 
 ## Notes

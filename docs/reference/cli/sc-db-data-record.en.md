@@ -25,7 +25,7 @@ uv run sc-db data-record <action> [args]
 
 | Argument | Description | Default |
 |---|---|---|
-| `<action>` | `list` / `info` / `delete` / `reorder-id` | - |
+| `<action>` | `list` / `info` / `delete` / `auto-reorder` | - |
 
 ## Options
 
@@ -52,13 +52,13 @@ uv run sc-db data-record delete <ID>
 
 **Reorder ID**
 ```bash
-uv run sc-db data-record reorder-id <OLD_ID> <NEW_ID>
+uv run sc-db data-record auto-reorder
 ```
 
 ## Notes
 
 !!! warning "Destructive"
-    `delete` and `reorder-id` are destructive. Back up first.
+    `delete` and `auto-reorder` are destructive. Back up first.
 
 <!-- CLI-HELP-START -->
 
