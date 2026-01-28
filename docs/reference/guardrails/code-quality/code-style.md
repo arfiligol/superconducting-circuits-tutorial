@@ -55,7 +55,7 @@ tags:
 
 專案使用自動化工具來確保程式碼一致性與品質。詳細說明請參考：
 
-👉 **[Linting & Formatting Guardrails](./linting.md)**
+👉 **[Linting & Formatting Guardrails](../execution-verification/linting.md)**
 
 ### 快速參考
 - **Ruff**: 統一 Linting & Formatting

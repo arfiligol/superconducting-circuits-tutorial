@@ -285,6 +285,6 @@ uv run sc-my-simulation --param1 10.0 --param2 1.0
 
 ## 相關資源
 
-- [Script Authoring](../../reference/guardrails/script-authoring.md) - CLI 規範
-- [Folder Structure](../../reference/guardrails/folder-structure.md) - 目錄結構
+- [Script Authoring](../../reference/guardrails/code-quality/script-authoring.md) - CLI 規範
+- [Folder Structure](../../reference/guardrails/project-basics/folder-structure.md) - 目錄結構
 - [Python API 詳解](../simulation/python-api.md) - API 使用

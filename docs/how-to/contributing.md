@@ -85,7 +85,7 @@ uv run mkdocs serve
 2.  **Formatting**: 程式碼已格式化（遵循 PEP 8，透過 Ruff 檢查）。
 3.  **Tests**: 所有測試皆通過。
 
-> 詳細的程式碼品質規範請參考 [Code Style Guardrails](../reference/guardrails/code-style.md)。
+> 詳細的程式碼品質規範請參考 [Code Style Guardrails](../reference/guardrails/code-quality/code-style.md)。
 
 ## 3. 開發規範 (Guardrails)
 
@@ -98,14 +98,14 @@ uv run mkdocs serve
 
 | 類別 | 規範 | Agent Rule |
 |---|---|---|
-| **專案基礎** | [專案概述](../reference/guardrails/project-overview.md) | [#agent-rule](../reference/guardrails/project-overview.md#agent-rule) |
-| | [技術堆疊](../reference/guardrails/tech-stack.md) | [#agent-rule](../reference/guardrails/tech-stack.md#agent-rule) |
-| | [目錄結構](../reference/guardrails/folder-structure.md) | [#agent-rule](../reference/guardrails/folder-structure.md#agent-rule) |
-| **執行驗證** | [執行指令](../reference/guardrails/build-commands.md) | [#agent-rule](../reference/guardrails/build-commands.md#agent-rule) |
-| | [Linting](../reference/guardrails/linting.md) | [#agent-rule](../reference/guardrails/linting.md#agent-rule) |
-| | [測試](../reference/guardrails/testing.md) | [#agent-rule](../reference/guardrails/testing.md#agent-rule) |
-| **程式品質** | [程式碼風格](../reference/guardrails/code-style.md) | [#agent-rule](../reference/guardrails/code-style.md#agent-rule) |
-| | [類型檢查](../reference/guardrails/type-checking.md) | [#agent-rule](../reference/guardrails/type-checking.md#agent-rule) |
-| | [腳本撰寫](../reference/guardrails/script-authoring.md) | [#agent-rule](../reference/guardrails/script-authoring.md#agent-rule) |
-| **文件設計** | [文件撰寫](../reference/guardrails/documentation.md) | [#agent-rule](../reference/guardrails/documentation.md#agent-rule) |
+| **專案基礎** | [專案概述](../reference/guardrails/project-basics/project-overview.md) | [#agent-rule](../reference/guardrails/project-basics/project-overview.md#agent-rule) |
+| | [技術堆疊](../reference/guardrails/project-basics/tech-stack.md) | [#agent-rule](../reference/guardrails/project-basics/tech-stack.md#agent-rule) |
+| | [目錄結構](../reference/guardrails/project-basics/folder-structure.md) | [#agent-rule](../reference/guardrails/project-basics/folder-structure.md#agent-rule) |
+| **執行驗證** | [執行指令](../reference/guardrails/execution-verification/build-commands.md) | [#agent-rule](../reference/guardrails/execution-verification/build-commands.md#agent-rule) |
+| | [Linting](../reference/guardrails/execution-verification/linting.md) | [#agent-rule](../reference/guardrails/execution-verification/linting.md#agent-rule) |
+| | [測試](../reference/guardrails/execution-verification/testing.md) | [#agent-rule](../reference/guardrails/execution-verification/testing.md#agent-rule) |
+| **程式品質** | [程式碼風格](../reference/guardrails/code-quality/code-style.md) | [#agent-rule](../reference/guardrails/code-quality/code-style.md#agent-rule) |
+| | [類型檢查](../reference/guardrails/code-quality/type-checking.md) | [#agent-rule](../reference/guardrails/code-quality/type-checking.md#agent-rule) |
+| | [腳本撰寫](../reference/guardrails/code-quality/script-authoring.md) | [#agent-rule](../reference/guardrails/code-quality/script-authoring.md#agent-rule) |
+| **文件設計** | [文件撰寫](../reference/guardrails/documentation-design/documentation.md) | [#agent-rule](../reference/guardrails/documentation-design/documentation.md#agent-rule) |
 | | [電路繪圖](./contributing/circuit-diagrams.md) | [#agent-rule](./contributing/circuit-diagrams.md#agent-rule) |

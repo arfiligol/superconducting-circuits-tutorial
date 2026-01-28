@@ -57,4 +57,4 @@ uv run sc-docs-cli-sync --check
 
 ## Related
 
-- [CLI Reference](index.md)
+- [CLI Reference](../../cli/index.md)

@@ -205,23 +205,24 @@ nav:
       - Guardrails:
           - Project Basics:
               - Overview: reference/guardrails/index.md
-              - Project Overview: reference/guardrails/project-overview.md
-              - Tech Stack: reference/guardrails/tech-stack.md
-              - Folder Structure: reference/guardrails/folder-structure.md
+              - Project Overview: reference/guardrails/project-basics/project-overview.md
+              - Tech Stack: reference/guardrails/project-basics/tech-stack.md
+              - Folder Structure: reference/guardrails/project-basics/folder-structure.md
           - Execution & Verification:
-              - Build Commands: reference/guardrails/build-commands.md
-              - Linting & Formatting: reference/guardrails/linting.md
-              - Testing: reference/guardrails/testing.md
-              - Commit Standards: reference/guardrails/commit-standards.md
-              - CI Gates: reference/guardrails/ci-gates.md
+              - Build Commands: reference/guardrails/execution-verification/build-commands.md
+              - Linting & Formatting: reference/guardrails/execution-verification/linting.md
+              - Testing: reference/guardrails/execution-verification/testing.md
+              - Commit Standards: reference/guardrails/execution-verification/commit-standards.md
+              - CI Gates: reference/guardrails/execution-verification/ci-gates.md
           - Code Quality:
-              - Code Style: reference/guardrails/code-style.md
-              - Type Checking: reference/guardrails/type-checking.md
-              - Logging: reference/guardrails/logging.md
-              - Script Authoring: reference/guardrails/script-authoring.md
-              - Data Handling: reference/guardrails/data-handling.md
+              - Code Style: reference/guardrails/code-quality/code-style.md
+              - Type Checking: reference/guardrails/code-quality/type-checking.md
+              - Logging: reference/guardrails/code-quality/logging.md
+              - Script Authoring: reference/guardrails/code-quality/script-authoring.md
+              - Data Handling: reference/guardrails/code-quality/data-handling.md
           - Documentation Design:
-              - Documentation Standards: reference/guardrails/documentation.md
+              - Documentation Standards: reference/guardrails/documentation-design/documentation.md
+              - CLI Docs Automation: reference/guardrails/documentation-design/cli-docs-automation.md
               - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
       - Plotting Utilities: reference/utilities.md
   - Notebooks:

@@ -284,6 +284,6 @@ For computationally intensive operations (like parameter sweeps), implement the 
 
 ## Related Resources
 
-- [Script Authoring](../../reference/guardrails/script-authoring.md) - CLI standards
-- [Folder Structure](../../reference/guardrails/folder-structure.md) - Directory structure
+- [Script Authoring](../../reference/guardrails/code-quality/script-authoring.en.md) - CLI standards
+- [Folder Structure](../../reference/guardrails/project-basics/folder-structure.en.md) - Directory structure
 - [Python API Guide](../simulation/python-api.md) - API usage

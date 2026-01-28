@@ -81,8 +81,8 @@ session.query(DatasetRecord).filter_by(...)
 
 ## Related
 
-- [Dataset Record Schema](../data-formats/dataset-record.md) - 資料庫 Schema
-- [Raw Data Layout](../data-formats/raw-data-layout.md) - 目錄結構詳情
+- [Dataset Record Schema](../../data-formats/dataset-record.md) - 資料庫 Schema
+- [Raw Data Layout](../../data-formats/raw-data-layout.md) - 目錄結構詳情
 - [Script Authoring](script-authoring.md) - 腳本撰寫規範
 
 ---

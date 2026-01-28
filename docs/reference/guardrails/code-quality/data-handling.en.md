@@ -80,8 +80,8 @@ session.query(DatasetRecord).filter_by(...)
 
 ## Related
 
-- [Dataset Record Schema](../data-formats/dataset-record.md) - Database schema
-- [Raw Data Layout](../data-formats/raw-data-layout.md) - Directory structure details
+- [Dataset Record Schema](../../data-formats/dataset-record.md) - Database schema
+- [Raw Data Layout](../../data-formats/raw-data-layout.md) - Directory structure details
 - [Script Authoring](script-authoring.md) - Script writing rules
 
 ---

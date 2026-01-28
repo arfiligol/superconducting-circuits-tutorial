@@ -71,15 +71,15 @@ def main() -> None:
 ## Documentation
 
 When adding a new script:
-1. Add a page in [CLI Reference](../cli/index.md)
-2. Add a guide in [How-to](../../how-to/index.md) section
+1. Add a page in [CLI Reference](../../cli/index.md)
+2. Add a guide in [How-to](../../../how-to/index.md) section
 3. Update README.md (if necessary)
 
 ## Related
 
 - [Data Handling](data-handling.md) - Output path rules
-- [CLI Reference](../cli/index.md) - Command reference
-- [Folder Structure](folder-structure.md) - Directory structure
+- [CLI Reference](../../cli/index.md) - Command reference
+- [Folder Structure](../project-basics/folder-structure.md) - Directory structure
 
 ---
 

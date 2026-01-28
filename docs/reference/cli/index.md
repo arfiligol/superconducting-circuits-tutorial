@@ -17,12 +17,6 @@ updated_by: docs-team
 
 命令列工具參考。
 
-## Automation
-
-CLI Reference 將在 Typer 遷移完成後改為自動生成，詳見：
-
-- [CLI 文件自動生成](cli-docs-automation.md)
-
 ## Data Conversion
 
 - [convert-hfss-admittance](convert-hfss-admittance.md) - 轉換 HFSS 虛阻納數據

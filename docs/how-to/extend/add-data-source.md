@@ -66,4 +66,4 @@ updated_by: docs-team
 ## Related
 
 - [Preprocessing Rationale](../../explanation/architecture/pipeline/preprocessing-rationale.md) - 為什麼要這樣做
-- [Script Authoring](../../reference/guardrails/script-authoring.md) - 腳本規範
+- [Script Authoring](../../reference/guardrails/code-quality/script-authoring.md) - 腳本規範

@@ -151,15 +151,29 @@ tags:
         print("Hello")
     ```
 
-## 4. 視覺與圖表 (Visuals)
+## 5. Special Sections
+
+某些主題有獨立的規範或維護方式，請優先參考對應文件。
+
+### 視覺與圖表 (Visuals)
 
 - **電路圖**: 必須使用 **Schemdraw** (Python) 生成 SVG。
-    - 詳見: [Circuit Diagram Guide](../../how-to/contributing/circuit-diagrams.md)
+    - 詳見: [Circuit Diagram Guide](../../../how-to/contributing/circuit-diagrams.md)
 - **流程圖**: 使用 Mermaid。
     ```mermaid
     graph TD;
         A-->B;
     ```
+
+### CLI Options
+
+CLI 參考頁採用 **手寫內容 + 自動生成區塊** 的混合模式：
+
+- **手寫內容**：用途、範例、注意事項（可讀性優先）。
+- **自動生成**：由 `sc-docs-cli` 產生 help 區塊，再用 `sc-docs-cli-sync` 同步到手寫頁面。
+- **檢查一致性**：使用 `sc-docs-cli-sync --check` 比對 generated 與手寫文件。
+
+詳見：[CLI 文件自動生成](cli-docs-automation.md)
 
 ---
 

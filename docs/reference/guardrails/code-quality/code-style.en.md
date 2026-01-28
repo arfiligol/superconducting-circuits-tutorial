@@ -55,7 +55,7 @@ Source code dependencies must point only **inward**, toward higher-level policie
 
 The project uses automated tools to ensure code consistency and quality. For detailed information, see:
 
-👉 **[Linting & Formatting Guardrails](./linting.md)**
+👉 **[Linting & Formatting Guardrails](../execution-verification/linting.en.md)**
 
 ### Quick Reference
 - **Ruff**: Unified Linting & Formatting

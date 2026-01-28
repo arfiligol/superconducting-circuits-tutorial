@@ -82,13 +82,13 @@ Before submitting a Pull Request, please ensure:
 2.  **Formatting**: Code is formatted (following PEP 8, checked via Ruff).
 3.  **Tests**: All tests pass.
 
-> For detailed code quality standards, see [Code Style Guardrails](../reference/guardrails/code-style.md).
+> For detailed code quality standards, see [Code Style Guardrails](../reference/guardrails/code-quality/code-style.md).
 
 ## 3. Coding Standards
 
 Please refer to our **Reference** section for detailed standards:
 
-- 👉 [Code Style & Principles](../reference/guardrails/code-style.md) (Clean Code, Clean Arch)
-- 👉 [Documentation Standards](../reference/guardrails/documentation.md) (Schemdraw, SVG)
-- 👉 [Type Checking](../reference/guardrails/type-checking.md)
+- 👉 [Code Style & Principles](../reference/guardrails/code-quality/code-style.md) (Clean Code, Clean Arch)
+- 👉 [Documentation Standards](../reference/guardrails/documentation-design/documentation.en.md) (Schemdraw, SVG)
+- 👉 [Type Checking](../reference/guardrails/code-quality/type-checking.en.md)
 - 👉 [Circuit Diagram Guide](./contributing/circuit-diagrams.md)

@@ -72,15 +72,15 @@ def main() -> None:
 ## Documentation
 
 新增腳本時：
-1. 在 [CLI Reference](../cli/index.md) 新增對應頁面
-2. 在對應的 [How-to](../../how-to/index.md) 新增使用指南
+1. 在 [CLI Reference](../../cli/index.md) 新增對應頁面
+2. 在對應的 [How-to](../../../how-to/index.md) 新增使用指南
 3. 更新 README.md（如有必要）
 
 ## Related
 
 - [Data Handling](data-handling.md) - 輸出路徑規範
-- [CLI Reference](../cli/index.md) - 指令參考
-- [Folder Structure](folder-structure.md) - 目錄結構
+- [CLI Reference](../../cli/index.md) - 指令參考
+- [Folder Structure](../project-basics/folder-structure.md) - 目錄結構
 
 ---
 
