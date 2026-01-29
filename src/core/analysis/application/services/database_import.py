@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from core.analysis.application.preprocessing.admittance import process_hfss_admittance_file
-from core.analysis.application.preprocessing.naming import strip_component_suffix
+from core.analysis.application.preprocessing.naming import strip_dataset_suffix
 from core.analysis.application.preprocessing.phase import process_hfss_phase_file
 from core.analysis.application.services.database_service import save_dataset_payload_to_db
 from core.analysis.infrastructure.paths import (
@@ -57,7 +57,7 @@ def import_hfss_to_database(
         return
 
     # Determine dataset name
-    name = dataset_name or strip_component_suffix(resolved_path.stem)
+    name = dataset_name or strip_dataset_suffix(resolved_path.stem)
 
     try:
         # Process the file to dataset payload

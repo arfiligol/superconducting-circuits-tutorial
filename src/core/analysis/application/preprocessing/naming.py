@@ -27,10 +27,10 @@ _DELIMS = {"_", "-"}
 _KEYWORD_PREFIXES_UPPER = tuple(keyword.upper() for keyword in KEYWORD_PREFIXES)
 
 
-def strip_component_suffix(stem: str) -> str:
+def strip_dataset_suffix(stem: str) -> str:
     """
     Remove trailing tokens that begin with any keyword prefix (e.g., S11, Y11, Phase).
-    Used to normalize component IDs derived from filenames.
+    Used to normalize dataset names derived from filenames.
     """
     upper = stem.upper()
     for idx, _ in enumerate(stem):
