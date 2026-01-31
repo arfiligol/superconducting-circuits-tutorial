@@ -4,9 +4,7 @@ from typing import Any
 
 import plotly.graph_objects as go
 
-# Matplotlib defaults
-MATPLOTLIB_FONT_SIZE = 14
-MATPLOTLIB_TITLE_SIZE = 16
+# Matplotlib defaults removed
 
 
 def create_plotly_default_config(filename: str) -> dict[str, Any]:

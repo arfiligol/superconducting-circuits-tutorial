@@ -88,7 +88,23 @@ def analyze_file(
         logger.warning("Extraction failed for %s", dataset.name)
         return None
 
-    print_dataframe_table("Extracted Resonant Modes", df_modes)
+    # Filter columns if specific modes are requested
+    if modes_to_highlight:
+        # Keep non-mode columns (like L_jun, flux, etc.) + requested modes
+        available_modes = [c for c in df_modes.columns if "Mode" in c]
+        keep_modes = [m for m in available_modes if m in modes_to_highlight]
+        other_cols = [c for c in df_modes.columns if "Mode" not in c]
+
+        if keep_modes:
+            df_modes = df_modes[other_cols + keep_modes]
+        else:
+            logger.warning(
+                "Requested modes %s not found in dataset. Available: %s",
+                modes_to_highlight,
+                available_modes,
+            )
+
+    print_dataframe_table(f"Extracted Resonant Modes ({dataset.name})", df_modes)
 
     if fit_model == FitModel.NO_LS:
         fit_results = fit_squid_model(df_modes, parameter_bounds, fit_window)

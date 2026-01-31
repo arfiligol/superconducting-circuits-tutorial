@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI wrapper for SQUID model fitting."""
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -15,12 +15,6 @@ from core.analysis.infrastructure.visualization.plot_utils import plot_json_resu
 # ==========================================
 #           USER CONFIGURATION
 # ==========================================
-# List of dataset names or IDs to analyze if no CLI arguments are provided
-DEFAULT_COMPONENTS = [
-    "PF6FQ_Q0_Readout",
-    "PF6FQ_Q0_XY",
-]
-
 # List of modes to fit/plot (e.g. ["Mode 1", "Mode 2"]). Set to None for all.
 DEFAULT_MODES: list[str] | None = ["Mode 1"]
 
@@ -33,15 +27,12 @@ DEFAULT_LS_MAX: float | None = None
 DEFAULT_C_MIN: float | None = 0.0
 DEFAULT_C_MAX: float | None = None
 
-# Fixed Capacitance Value (pF). If set, forces 'fixed_c' model.
-DEFAULT_FIXED_C_VALUE: float | None = None
-
 # Fit Window (GHz)
 DEFAULT_FIT_WINDOW_MIN: float = 15.0
 DEFAULT_FIT_WINDOW_MAX: float = 30.0
 
 # General Options
-DEFAULT_USE_MATPLOTLIB = False
+
 # ==========================================
 
 DEFAULT_FIT_BOUNDS = {
@@ -49,7 +40,7 @@ DEFAULT_FIT_BOUNDS = {
     "C_pF": (0.0, None),
 }
 
-app = typer.Typer(add_completion=False)
+app = typer.Typer(help="Fit Analysis Commands", add_completion=False)
 
 
 def build_bounds(
@@ -75,36 +66,68 @@ def build_bounds(
     }
 
 
-@app.command()
-def main(
-    components: Annotated[
-        Optional[list[str]],
+@app.command("lc-squid")
+def lc_squid_fit(
+    datasets: Annotated[
+        list[str] | None,
         typer.Argument(help="Dataset names or IDs."),
     ] = None,
     modes: Annotated[
-        Optional[list[str]],
-        typer.Option(help="Modes to fit/plot (e.g. 'Mode 1')."),
+        list[str] | None,
+        typer.Option(help="Modes to fit/plot (e.g. '1'). Can be used multiple times."),
     ] = DEFAULT_MODES,
     title: Annotated[str, typer.Option(help="Plot title")] = DEFAULT_TITLE,
-    ls_min: Annotated[Optional[float], typer.Option()] = DEFAULT_LS_MIN,
-    ls_max: Annotated[Optional[float], typer.Option()] = DEFAULT_LS_MAX,
-    c_min: Annotated[Optional[float], typer.Option()] = DEFAULT_C_MIN,
-    c_max: Annotated[Optional[float], typer.Option()] = DEFAULT_C_MAX,
-    fixed_c: Annotated[Optional[float], typer.Option()] = DEFAULT_FIXED_C_VALUE,
+    ls_min: Annotated[float | None, typer.Option()] = DEFAULT_LS_MIN,
+    ls_max: Annotated[float | None, typer.Option()] = DEFAULT_LS_MAX,
+    c_min: Annotated[float | None, typer.Option()] = DEFAULT_C_MIN,
+    c_max: Annotated[float | None, typer.Option()] = DEFAULT_C_MAX,
+    fixed_c: Annotated[
+        float | None,
+        typer.Option(help="Fixed Capacitance Value (pF). Forces 'fixed_c' model."),
+    ] = None,
+    no_ls: Annotated[
+        bool,
+        typer.Option("--no-ls", help="Disable Series Inductance (Ls) fitting."),
+    ] = False,
     fit_min: Annotated[float, typer.Option(help="Fit window min (GHz)")] = DEFAULT_FIT_WINDOW_MIN,
     fit_max: Annotated[float, typer.Option(help="Fit window max (GHz)")] = DEFAULT_FIT_WINDOW_MAX,
-    matplotlib: Annotated[
-        bool, typer.Option(help="Use Matplotlib backend")
-    ] = DEFAULT_USE_MATPLOTLIB,
 ) -> None:
-    """Batch analysis of admittance datasets."""
-    # Use CLI args if provided, otherwise fall back to USER CONFIGURATION
-    file_list = components if components else DEFAULT_COMPONENTS
+    """
+    Fit SQUID LC parameters (Ls, C) from admittance data.
 
-    fit_model = FitModel.FIXED_C if fixed_c is not None else FitModel.WITH_LS
+    Models:
+    - Default: Fits with Series Inductance (Ls).
+    - --no-ls: Fits WITHOUT Series Inductance (ideal LC).
+    - --fixed-c <VAL>: Fits Ls with Fixed Capacitance.
+    """
+    if not datasets:
+        typer.echo("Error: No datasets specified.")
+        typer.echo("Usage: sc analysis fit lc-squid [OPTIONS] [DATASETS]...")
+        typer.echo("Example: uv run sc analysis fit lc-squid 1 2 --no-ls")
+        raise typer.Exit(code=1)
+
+    # Determine Fit Model
+    if fixed_c is not None:
+        if no_ls:
+            typer.echo("Warning: --no-ls ignored when --fixed-c is set.")
+        fit_model = FitModel.FIXED_C
+    elif no_ls:
+        fit_model = FitModel.NO_LS
+    else:
+        fit_model = FitModel.WITH_LS  # Default
+
+    # Normalize modes input (handle "1" -> "Mode 1")
+    if modes:
+        normalized_modes = []
+        for m in modes:
+            if m.isdigit():
+                normalized_modes.append(f"Mode {m}")
+            else:
+                normalized_modes.append(m)
+        modes = normalized_modes
 
     entries = []
-    for comp in file_list:
+    for comp in datasets:
         dataset = resolve_dataset(comp)
         if not dataset:
             continue
@@ -125,7 +148,6 @@ def main(
             entries,
             target_modes=modes,
             title=title,
-            use_matplotlib=matplotlib,
         )
 
 
