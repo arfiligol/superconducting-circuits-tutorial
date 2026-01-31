@@ -81,20 +81,46 @@ def get_dataset(identifier: Annotated[str, typer.Argument(help="Dataset ID or Na
 
 
 @dataset_app.command("delete")
-def delete_dataset(identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")]) -> None:
-    """Delete a dataset (Cascades to DataRecords/Params)."""
+def delete_dataset(
+    identifiers: Annotated[list[str], typer.Argument(help="Dataset IDs or Names")],
+) -> None:
+    """Delete datasets (Cascades to DataRecords/Params)."""
     service = DatasetManagementService()
-    dataset = service.get_dataset(identifier)
-    if not dataset:
-        console.print(f"[red]Not found:[/red] {identifier}")
+
+    # Resolve all datasets first
+    targets = []
+    missing = []
+
+    for identifier in identifiers:
+        ds = service.get_dataset(identifier)
+        if ds:
+            targets.append(ds)
+        else:
+            missing.append(identifier)
+
+    if missing:
+        console.print(f"[yellow]Skipping not found:[/yellow] {', '.join(missing)}")
+
+    if not targets:
+        console.print("[red]No valid datasets specified.[/red]")
         raise typer.Exit(code=1)
 
-    confirm = console.input(f"[bold red]Delete dataset '{dataset.name}'? [y/N]: [/bold red]")
+    # List targets
+    console.print("[bold red]The following datasets will be PERMANENTLY deleted:[/bold red]")
+    for ds in targets:
+        console.print(f" - {ds.name} (ID: {ds.id})")
+
+    confirm = console.input(f"\n[bold red]Delete {len(targets)} datasets? [y/N]: [/bold red]")
     if confirm.lower() != "y":
         return
 
-    if service.delete_dataset(identifier):
-        console.print(f"[green]Deleted:[/green] {dataset.name}")
+    deleted_count = 0
+    for ds in targets:
+        if service.delete_dataset(str(ds.id)):
+            console.print(f"[green]Deleted:[/green] {ds.name}")
+            deleted_count += 1
+
+    console.print(f"Total deleted: {deleted_count}")
 
 
 @dataset_app.command("auto-reorder")
