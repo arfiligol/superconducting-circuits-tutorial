@@ -1,4 +1,5 @@
 [console_scripts]
+sc = scripts.cli.entry:app
 sc-convert-flux-dependence = scripts.preprocessing.convert_flux_dependence:app
 sc-db = scripts.database.manage_db:app
 sc-docs-cli = scripts.docs.generate_cli_reference:app

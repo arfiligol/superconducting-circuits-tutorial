@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""
+Unified Hierarchical CLI for Superconducting Circuits Analysis.
+Entry point for `sc` command.
+"""
+
+import typer
+
+# Import command modules
+# Note: We import the 'main' function for single-command scripts,
+# and the 'app' object for multi-command scripts (like manage_db).
+from scripts.analysis import squid_fit
+from scripts.database import manage_db
+from scripts.docs import generate_cli_reference, sync_cli_reference
+from scripts.preprocessing import (
+    convert_flux_dependence,
+    convert_hfss_admittance,
+    convert_hfss_phase,
+)
+from scripts.simulation import run_lc
+
+# Main App
+app = typer.Typer(
+    help="Superconducting Circuits Analysis Platform CLI",
+    add_completion=False,
+    no_args_is_help=True,
+)
+
+# ==========================================
+# 1. Analysis
+# ==========================================
+analysis_app = typer.Typer(help="Analysis and Fitting Tools")
+app.add_typer(analysis_app, name="analysis")
+
+# sc analysis fit ...
+# Mount the fit sub-application (which contains 'lc-squid' command)
+analysis_app.add_typer(squid_fit.app, name="fit")
+
+
+# ==========================================
+# 2. Preprocessing (Data Ingestion)
+# ==========================================
+preprocess_app = typer.Typer(help="Data Ingestion and Preprocessing")
+app.add_typer(preprocess_app, name="preprocess")
+
+# sc preprocess admittance ...
+preprocess_app.command(name="admittance", help="Import HFSS Admittance CSV to Database.")(
+    convert_hfss_admittance.main
+)
+
+# sc preprocess phase ...
+preprocess_app.command(name="phase", help="Import HFSS Phase CSV to Database.")(
+    convert_hfss_phase.main
+)
+
+# sc preprocess flux ...
+# Note: Using 'flux' as shorthand for flux-dependence
+preprocess_app.command(name="flux", help="Import VNA Flux Dependence TXT to Database.")(
+    convert_flux_dependence.main
+)
+
+
+# ==========================================
+# 3. Database
+# ==========================================
+# sc db ...
+# manage_db.app already has subcommands: dataset-record, tag, etc.
+app.add_typer(manage_db.app, name="db", help="Database Management")
+
+
+# ==========================================
+# 4. Simulation
+# ==========================================
+sim_app = typer.Typer(help="Julia-based Simulations")
+app.add_typer(sim_app, name="sim")  # Alias 'simulation' if needed, but 'sim' is shorter
+
+# sc sim lc ...
+sim_app.command(name="lc", help="Simulate LC Circuit (Eigenmode).")(run_lc.main)
+
+
+# ==========================================
+# 5. Documentation
+# ==========================================
+docs_app = typer.Typer(help="Documentation Tooling")
+app.add_typer(docs_app, name="docs")
+
+# sc docs generate
+docs_app.command(name="generate", help="Generate CLI Reference Markdown.")(
+    generate_cli_reference.main
+)
+
+# sc docs sync
+docs_app.command(name="sync", help="Sync CLI Reference frontmatter.")(sync_cli_reference.main)
+
+
+if __name__ == "__main__":
+    app()

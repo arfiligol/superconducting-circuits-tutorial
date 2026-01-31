@@ -31,6 +31,7 @@ sc-simulate-lc = "scripts.simulation.run_lc:app"
 sc-db = "scripts.database.manage_db:app"
 sc-docs-cli = "scripts.docs.generate_cli_reference:app"
 sc-docs-cli-sync = "scripts.docs.sync_cli_reference:app"
+sc = "scripts.cli.entry:app"
 
 [tool.uv]
 package = true
