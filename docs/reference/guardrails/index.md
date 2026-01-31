@@ -51,7 +51,7 @@ tags:
 
 | 規範 | 說明 | Agent Rule |
 |---|---|---|
-| [文件撰寫](./documentation-design/documentation.md) | Diataxis, Style Guide | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
+| [文件設計](./documentation-design/documentation.md) | Standards / Style / Maintenance 索引 | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
 | [電路繪圖](../../how-to/contributing/circuit-diagrams.md) | Schemdraw 規範 | [#agent-rule](../../how-to/contributing/circuit-diagrams.md#agent-rule) |
 
 ---

@@ -23,7 +23,7 @@ updated_by: docs-team
 ## Usage
 
 ```bash
-uv run sc-db tag list
+uv run sc db tag list
 ```
 
 ## Examples
@@ -31,25 +31,25 @@ uv run sc-db tag list
 ### 列出所有 Tags
 
 ```bash
-uv run sc-db tag list
+uv run sc db tag list
 ```
 
 ### 新增 Tag
 
 ```bash
-uv run sc-db tag create "NewTag"
+uv run sc db tag create "NewTag"
 ```
 
 ### 重新命名 Tag
 
 ```bash
-uv run sc-db tag update "OldTag" "RenamedTag"
+uv run sc db tag update "OldTag" "RenamedTag"
 ```
 
 ### 刪除 Tag
 
 ```bash
-uv run sc-db tag delete "RenamedTag"
+uv run sc db tag delete "RenamedTag"
 ```
 
 ## Notes / Warnings

@@ -8,8 +8,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: 完整 HFSS 模擬到參數提取的端到端流程
-version: v0.1.0
-last_updated: 2026-01-28
+version: v1.1.0
+last_updated: 2026-01-31
 updated_by: docs-team
 ---
 
@@ -26,7 +26,7 @@ updated_by: docs-team
 
 ```mermaid
 flowchart TB
-    A["HFSS Simulation"] --> B["Export CSV"]
+    A["HFSS Simulation"] --> B["Export CSV/SNP"]
     B --> C["Preprocess"]
     C --> D["Resonance Extraction"]
     D --> E{"Im(Y) vs Phase(S)<br/>Consistency Check"}
@@ -63,7 +63,7 @@ flowchart TB
 
 ### 1.3 What to Export
 
-從 HFSS 匯出以下 CSV 檔案：
+從 HFSS 匯出以下檔案：
 
 | Parameter | HFSS Export Name | Purpose |
 |-----------|-----------------|---------|
@@ -74,14 +74,14 @@ flowchart TB
 
 ## Step 2: Resonance Extraction (Im(Y) Method)
 
-這是主要的共振頻率提取方法。詳細操作見 [Resonance Fitting Tutorial](resonance-fitting.md)。
+這是主要的共振頻率提取方法。詳細操作見 [End-to-End Fitting Tutorial](end-to-end-fitting.md)。
 
 ```bash
-# 轉換 CSV → JSON
-uv run convert-hfss-admittance data/raw/admittance/MyChip_Im_Y11.csv --dataset-name MyChip
+# 匯入數據 (CLI/UI)
+uv run sc preprocess admittance data/raw/admittance/MyChip_Im_Y11.csv
 
-# 視覺化並標示共振點
-uv run plot-admittance --show-zeros MyChip
+# 執行擬合與視覺化
+uv run sc analysis fit lc-squid MyChip_Im_Y11
 ```
 
 ---
@@ -93,7 +93,7 @@ uv run plot-admittance --show-zeros MyChip
 ### 3.1 Preprocess
 
 ```bash
-uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --dataset-name MyChip_Phase
+uv run sc preprocess phase data/raw/phase/MyChip_Phase_S11.csv
 ```
 
 ### 3.2 Extraction (Manual)
@@ -142,7 +142,7 @@ uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --dataset-name MyC
 
 ### 5.2 Re-export
 
-完成後，重新匯出高精度數據，覆蓋原始 CSV。
+完成後，重新匯出高精度數據，覆蓋原始 CSV/SNP。
 
 ---
 
@@ -161,32 +161,7 @@ uv run convert-hfss-phase data/raw/phase/MyChip_Phase_S11.csv --dataset-name MyC
 
 ---
 
-## Step 7: C_eff Extraction (No Lumped L)
-
-當您有一組**不包含 Lumped L 設定**的 Y-parameter 數據時，可以直接提取有效電容 $C_{eff}$。
-
-!!! danger
-    使用此方法前，**請手動確認**您的 HFSS 模型中沒有設定 Lumped Element 的電感。
-
-### 原理
-
-沒有 Lumped L 時，電路總電感只有 $L_{jun}$。由共振條件：
-$$ f_0 = \frac{1}{2\pi\sqrt{L_{jun} \cdot C_{eff}}} $$
-
-我們可以反推：
-$$ C_{eff} = \frac{1}{(2\pi f_0)^2 L_{jun}} $$
-
-### 執行
-
-```bash
-uv run effective-capacitance-fit MyChip_NoL
-```
-
-程式會對每個 $L_{jun}$ 計算對應的 $C_{eff}$，並輸出平均值與標準差。
-
----
-
 ## Next Steps
 
-- [Resonance Fitting](resonance-fitting.md) - 完整 LC 模型擬合 (有 $L_s$)
-- [Admittance Fit How-to](../how-to/analysis/admittance-fit.md) - CLI 參數詳解
+- [Resonance Fitting Tutorial](end-to-end-fitting.md) - 完整 LC 模型擬合
+- [SQUID Fitting How-to](../how-to/fit-model/squid.md) - CLI 參數詳解

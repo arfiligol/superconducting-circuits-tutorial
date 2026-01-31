@@ -96,7 +96,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
 **驗證 Python CLI 工具**：
 ```bash
-uv run sc-fit-squid --help
+uv run sc analysis fit lc-squid --help
 ```
 *應顯示幫助訊息 (Help Message)*
 

@@ -1,53 +1,53 @@
 ---
 aliases:
 - How-to Guides
-- 操作指南
 tags:
 - audience/team
-status: draft
+status: stable
 owner: docs-team
 audience: team
-scope: 目標導向的操作指南索引，涵蓋前處理、分析、擴展
-version: v0.1.0
-last_updated: 2026-01-28
+scope: Index of goal-oriented guides
+version: v1.1.0
+last_updated: 2026-01-31
 updated_by: docs-team
 ---
 
 # How-to Guides
 
-Task-oriented guides for solving specific problems.
+Goal-oriented guides to help you solve specific problems.
 
 ## Categories
 
-### [Getting Started](getting-started/installation.md)
-Environment setup and first simulation quickstart.
+### [Data Ingestion](ingest-data/hfss.md)
+Import external data (e.g., HFSS simulation results) into the system.
 
-### [CLI](cli/index.md)
-CLI usage and common tasks.
+- [Ingest HFSS Data](ingest-data/hfss.md)
 
-### [Contributing](contributing.md)
-Contribution workflow and collaboration rules.
+### [Model Fitting](fit-model/squid.md)
+Perform circuit parameter fitting and analysis.
 
-### [Preprocess](preprocess/index.md)
-Data preprocessing for converting HFSS/VNA data into standard formats.
+- [Fit SQUID Models](fit-model/squid.md)
 
-### [Analysis](analysis/index.md)
-Run analysis workflows including fitting and visualization.
+### [Database Management](manage-db/index.md)
+Manage ingested datasets and tags.
+
+- [Manage Datasets](manage-db/datasets.md)
+- [Manage Tags](manage-db/tags.md)
+- [Reorder IDs](manage-db/reorder-record-ids.md)
+
+### [CLI Usage](cli/index.md)
+CLI command overview and task index.
 
 ### [Simulation](simulation/index.md)
-Run simulations including LC, Python API, and native Julia workflows.
+Run circuit simulations (Python/Julia).
+
+### [Contributing](contributing.md)
+Contribution workflow and standards.
 
 ### [Extend](extend/index.md)
-Extend the pipeline with new data sources or methods.
-
-### Database
-Manage Datasets in the project database.
-
-- [Manage Datasets](database/manage-datasets.md)
-- [Manage Tags](database/manage-tags.md)
-- [Reorder Record IDs](database/reorder-record-ids.md)
+Extend system capabilities (add Parsers or Models).
 
 ## Related
 
-- [Tutorials](../tutorials/index.md) - Learn from scratch
-- [CLI Reference](../reference/cli/index.md) - Detailed command parameters
+- [Tutorials](../tutorials/index.md) - Step-by-step lessons
+- [Reference](../reference/index.md) - Technical specifications

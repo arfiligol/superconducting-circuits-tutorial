@@ -4,60 +4,46 @@ aliases:
   - "CLI How-to"
 tags:
   - diataxis/how-to
-  - status/draft
+  - status/stable
   - audience/user
   - topic/cli
-owner: I-LI CHIU
+owner: team
+status: stable
+audience: user
+scope: "CLI 指令快速索引與常見任務連結"
+version: v1.1.0
+last_updated: 2026-01-31
+updated_by: team
 ---
 
 # CLI 使用總覽
 
-本指南說明如何使用專案的 CLI 指令完成常見任務，並快速定位參數與說明。
+本指南提供 CLI 指令的快速索引，協助您定位到特定的任務指南。
 
-## Prerequisites
+## 常用指令速查
 
-- 已完成環境安裝與依賴同步（參考 [安裝環境](../getting-started/installation.md)）。
+所有指令皆以 `sc` (Superconducting Circuits) 開頭：
 
-## Steps
+```bash
+uv run sc <CATEGORY> <COMMAND>
+```
 
-1. **查看指令說明**
+| 任務分類 | 指令前綴 | 相關指南 |
+|----------|----------|----------|
+| **資料庫管理** | `sc db ...` | [Database Management](../manage-db/index.md) |
+| **資料匯入** | `sc preprocess ...` | [Ingest HFSS Data](../ingest-data/hfss.md) |
+| **分析與擬合** | `sc analysis ...` | [Fit SQUID Models](../fit-model/squid.md) |
+| **模擬** | `sc simulation ...` | (TBD) |
 
-   ```bash
-   uv run <command> --help
-   ```
+## 查看說明
 
-   例：
+您隨時可以使用 `--help` 查看指令用法：
 
-   ```bash
-   uv run sc-db --help
-   uv run sc-preprocess-admittance --help
-   ```
+```bash
+uv run sc --help
+uv run sc analysis fit lc-squid --help
+```
 
-2. **執行常見任務**
+## 相關參考
 
-   - 列出已匯入的 Dataset：
-     ```bash
-     uv run sc-db list
-     ```
-
-   - 匯入 HFSS Admittance CSV：
-     ```bash
-     uv run sc-preprocess-admittance data/raw/layout_simulation/admittance/MyChip_Im_Y11.csv
-     ```
-
-   - 擬合 SQUID 模型：
-     ```bash
-     uv run sc-fit-squid
-     ```
-
-3. **查詢完整參數與輸出**
-
-   詳細參數與輸出欄位請參考：
-
-   - [CLI Reference](../../reference/cli/index.md)
-
-## Related
-
-- [Database 管理](../database/manage-datasets.md)
-- [前處理：HFSS Admittance](../preprocess/hfss-admittance.md)
-- [CLI Reference](../../reference/cli/index.md)
+- [完整 CLI Reference](../../reference/cli/index.md)

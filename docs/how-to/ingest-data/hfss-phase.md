@@ -26,7 +26,7 @@ updated_by: docs-team
 
 2. **執行轉換**
    ```bash
-   uv run convert-hfss-phase data/raw/phase/MyChip_Phase.csv
+   uv run sc preprocess phase data/raw/phase/MyChip_Phase.csv
    ```
 
 3. **輸出**
@@ -34,7 +34,7 @@ updated_by: docs-team
 
 ## Next Steps
 
-- 目前 `squid-model-fit` 主要針對 Admittance 數據，Phase 數據的擬合功能尚未完全整合至 CLI，需使用 `src/extraction/phase.py` 進行代碼層級調用，或等待未來更新。
+- 目前 `sc analysis fit` 主要針對 Admittance 數據，Phase 數據的擬合功能尚未完全整合至 CLI，需使用 `src/extraction/phase.py` 進行代碼層級調用，或等待未來更新。
 
 ## Related
 

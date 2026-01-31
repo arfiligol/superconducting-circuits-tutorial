@@ -86,6 +86,8 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid
@@ -124,6 +126,16 @@ nav:
       - Getting Started:
           - Installation: how-to/getting-started/installation.md
           - First Simulation: how-to/getting-started/first-simulation.md
+      - Data Ingestion:
+          - HFSS Admittance: how-to/ingest-data/hfss.md
+          - HFSS Phase: how-to/ingest-data/hfss-phase.md
+      - Model Fitting:
+          - SQUID Fitting: how-to/fit-model/squid.md
+      - Database Management:
+          - Overview: how-to/manage-db/index.md
+          - Manage Datasets: how-to/manage-db/datasets.md
+          - Manage Tags: how-to/manage-db/tags.md
+          - Reorder IDs: how-to/manage-db/reorder-record-ids.md
       - CLI:
           - Overview: how-to/cli/index.md
       - Contributing:
@@ -134,23 +146,13 @@ nav:
               - Overview: how-to/extend/index.md
               - Add Data Source: how-to/extend/add-data-source.md
               - Extend Julia Functions: how-to/extend/extend-julia-functions.md
-      - Preprocessing:
-          - Overview: how-to/preprocess/index.md
-          - HFSS Admittance: how-to/preprocess/hfss-admittance.md
-          - HFSS Phase: how-to/preprocess/hfss-phase.md
-      - Analysis:
-          - Overview: how-to/analysis/index.md
-          - Admittance Fit: how-to/analysis/admittance-fit.md
-      - Database:
-          - Manage Datasets (sc-db): how-to/database/manage-datasets.md
-          - Manage Tags (sc-db): how-to/database/manage-tags.md
-          - Reorder Record IDs (sc-db): how-to/database/reorder-record-ids.md
       - Simulation:
           - Overview: how-to/simulation/index.md
           - Python API: how-to/simulation/python-api.md
           - Native Julia: how-to/simulation/native-julia.md
   - Tutorials:
       - Overview: tutorials/index.md
+      - End-to-End Fitting: tutorials/end-to-end-fitting.md
       - Simulation Workflow: tutorials/simulation-workflow.md
       - LC Resonator: tutorials/lc-resonator.md
       - Parameter Sweep: tutorials/parameter-sweep.md
@@ -183,11 +185,11 @@ nav:
           - Simulation:
               - LC Resonator: reference/cli/sc-simulate-lc.md
           - Data Conversion:
-              - Convert HFSS Admittance: reference/cli/convert-hfss-admittance.md
-              - Convert HFSS Phase: reference/cli/convert-hfss-phase.md
-              - Convert Flux Dependence: reference/cli/convert-flux-dependence.md
+              - Convert HFSS Admittance: reference/cli/sc-preprocess-admittance.md
+              - Convert HFSS Phase: reference/cli/sc-preprocess-phase.md
+              - Convert Flux Dependence: reference/cli/sc-convert-flux-dependence.md
           - Data Fitting:
-              - SQUID Model Fit: reference/cli/squid-model-fit.md
+              - SQUID Model Fit: reference/cli/sc-fit-squid.md
           - Data Plotting:
               - Plot Admittance: reference/cli/plot-admittance.md
               - Flux Dependence Plot: reference/cli/flux-dependence-plot.md
@@ -221,7 +223,10 @@ nav:
               - Script Authoring: reference/guardrails/code-quality/script-authoring.md
               - Data Handling: reference/guardrails/code-quality/data-handling.md
           - Documentation Design:
-              - Documentation Standards: reference/guardrails/documentation-design/documentation.md
+              - Documentation Design: reference/guardrails/documentation-design/documentation.md
+              - Standards: reference/guardrails/documentation-design/standards.md
+              - Style: reference/guardrails/documentation-design/style.md
+              - Maintenance: reference/guardrails/documentation-design/maintenance.md
               - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
               - CLI Docs Automation: how-to/contributing/cli-docs-automation.md
       - Contributors: reference/contributors.md

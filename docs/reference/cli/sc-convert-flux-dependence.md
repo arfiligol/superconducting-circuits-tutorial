@@ -12,16 +12,16 @@ last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
-# convert-flux-dependence
+# sc preprocess flux
 
-將 VNA 測量的 Flux Dependence TXT 掃描檔案匯入 SQLite Dataset。
+將 VNA 測量的 Flux Dependence TXT 掃描檔案匯入 SQLite Dataset (原 `sc-convert-flux-dependence`)。
 
 此工具會解析 TXT 檔案中的 `Frequency`, `Bias`, `Amplitude`, `Phase` 矩陣。
 
 ## Usage
 
 ```bash
-uv run convert-flux-dependence [OPTIONS] [txt ...]
+uv run sc preprocess flux [OPTIONS] [txt ...]
 ```
 
 ## Arguments
@@ -41,7 +41,7 @@ uv run convert-flux-dependence [OPTIONS] [txt ...]
 
 **基本轉換**
 ```bash
-uv run convert-flux-dependence data/raw/measurement/flux_dependence/LJPAL6572_B44D1_FluxDep.txt
+uv run sc preprocess flux data/raw/measurement/flux_dependence/LJPAL6572_B44D1_FluxDep.txt
 ```
 
 ## Notes

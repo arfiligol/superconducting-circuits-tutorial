@@ -107,6 +107,9 @@ uv run mkdocs serve
 | **程式品質** | [程式碼風格](../reference/guardrails/code-quality/code-style.md) | [#agent-rule](../reference/guardrails/code-quality/code-style.md#agent-rule) |
 | | [類型檢查](../reference/guardrails/code-quality/type-checking.md) | [#agent-rule](../reference/guardrails/code-quality/type-checking.md#agent-rule) |
 | | [腳本撰寫](../reference/guardrails/code-quality/script-authoring.md) | [#agent-rule](../reference/guardrails/code-quality/script-authoring.md#agent-rule) |
-| **文件設計** | [文件撰寫](../reference/guardrails/documentation-design/documentation.md) | [#agent-rule](../reference/guardrails/documentation-design/documentation.md#agent-rule) |
+| **文件設計** | [文件設計](../reference/guardrails/documentation-design/documentation.md) | [#agent-rule](../reference/guardrails/documentation-design/documentation.md#agent-rule) |
+| | [Standards](../reference/guardrails/documentation-design/standards.md) | [#agent-rule](../reference/guardrails/documentation-design/standards.md#agent-rule) |
+| | [Style](../reference/guardrails/documentation-design/style.md) | [#agent-rule](../reference/guardrails/documentation-design/style.md#agent-rule) |
+| | [Maintenance](../reference/guardrails/documentation-design/maintenance.md) | [#agent-rule](../reference/guardrails/documentation-design/maintenance.md#agent-rule) |
 | | [電路繪圖](./contributing/circuit-diagrams.md) | [#agent-rule](./contributing/circuit-diagrams.md#agent-rule) |
 | | [CLI 文件自動生成](./contributing/cli-docs-automation.md) | [#agent-rule](./contributing/cli-docs-automation.md#agent-rule) |

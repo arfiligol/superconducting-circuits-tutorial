@@ -88,8 +88,11 @@ Before submitting a Pull Request, please ensure:
 
 Please refer to our **Reference** section for detailed standards:
 
-- 👉 [Code Style & Principles](../reference/guardrails/code-quality/code-style.md) (Clean Code, Clean Arch)
-- 👉 [Documentation Standards](../reference/guardrails/documentation-design/documentation.en.md) (Schemdraw, SVG)
+- 👉 [Code Style & Principles](../reference/guardrails/code-quality/code-style.en.md) (Clean Code, Clean Arch)
+- 👉 [Documentation Design](../reference/guardrails/documentation-design/documentation.en.md) (Index)
+- 👉 [Documentation Standards](../reference/guardrails/documentation-design/standards.en.md)
+- 👉 [Documentation Style](../reference/guardrails/documentation-design/style.en.md)
+- 👉 [Documentation Maintenance](../reference/guardrails/documentation-design/maintenance.en.md)
 - 👉 [Type Checking](../reference/guardrails/code-quality/type-checking.en.md)
-- 👉 [Circuit Diagram Guide](./contributing/circuit-diagrams.md)
+- 👉 [Circuit Diagram Guide](./contributing/circuit-diagrams.en.md)
 - 👉 [CLI Docs Automation](./contributing/cli-docs-automation.en.md)

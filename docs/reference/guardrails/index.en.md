@@ -51,7 +51,7 @@ Development standards that ensure code quality and consistency.
 
 | Rule | Description | Agent Rule |
 |---|---|---|
-| [Documentation Standards](./documentation-design/documentation.en.md) | Diataxis and style guide | [#agent-rule](./documentation-design/documentation.en.md#agent-rule) |
+| [Documentation Design](./documentation-design/documentation.en.md) | Index: standards / style / maintenance | [#agent-rule](./documentation-design/documentation.en.md#agent-rule) |
 | [Circuit Diagrams](../../how-to/contributing/circuit-diagrams.en.md) | Schemdraw rules | [#agent-rule](../../how-to/contributing/circuit-diagrams.en.md#agent-rule) |
 
 ---

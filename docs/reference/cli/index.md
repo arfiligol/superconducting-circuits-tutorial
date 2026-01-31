@@ -17,26 +17,24 @@ updated_by: docs-team
 
 命令列工具參考。
 
-## Data Conversion
+## Preprocessing (Data Ingestion)
 
-- [convert-hfss-admittance](convert-hfss-admittance.md) - 轉換 HFSS 虛阻納數據
-- [convert-hfss-phase](convert-hfss-phase.md) - 轉換 HFSS 相位數據
-- [convert-flux-dependence](convert-flux-dependence.md) - 轉換 VNA 磁通依賴數據
+- [sc preprocess admittance](sc-preprocess-admittance.md) - 轉換 HFSS 虛阻納數據
+- [sc preprocess phase](sc-preprocess-phase.md) - 轉換 HFSS 相位數據
+- [sc preprocess flux](sc-convert-flux-dependence.md) - 轉換 VNA 磁通依賴數據
 
-## Data Fitting
+## Analysis (Data Fitting)
 
-- [convert-flux-dependence](convert-flux-dependence.md)
-- [squid-model-fit](squid-model-fit.md)
-- [plot-admittance](plot-admittance.md)
-- [flux-dependence-plot](flux-dependence-plot.md) - 磁通依賴熱圖
+- [sc analysis fit](sc-fit-squid.md) - SQUID 模型擬合
+- [flux-dependence-plot](flux-dependence-plot.md) - 磁通依賴熱圖 (Todo: integrate into `sc analysis`)
 
 ## Database
 
-- [sc-db](sc-db.md) - Dataset 管理 (list/info/delete)
-- [sc-db dataset-record](sc-db-dataset-record.md) - DatasetRecord CRUD
-- [sc-db data-record](sc-db-data-record.md) - DataRecord CRUD
-- [sc-db derived-parameter](sc-db-derived-parameter.md) - DerivedParameter CRUD
-- [sc-db tag](sc-db-tag.md) - Tag CRUD
+- [sc db](sc-db.md) - Dataset 管理
+- [sc db dataset-record](sc-db-dataset-record.md) - DatasetRecord CRUD
+- [sc db data-record](sc-db-data-record.md) - DataRecord CRUD
+- [sc db derived-parameter](sc-db-derived-parameter.md) - DerivedParameter CRUD
+- [sc db tag](sc-db-tag.md) - Tag CRUD
 
 ## Related
 

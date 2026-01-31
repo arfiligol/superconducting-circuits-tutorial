@@ -17,26 +17,24 @@ updated_by: docs-team
 
 Command-line tool reference.
 
-## Data Conversion
+## Preprocessing (Data Ingestion)
 
-- [convert-hfss-admittance](convert-hfss-admittance.md) - Convert HFSS admittance data
-- [convert-hfss-phase](convert-hfss-phase.md) - Convert HFSS phase data
-- [convert-flux-dependence](convert-flux-dependence.md) - Convert VNA flux dependence data
+- [sc preprocess admittance](sc-preprocess-admittance.en.md) - Convert HFSS admittance data
+- [sc preprocess phase](sc-preprocess-phase.en.md) - Convert HFSS phase data
+- [sc preprocess flux](sc-convert-flux-dependence.en.md) - Convert VNA flux dependence data
 
-## Data Fitting
+## Analysis (Data Fitting)
 
-- [convert-flux-dependence](convert-flux-dependence.md)
-- [squid-model-fit](squid-model-fit.md)
-- [plot-admittance](plot-admittance.md)
-- [flux-dependence-plot](flux-dependence-plot.md) - Flux dependence heatmap
+- [sc analysis fit](sc-fit-squid.en.md) - SQUID LC Model Fit
+- [flux-dependence-plot](flux-dependence-plot.en.md) - Flux dependence heatmap (Todo: integrate into `sc analysis`)
 
 ## Database
 
-- [sc-db](sc-db.md) - Dataset management (list/info/delete)
-- [sc-db dataset-record](sc-db-dataset-record.md) - DatasetRecord CRUD
-- [sc-db data-record](sc-db-data-record.md) - DataRecord CRUD
-- [sc-db derived-parameter](sc-db-derived-parameter.md) - DerivedParameter CRUD
-- [sc-db tag](sc-db-tag.md) - Tag CRUD
+- [sc db](sc-db.en.md) - Dataset management
+- [sc db dataset-record](sc-db-dataset-record.en.md) - DatasetRecord CRUD
+- [sc db data-record](sc-db-data-record.en.md) - DataRecord CRUD
+- [sc db derived-parameter](sc-db-derived-parameter.en.md) - DerivedParameter CRUD
+- [sc db tag](sc-db-tag.en.md) - Tag CRUD
 
 ## Related
 

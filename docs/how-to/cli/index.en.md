@@ -1,63 +1,48 @@
 ---
 aliases:
-  - "CLI How-to"
-  - "CLI 操作指南"
+  - "CLI Guide"
 tags:
   - diataxis/how-to
-  - status/draft
+  - status/stable
   - audience/user
   - topic/cli
-owner: I-LI CHIU
+owner: team
+status: stable
+audience: user
+scope: "CLI command index and common task links"
+version: v1.1.0
+last_updated: 2026-01-31
+updated_by: team
 ---
 
 # CLI Overview
 
-This guide explains how to use the project CLI commands for common tasks and quickly locate parameters and outputs.
+This guide provides a quick index of CLI commands to help you find specific task guides.
 
-## Prerequisites
+## Quick Reference
 
-- Environment is installed and dependencies are synced (see [Installation](../getting-started/installation.md)).
+All commands start with `sc` (Superconducting Circuits):
 
-## Steps
+```bash
+uv run sc <CATEGORY> <COMMAND>
+```
 
-1. **Show command help**
+| Category | Command Prefix | Related Guide |
+|----------|----------------|---------------|
+| **Database** | `sc db ...` | [Database Management](../manage-db/index.md) |
+| **Ingestion** | `sc preprocess ...` | [Ingest HFSS Data](../ingest-data/hfss.md) |
+| **Analysis** | `sc analysis ...` | [Fit SQUID Models](../fit-model/squid.md) |
+| **Simulation** | `sc simulation ...` | (TBD) |
 
-   ```bash
-   uv run <command> --help
-   ```
+## Getting Help
 
-   Examples:
+You can always use `--help` to view command usage:
 
-   ```bash
-   uv run sc-db --help
-   uv run sc-preprocess-admittance --help
-   ```
+```bash
+uv run sc --help
+uv run sc analysis fit lc-squid --help
+```
 
-2. **Run common tasks**
+## See Also
 
-   - List imported Datasets:
-     ```bash
-     uv run sc-db list
-     ```
-
-   - Import HFSS Admittance CSV:
-     ```bash
-     uv run sc-preprocess-admittance data/raw/layout_simulation/admittance/MyChip_Im_Y11.csv
-     ```
-
-   - Fit SQUID model:
-     ```bash
-     uv run sc-fit-squid
-     ```
-
-3. **Find full parameters and outputs**
-
-   See:
-
-   - [CLI Reference](../../reference/cli/index.md)
-
-## Related
-
-- [Database Management](../database/manage-datasets.md)
-- [Preprocess HFSS Admittance](../preprocess/hfss-admittance.md)
-- [CLI Reference](../../reference/cli/index.md)
+- [Full CLI Reference](../../reference/cli/index.md)

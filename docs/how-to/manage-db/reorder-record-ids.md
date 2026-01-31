@@ -23,7 +23,7 @@ updated_by: docs-team
 ## Usage
 
 ```bash
-uv run sc-db <model> auto-reorder
+uv run sc db <model> auto-reorder
 ```
 
 ## Examples
@@ -31,25 +31,25 @@ uv run sc-db <model> auto-reorder
 ### Dataset Records
 
 ```bash
-uv run sc-db dataset-record auto-reorder
+uv run sc db dataset-record auto-reorder
 ```
 
 ### Data Records
 
 ```bash
-uv run sc-db data-record auto-reorder
+uv run sc db data-record auto-reorder
 ```
 
 ### Derived Parameters
 
 ```bash
-uv run sc-db derived-parameter auto-reorder
+uv run sc db derived-parameter auto-reorder
 ```
 
 ### Tags
 
 ```bash
-uv run sc-db tag auto-reorder
+uv run sc db tag auto-reorder
 ```
 
 ## Notes / Warnings
