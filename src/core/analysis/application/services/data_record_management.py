@@ -1,6 +1,6 @@
 """Service for managing DataRecords."""
 
-from typing import cast
+from typing import Literal, cast
 
 from core.analysis.application.dto.data_record_dtos import (
     DataRecordDetailDTO,
@@ -36,20 +36,21 @@ class DataRecordManagementService:
             uow.commit()
             return True
 
-    def auto_reorder(self) -> int:
-        """Automatically reorder IDs to be sequential (1..N)."""
-        count = 0
+    def auto_reorder(self, sort_by: Literal["id", "name"] = "id") -> int:
+        """
+        Automatically reorder IDs to be sequential (1..N).
+
+        sort_by:
+            - id: preserve current record ID order.
+            - name: sort by dataset name + record identity tuple.
+        """
         with get_unit_of_work() as uow:
-            records = sorted(uow.data_records.list_all(), key=lambda x: x.id)
-            for idx, record in enumerate(records, start=1):
-                if record.id != idx:
-                    try:
-                        uow.data_records.reorder_id(record.id, idx)
-                        count += 1
-                    except ValueError:
-                        pass
-            uow.commit()
-            return count
+            records = uow.data_records.list_all()
+            if not records:
+                return 0
+
+            ordered = self._sort_records(records, sort_by)
+            return self._reassign_sequential_ids(uow, ordered)
 
     def _to_summary(self, record: DataRecord) -> DataRecordSummaryDTO:
         return DataRecordSummaryDTO(
@@ -70,3 +71,56 @@ class DataRecordManagementService:
             axes=record.axes,
             values=record.values,
         )
+
+    def _sort_records(
+        self,
+        records: list[DataRecord],
+        sort_by: Literal["id", "name"],
+    ) -> list[DataRecord]:
+        """Sort data records using a deterministic key."""
+        if sort_by == "id":
+            return sorted(records, key=lambda record: cast(int, record.id))
+        if sort_by == "name":
+            return sorted(
+                records,
+                key=lambda record: (
+                    (record.dataset.name if record.dataset else "").casefold(),
+                    record.data_type.casefold(),
+                    record.parameter.casefold(),
+                    record.representation.casefold(),
+                    cast(int, record.id),
+                ),
+            )
+        raise ValueError(f"Unsupported sort_by mode: {sort_by}")
+
+    def _reassign_sequential_ids(self, uow, ordered: list[DataRecord]) -> int:
+        """
+        Reassign IDs to 1..N without collisions using two-pass remapping.
+
+        Pass 1: move all changed IDs to temporary high IDs.
+        Pass 2: move temporary IDs to final sequential IDs.
+        """
+        current_ids = [cast(int, record.id) for record in ordered]
+        target_by_old_id = {old_id: new_id for new_id, old_id in enumerate(current_ids, start=1)}
+        unchanged = sum(1 for old_id, new_id in target_by_old_id.items() if old_id == new_id)
+        if unchanged == len(current_ids):
+            return 0
+
+        temp_offset = max(current_ids) + len(current_ids) + 1000
+
+        for old_id in current_ids:
+            new_id = target_by_old_id[old_id]
+            if old_id == new_id:
+                continue
+            uow.data_records.reorder_id(old_id, old_id + temp_offset)
+
+        moved = 0
+        for old_id in current_ids:
+            new_id = target_by_old_id[old_id]
+            if old_id == new_id:
+                continue
+            uow.data_records.reorder_id(old_id + temp_offset, new_id)
+            moved += 1
+
+        uow.commit()
+        return moved

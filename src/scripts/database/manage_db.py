@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CLI for managing the SQLite database (Multi-model)."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 from rich.console import Console
@@ -124,11 +124,19 @@ def delete_dataset(
 
 
 @dataset_app.command("auto-reorder")
-def auto_reorder_datasets() -> None:
+def auto_reorder_datasets(
+    sort_by: Annotated[
+        Literal["id", "name"],
+        typer.Option(
+            "--sort-by",
+            help="Sort key before reassigning sequential IDs.",
+        ),
+    ] = "id",
+) -> None:
     """Auto-reorder Dataset IDs to be sequential."""
     service = DatasetManagementService()
-    count = service.auto_reorder()
-    console.print(f"[green]Reordered {count} datasets.[/green]")
+    count = service.auto_reorder(sort_by=sort_by)
+    console.print(f"[green]Reordered {count} datasets (sort_by={sort_by}).[/green]")
 
 
 # =======================
@@ -271,11 +279,19 @@ def delete_data(id: Annotated[int, typer.Argument(help="DataRecord ID")]) -> Non
 
 
 @data_app.command("auto-reorder")
-def auto_reorder_data() -> None:
+def auto_reorder_data(
+    sort_by: Annotated[
+        Literal["id", "name"],
+        typer.Option(
+            "--sort-by",
+            help="Sort key before reassigning sequential IDs.",
+        ),
+    ] = "id",
+) -> None:
     """Auto-reorder DataRecord IDs to be sequential."""
     service = DataRecordManagementService()
-    count = service.auto_reorder()
-    console.print(f"[green]Reordered {count} data records.[/green]")
+    count = service.auto_reorder(sort_by=sort_by)
+    console.print(f"[green]Reordered {count} data records (sort_by={sort_by}).[/green]")
 
 
 # =======================

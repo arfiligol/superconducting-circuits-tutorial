@@ -12,6 +12,7 @@ import typer
 from scripts.analysis import squid_fit
 from scripts.database import manage_db
 from scripts.docs import generate_cli_reference, sync_cli_reference
+from scripts.plot import admittance, flux_dependence, resonance_map
 from scripts.preprocessing import (
     convert_flux_dependence,
     convert_hfss_admittance,
@@ -79,7 +80,39 @@ sim_app.command(name="lc", help="Simulate LC Circuit (Eigenmode).")(run_lc.main)
 
 
 # ==========================================
-# 5. Documentation
+# 5. Plotting
+# ==========================================
+plot_app = typer.Typer(help="Plotting and Visualization Tools")
+app.add_typer(plot_app, name="plot")
+
+# sc plot different-qubit-structure-frequency-comparison-table ...
+plot_app.command(
+    name="different-qubit-structure-frequency-comparison-table",
+    help="Compare resonance frequencies across qubit structures (table-first).",
+)(resonance_map.main)
+
+# sc plot admittance ...
+plot_app.command(
+    name="admittance",
+    help="Plot admittance records from DB (line views).",
+)(admittance.main)
+
+# sc plot flux-dependence ...
+plot_app.command(
+    name="flux-dependence",
+    help="Plot flux-dependence maps and slices from DB.",
+)(flux_dependence.main)
+
+# Backward-compatible alias
+plot_app.command(
+    name="resonance-map",
+    help="Alias of different-qubit-structure-frequency-comparison-table.",
+    hidden=True,
+)(resonance_map.main)
+
+
+# ==========================================
+# 6. Documentation
 # ==========================================
 docs_app = typer.Typer(help="Documentation Tooling")
 app.add_typer(docs_app, name="docs")

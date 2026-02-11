@@ -5,12 +5,14 @@ from typing import Annotated
 
 import typer
 
+from core.analysis.application.services.fit_result_persistence import persist_lc_squid_fit_outputs
 from core.analysis.application.services.squid_fitting import (
     FitModel,
     analyze_file,
     resolve_dataset,
 )
 from core.analysis.infrastructure.visualization.plot_utils import plot_json_results
+from core.shared.persistence.models import DeviceType
 
 # ==========================================
 #           USER CONFIGURATION
@@ -91,6 +93,28 @@ def lc_squid_fit(
     ] = False,
     fit_min: Annotated[float, typer.Option(help="Fit window min (GHz)")] = DEFAULT_FIT_WINDOW_MIN,
     fit_max: Annotated[float, typer.Option(help="Fit window max (GHz)")] = DEFAULT_FIT_WINDOW_MAX,
+    save_to_db: Annotated[
+        bool,
+        typer.Option(
+            "--save-to-db/--no-save-to-db",
+            help="Persist fit outputs into DataRecord/DerivedParameter tables.",
+        ),
+    ] = False,
+    device_type: Annotated[
+        DeviceType,
+        typer.Option(
+            "--device-type",
+            case_sensitive=False,
+            help="Device type used when saving DerivedParameter rows.",
+        ),
+    ] = DeviceType.OTHER,
+    replace_existing: Annotated[
+        bool,
+        typer.Option(
+            "--replace-existing/--append",
+            help="Replace existing lc_squid_fit outputs in DB for each dataset.",
+        ),
+    ] = True,
 ) -> None:
     """
     Fit SQUID LC parameters (Ls, C) from admittance data.
@@ -142,6 +166,22 @@ def lc_squid_fit(
         )
         if entry:
             entries.append(entry)
+            if save_to_db:
+                if dataset.id is None:
+                    typer.echo(f"Skip save: dataset '{dataset.name}' has no database ID.")
+                else:
+                    summary = persist_lc_squid_fit_outputs(
+                        dataset_id=int(dataset.id),
+                        entry=entry,
+                        device_type=device_type,
+                        replace_existing=replace_existing,
+                    )
+                    typer.echo(
+                        "Saved fit outputs for "
+                        f"'{dataset.name}': "
+                        f"{summary.data_records} data records, "
+                        f"{summary.derived_parameters} derived parameters."
+                    )
 
     if entries:
         plot_json_results(
