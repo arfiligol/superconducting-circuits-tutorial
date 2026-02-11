@@ -62,10 +62,10 @@ uv run sc-simulate-lc --output data/processed/reports/lc.json
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-Usage: sc-simulate-lc [OPTIONS]                                                
-                                                                                
- Simulate an LC resonator and compute S11.                                      
-                                                                                
+Usage: sc-simulate-lc [OPTIONS]
+
+ Simulate an LC resonator and compute S11.
+
 ╭─ Options ────────────────────────────────────────────────────────────────────╮
 │ --inductance   -L      FLOAT    Inductance in nH (default: 10)               │
 │                                 [default: 10.0]                              │
@@ -83,7 +83,3 @@ Usage: sc-simulate-lc [OPTIONS]
 ```
 
 <!-- CLI-HELP-END -->
-
-
-
-

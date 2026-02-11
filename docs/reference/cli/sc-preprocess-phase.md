@@ -54,10 +54,10 @@ uv run sc preprocess phase data/raw/phase/LJPAL658_S11_Phase.csv
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-Usage: sc-preprocess-phase [OPTIONS] [CSV]...                                  
-                                                                                
- Import HFSS phase CSV to SQLite database.                                      
-                                                                                
+Usage: sc-preprocess-phase [OPTIONS] [CSV]...
+
+ Import HFSS phase CSV to SQLite database.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │   csv      [CSV]...  Path(s) to HFSS phase CSV.                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -69,6 +69,3 @@ Usage: sc-preprocess-phase [OPTIONS] [CSV]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
-

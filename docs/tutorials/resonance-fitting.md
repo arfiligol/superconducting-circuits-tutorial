@@ -39,7 +39,7 @@ updated_by: docs-team
 
 ```bash
 # 假設原始檔位於 data/raw/admittance/
-uv run convert-hfss-admittance data/raw/admittance/MyChip_Y11.csv --dataset-name MyChip
+uv run sc preprocess admittance data/raw/admittance/MyChip_Y11.csv --dataset-name MyChip
 ```
 這會在 `data/database.db` 中建立對應的 Dataset，包含標準化的頻率掃描資料。
 
@@ -48,7 +48,7 @@ uv run convert-hfss-admittance data/raw/admittance/MyChip_Y11.csv --dataset-name
 在擬合前，先確認數據品質。共振點是否清晰？有無雜訊？
 
 ```bash
-uv run plot-admittance --show-zeros MyChip
+uv run sc plot admittance --show-zeros MyChip
 ```
 
 - **操作**：瀏覽器會打開互動圖表。
@@ -60,7 +60,7 @@ uv run plot-admittance --show-zeros MyChip
 執行擬合。建議從簡單模型 (No $L_s$) 開始，再嘗試完整模型。
 
 ```bash
-uv run squid-model-with-Ls-fit MyChip
+uv run sc analysis fit lc-squid MyChip
 ```
 
 ### 3. Interpreting Results
@@ -84,4 +84,4 @@ Mode 1:
 ## Next Steps
 
 - **多模態分析**：如果看到多個 Mode，可以使用 `--modes 'Mode 2'` 指定分析特定模態。
-- **固定電容**：如果你很確定電容值，可以使用 `squid-model-with-Ls-fixed-C-fit` 來獲得更精準的 $L_s$。
+- **固定電容**：如果你很確定電容值，可以使用 `sc analysis fit lc-squid --fixed-c <pF>` 來獲得更精準的 $L_s$。

@@ -44,7 +44,7 @@ updated_by: docs-team
    ```
 
 4. **測試**
-   執行轉換並用 `sc-db list`/`plot-admittance` 驗證資料已入庫。
+   執行轉換並用 `sc db dataset-record list` / `sc plot admittance` 驗證資料已入庫。
 
 ## Checklist
 

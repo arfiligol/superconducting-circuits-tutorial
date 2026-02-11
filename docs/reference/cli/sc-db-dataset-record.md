@@ -32,6 +32,7 @@ uv run sc-db dataset-record <action> [args]
 | Option | Description | Default |
 |---|---|---|
 | `--help` | 顯示說明 | - |
+| `--sort-by` | `auto-reorder` 排序策略：`id` / `name` | `id` |
 
 ## Examples
 
@@ -53,6 +54,11 @@ uv run sc-db dataset-record delete <ID_OR_NAME>
 **重排 ID**
 ```bash
 uv run sc-db dataset-record auto-reorder
+```
+
+**依名稱重排 ID**
+```bash
+uv run sc-db dataset-record auto-reorder --sort-by name
 ```
 
 ## Notes

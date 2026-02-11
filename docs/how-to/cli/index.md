@@ -33,7 +33,8 @@ uv run sc <CATEGORY> <COMMAND>
 | **資料庫管理** | `sc db ...` | [Database Management](../manage-db/index.md) |
 | **資料匯入** | `sc preprocess ...` | [Ingest HFSS Data](../ingest-data/hfss.md) |
 | **分析與擬合** | `sc analysis ...` | [Fit SQUID Models](../fit-model/squid.md) |
-| **模擬** | `sc simulation ...` | (TBD) |
+| **繪圖與比較** | `sc plot ...` | [CLI Reference: Plotting](../../reference/cli/index.md) |
+| **模擬** | `sc sim ...` | [CLI Reference: Simulation](../../reference/cli/sc-simulate-lc.md) |
 
 ## 查看說明
 
@@ -42,6 +43,9 @@ uv run sc <CATEGORY> <COMMAND>
 ```bash
 uv run sc --help
 uv run sc analysis fit lc-squid --help
+uv run sc plot admittance --help
+uv run sc plot flux-dependence --help
+uv run sc plot different-qubit-structure-frequency-comparison-table --help
 ```
 
 ## 相關參考

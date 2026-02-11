@@ -32,6 +32,7 @@ uv run sc-db data-record <action> [args]
 | Option | Description | Default |
 |---|---|---|
 | `--help` | Show help | - |
+| `--sort-by` | Sort mode for `auto-reorder`: `id` / `name` | `id` |
 
 ## Examples
 
@@ -53,6 +54,11 @@ uv run sc-db data-record delete <ID>
 **Reorder ID**
 ```bash
 uv run sc-db data-record auto-reorder
+```
+
+**Reorder ID by Name**
+```bash
+uv run sc-db data-record auto-reorder --sort-by name
 ```
 
 ## Notes

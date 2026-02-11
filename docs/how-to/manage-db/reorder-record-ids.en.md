@@ -12,18 +12,22 @@ owner: docs-team
 audience: user
 scope: "Auto-reorder record IDs with sc-db"
 version: v0.1.0
-last_updated: 2026-01-28
+last_updated: 2026-02-10
 updated_by: docs-team
 ---
 
 # Reorder Record IDs (sc-db)
 
 Use `auto-reorder` to keep record IDs contiguous after deletions.
+Two sorting strategies are available:
+
+- `--sort-by id`: reorder by current ID order (default)
+- `--sort-by name`: reorder by name (Dataset uses `name`; DataRecord uses dataset name + record identity fields)
 
 ## Usage
 
 ```bash
-uv run sc-db <model> auto-reorder
+uv run sc-db <model> auto-reorder [--sort-by id|name]
 ```
 
 ## Examples
@@ -34,10 +38,18 @@ uv run sc-db <model> auto-reorder
 uv run sc-db dataset-record auto-reorder
 ```
 
+```bash
+uv run sc-db dataset-record auto-reorder --sort-by name
+```
+
 ### Data Records
 
 ```bash
 uv run sc-db data-record auto-reorder
+```
+
+```bash
+uv run sc-db data-record auto-reorder --sort-by name
 ```
 
 ### Derived Parameters

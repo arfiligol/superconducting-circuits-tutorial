@@ -16,10 +16,10 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc-preprocess-phase [OPTIONS] [CSV]...                                  
-                                                                                
- Import HFSS phase CSV to SQLite database.                                      
-                                                                                
+Usage: sc-preprocess-phase [OPTIONS] [CSV]...
+
+ Import HFSS phase CSV to SQLite database.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │   csv      [CSV]...  Path(s) to HFSS phase CSV.                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: 命令列工具參考，所有 CLI 指令與參數
 version: v0.1.0
-last_updated: 2026-01-28
+last_updated: 2026-02-11
 updated_by: docs-team
 ---
 
@@ -26,7 +26,12 @@ updated_by: docs-team
 ## Analysis (Data Fitting)
 
 - [sc analysis fit](sc-fit-squid.md) - SQUID 模型擬合
-- [flux-dependence-plot](flux-dependence-plot.md) - 磁通依賴熱圖 (Todo: integrate into `sc analysis`)
+
+## Plotting
+
+- [sc plot admittance](plot-admittance.md) - 觀察 Im(Y) 線圖，檢查共振點品質
+- [sc plot flux-dependence](flux-dependence-plot.md) - 磁通掃描熱圖與切片視覺化
+- [sc plot different-qubit-structure-frequency-comparison-table](sc-plot-resonance-map.md) - Qubit Structure Resonance Frequency 二維圖/表
 
 ## Database
 

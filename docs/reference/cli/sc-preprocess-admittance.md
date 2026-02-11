@@ -67,10 +67,10 @@ uv run sc preprocess admittance \
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-Usage: sc-preprocess-admittance [OPTIONS] [CSV]...                             
-                                                                                
- Import HFSS admittance CSV to SQLite database.                                 
-                                                                                
+Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
+
+ Import HFSS admittance CSV to SQLite database.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │   csv      [CSV]...  Path(s) to HFSS admittance CSV.                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -82,6 +82,3 @@ Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
-

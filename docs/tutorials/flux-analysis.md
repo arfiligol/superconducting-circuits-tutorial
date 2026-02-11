@@ -41,7 +41,7 @@ $$ L_{jun}(\Phi) = \frac{\Phi_0}{2\pi I_c |\cos(\pi \Phi/\Phi_0)|} $$
 將 VNA 的 TXT 掃描檔匯入資料庫。這通常包含兩個維度：Bias Current (mA) x Frequency (GHz)。
 
 ```bash
-uv run convert-flux-dependence data/raw/measurement/flux_dependence/Biasing_Sweep.txt --dataset-name Meas_JPA_1
+uv run sc preprocess flux data/raw/measurement/flux_dependence/Biasing_Sweep.txt --dataset-name Meas_JPA_1
 ```
 
 ### Step 2: Full Map Visualization
@@ -49,7 +49,7 @@ uv run convert-flux-dependence data/raw/measurement/flux_dependence/Biasing_Swee
 繪製完整的熱圖 (Heatmap)。
 
 ```bash
-uv run flux-dependence-plot Meas_JPA_1
+uv run sc plot flux-dependence Meas_JPA_1
 ```
 
 **觀察重點**：
@@ -61,7 +61,7 @@ uv run flux-dependence-plot Meas_JPA_1
 常常 Amplitude 圖看不太清楚共振點，這時 Phase 圖更重要。
 
 ```bash
-uv run flux-dependence-plot --view phase --phase-unit deg --wrap-phase Meas_JPA_1
+uv run sc plot flux-dependence --view phase --phase-unit deg --wrap-phase Meas_JPA_1
 ```
 
 - **為什麼要 Wrap Phase?**
@@ -73,7 +73,7 @@ uv run flux-dependence-plot --view phase --phase-unit deg --wrap-phase Meas_JPA_
 如果你想看某個特定 Bias 下的 S11 曲線（就像單次 VNA 掃描）：
 
 ```bash
-uv run flux-dependence-plot --slice-bias 0.5 Meas_JPA_1
+uv run sc plot flux-dependence --slice-bias 0.5 Meas_JPA_1
 ```
 
 程式會額外繪製一張 Bias = 0.5 mA 時的 Amplitude/Phase vs Frequency 線圖。這可以用來提取該工作點的 Q-factor。

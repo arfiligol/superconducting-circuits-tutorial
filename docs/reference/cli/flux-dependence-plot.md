@@ -1,6 +1,6 @@
 ---
 aliases:
-- flux-dependence-plot
+- sc-plot-flux-dependence
 tags:
 - audience/team
 status: stable
@@ -12,21 +12,21 @@ last_updated: 2026-01-28
 updated_by: docs-team
 ---
 
-# flux-dependence-plot
+# sc plot flux-dependence
 
 繪製磁通依賴 (Flux Dependence) 掃描數據的熱圖 (Heatmap) 與切片圖 (Slice)。
 
 ## Usage
 
 ```bash
-uv run flux-dependence-plot [OPTIONS] [components ...]
+uv run sc plot flux-dependence [OPTIONS] [datasets ...]
 ```
 
 ## Arguments
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `components` | Dataset 名稱或 ID | 內建預設清單 |
+| `datasets` | Dataset 名稱或 ID（可多個） | 必填 |
 
 ## Options
 
@@ -39,23 +39,25 @@ uv run flux-dependence-plot [OPTIONS] [components ...]
 | `--slice-frequency` | 擷取特定頻率 (GHz) 的 Bias 切片 | |
 | `--slice-bias` | 擷取特定 Bias (mA) 的頻率切片 | |
 | `--device` | 自訂圖表中的 Device 標籤 | Dataset 名稱 |
-| `--matplotlib` | 使用 Matplotlib 渲染 (預設: Plotly) | False |
+| `--show` / `--no-show` | 是否直接開啟瀏覽器預覽 | `--show` |
+| `--save-html` / `--no-save-html` | 是否輸出 HTML | `--no-save-html` |
+| `--output`, `-o` | HTML 輸出路徑 | 自動產生 |
 
 ## Examples
 
 **繪製所有視圖 (Amplitude + Phase)**
 ```bash
-uv run flux-dependence-plot LJPAL6572_B44D1
+uv run sc plot flux-dependence LJPAL6572_B44D1
 ```
 
 **僅繪製相視圖 (Phase)，使用角度顯示**
 ```bash
-uv run flux-dependence-plot --view phase --phase-unit deg LJPAL6572_B44D1
+uv run sc plot flux-dependence --view phase --phase-unit deg LJPAL6572_B44D1
 ```
 
 **繪製特定切片**
 ```bash
-uv run flux-dependence-plot \
+uv run sc plot flux-dependence \
     --slice-frequency 6.0 \
     --slice-bias 0.0 \
     LJPAL6572_B44D1
@@ -63,8 +65,12 @@ uv run flux-dependence-plot \
 
 ## Notes
 
-!!! note "Legacy 指令"
-    此指令為舊版 CLI，若未在 `pyproject.toml` 註冊，請優先使用新版本對應指令。
+!!! note "CLI 架構"
+    此功能已整合至 `sc plot` 子指令樹，不再使用獨立命令 `flux-dependence-plot`。
+
+!!! warning "目前資料前置條件"
+    `sc plot flux-dependence` 需要資料庫中已存在 2D `amplitude/phase` 記錄。
+    目前 `sc preprocess flux` 的原始 TXT 解析尚未完成，若沒有既有資料，指令會顯示 `Skip`。
 
 <!-- CLI-HELP-START -->
 
@@ -74,18 +80,44 @@ uv run flux-dependence-plot \
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-Usage: flux-dependence-plot [OPTIONS] [COMPONENTS]...
+Usage: sc plot flux-dependence [OPTIONS] DATASETS...
 
-Options:
-  --parameter TEXT        Parameter name (e.g. S11)
-  --view TEXT             View mode (amplitude/phase/combined/all)
-  --phase-unit TEXT       Phase unit (rad/deg)
-  --wrap-phase            Wrap phase to ±π/±180°
-  --slice-frequency FLOAT Slice at frequency (GHz)
-  --slice-bias FLOAT      Slice at bias (mA)
-  --device TEXT           Device label
-  --matplotlib            Use Matplotlib backend
-  --help                  Show this message and exit.
+ Plot flux-dependence maps and slices from DB.
+
+╭─ Arguments ──────────────────────────────────────────────────────────────────╮
+│ *    datasets      DATASETS...  Dataset names or IDs. [required]             │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────╮
+│ --parameter                               TEXT              Parameter name   │
+│                                                             (e.g. S11).      │
+│                                                             [default: S11]   │
+│ --view                                    [amplitude|phase  View mode.       │
+│                                           |combined|all]    [default: all]   │
+│ --phase-unit                              [rad|deg]         Phase unit.      │
+│                                                             [default: rad]   │
+│ --wrap-phase           --no-wrap-phase                      Wrap phase to    │
+│                                                             ±pi or ±180°.    │
+│                                                             [default:        │
+│                                                             no-wrap-phase]   │
+│ --slice-frequency                         FLOAT             Slice at         │
+│                                                             frequency (GHz). │
+│ --slice-bias                              FLOAT             Slice at bias.   │
+│ --device                                  TEXT              Custom device    │
+│                                                             label in title.  │
+│ --show                 --no-show                            Open interactive │
+│                                                             preview in       │
+│                                                             browser.         │
+│                                                             [default: show]  │
+│ --save-html            --no-save-html                       Save output as   │
+│                                                             HTML.            │
+│                                                             [default:        │
+│                                                             no-save-html]    │
+│ --output           -o                     PATH              Output HTML      │
+│                                                             path.            │
+│ --help                                                      Show this        │
+│                                                             message and      │
+│                                                             exit.            │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 
 <!-- CLI-HELP-END -->

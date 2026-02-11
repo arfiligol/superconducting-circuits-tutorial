@@ -16,10 +16,10 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc-preprocess-admittance [OPTIONS] [CSV]...                             
-                                                                                
- Import HFSS admittance CSV to SQLite database.                                 
-                                                                                
+Usage: sc-preprocess-admittance [OPTIONS] [CSV]...
+
+ Import HFSS admittance CSV to SQLite database.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │   csv      [CSV]...  Path(s) to HFSS admittance CSV.                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯

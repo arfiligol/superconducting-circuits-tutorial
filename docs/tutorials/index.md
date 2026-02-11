@@ -31,10 +31,10 @@ updated_by: docs-team
 | Step | Analysis Capability | Implementations (Code) | Documentation |
 |------|---------------------|------------------------|---------------|
 | **0** | **Full Workflow** | (Manual HFSS + CLI) | [Tutorial: Simulation Workflow](simulation-workflow.md) |
-| **1** | **Standardize Data** | `src/preprocess/convert_*.py` | [Preprocess Guide](../how-to/preprocess/index.md) |
-| **2** | **Visualize Raw** | `src/scripts/plot_admittance.py` | [Visualize Admittance](../reference/cli/plot-admittance.md) |
-| **3** | **Extract Resonance** | `src/extraction/admittance.py` | [Physics: Extraction](../explanation/physics/resonance-extraction.md) |
-| **4** | **Fit LC Model** | `src/scripts/admittance_fit.py` | [Tutorial: Resonance Fitting](resonance-fitting.md)<br/>[How-to: Fit](../how-to/analysis/admittance-fit.md) |
+| **1** | **Standardize Data** | `src/scripts/preprocessing/convert_hfss_admittance.py` | [HFSS Admittance Import](../how-to/ingest-data/hfss.md) |
+| **2** | **Visualize Raw** | `src/scripts/plot/admittance.py` | [CLI: sc plot admittance](../reference/cli/plot-admittance.md) |
+| **3** | **Extract Resonance** | `src/core/analysis/application/analysis/extraction/admittance.py` | [Physics: Extraction](../explanation/physics/resonance-extraction.md) |
+| **4** | **Fit LC Model** | `src/scripts/analysis/squid_fit.py` | [Tutorial: Resonance Fitting](resonance-fitting.md)<br/>[How-to: SQUID Fitting](../how-to/fit-model/squid.md) |
 
 ## 2. Flux Dependence Analysis
 
@@ -42,8 +42,8 @@ updated_by: docs-team
 
 | Feature | Description | Implementations (Code) | Documentation |
 |---------|-------------|------------------------|---------------|
-| **Visualization** | 繪製 Amplitude/Phase 熱圖 | `src/scripts/flux_dependence_plot.py` | [CLI Reference](../reference/cli/flux-dependence-plot.md) |
-| **Phase Tuning** | 相位解包裹與單位轉換 | `src/visualization/flux_plots.py` | [CLI Reference](../reference/cli/flux-dependence-plot.md) |
+| **Visualization** | 繪製 Amplitude/Phase 熱圖 | `src/scripts/plot/flux_dependence.py` | [CLI: sc plot flux-dependence](../reference/cli/flux-dependence-plot.md) |
+| **Phase Tuning** | 相位解包裹與單位轉換 | `src/scripts/plot/flux_dependence.py` | [CLI: sc plot flux-dependence](../reference/cli/flux-dependence-plot.md) |
 
 ## 3. Advanced / Experimental
 

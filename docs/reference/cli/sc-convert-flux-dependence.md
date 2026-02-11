@@ -57,10 +57,10 @@ uv run sc preprocess flux data/raw/measurement/flux_dependence/LJPAL6572_B44D1_F
     此區塊由 `sc-docs-cli` 產生，請勿手動修改。
 
 ```text
-Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...                           
-                                                                                
- Convert Flux Dependence TXT to SQLite database.                                
-                                                                                
+Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...
+
+ Convert Flux Dependence TXT to SQLite database.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────╮
 │   txt      [TXT]...  Path(s) to Flux Dependence TXT file.                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -72,6 +72,3 @@ Usage: sc-convert-flux-dependence [OPTIONS] [TXT]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
-

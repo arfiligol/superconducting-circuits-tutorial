@@ -32,7 +32,8 @@ uv run sc <CATEGORY> <COMMAND>
 | **Database** | `sc db ...` | [Database Management](../manage-db/index.md) |
 | **Ingestion** | `sc preprocess ...` | [Ingest HFSS Data](../ingest-data/hfss.md) |
 | **Analysis** | `sc analysis ...` | [Fit SQUID Models](../fit-model/squid.md) |
-| **Simulation** | `sc simulation ...` | (TBD) |
+| **Plotting & Comparison** | `sc plot ...` | [CLI Reference: Plotting](../../reference/cli/index.en.md) |
+| **Simulation** | `sc sim ...` | [CLI Reference: Simulation](../../reference/cli/sc-simulate-lc.en.md) |
 
 ## Getting Help
 
@@ -41,6 +42,9 @@ You can always use `--help` to view command usage:
 ```bash
 uv run sc --help
 uv run sc analysis fit lc-squid --help
+uv run sc plot admittance --help
+uv run sc plot flux-dependence --help
+uv run sc plot different-qubit-structure-frequency-comparison-table --help
 ```
 
 ## See Also
