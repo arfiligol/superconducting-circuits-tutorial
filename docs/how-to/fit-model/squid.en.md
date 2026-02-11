@@ -40,7 +40,7 @@ Choose the appropriate fitting mode based on your circuit design and data charac
 ## Steps
 
 === "CLI"
-    
+
     The core command is `sc analysis fit lc-squid`.
 
     ### 1. Standard Fit

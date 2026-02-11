@@ -2,7 +2,7 @@
 """CLI wrapper for HFSS admittance file conversion (DB Only)."""
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -29,11 +29,11 @@ app = typer.Typer(add_completion=False)
 @app.command()
 def main(
     csv: Annotated[
-        Optional[list[Path]],
+        list[Path] | None,
         typer.Argument(help="Path(s) to HFSS admittance CSV files or directories."),
     ] = None,
     dataset_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--dataset-name", help="Override dataset name (Single file only)"),
     ] = DEFAULT_DATASET_NAME,
     tags: Annotated[

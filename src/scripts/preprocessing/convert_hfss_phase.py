@@ -2,7 +2,7 @@
 """CLI wrapper for HFSS phase file conversion (DB Only)."""
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -27,11 +27,11 @@ app = typer.Typer(add_completion=False)
 @app.command()
 def main(
     csv: Annotated[
-        Optional[list[Path]],
+        list[Path] | None,
         typer.Argument(help="Path(s) to HFSS phase CSV."),
     ] = None,
     dataset_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--dataset-name", help="Override dataset name"),
     ] = DEFAULT_DATASET_NAME,
     tags: Annotated[

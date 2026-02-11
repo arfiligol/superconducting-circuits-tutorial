@@ -1,6 +1,5 @@
 """Repository for DatasetRecord operations."""
 
-from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from core.shared.persistence.models import DatasetRecord, DatasetTagLink, Tag

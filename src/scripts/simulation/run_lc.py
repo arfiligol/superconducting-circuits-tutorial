@@ -7,7 +7,7 @@ Usage:
     uv run sc-simulate-lc --inductance 10 --capacitance 1 --start 0.1 --stop 10
 """
 
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -37,7 +37,7 @@ def main(
         typer.Option("--points", "-n", help="Number of frequency points (default: 1000)"),
     ] = 1000,
     output: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--output", "-o", help="Output JSON file path (optional)"),
     ] = None,
 ) -> None:

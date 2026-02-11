@@ -41,7 +41,7 @@ updated_by: team
 ## 操作步驟
 
 === "CLI"
-    
+
     核心指令為 `sc analysis fit lc-squid`。
 
     ### 1. 執行標準擬合 (Standard Fit)

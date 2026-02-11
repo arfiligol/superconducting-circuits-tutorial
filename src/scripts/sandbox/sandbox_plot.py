@@ -4,7 +4,6 @@ import plotly.graph_objects as go
 
 def generate_fake_data():
     # Simulate a SQUID arch: f = f_max * |cos(x)|
-    phi = np.linspace(-2, 2, 100)  # Flux-like variable
     # Map to L_jun for x-axis? Or just plot vs Index/Flux to keep it simple as requested
     # The user mentioned "Fake Data Point"
     # Let's emulate L_jun vs Freq as in the real app

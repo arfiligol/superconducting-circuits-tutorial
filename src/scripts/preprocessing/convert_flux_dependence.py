@@ -2,7 +2,7 @@
 """CLI for converting Flux Dependence VNA data (DB Only)."""
 
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 
@@ -17,11 +17,11 @@ app = typer.Typer(add_completion=False)
 @app.command()
 def main(
     txt: Annotated[
-        Optional[list[Path]],
+        list[Path] | None,
         typer.Argument(help="Path(s) to Flux Dependence TXT file."),
     ] = None,
     dataset_name: Annotated[
-        Optional[str],
+        str | None,
         typer.Option("--dataset-name", help="Override dataset name"),
     ] = None,
     tags: Annotated[

@@ -40,7 +40,7 @@ updated_by: team
     ```bash
     # 依名稱關鍵字篩選
     uv run sc db dataset-record list --name-filter "LJPAL"
-    
+
     # 僅顯示包含特定 Tag 的資料
     uv run sc db dataset-record list --tag-filter "verified"
     ```

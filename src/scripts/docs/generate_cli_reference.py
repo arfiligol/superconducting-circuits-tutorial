@@ -37,10 +37,10 @@ def load_project_scripts() -> list[CommandSpec]:
 
 def render_markdown_zh(command: str, help_text: str) -> str:
     """Render zh-TW reference page with frontmatter and help output."""
-    return """---
+    return f"""---
 aliases:
-  - "{name} 指令參考"
-  - "{name} CLI Reference"
+  - "{command} 指令參考"
+  - "{command} CLI Reference"
 tags:
   - diataxis/reference
   - status/draft
@@ -50,25 +50,22 @@ tags:
 owner: I-LI CHIU
 ---
 
-# {name}
+# {command}
 
-此頁面由自動化產生，請勿手動編輯。
+此頁面由自動化產生, 請勿手動編輯。
 
 ```text
-{help_text}
+{help_text.strip()}
 ```
-""".format(
-        name=command,
-        help_text=help_text.strip(),
-    )
+"""
 
 
 def render_markdown_en(command: str, help_text: str) -> str:
     """Render English reference page with frontmatter and help output."""
-    return """---
+    return f"""---
 aliases:
-  - "{name} CLI Reference"
-  - "{name} 指令參考"
+  - "{command} CLI Reference"
+  - "{command} 指令參考"
 tags:
   - diataxis/reference
   - status/draft
@@ -78,17 +75,14 @@ tags:
 owner: I-LI CHIU
 ---
 
-# {name}
+# {command}
 
 This page is auto-generated. Do not edit manually.
 
 ```text
-{help_text}
+{help_text.strip()}
 ```
-""".format(
-        name=command,
-        help_text=help_text.strip(),
-    )
+"""
 
 
 def collect_help(command: str) -> str:
@@ -100,9 +94,7 @@ def collect_help(command: str) -> str:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Failed to run '{command} --help': {result.stderr.strip()}"
-        )
+        raise RuntimeError(f"Failed to run '{command} --help': {result.stderr.strip()}")
     return result.stdout or result.stderr
 
 
@@ -121,15 +113,18 @@ def main(
         typer.Option(help="Allow overwriting existing files"),
     ] = False,
     include: Annotated[
-        list[str],
+        list[str] | None,
         typer.Option(help="Only generate for specified commands"),
-    ] = [],
+    ] = None,
     exclude: Annotated[
-        list[str],
+        list[str] | None,
         typer.Option(help="Skip specified commands"),
-    ] = ["sc-docs-cli", "sc-docs-cli-sync"],
+    ] = None,
 ) -> None:
     """Generate CLI reference docs from `--help` output."""
+    include = include or []
+    exclude = exclude or ["sc-docs-cli", "sc-docs-cli-sync"]
+
     specs = load_project_scripts()
     commands = [s.name for s in specs]
 

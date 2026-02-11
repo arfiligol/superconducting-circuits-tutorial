@@ -10,8 +10,7 @@ logger = get_logger(__name__)
 def dataset_to_data_records(payload: DataPayload) -> list[DataRecord]:
     """Convert a DataPayload to DataRecord list."""
     axes_list = [
-        {"name": axis.name, "unit": axis.unit, "values": list(axis.values)}
-        for axis in payload.axes
+        {"name": axis.name, "unit": axis.unit, "values": list(axis.values)} for axis in payload.axes
     ]
 
     return [

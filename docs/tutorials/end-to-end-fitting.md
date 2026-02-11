@@ -51,7 +51,7 @@ updated_by: team
     ```bash
     # 匯入單一檔案
     uv run sc preprocess admittance data/raw/hfss_export/LJPAL658_v1.s2p
-    
+
     # 或者匯入整個目錄
     uv run sc preprocess admittance data/raw/hfss_export/
     ```
@@ -104,7 +104,7 @@ updated_by: team
     ```bash
     # 固定電容模式 (例如 C = 1.45 pF)
     uv run sc analysis fit lc-squid --fixed-c 1.45 LJPAL658_v1
-    
+
     # 排除系列電感 (Pure LC)
     uv run sc analysis fit lc-squid --no-ls LJPAL658_v1
     ```

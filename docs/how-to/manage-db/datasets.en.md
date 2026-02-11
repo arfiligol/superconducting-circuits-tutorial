@@ -39,7 +39,7 @@ This guide explains how to query, filter, and delete Datasets in the system.
     ```bash
     # Filter by name keyword
     uv run sc db dataset-record list --name-filter "LJPAL"
-    
+
     # Filter by tag
     uv run sc db dataset-record list --tag-filter "verified"
     ```
