@@ -10,9 +10,9 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "文件維護規範：雙語同步、版本與 Frontmatter 更新、MkDocs 檢查"
+scope: "文件維護規範：雙語同步、版本與 Frontmatter 更新、Zensical 檢查"
 version: v0.1.0
-last_updated: 2026-01-30
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -24,7 +24,7 @@ updated_by: docs-team
 
 ## 雙語同步（必須）
 
-本專案使用 `mkdocs-static-i18n`（suffix 結構）：
+本專案使用 Zensical 的 `i18n` 模組（suffix 結構）：
 
 - 中文：`path/to/page.md`
 - 英文：`path/to/page.en.md`
@@ -55,7 +55,7 @@ updated_by: docs-team
 
 新增/移動文件時：
 
-1. 更新 `mkdocs.yml` 的 `nav:`（避免 orphan pages）
+1. 更新 `zensical.yml` 的 `nav:`（避免 orphan pages）
 2. 檢查所有相對連結（含 `.en.md` 版本）
 3. 若文件為 SoT，確認 `tags` 含 `sot/true`
 
@@ -66,13 +66,13 @@ updated_by: docs-team
 ### 本地預覽
 
 ```bash
-uv run mkdocs serve
+uv run --group dev zensical serve -f zensical.yml
 ```
 
 ### 建置檢查
 
 ```bash
-uv run mkdocs build
+uv run --group dev zensical build -f zensical.yml
 ```
 
 !!! tip "常見問題"
@@ -87,7 +87,6 @@ uv run mkdocs build
 - **Bilingual sync**: `.md` changes require matching `.en.md` changes (and vice versa)
 - **Frontmatter**: update `last_updated` and `updated_by` on content changes
 - **Versioning**: patch/minor/major bumps for doc changes
-- **Nav/links**: update `mkdocs.yml` nav and fix all relative links
-- **Verify**: `uv run mkdocs build` must pass
+- **Nav/links**: update `zensical.yml` nav and fix all relative links
+- **Verify**: `uv run --group dev zensical build -f zensical.yml` must pass
 ```
-

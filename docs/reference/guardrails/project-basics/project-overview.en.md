@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: "Project mission, scope, and target audience"
 version: v2.0.0
-last_updated: 2026-01-24
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -26,7 +26,7 @@ Create a high-quality, bilingual (Traditional Chinese/English) **superconducting
 - **Data Sources**: HFSS Admittance/Phase data, VNA S-parameter.
 - **Core Simulation**: `JosephsonCircuits.jl` (Julia).
 - **Analysis Tools**: Python CLI scripts (Squid fitting, Plotting).
-- **Documentation**: MkDocs Material, Bilingual (zh-TW / en).
+- **Documentation**: Zensical, Bilingual (zh-TW / en).
 
 ## Target Audience
 

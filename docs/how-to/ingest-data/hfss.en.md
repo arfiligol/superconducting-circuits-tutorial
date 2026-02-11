@@ -9,19 +9,20 @@ tags:
 status: stable
 owner: team
 audience: user
-scope: "How to ingest HFSS Touchstone files into the database"
-version: v1.1.0
-last_updated: 2026-01-31
+scope: "How to ingest HFSS-exported admittance CSV files into the database"
+version: v1.1.1
+last_updated: 2026-02-11
 updated_by: team
 ---
 
 # Ingesting HFSS Data
 
-This guide explains how to ingest HFSS Admittance (Y-parameter) simulation data into the system for further analysis.
+This guide explains how to ingest HFSS report-exported Admittance (Y-parameter) `.csv` data into the system for further analysis.
 
 !!! info "Prerequisites"
-    - You have simulation files in `.sNp` format (Touchstone).
-    - The filename will be used as the Dataset Name (e.g., `Design_A.s2p` -> Dataset: `Design_A`).
+    - You have completed an HFSS simulation and created an Admittance report (for example, Im(Y11) vs Frequency).
+    - You have exported the report data to a `.csv` file.
+    - The filename will be used as the Dataset Name (e.g., `Design_A_Im_Y11.csv` -> Dataset: `Design_A_Im_Y11`).
 
 ---
 
@@ -29,17 +30,25 @@ This guide explains how to ingest HFSS Admittance (Y-parameter) simulation data 
 
 === "CLI"
 
-    Use the `sc preprocess admittance` command.
+    Export `.csv` from HFSS first, then use `sc preprocess admittance`.
 
-    ### 1. Ingest Single File
+    ### 1. Export `.csv` in HFSS
+
+    From the Admittance report window:
+
+    1. Create or open an Admittance report (for example, Im(Y11)).
+    2. In the report window, choose **Export** / **Export to File**.
+    3. Select `.csv` as the output format and save the file.
+
+    ### 2. Ingest Single `.csv` File
 
     If you only need to analyze a specific design file:
 
     ```bash
-    uv run sc preprocess admittance path/to/your/file.s2p
+    uv run sc preprocess admittance path/to/your/file.csv
     ```
 
-    ### 2. Batch Ingest Directory
+    ### 3. Batch Ingest a Directory of `.csv` Files
 
     If you have a series of sweep data, specify the directory, and the system will process all supported files:
 
@@ -57,7 +66,7 @@ This guide explains how to ingest HFSS Admittance (Y-parameter) simulation data 
         The GUI is currently under development.
 
     1. Open Dashboard and navigate to **Data Ingestion**.
-    2. Click **Upload Files** or drag `.sNp` files into the upload area.
+    2. Click **Upload Files** or drag `.csv` files into the upload area.
     3. Verify filenames and preview information.
     4. Click **Import** to start processing.
 

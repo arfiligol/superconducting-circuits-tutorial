@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: "Technology stack and tools"
 version: v2.0.0
-last_updated: 2026-01-24
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -28,7 +28,7 @@ The project uses a **Python + Julia** hybrid architecture.
 | `plotly` | Interactive visualization |
 | `rich` | Colored logging & CLI output |
 | `typer` | CLI framework (built on Click) |
-| `mkdocs-material` | Documentation generation |
+| `zensical` | Documentation generation |
 | `ruff`, `basedpyright` | Linting, Formatting, Type Checking |
 | `pytest` | Automated testing |
 
@@ -58,7 +58,7 @@ The project uses a **Python + Julia** hybrid architecture.
     - **GUI**: `nicegui` (Native App).
 - **Julia** (Managed by `juliaup`):
     - **Sim**: `JosephsonCircuits.jl` (Core Engine).
-- **Docs**: `mkdocs-material` (Static Site).
+- **Docs**: `zensical` (Static Site).
 - **Config Files**:
     - Python: `pyproject.toml`
     - Julia: `Project.toml`

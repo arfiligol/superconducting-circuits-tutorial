@@ -11,7 +11,7 @@ owner: docs-team
 audience: team
 scope: "Diataxis boundaries, frontmatter/tags schema, and core documentation rules"
 version: v0.1.0
-last_updated: 2026-01-30
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -102,7 +102,7 @@ Tags use `namespace/value`.
 
 ## Core Rules
 
-!!! warning "Violations reduce consistency (and can make CI/MkDocs checks harder to maintain)"
+!!! warning "Violations reduce consistency (and can make CI/Zensical checks harder to maintain)"
 
 | Rule | Description |
 |------|-------------|
@@ -133,4 +133,3 @@ Tags use `namespace/value`.
 - **SoT**: mark authoritative docs with `sot/true`
 - **No vague time**: avoid “soon/later/future”; use concrete dates
 ```
-

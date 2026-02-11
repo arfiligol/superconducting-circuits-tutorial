@@ -51,13 +51,21 @@ uv run pytest
 ```
 
 ### Building Documentation
-We use `mkdocs` with `material` theme.
-```bash
-uv run mkdocs serve
-```
-Access the site at `http://localhost:8000`.
+We use `zensical` with the dedicated `zensical.yml` config.
 
-> Need more customization? See the [MkDocs Official Documentation](https://www.mkdocs.org/).
+Default port (`localhost:8000`):
+```bash
+uv run --group dev zensical serve -f zensical.yml
+```
+
+Custom IP and port (for example, `localhost:9000`):
+```bash
+uv run --group dev zensical serve -f zensical.yml -a localhost:9000
+```
+
+`zensical serve` supports hot reload. After saving files, the page refreshes automatically.
+
+> Need more customization? See the [Zensical Official Documentation](https://zensical.org/docs/).
 
 ### Submitting Changes (Pull Request)
 

@@ -9,15 +9,15 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "Writing style, tone, and visual elements (MkDocs Material)"
+scope: "Writing style, tone, and visual elements (Zensical)"
 version: v0.1.0
-last_updated: 2026-01-30
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
 # Documentation Style
 
-This page defines writing style, tone, and visual conventions (limited to what MkDocs Material renders reliably).
+This page defines writing style, tone, and visual conventions (limited to what Zensical renders reliably).
 
 ---
 
@@ -132,7 +132,7 @@ flowchart TD
 
 | Check | Command | Required |
 |---|---|---|
-| Docs build | `uv run mkdocs build` | ✅ |
+| Docs build | `uv run --group dev zensical build -f zensical.yml` | ✅ |
 
 ---
 
@@ -150,7 +150,7 @@ flowchart TD
 - **Language**: zh-TW primary; keep `.en.md` synchronized
 - **Tone**: Tutorial guiding / How-to imperative / Reference neutral / Explanation reasoning
 - **Terms**: keep technical terms in English or bilingual
-- **Admonitions**: use MkDocs Material `!!!` / `???` (4-space indent)
+- **Admonitions**: use Zensical `!!!` / `???` (4-space indent)
 - **Tabs**: use `===` for variants (OS/language/context)
 - **Mermaid**: prefer `TD`/`LR`, keep nodes < 10
 - **Code blocks**: always specify language

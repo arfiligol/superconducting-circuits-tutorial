@@ -44,13 +44,12 @@ This project uses an **App-Centric Hybrid Architecture**. All core source code r
 ### 1. Source Root (`src/`)
 The polyglot source center:
 
-- **`sc_analysis/`** (Python): Core analysis logic (Clean Architecture).
-- **`sc_app/`** (Python): NiceGUI application interface.
-- **`plotting.jl`** (Julia): Shared plotting utilities.
+- **`core/analysis/`** (Python): Core analysis logic (Clean Architecture).
+- **`core/simulation/`** (Python + Julia): Simulation and Julia bridge layer.
+- **`scripts/`** (Python): CLI entrypoints (`sc analysis ...`, `sc plot ...`).
 
 ### 2. Interfaces
-- **`scripts/`**: Python CLI scripts (invoke `src/sc_analysis`).
 - **`examples/`**: Julia simulation and tutorial examples.
 
 ### 3. Documentation
-- **`docs/`**: Documentation site (MkDocs).
+- **`docs/`**: Documentation site (Zensical).

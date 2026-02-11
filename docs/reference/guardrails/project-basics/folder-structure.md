@@ -28,7 +28,7 @@ superconducting-circuits-tutorial/
 │   ├── raw/                  # Read-Only Input (HFSS/VNA)
 │   └── processed/            # Analysis Results & Reports
 │   └── database.db           # SQLite Database
-├── docs/                     # Documentation (MkDocs)
+├── docs/                     # Documentation (Zensical)
 ├── examples/                 # Usage Examples
 ├── tests/                    # Tests
 ├── sandbox/                  # Experimental / Legacy Code

@@ -52,12 +52,12 @@ tags:
 此專案採用 **App-Centric Hybrid 架構**，核心邏輯位於 `src/`：
 
 ### 1. 核心邏輯
-- **`src/sc_analysis/`** (Python): 實驗數據分析核心 (Fitting, Plotting, Processing)。
-- **`src/plotting.jl`** (Julia): 模擬數據視覺化工具。
+- **`src/core/analysis/`** (Python): 實驗數據分析核心 (Fitting, Plotting, Processing)。
+- **`src/core/simulation/`** (Python + Julia): 模擬與 Julia 介接層。
 
 ### 2. 應用層
-- **`scripts/`**: CLI 工具集 (e.g., `squid-model-fit`, `flux-dependence-plot`)。
-- **`sc_app/`**: GUI 應用程式 (NiceGUI)。
+- **`src/scripts/`**: CLI 工具集 (e.g., `sc analysis fit`, `sc plot`)。
+- **`src/app/`**: GUI 應用程式 (NiceGUI, planned)。
 
 ### 3. 文件
 - **`docs/`**: 本文件網站，包含教學與 API 參考。

@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: "Common build and execution commands"
 version: v2.0.0
-last_updated: 2026-01-24
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -41,27 +41,27 @@ julia --project=. -e 'using Pkg; Pkg.update()'
 
 ## CLI Scripts
 
-All scripts are executed via `uv run <script-name>`:
+Use the unified `sc` entrypoint for CLI commands:
 
 ```bash
 # Data Preprocessing
-uv run sc-preprocess-admittance --input data.csv
+uv run sc preprocess admittance data/raw/layout_simulation/admittance/example.csv
 
 # Analysis Fitting
-uv run sc-fit-squid
+uv run sc analysis fit lc-squid DatasetName
 
 # Plotting
-uv run sc-plot-admittance
+uv run sc plot admittance DatasetName
 ```
 
 ## Documentation
 
 ```bash
 # Preview (localhost:8000)
-uv run mkdocs serve
+uv run --group dev zensical serve -f zensical.yml
 
 # Build static site
-uv run mkdocs build
+uv run --group dev zensical build -f zensical.yml
 ```
 
 ---
@@ -75,8 +75,8 @@ uv run mkdocs build
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
-    - Build: `uv run mkdocs build --clean`
-    - Serve: `uv run mkdocs serve`
+    - Build: `uv run --group dev zensical build -f zensical.yml -c`
+    - Serve: `uv run --group dev zensical serve -f zensical.yml`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`
 ```

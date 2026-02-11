@@ -24,8 +24,11 @@ Place tool scripts in `src/scripts/`, organized by function:
 ```
 src/scripts/
 ├── analysis/              # Analysis scripts
-│   ├── admittance_fit.py
-│   └── flux_dependence_plot.py
+│   └── squid_fit.py
+├── plot/                  # Plotting scripts
+│   ├── admittance.py
+│   ├── flux_dependence.py
+│   └── resonance_map.py
 └── simulation/            # Simulation scripts
     └── run_lc.py
 ```
@@ -36,12 +39,7 @@ Register entry points in `pyproject.toml`:
 
 ```toml
 [project.scripts]
-# Analysis
-sc-fit-squid = "scripts.analysis.admittance_fit:app"
-flux-dependence-plot = "scripts.analysis.flux_dependence_plot:app"
-
-# Simulation
-sc-simulate-lc = "scripts.simulation.run_lc:app"
+sc = "scripts.cli.entry:app"
 ```
 
 ## Execution
@@ -49,7 +47,8 @@ sc-simulate-lc = "scripts.simulation.run_lc:app"
 Scripts must be executable as modules:
 
 ```bash
-uv run python -m scripts.analysis.admittance_fit
+uv run python -m scripts.analysis.squid_fit
+uv run python -m scripts.plot.admittance
 uv run python -m scripts.simulation.run_lc
 ```
 

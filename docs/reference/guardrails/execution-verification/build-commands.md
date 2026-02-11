@@ -35,27 +35,27 @@ julia --project=. -e 'using Pkg; Pkg.update()'
 
 ## CLI 腳本執行
 
-所有腳本皆由 `uv run <script-name>` 執行：
+所有 CLI 統一由 `sc` 入口執行：
 
 ```bash
 # 資料轉換
-uv run sc-preprocess-admittance --input data.csv
+uv run sc preprocess admittance data/raw/layout_simulation/admittance/example.csv
 
 # 分析擬合
-uv run sc-fit-squid
+uv run sc analysis fit lc-squid DatasetName
 
 # 繪圖
-uv run sc-plot-admittance
+uv run sc plot admittance DatasetName
 ```
 
 ## 文件
 
 ```bash
 # 預覽 (localhost:8000)
-uv run mkdocs serve
+uv run --group dev zensical serve -f zensical.yml
 
 # 建置靜態網站
-uv run mkdocs build
+uv run --group dev zensical build -f zensical.yml
 ```
 
 ---
@@ -69,8 +69,8 @@ uv run mkdocs build
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
-    - Build: `uv run mkdocs build --clean`
-    - Serve: `uv run mkdocs serve`
+    - Build: `uv run --group dev zensical build -f zensical.yml -c`
+    - Serve: `uv run --group dev zensical serve -f zensical.yml`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`
 ```

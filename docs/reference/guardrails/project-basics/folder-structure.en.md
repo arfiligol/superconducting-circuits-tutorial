@@ -9,7 +9,7 @@ owner: docs-team
 audience: team
 scope: "Project directory structure and layering"
 version: v1.0.0
-last_updated: 2026-01-24
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -34,7 +34,7 @@ superconducting-circuits-tutorial/
 │   ├── raw/                  # Read-Only Input (HFSS/VNA)
 │   └── processed/            # Analysis Results & Reports
 │   └── database.db           # SQLite Database
-├── docs/                     # Documentation (MkDocs)
+├── docs/                     # Documentation (Zensical)
 ├── examples/                 # Usage Examples
 ├── tests/                    # Tests
 ├── sandbox/                  # Experimental / Legacy Code

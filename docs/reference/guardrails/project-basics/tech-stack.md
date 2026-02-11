@@ -22,7 +22,7 @@ tags:
 | `plotly` | 互動式可視化 |
 | `rich` | 彩色日誌與 CLI 輸出 |
 | `typer` | CLI 框架 (基於 Click) |
-| `mkdocs-material` | 文檔生成 |
+| `zensical` | 文檔生成 |
 | `ruff`, `basedpyright` | Lint, Format, Type Check |
 | `pytest` | 自動化測試 |
 
@@ -52,7 +52,7 @@ tags:
     - **GUI**: `nicegui` (Native App).
 - **Julia** (Managed by `juliaup`):
     - **Sim**: `JosephsonCircuits.jl` (Core Engine).
-- **Docs**: `mkdocs-material` (Static Site).
+- **Docs**: `zensical` (Static Site).
 - **Config Files**:
     - Python: `pyproject.toml`
     - Julia: `Project.toml`

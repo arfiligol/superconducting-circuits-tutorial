@@ -60,7 +60,7 @@ uv run scripts/docs/generate_lc_schematic.py
 ```
 檢查 `docs/assets/` 是否出現了 SVG 檔案。
 
-### 4. 嵌入 MkDocs
+### 4. 嵌入 Zensical
 在您的 Markdown 文件中，請使用以下格式。我們使用 `??? quote` 來建立一個可摺疊的區塊，既展示代碼又不佔用版面。
 
 ```markdown

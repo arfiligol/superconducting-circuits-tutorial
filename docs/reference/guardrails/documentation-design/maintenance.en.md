@@ -9,9 +9,9 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "Documentation maintenance: bilingual sync, version/frontmatter updates, MkDocs checks"
+scope: "Documentation maintenance: bilingual sync, version/frontmatter updates, Zensical checks"
 version: v0.1.0
-last_updated: 2026-01-30
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -23,7 +23,7 @@ This page defines maintenance rules (bilingual sync, update rules, verification 
 
 ## Bilingual Sync (required)
 
-We use `mkdocs-static-i18n` with suffix structure:
+We use Zensical's `i18n` module with suffix structure:
 
 - zh: `path/to/page.md`
 - en: `path/to/page.en.md`
@@ -54,7 +54,7 @@ Suggested versioning:
 
 When adding/moving pages:
 
-1. Update `mkdocs.yml` `nav:` to avoid orphan pages
+1. Update `zensical.yml` `nav:` to avoid orphan pages
 2. Check all relative links (including `.en.md`)
 3. If the page is SoT, ensure `tags` includes `sot/true`
 
@@ -65,13 +65,13 @@ When adding/moving pages:
 ### Local preview
 
 ```bash
-uv run mkdocs serve
+uv run --group dev zensical serve -f zensical.yml
 ```
 
 ### Build
 
 ```bash
-uv run mkdocs build
+uv run --group dev zensical build -f zensical.yml
 ```
 
 !!! tip "Common issues"
@@ -86,7 +86,6 @@ uv run mkdocs build
 - **Bilingual sync**: `.md` changes require matching `.en.md` changes (and vice versa)
 - **Frontmatter**: update `last_updated` and `updated_by` on content changes
 - **Versioning**: patch/minor/major bumps for doc changes
-- **Nav/links**: update `mkdocs.yml` nav and fix all relative links
-- **Verify**: `uv run mkdocs build` must pass
+- **Nav/links**: update `zensical.yml` nav and fix all relative links
+- **Verify**: `uv run --group dev zensical build -f zensical.yml` must pass
 ```
-

@@ -60,7 +60,7 @@ uv run scripts/docs/generate_lc_schematic.py
 ```
 Check `docs/assets/` to see if the SVG file works.
 
-### 4. Embed in MkDocs
+### 4. Embed in Zensical
 Use the following format in your Markdown file. We use `??? quote` to create a collapsible block that shows the code without cluttering the layout.
 
 ```markdown

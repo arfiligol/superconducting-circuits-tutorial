@@ -25,8 +25,11 @@ CLI 腳本撰寫規範。
 ```
 src/scripts/
 ├── analysis/              # 分析相關腳本
-│   ├── admittance_fit.py
-│   └── flux_dependence_plot.py
+│   └── squid_fit.py
+├── plot/                  # 繪圖相關腳本
+│   ├── admittance.py
+│   ├── flux_dependence.py
+│   └── resonance_map.py
 └── simulation/            # 模擬相關腳本
     └── run_lc.py
 ```
@@ -37,12 +40,7 @@ src/scripts/
 
 ```toml
 [project.scripts]
-# Analysis
-sc-fit-squid = "scripts.analysis.admittance_fit:app"
-flux-dependence-plot = "scripts.analysis.flux_dependence_plot:app"
-
-# Simulation
-sc-simulate-lc = "scripts.simulation.run_lc:app"
+sc = "scripts.cli.entry:app"
 ```
 
 ## Execution
@@ -50,7 +48,8 @@ sc-simulate-lc = "scripts.simulation.run_lc:app"
 腳本必須可透過模組方式執行：
 
 ```bash
-uv run python -m scripts.analysis.admittance_fit
+uv run python -m scripts.analysis.squid_fit
+uv run python -m scripts.plot.admittance
 uv run python -m scripts.simulation.run_lc
 ```
 

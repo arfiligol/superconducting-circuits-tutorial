@@ -31,7 +31,7 @@ uv run pre-commit run --all-files
 ### 2. 文檔建置
 
 ```bash
-uv run mkdocs build
+uv run --group dev zensical build -f zensical.yml
 ```
 
 !!! note "允許的警告"
@@ -51,10 +51,10 @@ uv run pytest
 ## CI Gates
 - **Mandatory Checks**:
     1. **Pre-commit**: `ruff format` + `ruff check` + `basedpyright`.
-    2. **Build**: `mkdocs build` must pass.
+    2. **Build**: `uv run --group dev zensical build -f zensical.yml` must pass.
     3. **Test**: `pytest` must pass.
 - **Tolerance**:
-    - `mkdocs build`: Allow `404` warnings logic.
+    - `uv run --group dev zensical build -f zensical.yml`: Allow `404` warnings logic.
     - Code Coverage: Not strictly enforced yet.
 - **Fast Fail**: Any lint error fails the pipeline immediately.
 ```

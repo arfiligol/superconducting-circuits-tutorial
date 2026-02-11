@@ -20,7 +20,7 @@ tags:
 - **資料來源**: HFSS Admittance/Phase data, VNA S-parameter
 - **核心模擬**: `JosephsonCircuits.jl` (Julia)
 - **分析工具**: Python CLI 腳本 (Squid fitting, Plotting)
-- **文件系統**: MkDocs Material, 雙語化 (zh-TW / en)
+- **文件系統**: Zensical, 雙語化 (zh-TW / en)
 
 ## 目標受眾
 

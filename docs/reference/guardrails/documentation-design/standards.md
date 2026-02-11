@@ -12,7 +12,7 @@ owner: docs-team
 audience: team
 scope: "Diataxis 分類邊界、Frontmatter/Tags 規格與文件核心規則"
 version: v0.1.0
-last_updated: 2026-01-30
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
@@ -103,7 +103,7 @@ Tags 採用 `namespace/value` 格式。
 
 ## 核心規則
 
-!!! warning "違反會造成文件一致性下降（且可能讓 CI/MkDocs 檢查更難維護）"
+!!! warning "違反會造成文件一致性下降（且可能讓 CI/Zensical 檢查更難維護）"
 
 | 規則 | 說明 |
 |------|------|
@@ -134,4 +134,3 @@ Tags 採用 `namespace/value` 格式。
 - **SoT**: 權威文件標 `sot/true`
 - **No vague time**: 禁用「未來/後續/即將」等，請寫明確日期
 ```
-

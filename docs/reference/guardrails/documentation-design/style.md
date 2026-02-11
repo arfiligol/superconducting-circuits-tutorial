@@ -10,15 +10,15 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "撰寫風格、語氣調性與視覺元素使用規範（MkDocs Material）"
+scope: "撰寫風格、語氣調性與視覺元素使用規範（Zensical）"
 version: v0.1.0
-last_updated: 2026-01-30
+last_updated: 2026-02-08
 updated_by: docs-team
 ---
 
 # Documentation Style
 
-本文件定義文件撰寫的風格、語氣與視覺呈現規範（以 MkDocs Material 可渲染的語法為準）。
+本文件定義文件撰寫的風格、語氣與視覺呈現規範（以 Zensical 可渲染的語法為準）。
 
 ---
 
@@ -54,7 +54,7 @@ updated_by: docs-team
 ```
 
 !!! warning "語法注意"
-    不要使用 GitHub 風格 `> [!NOTE]`，MkDocs Material 不會正確渲染。
+    不要使用 GitHub 風格 `> [!NOTE]`，Zensical 不會正確渲染。
 
 ---
 
@@ -133,7 +133,7 @@ flowchart TD
 
 | 檢查項目 | 指令 | 必要性 |
 |---|---|---|
-| Docs build | `uv run mkdocs build` | ✅ |
+| Docs build | `uv run --group dev zensical build -f zensical.yml` | ✅ |
 
 ---
 
@@ -151,7 +151,7 @@ flowchart TD
 - **Language**: zh-TW primary; keep `.en.md` synchronized
 - **Tone**: Tutorial guiding / How-to imperative / Reference neutral / Explanation reasoning
 - **Terms**: keep technical terms in English or bilingual
-- **Admonitions**: use MkDocs Material `!!!` / `???` (4-space indent)
+- **Admonitions**: use Zensical `!!!` / `???` (4-space indent)
 - **Tabs**: use `===` for variants (OS/language/context)
 - **Mermaid**: prefer `TD`/`LR`, keep nodes < 10
 - **Code blocks**: always specify language

@@ -52,13 +52,21 @@ uv run pytest
 ```
 
 ### 預覽文件
-我們使用 `mkdocs` 搭配 `material` 主題。
-```bash
-uv run mkdocs serve
-```
-啟動後請訪問 `http://localhost:8000` 查看效果。
+我們使用 `zensical`，並以 `zensical.yml` 作為文件設定檔。
 
-> 需要更多客製化？請參考 [MkDocs 官方文檔](https://www.mkdocs.org/)。
+預設埠（`localhost:8000`）：
+```bash
+uv run --group dev zensical serve -f zensical.yml
+```
+
+指定 IP 與 Port（例如 `localhost:9000`）：
+```bash
+uv run --group dev zensical serve -f zensical.yml -a localhost:9000
+```
+
+`zensical serve` 支援 Hot Reload，儲存文件後頁面會自動重新整理。
+
+> 需要更多客製化？請參考 [Zensical 官方文件](https://zensical.org/docs/)。
 
 ### 提交變更 (Pull Request)
 
