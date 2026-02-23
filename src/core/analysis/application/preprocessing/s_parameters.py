@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from core.analysis.application.preprocessing.dataset_payload import (
+    AxisPayload,
+    DataPayload,
+    DatasetPayload,
+)
+
+
+def derive_parameter_name(input_str: str) -> str:
+    """Extracts S-parameter types like S11 or S21 from the string."""
+    lower = input_str.lower()
+    for p in ["s11", "s21", "s12", "s22"]:
+        if p in lower:
+            return p.upper()
+    raise ValueError(f"Unable to derive phase parameter name (S11, S21, etc.) from '{input_str}'")
+
+
+def detect_representation(filename: str, df: pd.DataFrame) -> tuple[str, str, str, str]:
+    """Detect l_col, freq_col, data_col, and representation from the dataframe and filename."""
+    l_cols = [c for c in df.columns if "l_jun" in c.lower() or "l_ind" in c.lower()]
+    if not l_cols:
+        raise ValueError("Unable to locate L_jun column.")
+
+    freq_cols = [c for c in df.columns if "freq" in c.lower()]
+    if not freq_cols:
+        raise ValueError("Unable to locate frequency column.")
+
+    # Check representation from filename or columns
+    combined = f"{filename} {' '.join(df.columns)}".lower()
+
+    data_col = None
+    representation = "magnitude"  # default fallback
+
+    if "re_" in combined or "real" in combined:
+        # Looking for Re
+        data_col = [c for c in df.columns if any(kw in c.lower() for kw in ["re", "real", "s"])]
+        representation = "real"
+    elif "im_" in combined or "imag" in combined:
+        # Looking for Im
+        data_col = [c for c in df.columns if any(kw in c.lower() for kw in ["im", "imag", "s"])]
+        representation = "imaginary"
+    elif any(kw in combined for kw in ["phase", "deg", "rad", "ang", "cang"]):
+        data_col = [
+            c
+            for c in df.columns
+            if any(kw in c.lower() for kw in ["phase", "deg", "rad", "ang", "cang"])
+        ]
+        representation = "unwrapped_phase" if "cang" in combined else "phase"
+    elif "mag" in combined or "amp" in combined:
+        data_col = [c for c in df.columns if any(kw in c.lower() for kw in ["mag", "amp", "s"])]
+        representation = "magnitude"
+    else:
+        # Fallback to the first non-freq, non-l column
+        data_col = [c for c in df.columns if c not in l_cols and c not in freq_cols]
+
+    if not data_col:
+        raise ValueError(f"Unable to locate S-parameter data column in {filename}.")
+
+    return l_cols[0], freq_cols[0], data_col[0], representation
+
+
+def reshape_matrix(df: pd.DataFrame, l_col: str, freq_col: str, data_col: str) -> pd.DataFrame:
+    pivot = df.pivot(index=freq_col, columns=l_col, values=data_col).sort_index()
+    pivot = pivot[sorted(pivot.columns, key=float)]
+    return pivot
+
+
+def process_hfss_s_parameters(raw_path: Path) -> DatasetPayload:
+    """Orchestrate the processing of a generic HFSS S-Parameter CSV file."""
+    df = pd.read_csv(raw_path)
+    l_col, freq_col, data_col, representation = detect_representation(raw_path.name, df)
+
+    parameter_name = derive_parameter_name(raw_path.name)
+    pivot = reshape_matrix(df, l_col, freq_col, data_col)
+
+    # Unit conversion for phase
+    if representation in ["phase", "unwrapped_phase"]:
+        combined = f"{raw_path.name} {data_col}".lower()
+        is_degrees = True if ("rad" not in combined or "deg" in combined) else False
+        if is_degrees:
+            pivot = pd.DataFrame(np.deg2rad(pivot), index=pivot.index, columns=pivot.columns)
+
+    freq_axis = AxisPayload(name="Freq", unit="GHz", values=pivot.index.tolist())
+    bias_axis = AxisPayload(name="L_jun", unit="nH", values=[float(x) for x in pivot.columns])
+
+    data_record = DataPayload(
+        data_type="s_parameters",
+        parameter=parameter_name,
+        representation=representation,
+        axes=[freq_axis, bias_axis],
+        values=pivot.values.tolist(),
+    )
+
+    return DatasetPayload(
+        source_meta={"origin": "layout_simulation"},
+        parameters={},
+        data_records=[data_record],
+        raw_files=[str(raw_path.resolve())],
+    )

@@ -5,11 +5,9 @@ from pathlib import Path
 from core.analysis.application.preprocessing.admittance import process_hfss_admittance_file
 from core.analysis.application.preprocessing.naming import strip_dataset_suffix
 from core.analysis.application.preprocessing.phase import process_hfss_phase_file
+from core.analysis.application.preprocessing.s_parameters import process_hfss_s_parameters
 from core.analysis.application.services.database_service import save_dataset_payload_to_db
-from core.analysis.infrastructure.paths import (
-    RAW_LAYOUT_ADMITTANCE_DIR,
-    RAW_LAYOUT_PHASE_DIR,
-)
+from core.analysis.infrastructure.paths import RAW_LAYOUT_SIMULATION_DIR
 from core.shared.logging import get_logger
 
 logger = get_logger(__name__)
@@ -41,12 +39,13 @@ def import_hfss_to_database(
         tags: Optional list of tags to attach to the dataset
     """
     # Determine paths and processor
+    search_dir = RAW_LAYOUT_SIMULATION_DIR
     if file_type == "admittance":
-        search_dir = RAW_LAYOUT_ADMITTANCE_DIR
         processor = process_hfss_admittance_file
     elif file_type == "phase":
-        search_dir = RAW_LAYOUT_PHASE_DIR
         processor = process_hfss_phase_file
+    elif file_type == "s_parameters":
+        processor = process_hfss_s_parameters
     else:
         raise ValueError(f"Unknown file_type: {file_type}")
 

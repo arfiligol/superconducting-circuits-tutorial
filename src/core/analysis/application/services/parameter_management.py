@@ -19,6 +19,44 @@ class ParameterManagementService:
             params = uow.derived_params.list_all()
             return [self._to_summary(p) for p in params]
 
+    def create_or_update_param(
+        self,
+        dataset_id: int,
+        name: str,
+        value: float | list,
+        unit: str = "",
+        device_type: str | None = None,
+        method: str | None = None,
+    ) -> DerivedParameterDetailDTO:
+        """Create or update a derived parameter for a dataset."""
+        with get_unit_of_work() as uow:
+            # Simple linear search for now; optimization possible later via specific repo methods
+            existing = next(
+                (
+                    p
+                    for p in uow.derived_params.list_all()
+                    if p.dataset_id == dataset_id and p.name == name
+                ),
+                None,
+            )
+            if existing:
+                existing.value = value
+                existing.unit = unit
+                existing.method = method
+                param = existing
+            else:
+                param = DerivedParameter(
+                    dataset_id=dataset_id,
+                    name=name,
+                    value=value,
+                    unit=unit,
+                    device_type=device_type,
+                    method=method,
+                )
+                uow.derived_params.add(param)
+            uow.commit()
+            return self._to_detail(param)
+
     def get_param(self, id: int) -> DerivedParameterDetailDTO | None:
         """Get parameter details."""
         with get_unit_of_work() as uow:

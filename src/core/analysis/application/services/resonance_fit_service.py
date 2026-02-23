@@ -65,9 +65,9 @@ class ResonanceFitService:
 
         if "real" in reps and "imaginary" in reps:
             # Reconstruct from Re/Im
-            f_axis = np.array(reps["real"].axes[0].values)
-            values_re = np.array(reps["real"].values)
-            values_im = np.array(reps["imaginary"].values)
+            f_axis = np.array(reps["real"].axes[0]["values"], dtype=float)
+            values_re = np.array(reps["real"].values, dtype=float)
+            values_im = np.array(reps["imaginary"].values, dtype=float)
             s21_complex = values_re + 1j * values_im
         elif ("phase" in reps or "unwrapped_phase" in reps) and "magnitude" in reps:
             # Reconstruct from Mag/Phase
@@ -76,14 +76,16 @@ class ResonanceFitService:
             phase_key = "unwrapped_phase" if "unwrapped_phase" in reps else "phase"
             phase_record = reps[phase_key]
 
-            f_axis = np.array(mag_record.axes[0].values)
+            f_axis = np.array(mag_record.axes[0]["values"], dtype=float)
 
             # HFSS magnitude is often in dB. We should check if it needs conversion to linear.
             # Assuming linear magnitude for now, but if it's dB: mag_lin = 10**(mag_dB/20)
             # The user's S-parameter files usually don't dictate dB vs lin in the representation string yet,
             # but standard is linear unless specified. We will assume linear.
-            mag_vals = np.array(mag_record.values)
-            phase_vals = np.array(phase_record.values)  # already in radians per phase.py
+            mag_vals = np.array(mag_record.values, dtype=float)
+            phase_vals = np.array(
+                phase_record.values, dtype=float
+            )  # already in radians per phase.py
 
             s21_complex = mag_vals * np.exp(1j * phase_vals)
         else:
@@ -95,7 +97,11 @@ class ResonanceFitService:
 
         # Now we have the arrays, call the math core
         # Note: Depending on the axes structure from raw HFSS, there might be multiple sweep dimensions
-        # Assuming 1D for simplicity in the current implementation path
+        # Assuming 1D for simplicity in the current implementation path.
+        # If the array is multi-dimensional (e.g. [Freq, L_jun]), slice the first bias point to prevent shaping crashes.
+        if s21_complex.ndim > 1:
+            s21_complex = s21_complex[:, 0]
+
         f_arr = f_axis.flatten()
         s21_arr = s21_complex.flatten()
 
@@ -111,22 +117,43 @@ class ResonanceFitService:
         method_name = f"complex_notch_fit_{parameter}"
 
         self.param_service.create_or_update_param(
-            dataset.id, name="fr_ghz", value=result["fr"] / 1e9, unit="GHz", method=method_name
+            dataset.id,
+            name="fr_ghz",
+            value=result["fr"] / 1e9,
+            unit="GHz",
+            device_type="resonator",
+            method=method_name,
         )
         self.param_service.create_or_update_param(
-            dataset.id, name="Ql", value=result["Ql"], unit="", method=method_name
+            dataset.id,
+            name="Ql",
+            value=result["Ql"],
+            unit="",
+            device_type="resonator",
+            method=method_name,
         )
         self.param_service.create_or_update_param(
-            dataset.id, name="Qc", value=result["Qc_mag"], unit="", method=method_name
+            dataset.id,
+            name="Qc",
+            value=result["Qc_mag"],
+            unit="",
+            device_type="resonator",
+            method=method_name,
         )
         self.param_service.create_or_update_param(
-            dataset.id, name="Qi", value=result["Qi"], unit="", method=method_name
+            dataset.id,
+            name="Qi",
+            value=result["Qi"],
+            unit="",
+            device_type="resonator",
+            method=method_name,
         )
         self.param_service.create_or_update_param(
             dataset.id,
             name="electrical_delay",
             value=result["tau"] * 1e9,
             unit="ns",
+            device_type="resonator",
             method=method_name,
         )
 

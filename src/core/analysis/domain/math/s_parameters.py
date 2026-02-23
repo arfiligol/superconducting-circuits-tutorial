@@ -64,9 +64,14 @@ def estimate_notch_initial_guess(f: np.ndarray, s21_complex: np.ndarray) -> dict
     s21_phase = np.unwrap(np.angle(s21_complex))
 
     # 1. Estimate resonance frequency (minimum amplitude)
-    min_idx = np.argmin(s21_mag)
-    fr_guess = float(f[min_idx])
-    min_mag = s21_mag[min_idx]
+    # Ignore DC components (f <= 0) which can artificially drop to 0 in simulations
+    valid_f = f > 0
+    if not np.any(valid_f):
+        valid_f = np.ones_like(f, dtype=bool)
+
+    min_idx_valid = np.argmin(s21_mag[valid_f])
+    fr_guess = float(f[valid_f][min_idx_valid])
+    min_mag = s21_mag[valid_f][min_idx_valid]
 
     # 2. Estimate baselines (using endpoints assuming they are far from resonance)
     # Average amplitude of the first and last few points
@@ -118,14 +123,17 @@ def estimate_notch_initial_guess(f: np.ndarray, s21_complex: np.ndarray) -> dict
 
     Ql_guess = fr_guess / fwhm
 
-    # Estimate Qc_real assuming symmetric for now:
-    # Depth = Ql / Qc_real => min_mag / a_guess = |1 - Ql/Qc|
-    # If Qc is purely real: min_mag / a_guess = 1 - Ql/Qc_real
-    # => Ql / Qc_real = 1 - (min_mag / a_guess)
+    # Ensure strictly positive values for initial Q guesses to prevent zero-division
+    if Ql_guess <= 0:
+        Ql_guess = 100.0
+
     depth = 1.0 - (min_mag / a_guess)
     if depth <= 0:
         depth = 0.01  # avoid division by zero
     Qc_real_guess = Ql_guess / depth
+
+    if Qc_real_guess <= 0:
+        Qc_real_guess = Ql_guess * 10.0
 
     return {
         "fr": fr_guess,
@@ -150,6 +158,7 @@ def fit_notch_s21(
         initial_guess = estimate_notch_initial_guess(f, s21_complex)
 
     # Unpack guess into an array: [fr, Ql, Qc_real, Qc_imag, a, alpha, tau]
+    print(f"DEBUG: initial_guess = {initial_guess}")
     p0 = [
         initial_guess["fr"],
         initial_guess["Ql"],
@@ -174,7 +183,7 @@ def fit_notch_s21(
     # Bounds to prevent unphysical regimes
     # fr > 0, Ql > 0, a > 0
     bounds = (
-        [0, 1, -np.inf, -np.inf, 0, -np.inf, -np.inf],
+        [0, 0, -np.inf, -np.inf, 0, -np.inf, -np.inf],
         [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf, np.inf],
     )
 

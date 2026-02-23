@@ -17,6 +17,7 @@ from scripts.preprocessing import (
     convert_flux_dependence,
     convert_hfss_admittance,
     convert_hfss_phase,
+    convert_hfss_s_parameters,
 )
 from scripts.simulation import run_lc
 
@@ -57,6 +58,11 @@ preprocess_app.command(name="admittance", help="Import HFSS Admittance CSV to Da
 # sc preprocess phase ...
 preprocess_app.command(name="phase", help="Import HFSS Phase CSV to Database.")(
     convert_hfss_phase.main
+)
+
+# sc preprocess s-parameters ...
+preprocess_app.command(name="s-parameters", help="Import Generic HFSS S-Parameter CSV to DB.")(
+    convert_hfss_s_parameters.main
 )
 
 # sc preprocess flux ...
