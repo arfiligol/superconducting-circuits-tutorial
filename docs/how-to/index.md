@@ -19,10 +19,11 @@ updated_by: docs-team
 
 ## Categories
 
-### [Data Ingestion](ingest-data/hfss.md)
+### [Data Ingestion](ingest-data/hfss-admittance.md)
 如何將外部數據（如 HFSS 模擬結果）匯入系統。
 
-- [Ingest HFSS Data](ingest-data/hfss.md)
+- [Ingest HFSS Admittance Data](ingest-data/hfss-admittance.md)
+- [Ingest HFSS Phase Data](ingest-data/hfss-phase.md)
 
 ### [Model Fitting](fit-model/squid.md)
 執行電路參數擬合與分析。

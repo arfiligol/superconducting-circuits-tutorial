@@ -144,7 +144,7 @@ nav:
           - Installation: how-to/getting-started/installation.md
           - First Simulation: how-to/getting-started/first-simulation.md
       - Data Ingestion:
-          - HFSS Admittance: how-to/ingest-data/hfss.md
+          - HFSS Admittance: how-to/ingest-data/hfss-admittance.md
           - HFSS Phase: how-to/ingest-data/hfss-phase.md
       - Model Fitting:
           - SQUID Fitting: how-to/fit-model/squid.md

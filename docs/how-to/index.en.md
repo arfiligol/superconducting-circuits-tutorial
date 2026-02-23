@@ -18,10 +18,11 @@ Goal-oriented guides to help you solve specific problems.
 
 ## Categories
 
-### [Data Ingestion](ingest-data/hfss.md)
+### [Data Ingestion](ingest-data/hfss-admittance.md)
 Import external data (e.g., HFSS simulation results) into the system.
 
-- [Ingest HFSS Data](ingest-data/hfss.md)
+- [Ingest HFSS Admittance Data](ingest-data/hfss-admittance.md)
+- [Ingest HFSS Phase Data](ingest-data/hfss-phase.md)
 
 ### [Model Fitting](fit-model/squid.md)
 Perform circuit parameter fitting and analysis.

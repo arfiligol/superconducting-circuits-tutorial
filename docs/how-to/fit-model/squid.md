@@ -21,7 +21,7 @@ updated_by: team
 本指南說明如何針對已匯入的 Admittance 數據執行 **LC-SQUID** 模型擬合，以提取電路參數（系列電感 $L_s$ 與電容 $C$）。
 
 !!! info "前置條件"
-    - 數據已匯入資料庫（請參閱 [Ingest HFSS Data](../ingest-data/hfss.md)）。
+    - 數據已匯入資料庫（請參閱 [Ingest HFSS Admittance Data](../ingest-data/hfss-admittance.md)）。
     - 知道目標 Dataset 的 **名稱 (Name)** 或 **ID**。
 
 ---

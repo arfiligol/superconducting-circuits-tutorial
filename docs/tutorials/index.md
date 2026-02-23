@@ -31,7 +31,7 @@ updated_by: docs-team
 | Step | Analysis Capability | Implementations (Code) | Documentation |
 |------|---------------------|------------------------|---------------|
 | **0** | **Full Workflow** | (Manual HFSS + CLI) | [Tutorial: Simulation Workflow](simulation-workflow.md) |
-| **1** | **Standardize Data** | `src/scripts/preprocessing/convert_hfss_admittance.py` | [HFSS Admittance Import](../how-to/ingest-data/hfss.md) |
+| **1** | **Standardize Data** | `src/scripts/preprocessing/convert_hfss_admittance.py` | [HFSS Admittance Import](../how-to/ingest-data/hfss-admittance.md) |
 | **2** | **Visualize Raw** | `src/scripts/plot/admittance.py` | [CLI: sc plot admittance](../reference/cli/plot-admittance.md) |
 | **3** | **Extract Resonance** | `src/core/analysis/application/analysis/extraction/admittance.py` | [Physics（重建中）](../explanation/physics/index.md) |
 | **4** | **Fit LC Model** | `src/scripts/analysis/squid_fit.py` | [Tutorial: Resonance Fitting](resonance-fitting.md)<br/>[How-to: SQUID Fitting](../how-to/fit-model/squid.md) |

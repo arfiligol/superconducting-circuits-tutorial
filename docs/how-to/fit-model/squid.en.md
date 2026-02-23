@@ -20,7 +20,7 @@ updated_by: team
 This guide explains how to perform **LC-SQUID** model fitting on ingested Admittance data to extract circuit parameters (Series Inductance $L_s$ and Capacitance $C$).
 
 !!! info "Prerequisites"
-    - Data has been ingested (see [Ingest HFSS Data](../ingest-data/hfss.md)).
+    - Data has been ingested (see [Ingest HFSS Admittance Data](../ingest-data/hfss-admittance.md)).
     - You know the target Dataset **Name** or **ID**.
 
 ---

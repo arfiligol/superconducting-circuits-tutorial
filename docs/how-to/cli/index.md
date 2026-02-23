@@ -31,7 +31,7 @@ uv run sc <CATEGORY> <COMMAND>
 | 任務分類 | 指令前綴 | 相關指南 |
 |----------|----------|----------|
 | **資料庫管理** | `sc db ...` | [Database Management](../manage-db/index.md) |
-| **資料匯入** | `sc preprocess ...` | [Ingest HFSS Data](../ingest-data/hfss.md) |
+| **資料匯入** | `sc preprocess ...` | [Ingest HFSS Admittance](../ingest-data/hfss-admittance.md), [Phase](../ingest-data/hfss-phase.md) |
 | **分析與擬合** | `sc analysis ...` | [Fit SQUID Models](../fit-model/squid.md) |
 | **繪圖與比較** | `sc plot ...` | [CLI Reference: Plotting](../../reference/cli/index.md) |
 | **模擬** | `sc sim ...` | [CLI Reference: Simulation](../../reference/cli/sc-simulate-lc.md) |
