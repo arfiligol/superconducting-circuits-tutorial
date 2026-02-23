@@ -9,7 +9,7 @@ import typer
 # Import command modules
 # Note: We import the 'main' function for single-command scripts,
 # and the 'app' object for multi-command scripts (like manage_db).
-from scripts.analysis import squid_fit
+from scripts.analysis import manage_analysis, squid_fit
 from scripts.database import manage_db
 from scripts.docs import generate_cli_reference, sync_cli_reference
 from scripts.plot import admittance, flux_dependence, resonance_map
@@ -36,6 +36,11 @@ app.add_typer(analysis_app, name="analysis")
 # sc analysis fit ...
 # Mount the fit sub-application (which contains 'lc-squid' command)
 analysis_app.add_typer(squid_fit.app, name="fit")
+
+# sc analysis resonance-fit ...
+analysis_app.command(name="resonance-fit", help="Perform Notch S-Parameter resonance fit.")(
+    manage_analysis.fit_resonance
+)
 
 
 # ==========================================
