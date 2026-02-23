@@ -425,11 +425,9 @@ class MultiResonanceVectorFitter:
         self.vf_engine.vector_fit(n_poles_real=bg_poles, n_poles_cmplx=n_resonators)
 
         # Reconstruct the model
-        model_ntwk = self.vf_engine.get_model_response(0, 1)  # (i, j) = (0, 1) for S21? Wait.
-        # Wait, skrf internal indexing: response index for S21 in a 2-port is (1, 0).
-        # Network ports are 0-indexed in skrf, so S21 -> port 2 to port 1 -> index (1, 0)
-
-        model_s21 = self.vf_engine.get_model_response(1, 0)
+        # Pass the original frequency array self.f to ensure the model output array
+        # exactly matches the length of the raw data for plotting.
+        model_s21 = self.vf_engine.get_model_response(1, 0, self.f)
 
         frequencies, q_factors = self._extract_physics()
 
