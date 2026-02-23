@@ -1,7 +1,7 @@
 ---
 aliases:
-  - "Ingest HFSS Phase"
-  - "匯入 HFSS 相位數據"
+  - "Ingest HFSS Scattering"
+  - "匯入 HFSS 散射參數數據"
 tags:
   - diataxis/how-to
   - audience/user
@@ -10,15 +10,15 @@ tags:
 status: stable
 owner: team
 audience: user
-scope: "如何將 HFSS 匯出的 Phase CSV 檔案匯入系統資料庫"
+scope: "如何將 HFSS 匯出的 S-Parameter (Scattering) CSV 檔案匯入系統資料庫"
 version: v1.1.2
 last_updated: 2026-02-23
 updated_by: team
 ---
 
-# Ingesting HFSS Phase Data
+# Ingesting HFSS Scattering Data
 
-本指南說明如何將 HFSS 中取得的 S-parameter Phase `.csv` 數據匯入系統，以供後續（例如共振頻率 Fitting）使用。適用於 **Driven Modal** 模擬數據，利用 Group Delay 峰值來尋找共振頻率。
+本指南說明如何將 HFSS 中取得的 S-parameter (Scattering Matrix) `.csv` 數據匯入系統。支援 **實部 (Re)**、**虛部 (Im)**、與 **相位 (Phase)** 三種表示法，以供後續（例如共振頻率 Fitting）使用。適用於 **Driven Modal** 模擬數據。
 
 !!! info "前置條件"
     - 您已在 HFSS 完成模擬，並建立 Phase Plot（例如 ang_rad(S21) 或 cang_deg(S11) 等）。

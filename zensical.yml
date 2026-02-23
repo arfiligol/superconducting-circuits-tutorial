@@ -144,8 +144,9 @@ nav:
           - Installation: how-to/getting-started/installation.md
           - First Simulation: how-to/getting-started/first-simulation.md
       - Data Ingestion:
+          - Overview: how-to/ingest-data/index.md
           - HFSS Admittance: how-to/ingest-data/hfss-admittance.md
-          - HFSS Phase: how-to/ingest-data/hfss-phase.md
+          - HFSS Scattering: how-to/ingest-data/hfss-scattering.md
       - Model Fitting:
           - SQUID Fitting: how-to/fit-model/squid.md
       - Database Management:
@@ -203,8 +204,9 @@ nav:
               - Convert HFSS Admittance: reference/cli/sc-preprocess-admittance.md
               - Convert HFSS Phase: reference/cli/sc-preprocess-phase.md
               - Convert Flux Dependence: reference/cli/sc-convert-flux-dependence.md
-          - Data Fitting:
+          - Analysis:
               - SQUID Model Fit: reference/cli/sc-fit-squid.md
+              - Resonance Fitting: reference/cli/sc-analysis-resonance-fit.md
           - Data Plotting:
               - Plot Admittance: reference/cli/plot-admittance.md
               - Flux Dependence Plot: reference/cli/flux-dependence-plot.md

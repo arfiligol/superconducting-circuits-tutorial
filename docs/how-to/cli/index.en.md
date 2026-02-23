@@ -30,7 +30,7 @@ uv run sc <CATEGORY> <COMMAND>
 | Category | Command Prefix | Related Guide |
 |----------|----------------|---------------|
 | **Database** | `sc db ...` | [Database Management](../manage-db/index.md) |
-| **Ingestion** | `sc preprocess ...` | [Ingest HFSS Admittance](../ingest-data/hfss-admittance.md), [Phase](../ingest-data/hfss-phase.md) |
+| **Ingestion** | `sc preprocess ...` | [Ingest HFSS Admittance](../ingest-data/hfss-admittance.md), [Scattering](../ingest-data/hfss-scattering.md) |
 | **Analysis** | `sc analysis ...` | [Fit SQUID Models](../fit-model/squid.md) |
 | **Plotting & Comparison** | `sc plot ...` | [CLI Reference: Plotting](../../reference/cli/index.en.md) |
 | **Simulation** | `sc sim ...` | [CLI Reference: Simulation](../../reference/cli/sc-simulate-lc.en.md) |

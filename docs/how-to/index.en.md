@@ -22,7 +22,7 @@ Goal-oriented guides to help you solve specific problems.
 Import external data (e.g., HFSS simulation results) into the system.
 
 - [Ingest HFSS Admittance Data](ingest-data/hfss-admittance.md)
-- [Ingest HFSS Phase Data](ingest-data/hfss-phase.md)
+- [Ingest HFSS Scattering Data](ingest-data/hfss-scattering.md)
 
 ### [Model Fitting](fit-model/squid.md)
 Perform circuit parameter fitting and analysis.

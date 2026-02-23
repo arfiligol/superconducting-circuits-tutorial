@@ -1,6 +1,6 @@
 ---
 aliases:
-  - "Ingest HFSS Phase"
+  - "Ingest HFSS Scattering"
 tags:
   - diataxis/how-to
   - audience/user
@@ -9,15 +9,15 @@ tags:
 status: stable
 owner: team
 audience: user
-scope: "How to ingest HFSS-exported phase CSV files into the database"
+scope: "How to ingest HFSS-exported S-parameter (Scattering) CSV files into the database"
 version: v1.1.2
 last_updated: 2026-02-23
 updated_by: team
 ---
 
-# Ingesting HFSS Phase Data
+# Ingesting HFSS Scattering Data
 
-This guide explains how to ingest S-parameter Phase `.csv` data exported from HFSS into the system for downstream analysis (e.g., resonance frequency fitting). This applies to **Driven Modal** simulation data to find resonant frequencies using Group Delay peaks.
+This guide explains how to ingest S-parameter (Scattering Matrix) `.csv` data exported from HFSS into the system for downstream analysis (e.g., resonance frequency fitting). It supports **Real (Re)**, **Imaginary (Im)**, and **Phase** representations. This applies to **Driven Modal** simulation data.
 
 !!! info "Prerequisites"
     - You have completed an HFSS simulation and created a Phase plot (e.g. `ang_rad(S21)` or `cang_deg(S11)`).

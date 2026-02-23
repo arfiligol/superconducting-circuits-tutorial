@@ -23,7 +23,7 @@ updated_by: docs-team
 如何將外部數據（如 HFSS 模擬結果）匯入系統。
 
 - [Ingest HFSS Admittance Data](ingest-data/hfss-admittance.md)
-- [Ingest HFSS Phase Data](ingest-data/hfss-phase.md)
+- [Ingest HFSS Scattering Data](ingest-data/hfss-scattering.md)
 
 ### [Model Fitting](fit-model/squid.md)
 執行電路參數擬合與分析。
