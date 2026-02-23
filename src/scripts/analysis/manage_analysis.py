@@ -19,6 +19,12 @@ def fit_resonance(
     parameter: Annotated[
         str, typer.Option("--parameter", "-p", help="S-parameter name (e.g. S21, S11)")
     ] = "S21",
+    f_min: Annotated[
+        float | None, typer.Option("--f-min", help="Minimum frequency for fitting range in GHz")
+    ] = None,
+    f_max: Annotated[
+        float | None, typer.Option("--f-max", help="Maximum frequency for fitting range in GHz")
+    ] = None,
 ) -> None:
     """
     Perform a complex resonance fit (Notch model) on a dataset's S-parameters.
@@ -34,7 +40,10 @@ def fit_resonance(
         console.print(f"Targeting Parameter: [bold]{parameter}[/bold]")
 
         result = service.perform_notch_fit(
-            dataset_identifier=dataset_identifier, parameter=parameter
+            dataset_identifier=dataset_identifier,
+            parameter=parameter,
+            f_min=f_min,
+            f_max=f_max,
         )
 
         console.print("[green]Fit completed successfully![/green]\n")

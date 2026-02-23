@@ -75,6 +75,12 @@ updated_by: docs-team
 5. **限制與近似**：明確寫出模型適用範圍與失效條件。
 6. **跨文件導航**：依內容相關性提供 1–3 個延伸連結（可為 Tutorial、How-to、Reference、Design Decisions；不強制同時具備）。
 
+## 學術引用與可靠性 (Citations & Reliability)
+
+所有涉及核心物理推導、近似模型（如 CPZM）或工程擬合公式的段落，都**必須附上參考文獻**。
+- 格式：文件底部需建立 `## References` 區塊，建議使用 **APA 格式**。
+- 連結寫法：若有 DOI 或 arXiv 連結，應以 Markdown 形式附上（如 `[arXiv](link)`)，方便讀者追溯。
+
 ---
 
 ## 全域敘事路徑（維持一致性）
@@ -129,4 +135,5 @@ Physics Explanation 必須同時具備：
 - **Diataxis boundary**: Explanation explains reasoning, not command-style procedures
 - **Question-driven**: each page starts from a physics question, not an engineering operation question
 - **Admonition usage**: include at least one history/application admonition per page
+- **Citations**: physics models, equations, and engineering derivations MUST include references (APA format) at the bottom of the document.
 ```

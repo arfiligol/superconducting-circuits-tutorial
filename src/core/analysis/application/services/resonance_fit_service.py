@@ -19,7 +19,11 @@ class ResonanceFitService:
         self.param_service = ParameterManagementService()
 
     def perform_notch_fit(
-        self, dataset_identifier: str, parameter: str = "S21"
+        self,
+        dataset_identifier: str,
+        parameter: str = "S21",
+        f_min: float | None = None,
+        f_max: float | None = None,
     ) -> dict[str, float]:
         """
         Perform a CPZM notch resonance fit on a given dataset and parameter.
@@ -80,8 +84,8 @@ class ResonanceFitService:
 
             # HFSS magnitude is often in dB. We should check if it needs conversion to linear.
             # Assuming linear magnitude for now, but if it's dB: mag_lin = 10**(mag_dB/20)
-            # The user's S-parameter files usually don't dictate dB vs lin in the representation string yet,
-            # but standard is linear unless specified. We will assume linear.
+            # The user's S-parameter files usually don't dictate dB vs lin in the representation
+            # string yet, but standard is linear unless specified. We will assume linear.
             mag_vals = np.array(mag_record.values, dtype=float)
             phase_vals = np.array(
                 phase_record.values, dtype=float
@@ -96,19 +100,30 @@ class ResonanceFitService:
             )
 
         # Now we have the arrays, call the math core
-        # Note: Depending on the axes structure from raw HFSS, there might be multiple sweep dimensions
-        # Assuming 1D for simplicity in the current implementation path.
-        # If the array is multi-dimensional (e.g. [Freq, L_jun]), slice the first bias point to prevent shaping crashes.
+        # Note: Depending on the axes structure from raw HFSS, there might be
+        # multiple sweep dimensions. Assuming 1D for simplicity in the current path.
+        # If the array is multi-dimensional (e.g. [Freq, L_jun]),
+        # slice the first bias point to prevent shaping crashes.
         if s21_complex.ndim > 1:
             s21_complex = s21_complex[:, 0]
 
-        f_arr = f_axis.flatten()
+        f_arr = f_axis.flatten() * 1e9
         s21_arr = s21_complex.flatten()
 
         # Mask out NaNs
         valid = ~np.isnan(f_arr) & ~np.isnan(s21_arr)
+
+        # Apply user-defined frequency window (converted from GHz to Hz)
+        if f_min is not None:
+            valid &= f_arr >= f_min * 1e9
+        if f_max is not None:
+            valid &= f_arr <= f_max * 1e9
+
         f_arr = f_arr[valid]
         s21_arr = s21_arr[valid]
+
+        if len(f_arr) < 5:
+            raise ValueError("Insufficient data points in the specified frequency range to fit.")
 
         # Fit
         result = fit_notch_s21(f_arr, s21_arr)
