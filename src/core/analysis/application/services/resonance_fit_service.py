@@ -1,5 +1,7 @@
 """Application service for S-Parameter resonance fitting workflows."""
 
+import typing
+
 import numpy as np
 
 from core.analysis.application.services.data_record_management import (
@@ -7,7 +9,7 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
-from core.analysis.domain.math.s_parameters import fit_notch_s21
+from core.analysis.domain.math.s_parameters import fit_notch_s21, notch_s21
 
 
 class ResonanceFitService:
@@ -24,7 +26,7 @@ class ResonanceFitService:
         parameter: str = "S21",
         f_min: float | None = None,
         f_max: float | None = None,
-    ) -> dict[str, float]:
+    ) -> dict[str, "typing.Any"]:
         """
         Perform a CPZM notch resonance fit on a given dataset and parameter.
         Uses complex representations if available, or reconstructs from magnitude/phase.
@@ -172,4 +174,22 @@ class ResonanceFitService:
             method=method_name,
         )
 
-        return result
+        model_s21 = notch_s21(
+            f_arr,
+            fr=result["fr"],
+            Ql=result["Ql"],
+            Qc_real=result["Qc_real"],
+            Qc_imag=result["Qc_imag"],
+            a=result["a"],
+            alpha=result["alpha"],
+            tau=result["tau"],
+        )
+
+        return {
+            **result,
+            "data": {
+                "f": f_arr,
+                "s21_raw": s21_arr,
+                "s21_model": model_s21,
+            },
+        }
