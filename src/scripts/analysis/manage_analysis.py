@@ -20,7 +20,7 @@ def fit_scattering(
         str, typer.Option("--parameter", "-p", help="S-parameter name (e.g. S21, S11)")
     ] = "S21",
     model: Annotated[
-        str, typer.Option("--model", "-m", help="Fit model (notch, purcell_notch, vf)")
+        str, typer.Option("--model", "-m", help="Fit model (notch, transmission, vf)")
     ] = "notch",
     f_min: Annotated[
         float | None, typer.Option("--f-min", help="Minimum frequency for fitting range in GHz")

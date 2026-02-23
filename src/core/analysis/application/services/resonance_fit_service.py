@@ -11,9 +11,9 @@ from core.analysis.application.services.dataset_management import DatasetManagem
 from core.analysis.application.services.parameter_management import ParameterManagementService
 from core.analysis.domain.math.s_parameters import (
     fit_notch_s21,
-    fit_purcell_notch_s21,
+    fit_transmission_s21,
     notch_s21,
-    purcell_notch_s21,
+    transmission_s21,
 )
 
 
@@ -143,9 +143,9 @@ class ResonanceFitService:
         if model == "notch":
             result = fit_notch_s21(f_arr, s21_arr)
             method_name = f"complex_notch_fit_{parameter}"
-        elif model == "purcell_notch":
-            result = fit_purcell_notch_s21(f_arr, s21_arr)
-            method_name = f"purcell_notch_fit_{parameter}"
+        elif model == "transmission":
+            result = fit_transmission_s21(f_arr, s21_arr)
+            method_name = f"transmission_fit_{parameter}"
         else:
             raise ValueError(f"Unsupported model: {model}")
 
@@ -201,8 +201,8 @@ class ResonanceFitService:
                 alpha=result["alpha"],
                 tau=result["tau"],
             )
-        elif model == "purcell_notch":
-            model_s21 = purcell_notch_s21(
+        elif model == "transmission":
+            model_s21 = transmission_s21(
                 f_arr,
                 fr=result["fr"],
                 Ql=result["Ql"],

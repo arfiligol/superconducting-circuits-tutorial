@@ -223,7 +223,7 @@ def fit_notch_s21(
     }
 
 
-def purcell_notch_s21(
+def transmission_s21(
     f: np.ndarray,
     fr: float,
     Ql: float,
@@ -251,10 +251,8 @@ def purcell_notch_s21(
     return baseline * peak
 
 
-def estimate_purcell_notch_initial_guess(
-    f: np.ndarray, s21_complex: np.ndarray
-) -> dict[str, float]:
-    """Estimate initial guess parameters for a purcell notch/transmission peak."""
+def estimate_transmission_initial_guess(f: np.ndarray, s21_complex: np.ndarray) -> dict[str, float]:
+    """Estimate initial guess parameters for a transmission peak."""
     s21_mag = np.abs(s21_complex)
     s21_phase = np.unwrap(np.angle(s21_complex))
 
@@ -311,14 +309,14 @@ def estimate_purcell_notch_initial_guess(
     }
 
 
-def fit_purcell_notch_s21(
+def fit_transmission_s21(
     f: np.ndarray, s21_complex: np.ndarray, initial_guess: dict[str, float] | None = None
 ) -> dict[str, float]:
-    """Fits the Purcell notch (transmission) model to data using least squares."""
+    """Fits the transmission (inline resonator/peak) model to data using least squares."""
     from scipy.optimize import least_squares
 
     if initial_guess is None:
-        initial_guess = estimate_purcell_notch_initial_guess(f, s21_complex)
+        initial_guess = estimate_transmission_initial_guess(f, s21_complex)
 
     print(f"DEBUG: initial_guess = {initial_guess}")
     p0 = [
@@ -331,7 +329,7 @@ def fit_purcell_notch_s21(
 
     def residual(p, f_data, s21_data):
         fr, Ql, a, alpha, tau = p
-        s21_model = purcell_notch_s21(f_data, fr, Ql, a, alpha, tau)
+        s21_model = transmission_s21(f_data, fr, Ql, a, alpha, tau)
         diff = s21_model - s21_data
         return np.concatenate((np.real(diff), np.imag(diff)))
 
