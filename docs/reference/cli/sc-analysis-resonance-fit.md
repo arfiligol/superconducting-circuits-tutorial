@@ -25,8 +25,9 @@ updated_by: docs-team
 | Subcommand | 說明 |
 |------------|------|
 | `scattering` | 對 S 參數（如 S21, S11）執行共振擬合 |
-| `admittance` | 對 Y 參數執行 RLC 共振擬合（尚未實作） |
-| `compare` | 比較 S 參數與 Y 參數的擬合結果（尚未實作） |
+
+!!! tip "尋找 Admittance (Y 參數) 萃取？"
+    如果你需要用 Im(Y)=0 零交叉法萃取共振頻率，請使用 [`sc analysis resonance-extract`](sc-analysis-resonance-extract.md)。
 
 ---
 

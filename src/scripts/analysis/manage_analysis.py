@@ -10,7 +10,7 @@ from core.analysis.application.services.resonance_fit_service import ResonanceFi
 from core.shared.logging import setup_logging
 
 console = Console()
-app = typer.Typer(help="Resonance Fitting Subcommands.", add_completion=False)
+app = typer.Typer(help="S-Parameter Resonance Fitting Subcommands.", add_completion=False)
 
 
 @app.command("scattering")
@@ -144,26 +144,6 @@ def fit_scattering(
     except Exception as e:
         console.print(f"[red]Error during fitting:[/red] {e}")
         raise typer.Exit(code=1)
-
-
-@app.command("admittance")
-def fit_admittance(
-    dataset_identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")],
-) -> None:
-    """Perform RLC resonance fit on a dataset's Y-parameters."""
-    console.print(
-        f"[yellow]Admittance fitting for {dataset_identifier} is not yet implemented.[/yellow]"
-    )
-    raise typer.Exit(code=1)
-
-
-@app.command("compare")
-def compare_fits(
-    dataset_identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")],
-) -> None:
-    """Compare S-parameter and Y-parameter fits for the same dataset."""
-    console.print(f"[yellow]Comparison for {dataset_identifier} is not yet implemented.[/yellow]")
-    raise typer.Exit(code=1)
 
 
 def main() -> None:
