@@ -21,6 +21,10 @@ KEYWORD_PREFIXES: Sequence[str] = (
     "AMPLITUDE",
     "FLUX",
     "FLUXDEP",
+    "ANG",
+    "CANG",
+    "RAD",
+    "DEG",
 )
 
 _DELIMS = {"_", "-"}

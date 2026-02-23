@@ -56,10 +56,10 @@ uv run sc-simulate-lc --output data/processed/reports/lc.json
 
 <!-- CLI-HELP-START -->
 
-## CLI Help（自動生成）
+## CLI Help (自動生成)
 
 !!! note "自動生成"
-    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+    此區塊由 `sc-docs-cli` 產生, 請勿手動修改.
 
 ```text
 Usage: sc-simulate-lc [OPTIONS]
@@ -83,3 +83,4 @@ Usage: sc-simulate-lc [OPTIONS]
 ```
 
 <!-- CLI-HELP-END -->
+

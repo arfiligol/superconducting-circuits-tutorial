@@ -34,6 +34,7 @@ uv run sc preprocess admittance [OPTIONS] [csv ...]
 |--------|-------------|---------|
 | `--dataset-name` | 強制指定 Dataset 名稱 (單檔模式生效) | |
 | `--tags` | 標籤 (Tag) 用逗號分隔 | |
+| `--match` | 目錄模式下用來過濾檔案名稱的關鍵字 (用逗號分隔) | `Re_Y,Im_Y` |
 
 ## Examples
 

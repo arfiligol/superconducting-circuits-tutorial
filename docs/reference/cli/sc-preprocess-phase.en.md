@@ -32,8 +32,9 @@ uv run sc preprocess phase [OPTIONS] [csv ...]
 
 | Option | Description | Default |
 |---|---|---|
-| `--dataset-name` | Override dataset name | - |
-| `--tags` | Comma-separated tags | - |
+| `--dataset-name` | Force specific Dataset Name (single file mode only) | |
+| `--tags` | Comma-separated tags | |
+| `--match` | Comma-separated keywords to filter files in directory mode | `Phase,S21,deg,rad` |
 
 ## Examples
 

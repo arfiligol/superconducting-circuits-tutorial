@@ -31,17 +31,21 @@ def reshape_matrix(df: pd.DataFrame, l_col: str, freq_col: str, y_col: str) -> p
     return pivot
 
 
-def derive_parameter_name(column: str) -> str:
-    lower = column.lower()
-    if "y11" in lower or "(rect" in lower:
+def derive_parameter_name(input_str: str) -> str:
+    lower = input_str.lower()
+    if "y11" in lower:
         return "Y11"
+    if "yin" in lower:
+        return "Yin"
     if "y22" in lower:
         return "Y22"
     if "y12" in lower:
         return "Y12"
     if "y21" in lower:
         return "Y21"
-    return "Y"
+    raise ValueError(
+        f"Unable to derive admittance parameter name (Y11, Yin, etc.) from '{input_str}'"
+    )
 
 
 def build_dataset_payload(
@@ -74,5 +78,5 @@ def process_hfss_admittance_file(raw_path: Path) -> DatasetPayload:
     df = pd.read_csv(raw_path)
     l_col, freq_col, y_col = detect_columns(df)
     pivot = reshape_matrix(df, l_col, freq_col, y_col)
-    parameter_name = derive_parameter_name(y_col)
+    parameter_name = derive_parameter_name(raw_path.name)
     return build_dataset_payload(pivot, str(raw_path.resolve()), parameter_name)

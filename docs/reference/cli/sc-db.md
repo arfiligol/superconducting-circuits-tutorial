@@ -78,10 +78,10 @@ uv run sc-db tag update "NewTag" "RenamedTag"
 
 <!-- CLI-HELP-START -->
 
-## CLI Help（自動生成）
+## CLI Help (自動生成)
 
 !!! note "自動生成"
-    此區塊由 `sc-docs-cli` 產生，請勿手動修改。
+    此區塊由 `sc-docs-cli` 產生, 請勿手動修改.
 
 ```text
 Usage: sc-db [OPTIONS] COMMAND [ARGS]...
@@ -100,3 +100,4 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
+

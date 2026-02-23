@@ -40,6 +40,14 @@ def main(
         str,
         typer.Option(help="Comma-separated tags for database record"),
     ] = "",
+    match_keywords: Annotated[
+        str,
+        typer.Option(
+            "--match",
+            help="Comma-separated keywords to filter files (e.g., 'Re_Y,Im_Y'). "
+            "Fits admittance naturally.",
+        ),
+    ] = "Re_Y,Im_Y",
 ) -> None:
     """
     Import HFSS admittance CSV to SQLite database.
@@ -49,6 +57,7 @@ def main(
     - AUTOMATICALLY SKIPS datasets that already exist in the database (by name).
     - --dataset-name is ignored in batch/directory mode.
     - --tags are applied to all NEWLY imported datasets in this run.
+    - --match filters files in directories to only those containing any of the keywords.
     """
     setup_logging(level="INFO")
 
@@ -63,9 +72,15 @@ def main(
 
     # Expand directories to files
     processed_files: list[Path] = []
+
+    keywords = [k.strip().lower() for k in match_keywords.split(",") if k.strip()]
+
     for path in input_files:
         if path.is_dir():
-            processed_files.extend(path.glob("*.csv"))
+            for f in path.glob("*.csv"):
+                # Check if file matches any of the keywords
+                if not keywords or any(k in f.name.lower() for k in keywords):
+                    processed_files.append(f)
         else:
             processed_files.append(path)
 
@@ -93,14 +108,6 @@ def main(
                 typer.echo("Warning: --dataset-name ignored for batch processing. Using filenames.")
                 dataset_name = None  # Reset to prevent misuse in loop
             target_name = strip_dataset_suffix(raw_path.stem)
-
-        # Check if dataset exists in DB
-        with get_unit_of_work() as uow:
-            existing = uow.datasets.get_by_name(target_name)
-
-        if existing:
-            typer.echo(f"Skipping '{target_name}' (already exists)")
-            continue
 
         typer.echo(f"Importing '{raw_path.name}' as '{target_name}'...")
         import_hfss_to_database(

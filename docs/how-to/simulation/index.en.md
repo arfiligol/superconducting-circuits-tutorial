@@ -45,5 +45,5 @@ We provide **two main approaches** for simulation, with Python as the primary me
 
 - [CLI Reference: sc-simulate-lc](../../reference/cli/sc-simulate-lc.md) - Command options
 - [Tutorial: LC Resonator](../../tutorials/lc-resonator.md) - End-to-end starter tutorial
-- [Harmonic Balance Explanation](../../explanation/physics/harmonic-balance.md) - Simulation principles
+- [Physics (Rebuild In Progress)](../../explanation/physics/index.en.md) - Physics section status
 - [Extend Julia Functions](../extend/extend-julia-functions.md) - Contributor guide

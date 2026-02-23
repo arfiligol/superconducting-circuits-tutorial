@@ -46,5 +46,5 @@ updated_by: docs-team
 
 - [CLI Reference: sc-simulate-lc](../../reference/cli/sc-simulate-lc.md) - 指令參數
 - [Tutorial: LC 共振器](../../tutorials/lc-resonator.md) - 完整入門案例
-- [Harmonic Balance 說明](../../explanation/physics/harmonic-balance.md) - 模擬原理
+- [Physics（重建中）](../../explanation/physics/index.md) - Physics 章節重建狀態
 - [擴充 Julia 函數](../extend/extend-julia-functions.md) - 貢獻者指南

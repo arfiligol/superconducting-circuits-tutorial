@@ -5,6 +5,7 @@ repo_name: arfiligol/superconducting-circuits-tutorial
 
 theme:
   name: zensical
+  custom_dir: overrides
   palette:
     - media: "(prefers-color-scheme)"
       scheme: default
@@ -46,7 +47,7 @@ plugins:
   - i18n:
       docs_structure: suffix
       fallback_to_default: true
-      reconfigure_material: false
+      reconfigure_material: true
       reconfigure_search: false
       languages:
         - locale: zh-TW
@@ -57,7 +58,9 @@ plugins:
           theme:
             language: zh-TW
           nav_translations:
-            Home: 首頁
+            Home: Home
+            About: About
+            Documentation: Documentation
             Getting Started: 入門
             Installation: 安裝環境
             First Simulation: 第一次模擬
@@ -112,17 +115,28 @@ not_in_nav: |
 
 
 extra_javascript:
+  - javascripts/lang-switch-same-page.js
   - javascripts/mathjax.js
   - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 extra:
+  alternate:
+    - name: 繁體中文
+      link: /
+      lang: zh-Hant
+    - name: English
+      link: /index.en/
+      lang: en
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/arfiligol
 
+copyright: |
+  © 2026 Superconducting Circuits Tutorial · <a href="https://github.com/arfiligol/superconducting-circuits-tutorial">Source</a> · <a href="https://github.com/arfiligol/superconducting-circuits-tutorial/issues">Issues</a> · <a href="/reference/contributors/">Contributors</a><br>
+  Built with <a href="https://zensical.org/" target="_blank" rel="noopener">Zensical</a>
+
 nav:
-  - Home: index.md
   - How-to Guides:
       - Overview: how-to/index.md
       - Getting Started:
@@ -164,12 +178,10 @@ nav:
       - Overview: explanation/index.md
       - Physics:
           - Overview: explanation/physics/index.md
-          - hbsolve Concepts: explanation/physics/understanding-hbsolve.md
-          - Harmonic Balance: explanation/physics/harmonic-balance.md
-          - S/Z/Y Parameters: explanation/physics/s-parameters.md
-          - SQUID JPA Basics: explanation/physics/squid-jpa-basics.md
-          - LC Resonance Model: explanation/physics/lc-resonance-model.md
-          - Resonance Extraction: explanation/physics/resonance-extraction.md
+          - Why Flux Is Quantized: explanation/physics/why-flux-is-quantized.md
+          - Why Nonlinearity Creates Unequal Levels: explanation/physics/why-nonlinearity-makes-unequal-level-spacing.md
+          - Lagrangian Mechanics and Circuit Physics: explanation/physics/lagrangian-mechanics-and-circuit-physics.md
+          - Why SQUID Tunes Nonlinear Inductance: explanation/physics/squid-controls-nonlinear-inductance.md
       - Architecture:
           - Pipeline:
               - Overview: explanation/architecture/pipeline/index.md
@@ -230,6 +242,7 @@ nav:
               - Standards: reference/guardrails/documentation-design/standards.md
               - Style: reference/guardrails/documentation-design/style.md
               - Maintenance: reference/guardrails/documentation-design/maintenance.md
+              - Explanation Physics: reference/guardrails/documentation-design/explanation-physics.md
               - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
               - CLI Docs Automation: how-to/contributing/cli-docs-automation.md
       - Contributors: reference/contributors.md

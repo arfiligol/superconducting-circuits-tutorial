@@ -10,19 +10,19 @@ status: stable
 owner: team
 audience: user
 scope: "How to ingest HFSS-exported admittance CSV files into the database"
-version: v1.1.1
+version: v1.1.2
 last_updated: 2026-02-11
 updated_by: team
 ---
 
 # Ingesting HFSS Data
 
-This guide explains how to ingest HFSS report-exported Admittance (Y-parameter) `.csv` data into the system for further analysis.
+This guide explains how to ingest Admittance (Y-parameter) `.csv` data exported from HFSS after plotting the curves, so it can be used for downstream analysis.
 
 !!! info "Prerequisites"
-    - You have completed an HFSS simulation and created an Admittance report (for example, Im(Y11) vs Frequency).
-    - You have exported the report data to a `.csv` file.
-    - The filename will be used as the Dataset Name (e.g., `Design_A_Im_Y11.csv` -> Dataset: `Design_A_Im_Y11`).
+    - You have completed an HFSS simulation and created an Admittance plot (for example, Im(Y11) vs Frequency).
+    - You exported the plotted data to a `.csv` file (Export Plot Data / Export to File).
+    - The system automatically derives the Dataset Name from the filename by stripping suffixes like `_Im` and `_Y11` (e.g., `Design_A_Im_Y11.csv` -> Dataset: `Design_A`).
 
 ---
 
@@ -30,15 +30,16 @@ This guide explains how to ingest HFSS report-exported Admittance (Y-parameter) 
 
 === "CLI"
 
-    Export `.csv` from HFSS first, then use `sc preprocess admittance`.
+    Create the plot in HFSS first, export `.csv` from that plot, then run `sc preprocess admittance`.
 
-    ### 1. Export `.csv` in HFSS
+    ### 1. Plot in HFSS, then export `.csv`
 
-    From the Admittance report window:
+    From the Admittance plot/report window:
 
-    1. Create or open an Admittance report (for example, Im(Y11)).
-    2. In the report window, choose **Export** / **Export to File**.
-    3. Select `.csv` as the output format and save the file.
+    1. Create or open an Admittance plot (for example, Im(Y11) vs Frequency).
+    2. Verify the plotted curve and sweep range first.
+    3. Choose **Export Plot Data** / **Export to File**.
+    4. Select `.csv` as the output format and save the file.
 
     ### 2. Ingest Single `.csv` File
 
@@ -56,8 +57,9 @@ This guide explains how to ingest HFSS report-exported Admittance (Y-parameter) 
     uv run sc preprocess admittance path/to/data_folder/
     ```
 
-    !!! tip "Duplicate Check"
-        The system checks Dataset Names. Duplicate names are skipped by default.
+    !!! tip "Auto-filtering & Duplicate Check"
+        - In directory mode, the system defaults to only processing `.csv` files that contain `Re_Y` or `Im_Y` in their filename. You can use `--match "Y11,Yin"` to customize the filter.
+        - The system automatically checks Dataset Names. If a name already exists, it is skipped by default to avoid duplicates.
         To force an update, utilize the database management tools to remove old data first (see [Manage Database](../manage-db/index.md)).
 
 === "UI (TBD)"

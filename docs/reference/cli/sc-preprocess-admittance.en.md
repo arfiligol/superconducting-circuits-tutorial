@@ -32,8 +32,9 @@ uv run sc preprocess admittance [OPTIONS] [csv ...]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--dataset-name` | Override Dataset Name (Single file only) | |
+| `--dataset-name` | Force specific Dataset Name (single file mode only) | |
 | `--tags` | Comma-separated tags | |
+| `--match` | Comma-separated keywords to filter files in directory mode | `Re_Y,Im_Y` |
 
 ## Examples
 

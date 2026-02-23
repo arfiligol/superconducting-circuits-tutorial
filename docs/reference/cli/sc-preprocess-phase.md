@@ -32,7 +32,9 @@ uv run sc preprocess phase [OPTIONS] [csv ...]
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--dataset-name` | 強制指定 Dataset 名稱 (預設使用檔名) | |
+| `--dataset-name` | 強制指定 Dataset 名稱 (單檔模式生效) | |
+| `--tags` | 標籤 (Tag) 用逗號分隔 | |
+| `--match` | 目錄模式下用來過濾檔案名稱的關鍵字 (用逗號分隔) | `Phase,S21,deg,rad` |
 
 ## Examples
 

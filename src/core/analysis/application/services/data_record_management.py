@@ -59,6 +59,7 @@ class DataRecordManagementService:
             data_type=record.data_type,
             parameter=record.parameter,
             representation=record.representation,
+            created_at=record.created_at,
         )
 
     def _to_detail(self, record: DataRecord) -> DataRecordDetailDTO:
@@ -70,6 +71,7 @@ class DataRecordManagementService:
             representation=record.representation,
             axes=record.axes,
             values=record.values,
+            created_at=record.created_at,
         )
 
     def _sort_records(

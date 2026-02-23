@@ -24,12 +24,12 @@ updated_by: docs-team
 **背後原理**：
 1. **為什麼看 Im(Y)?**
    並聯 LC 電路共振時，虛部導納為零 ($Im(Y)=0$)。我們透過尋找過零點來提取共振頻率 $f_0$。
-   > 深入閱讀：[Resonance Extraction: Admittance Method](../explanation/physics/resonance-extraction.md#1-admittance-method)
+   > 深入閱讀：[Physics（重建中）](../explanation/physics/index.md)
 
 2. **為什麼擬合模型?**
    提取出的 $f_0$ 會隨 $L_{jun}$ (Junction Inductance) 變化。透過擬合 $f_0(L_{jun})$ 曲線，我們可以反推電路參數。
    $$ f = \frac{1}{2\pi\sqrt{(L_{jun}/2 + L_s)C_{eff}}} $$
-   > 深入閱讀：[LC Resonance Model](../explanation/physics/lc-resonance-model.md)
+   > 深入閱讀：[Physics（重建中）](../explanation/physics/index.md)
 
 ## 2. Step-by-Step Analysis
 

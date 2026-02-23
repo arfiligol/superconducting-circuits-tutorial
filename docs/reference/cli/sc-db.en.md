@@ -100,3 +100,4 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
+

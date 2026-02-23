@@ -8,7 +8,6 @@ Requires-Dist: ipython>=9.7.0
 Requires-Dist: juliacall>=0.9.31
 Requires-Dist: lmfit>=1.3.1
 Requires-Dist: matplotlib>=3.10.7
-Requires-Dist: mkdocs-roamlinks-plugin>=0.3.2
 Requires-Dist: numpy>=2.3.5
 Requires-Dist: pandas>=2.3.3
 Requires-Dist: pandas-stubs>=2.3.3.251201
@@ -45,7 +44,7 @@ uv sync
 ### 2. 本地預覽文件
 
 ```bash
-uv run mkdocs serve
+uv run --group dev zensical serve -f zensical.yml
 ```
 
 ## 📁 專案結構
@@ -62,7 +61,7 @@ superconducting-circuits-tutorial/
 │   ├── raw/                  # 原始數據 (HFSS/VNA)
 │   └── processed/            # 分析結果
 │   └── database.db           # SQLite 資料庫
-├── docs/                     # MkDocs 教學文件
+├── docs/                     # Zensical 教學文件
 ├── examples/                 # 可執行範例
 ├── pyproject.toml            # Python 依賴 (uv)
 ├── juliapkg.json             # Julia 依賴 (JosephsonCircuits.jl)
@@ -88,16 +87,18 @@ Python CLI 工具進行數據分析：
 
 ```bash
 # SQUID 模型擬合
-uv run sc-fit-squid SampleDataset
+uv run sc analysis fit lc-squid SampleDataset
 
 # Flux 依賴性繪圖
-uv run flux-dependence-plot FluxSweepDataset
+uv run sc plot flux-dependence FluxSweepDataset
 ```
 
 | 指令 | 說明 |
 |------|------|
-| `sc-fit-squid` | SQUID 導納模型擬合 |
-| `flux-dependence-plot` | Flux 依賴性分析繪圖 |
+| `sc analysis fit lc-squid` | SQUID 導納模型擬合 |
+| `sc plot admittance` | 導納數據視覺化 (lines/heatmap) |
+| `sc plot flux-dependence` | Flux 依賴性分析繪圖 |
+| `sc plot different-qubit-structure-frequency-comparison-table` | 不同 Qubit 結構頻率比較表 |
 
 ## 🎯 適合誰？
 

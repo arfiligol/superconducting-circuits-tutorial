@@ -52,6 +52,7 @@ Development standards that ensure code quality and consistency.
 | Rule | Description | Agent Rule |
 |---|---|---|
 | [Documentation Design](./documentation-design/documentation.en.md) | Index: standards / style / maintenance | [#agent-rule](./documentation-design/documentation.en.md#agent-rule) |
+| [Explanation Physics](./documentation-design/explanation-physics.en.md) | positioning and consistency rules for Explanation/Physics | [#agent-rule](./documentation-design/explanation-physics.en.md#agent-rule) |
 | [Circuit Diagrams](../../how-to/contributing/circuit-diagrams.en.md) | Schemdraw rules | [#agent-rule](../../how-to/contributing/circuit-diagrams.en.md#agent-rule) |
 
 ---

@@ -10,8 +10,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Documentation design index: standards / style / maintenance"
-version: v0.2.0
-last_updated: 2026-02-08
+version: v0.3.0
+last_updated: 2026-02-11
 updated_by: docs-team
 ---
 
@@ -28,6 +28,7 @@ Index for documentation design rules (aligned with this repo’s Zensical + i18n
 | [Standards](standards.en.md) | Diataxis + frontmatter/tags + core rules | [#agent-rule](standards.en.md#agent-rule) |
 | [Style](style.en.md) | tone + visual elements (admonitions/tabs/mermaid) | [#agent-rule](style.en.md#agent-rule) |
 | [Maintenance](maintenance.en.md) | bilingual sync + frontmatter updates + Zensical checks | [#agent-rule](maintenance.en.md#agent-rule) |
+| [Explanation Physics](explanation-physics.en.md) | writing position, chapter skeleton, and cross-linking rules for Explanation/Physics | [#agent-rule](explanation-physics.en.md#agent-rule) |
 
 ---
 
@@ -47,5 +48,6 @@ Index for documentation design rules (aligned with this repo’s Zensical + i18n
 - **Standards**: Diataxis + frontmatter/tags + core rules (see `standards.en.md`)
 - **Style**: tone + visual elements (admonitions/tabs/mermaid) (see `style.en.md`)
 - **Maintenance**: bilingual sync + frontmatter updates + Zensical checks (see `maintenance.en.md`)
+- **Explanation Physics**: teaching position, chapter skeleton, and cross-linking rules (see `explanation-physics.en.md`)
 - Treat sub-pages as source of truth for details.
 ```

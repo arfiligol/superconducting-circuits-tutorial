@@ -83,3 +83,4 @@ Usage: sc-simulate-lc [OPTIONS]
 ```
 
 <!-- CLI-HELP-END -->
+

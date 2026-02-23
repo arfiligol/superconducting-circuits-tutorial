@@ -24,6 +24,7 @@ src/core/analysis/application/services/data_record_management.py
 src/core/analysis/application/services/database_import.py
 src/core/analysis/application/services/database_service.py
 src/core/analysis/application/services/dataset_management.py
+src/core/analysis/application/services/fit_result_persistence.py
 src/core/analysis/application/services/parameter_management.py
 src/core/analysis/application/services/squid_fitting.py
 src/core/analysis/application/services/tag_management.py
@@ -70,10 +71,16 @@ src/scripts/database/manage_db.py
 src/scripts/docs/__init__.py
 src/scripts/docs/generate_cli_reference.py
 src/scripts/docs/sync_cli_reference.py
+src/scripts/plot/__init__.py
+src/scripts/plot/admittance.py
+src/scripts/plot/flux_dependence.py
+src/scripts/plot/resonance_map.py
 src/scripts/preprocessing/__init__.py
 src/scripts/preprocessing/convert_flux_dependence.py
 src/scripts/preprocessing/convert_hfss_admittance.py
 src/scripts/preprocessing/convert_hfss_phase.py
+src/scripts/sandbox/derived_parameter_table_preview.py
+src/scripts/sandbox/resonance_sweep_table_preview.py
 src/scripts/sandbox/sandbox_plot.py
 src/scripts/simulation/__init__.py
 src/scripts/simulation/run_lc.py

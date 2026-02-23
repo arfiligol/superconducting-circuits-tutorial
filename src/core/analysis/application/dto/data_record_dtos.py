@@ -1,5 +1,7 @@
 """Data Transfer Objects for DataRecord Management."""
 
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -11,6 +13,7 @@ class DataRecordSummaryDTO(BaseModel):
     data_type: str
     parameter: str
     representation: str
+    created_at: datetime | None = None
 
 
 class DataRecordDetailDTO(BaseModel):
@@ -23,3 +26,4 @@ class DataRecordDetailDTO(BaseModel):
     representation: str
     axes: list
     values: list
+    created_at: datetime | None = None

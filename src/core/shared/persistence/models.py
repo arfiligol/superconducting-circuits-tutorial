@@ -102,6 +102,8 @@ class DataRecord(SQLModel, table=True):
     values: list = Field(default_factory=list, sa_column=Column(JSON))
     # [0.01, 0.02, ...] or [[...], [...]]
 
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
     # Relationship
     dataset: Optional["DatasetRecord"] = Relationship(back_populates="data_records")
 

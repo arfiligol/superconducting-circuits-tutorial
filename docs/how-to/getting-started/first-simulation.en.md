@@ -73,5 +73,5 @@ $$f_0 = \frac{1}{2\pi\sqrt{LC}} \approx 1.59 \text{ GHz}$$
 
 ## Next Steps
 
-- 👉 [hbsolve Concepts and Parameters](../../explanation/physics/understanding-hbsolve.md) — Learn more about the simulation function
+- 👉 [Physics (Rebuild In Progress)](../../explanation/physics/index.en.md) — The Physics section is being rebuilt
 - 👉 [LC Resonator Tutorial](../../tutorials/lc-resonator.md) — More detailed examples

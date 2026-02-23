@@ -237,9 +237,13 @@ def list_data() -> None:
     table.add_column("Type", style="green")
     table.add_column("Param", style="blue")
     table.add_column("Rep", style="dim")
+    table.add_column("Created", style="yellow")
 
     for r in records:
-        table.add_row(str(r.id), str(r.dataset_id), r.data_type, r.parameter, r.representation)
+        created_str = r.created_at.strftime("%Y-%m-%d %H:%M") if r.created_at else "-"
+        table.add_row(
+            str(r.id), str(r.dataset_id), r.data_type, r.parameter, r.representation, created_str
+        )
     console.print(table)
 
 
