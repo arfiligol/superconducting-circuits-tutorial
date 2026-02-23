@@ -10,11 +10,11 @@ from core.analysis.application.services.resonance_fit_service import ResonanceFi
 from core.shared.logging import setup_logging
 
 console = Console()
-app = typer.Typer(help="Run numerical analysis on datasets.", add_completion=False)
+app = typer.Typer(help="Resonance Fitting Subcommands.", add_completion=False)
 
 
-@app.command("resonance-fit")
-def fit_resonance(
+@app.command("scattering")
+def fit_scattering(
     dataset_identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")],
     parameter: Annotated[
         str, typer.Option("--parameter", "-p", help="S-parameter name (e.g. S21, S11)")
@@ -25,6 +25,9 @@ def fit_resonance(
     f_max: Annotated[
         float | None, typer.Option("--f-max", help="Maximum frequency for fitting range in GHz")
     ] = None,
+    bias_index: Annotated[
+        int, typer.Option("--bias-index", "-b", help="L_jun bias slice index to fit")
+    ] = 0,
 ) -> None:
     """
     Perform a complex resonance fit (Notch model) on a dataset's S-parameters.
@@ -44,6 +47,7 @@ def fit_resonance(
             parameter=parameter,
             f_min=f_min,
             f_max=f_max,
+            bias_index=bias_index,
         )
 
         console.print("[green]Fit completed successfully![/green]\n")
@@ -60,51 +64,15 @@ def fit_resonance(
         console.print("\n[yellow]Generating interactive Plotly visualization...[/yellow]")
         import numpy as np
         import plotly.graph_objects as go
-        from plotly.subplots import make_subplots
 
         data_payload = result["data"]
         f_ghz = data_payload["f"] / 1e9
         s21_raw = data_payload["s21_raw"]
         s21_fit = data_payload["s21_model"]
 
-        fig = make_subplots(
-            rows=1,
-            cols=2,
-            subplot_titles=("Complex Plane (Re vs Im)", f"Magnitude ({parameter}) vs Frequency"),
-        )
+        fig = go.Figure()
 
-        # Subplot 1: Complex Plane
-        fig.add_trace(
-            go.Scatter(
-                x=np.real(s21_raw),
-                y=np.imag(s21_raw),
-                mode="markers",
-                marker=dict(
-                    size=6,
-                    color=f_ghz,
-                    colorscale="Viridis",
-                    showscale=True,
-                    colorbar=dict(title="Freq (GHz)", x=0.45),
-                ),
-                name=f"Data ({parameter})",
-            ),
-            row=1,
-            col=1,
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=np.real(s21_fit),
-                y=np.imag(s21_fit),
-                mode="lines",
-                line=dict(color="red", width=2),
-                name="Fit Model",
-            ),
-            row=1,
-            col=1,
-        )
-
-        # Subplot 2: Magnitude vs Frequency
+        # Magnitude vs Frequency
         # Assuming linear S-parameters are passed, convert to dB for viewing
         mag_raw_db = 20 * np.log10(np.abs(s21_raw))
         mag_fit_db = 20 * np.log10(np.abs(s21_fit))
@@ -116,9 +84,7 @@ def fit_resonance(
                 mode="markers",
                 marker=dict(size=5, color="rgba(0,0,255,0.5)"),
                 name="Data Mag (dB)",
-            ),
-            row=1,
-            col=2,
+            )
         )
 
         fig.add_trace(
@@ -128,29 +94,43 @@ def fit_resonance(
                 mode="lines",
                 line=dict(color="red", width=2),
                 name="Fit Mag (dB)",
-            ),
-            row=1,
-            col=2,
+            )
         )
 
         fig.update_layout(
-            title=f"Resonance Fit: {dataset_identifier}",
+            title=f"Resonance Fit (Scattering): {dataset_identifier} ({parameter})",
             height=600,
-            width=1200,
+            width=800,
             template="plotly_white",
+            xaxis_title="Frequency (GHz)",
+            yaxis_title="Magnitude (dB)",
         )
-        fig.update_xaxes(title_text="Re", row=1, col=1)
-        # Force complex plane to be 1:1 aspect ratio
-        fig.update_yaxes(title_text="Im", scaleanchor="x", scaleratio=1, row=1, col=1)
-
-        fig.update_xaxes(title_text="Frequency (GHz)", row=1, col=2)
-        fig.update_yaxes(title_text="Magnitude (dB)", row=1, col=2)
 
         fig.show()
 
     except Exception as e:
         console.print(f"[red]Error during fitting:[/red] {e}")
         raise typer.Exit(code=1)
+
+
+@app.command("admittance")
+def fit_admittance(
+    dataset_identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")],
+) -> None:
+    """Perform RLC resonance fit on a dataset's Y-parameters."""
+    console.print(
+        f"[yellow]Admittance fitting for {dataset_identifier} is not yet implemented.[/yellow]"
+    )
+    raise typer.Exit(code=1)
+
+
+@app.command("compare")
+def compare_fits(
+    dataset_identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")],
+) -> None:
+    """Compare S-parameter and Y-parameter fits for the same dataset."""
+    console.print(f"[yellow]Comparison for {dataset_identifier} is not yet implemented.[/yellow]")
+    raise typer.Exit(code=1)
 
 
 def main() -> None:

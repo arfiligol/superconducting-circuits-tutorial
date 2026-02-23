@@ -31,33 +31,26 @@ def detect_representation(filename: str, df: pd.DataFrame) -> tuple[str, str, st
     if not freq_cols:
         raise ValueError("Unable to locate frequency column.")
 
-    # Check representation from filename or columns
-    combined = f"{filename} {' '.join(df.columns)}".lower()
+    data_cols = [c for c in df.columns if c not in l_cols and c not in freq_cols]
+    if not data_cols:
+        raise ValueError(f"Unable to locate S-parameter data column in {filename}.")
+    data_col_name = data_cols[0]
 
-    data_col = None
+    # Check representation from filename or columns
+    combined = f"{filename} {data_col_name}".lower()
+
     representation = "magnitude"  # default fallback
 
-    if "re_" in combined or "real" in combined:
-        # Looking for Re
-        data_col = [c for c in df.columns if any(kw in c.lower() for kw in ["re", "real", "s"])]
+    if "re_" in combined or "real" in combined or combined.startswith("re"):
         representation = "real"
-    elif "im_" in combined or "imag" in combined:
-        # Looking for Im
-        data_col = [c for c in df.columns if any(kw in c.lower() for kw in ["im", "imag", "s"])]
+    elif "im_" in combined or "imag" in combined or combined.startswith("im"):
         representation = "imaginary"
     elif any(kw in combined for kw in ["phase", "deg", "rad", "ang", "cang"]):
-        data_col = [
-            c
-            for c in df.columns
-            if any(kw in c.lower() for kw in ["phase", "deg", "rad", "ang", "cang"])
-        ]
         representation = "unwrapped_phase" if "cang" in combined else "phase"
     elif "mag" in combined or "amp" in combined:
-        data_col = [c for c in df.columns if any(kw in c.lower() for kw in ["mag", "amp", "s"])]
         representation = "magnitude"
-    else:
-        # Fallback to the first non-freq, non-l column
-        data_col = [c for c in df.columns if c not in l_cols and c not in freq_cols]
+
+    data_col = [data_col_name]
 
     if not data_col:
         raise ValueError(f"Unable to locate S-parameter data column in {filename}.")

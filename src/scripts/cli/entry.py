@@ -39,9 +39,7 @@ app.add_typer(analysis_app, name="analysis")
 analysis_app.add_typer(squid_fit.app, name="fit")
 
 # sc analysis resonance-fit ...
-analysis_app.command(name="resonance-fit", help="Perform Notch S-Parameter resonance fit.")(
-    manage_analysis.fit_resonance
-)
+analysis_app.add_typer(manage_analysis.app, name="resonance-fit", help="Perform resonance fits.")
 
 
 # ==========================================

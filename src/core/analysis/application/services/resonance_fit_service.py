@@ -26,6 +26,7 @@ class ResonanceFitService:
         parameter: str = "S21",
         f_min: float | None = None,
         f_max: float | None = None,
+        bias_index: int = 0,
     ) -> dict[str, "typing.Any"]:
         """
         Perform a CPZM notch resonance fit on a given dataset and parameter.
@@ -105,9 +106,14 @@ class ResonanceFitService:
         # Note: Depending on the axes structure from raw HFSS, there might be
         # multiple sweep dimensions. Assuming 1D for simplicity in the current path.
         # If the array is multi-dimensional (e.g. [Freq, L_jun]),
-        # slice the first bias point to prevent shaping crashes.
+        # slice the targeted bias point out of the matrix.
         if s21_complex.ndim > 1:
-            s21_complex = s21_complex[:, 0]
+            if bias_index >= s21_complex.shape[1]:
+                raise ValueError(
+                    f"Selected bias_index {bias_index} is out of bounds "
+                    f"for data with {s21_complex.shape[1]} bias points."
+                )
+            s21_complex = s21_complex[:, bias_index]
 
         f_arr = f_axis.flatten() * 1e9
         s21_arr = s21_complex.flatten()
