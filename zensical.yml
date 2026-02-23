@@ -79,6 +79,7 @@ plugins:
             Different Qubit Structure Frequency Comparison Table: 不同 Qubit 結構頻率比較表
             Notebooks: 研究筆記
             Floating Qubit Study: Floating Qubit 研究
+            S-Parameter Resonance Fit Theory: S參數共振頻率萃取
         - locale: en
           name: English
           build: true
@@ -249,3 +250,4 @@ nav:
       - Plotting Utilities: reference/utilities.md
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md
+      - S-Parameter Resonance Fit Theory: notebooks/s-parameter-resonance-fit-theory.md
