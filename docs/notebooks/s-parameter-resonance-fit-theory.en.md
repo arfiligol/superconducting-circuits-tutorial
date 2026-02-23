@@ -94,6 +94,26 @@ When extracting data from HFSS, although it might seem most intuitive to export 
 
 ---
 
+## Multi-Modal Full-Spectrum Extraction: Vector Fitting (VF)
+
+When dealing with more complex circuits, such as a **Purcell Filter coupled to a Readout Resonator or even multiple passive components**, the spectrum will exhibit multiple peaks and dips simultaneously.
+Instead of isolating each resonance and fitting them individually, we treat the entire $S_{21}$ spectrum as a multi-pole rational function system:
+
+$$ S_{21}(s) \approx \sum_{k=1}^{N_{poles}} \frac{R_k}{s - p_k} + d + s \cdot e $$
+*(where $s = 2\pi i f$, $p_k$ are the complex poles, and $R_k$ are the residues)*
+
+This formulation is known as the **Pole-Residue Model**.
+
+### Physical Resonators vs. Mathematical Poles
+In the VF framework, **a single physical microwave resonator corresponds mathematically to a "Complex Conjugate Pole Pair"**.
+* $\text{Re}(p_k)$ corresponds to energy dissipation, determining the $Q$ factor.
+* $\text{Im}(p_k)$ corresponds to the resonance frequency $f_r$.
+
+Therefore, if the tool is instructed with `--resonators 6`, the algorithm functionally allocates at least 12 poles (6 pairs), plus several "Real Poles" to fit the pure background transmission delay and environmental gain slopes.
+Utilizing the renowned Sanathanan-Koerner (SK) iteration method (as implemented in `scikit-rf.VectorFitting`), VF can seamlessly and perfectly fit both Notch (Dip) and Transmission (Peak) shapes. Whether the profile is a peak or a dip simply reflects the phase difference (constructive or destructive interference) in its Residue vector $R_k$ ([Gustavsen & Semlyen, 1999](#references)).
+
+---
+
 ## References
 
 1.  Probst, S., Song, F. B., Bushev, P. A., Ustinov, A. V., & Weides, M. (2015). Efficient and robust analysis of complex scattering data under noise in microwave resonators. *Review of Scientific Instruments, 86*(2), 024706. [doi:10.1063/1.4907935](https://doi.org/10.1063/1.4907935) | [arXiv:1410.3365](https://arxiv.org/abs/1410.3365)
@@ -102,3 +122,4 @@ When extracting data from HFSS, although it might seem most intuitive to export 
 4.  Gao, J. (2008). *The Physics of Superconducting Microwave Resonators* (Ph.D. thesis). California Institute of Technology. [CaltechTHESIS](https://thesis.library.caltech.edu/2530/)
 5.  Rieger, D., et al. (2023). Fano interference in microwave resonator measurements. *Applied Physics Letters, 122*(6), 062601. [arXiv:2209.03036](https://arxiv.org/abs/2209.03036)
 6.  Khalil, M. S., Stoutimore, M. J. A., Wellstood, F. C., & Osborn, K. D. (2012). An analysis method for asymmetric resonator transmission applied to superconducting devices. *Journal of Applied Physics, 111*(5), 054510. [doi:10.1063/1.3692073](https://doi.org/10.1063/1.3692073)
+7.  Gustavsen, B., & Semlyen, A. (1999). Rational approximation of frequency domain responses by vector fitting. *IEEE Transactions on Power Delivery, 14*(3), 1052-1061. [doi:10.1109/61.772353](https://doi.org/10.1109/61.772353)

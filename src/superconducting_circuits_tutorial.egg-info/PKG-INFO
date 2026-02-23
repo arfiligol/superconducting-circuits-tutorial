@@ -15,6 +15,7 @@ Requires-Dist: plotly>=5.22.0
 Requires-Dist: pydantic>=2.12.5
 Requires-Dist: rich>=14.3.1
 Requires-Dist: schemdraw>=0.22
+Requires-Dist: scikit-rf>=1.10.0
 Requires-Dist: scipy>=1.16.3
 Requires-Dist: sqlmodel>=0.0.31
 Requires-Dist: typer>=0.12.0

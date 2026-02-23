@@ -20,16 +20,19 @@ src/core/analysis/application/preprocessing/dataset_payload.py
 src/core/analysis/application/preprocessing/flux_dependence.py
 src/core/analysis/application/preprocessing/naming.py
 src/core/analysis/application/preprocessing/phase.py
+src/core/analysis/application/preprocessing/s_parameters.py
 src/core/analysis/application/services/data_record_management.py
 src/core/analysis/application/services/database_import.py
 src/core/analysis/application/services/database_service.py
 src/core/analysis/application/services/dataset_management.py
 src/core/analysis/application/services/fit_result_persistence.py
 src/core/analysis/application/services/parameter_management.py
+src/core/analysis/application/services/resonance_fit_service.py
 src/core/analysis/application/services/squid_fitting.py
 src/core/analysis/application/services/tag_management.py
 src/core/analysis/domain/__init__.py
 src/core/analysis/domain/interfaces/__init__.py
+src/core/analysis/domain/math/s_parameters.py
 src/core/analysis/domain/schemas/__init__.py
 src/core/analysis/domain/schemas/fitting.py
 src/core/analysis/domain/services/data_conversion.py
@@ -64,6 +67,7 @@ src/core/simulation/infrastructure/julia_adapter.py
 src/sc_app/__init__.py
 src/scripts/__init__.py
 src/scripts/analysis/__init__.py
+src/scripts/analysis/manage_analysis.py
 src/scripts/analysis/squid_fit.py
 src/scripts/cli/entry.py
 src/scripts/database/__init__.py
@@ -79,6 +83,7 @@ src/scripts/preprocessing/__init__.py
 src/scripts/preprocessing/convert_flux_dependence.py
 src/scripts/preprocessing/convert_hfss_admittance.py
 src/scripts/preprocessing/convert_hfss_phase.py
+src/scripts/preprocessing/convert_hfss_s_parameters.py
 src/scripts/sandbox/derived_parameter_table_preview.py
 src/scripts/sandbox/resonance_sweep_table_preview.py
 src/scripts/sandbox/sandbox_plot.py

@@ -365,3 +365,114 @@ def fit_transmission_s21(
         "tau": p_opt[4],
         "cost": result.cost,
     }
+
+
+class MultiResonanceVectorFitter:
+    """
+    Wrapper for scikit-rf VectorFitting algorithm to extract multiple physical
+    resonances (poles and residues) from S-parameter data.
+    """
+
+    def __init__(self, f: np.ndarray, s21_complex: np.ndarray):
+        """
+        Initialize the fitter with frequency (Hz) and complex S21 data.
+        """
+        self.f = f
+        self.s21_complex = s21_complex
+        self.vf_engine = None
+
+    def _create_skrf_network(self) -> "skrf.Network":
+        """Construct an skrf Network from numpy arrays."""
+        import skrf
+
+        # skrf Network expects frequencies in Hz
+        freq = skrf.Frequency.from_f(self.f, unit="hz")
+
+        # S-parameter matrix for a 2-port network: shape (N_freq, 2, 2)
+        # We only have S21, so we'll mock a 2-port network where S21 is populated
+        # and others are zero to satisfy skrf data structures.
+        s_matrix = np.zeros((len(self.f), 2, 2), dtype=complex)
+        s_matrix[:, 1, 0] = self.s21_complex  # S21
+
+        # Also put it in S11 just in case, though VF can fit individual responses
+        s_matrix[:, 0, 0] = self.s21_complex
+
+        ntwk = skrf.Network(frequency=freq, s=s_matrix)
+        return ntwk
+
+    def fit(self, n_resonators: int = 1, bg_poles: int = 2) -> dict:
+        """
+        Perform Vector Fitting to extract multi-modal resonances.
+
+        Arguments:
+            n_resonators: Expected number of physical resonance structures (e.g., Readout + Purcell).
+            bg_poles: Number of real poles to dedicate to resolving background delay/slopes.
+
+        Returns:
+            A dictionary containing the extracted physical poles, residues, and the reconstructed model.
+        """
+        import skrf
+
+        ntwk = self._create_skrf_network()
+
+        # 1 resonator -> 1 complex conjugate pair -> 2 poles.
+        total_poles = (n_resonators * 2) + bg_poles
+
+        self.vf_engine = skrf.VectorFitting(ntwk)
+
+        # Fit the entire Network using Sanathanan-Koerner iterations
+        # We target response (1, 0) which corresponds to S21
+        self.vf_engine.vector_fit(n_poles_real=bg_poles, n_poles_cmplx=n_resonators)
+
+        # Reconstruct the model
+        model_ntwk = self.vf_engine.get_model_response(0, 1)  # (i, j) = (0, 1) for S21? Wait.
+        # Wait, skrf internal indexing: response index for S21 in a 2-port is (1, 0).
+        # Network ports are 0-indexed in skrf, so S21 -> port 2 to port 1 -> index (1, 0)
+
+        model_s21 = self.vf_engine.get_model_response(1, 0)
+
+        frequencies, q_factors = self._extract_physics()
+
+        return {
+            "resonances": [{"fr": f, "Ql": q} for f, q in zip(frequencies, q_factors)],
+            "model_s21": model_s21,
+            "cost": self.vf_engine.get_rms_error(),
+        }
+
+    def _extract_physics(self) -> tuple[list[float], list[float]]:
+        """
+        Extract fr and Ql from the VF poles, filtering out real poles
+        and unphysical/low-Q mathematical artifacts.
+        """
+        frequencies = []
+        q_factors = []
+
+        poles = self.vf_engine.poles
+
+        for p in poles:
+            # Physical resonances are complex conjugate pairs, we only analyze the positive frequency part.
+            omega = np.imag(p)
+            sigma = -np.real(p)  # skrf poles should be in Left-Half Plane (negative real part)
+
+            # Skip real poles (omega == 0) and conjugate halves (omega < 0)
+            if omega <= 0:
+                continue
+
+            # Filter unstable poles just in case
+            if sigma <= 0:
+                continue
+
+            fr = omega / (2 * np.pi)
+            Q = omega / (2 * sigma)
+
+            # Filter low-Q artifacts (math padding poles usually have very low Q)
+            if Q > 2.0:
+                frequencies.append(float(fr))
+                q_factors.append(float(Q))
+
+        # Sort by frequency
+        sorted_indices = np.argsort(frequencies)
+        frequencies = [frequencies[i] for i in sorted_indices]
+        q_factors = [q_factors[i] for i in sorted_indices]
+
+        return frequencies, q_factors

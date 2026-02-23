@@ -22,6 +22,9 @@ def fit_scattering(
     model: Annotated[
         str, typer.Option("--model", "-m", help="Fit model (notch, transmission, vf)")
     ] = "notch",
+    resonators: Annotated[
+        int, typer.Option("--resonators", "-r", help="Number of physical resonators for VF model")
+    ] = 1,
     f_min: Annotated[
         float | None, typer.Option("--f-min", help="Minimum frequency for fitting range in GHz")
     ] = None,
@@ -49,6 +52,7 @@ def fit_scattering(
             dataset_identifier=dataset_identifier,
             parameter=parameter,
             model=model,
+            resonators=resonators,
             f_min=f_min,
             f_max=f_max,
             bias_index=bias_index,
@@ -56,11 +60,22 @@ def fit_scattering(
 
         console.print("[green]Fit completed successfully![/green]\n")
         console.print("[bold]Extracted Parameters:[/bold]")
-        console.print(f"  Resonance Frequency (fr): {result['fr'] / 1e9:.6f} GHz")
-        console.print(f"  Loaded Q (Ql)         : {result['Ql']:.2f}")
-        console.print(f"  Internal Q (Qi)       : {result['Qi']:.2f}")
-        console.print(f"  Coupling Q (Qc)       : {result['Qc_mag']:.2f}")
-        console.print(f"  Elec. Delay (tau)     : {result['tau'] * 1e9:.4f} ns")
+
+        if model in ["notch", "transmission"]:
+            console.print(f"  Resonance Frequency (fr): {result['fr'] / 1e9:.6f} GHz")
+            console.print(f"  Loaded Q (Ql)         : {result['Ql']:.2f}")
+            if "Qi" in result:
+                console.print(f"  Internal Q (Qi)       : {result['Qi']:.2f}")
+            if "Qc_mag" in result:
+                console.print(f"  Coupling Q (Qc)       : {result['Qc_mag']:.2f}")
+            if "tau" in result:
+                console.print(f"  Elec. Delay (tau)     : {result['tau'] * 1e9:.4f} ns")
+        elif model == "vf":
+            for idx, res in enumerate(result["resonances"]):
+                console.print(
+                    f"  Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
+                )
+
         console.print(f"  Model Cost            : {result['cost']:.4e}\n")
         console.print("[cyan]These have been saved as Derived Parameters to the database.[/cyan]")
 
@@ -101,8 +116,22 @@ def fit_scattering(
             )
         )
 
+        # Add vertical markers for extracted resonance frequencies
+        if model in ["notch", "transmission"]:
+            fr_ghz = result["fr"] / 1e9
+            fig.add_vline(
+                x=fr_ghz,
+                line_dash="dash",
+                line_color="green",
+                annotation_text=f"fr: {fr_ghz:.4f} GHz",
+            )
+        elif model == "vf":
+            for res in result["resonances"]:
+                fr_ghz = res["fr"] / 1e9
+                fig.add_vline(x=fr_ghz, line_dash="dash", line_color="green")
+
         fig.update_layout(
-            title=f"Resonance Fit (Scattering): {dataset_identifier} ({parameter})",
+            title=f"Resonance Fit ({model}): {dataset_identifier} ({parameter})",
             height=600,
             width=800,
             template="plotly_white",

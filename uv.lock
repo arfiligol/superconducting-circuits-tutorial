@@ -1104,6 +1104,22 @@ wheels = [
 ]
 
 [[package]]
+name = "scikit-rf"
+version = "1.10.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pre-commit" },
+    { name = "scipy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/25/3a/e4f2c83d4a1fd29028d00227a965df5228adaa70aacbb4ce94936e2e2db8/scikit_rf-1.10.0.tar.gz", hash = "sha256:41330d89bd06e5a39f0796b2bf6c363ca35d22193f54759a68338c129a426200", size = 575160, upload-time = "2026-02-01T12:00:02.762Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/a2/b8fce2f1096854b1b2cb87dfd337c5d954e3b0030b7f85318bc1e2c7fe94/scikit_rf-1.10.0-py3-none-any.whl", hash = "sha256:6278c38142e8329af5dafccd8325579099b97df62744357c1fb98d0ee7e8f594", size = 623979, upload-time = "2026-02-01T12:00:00.753Z" },
+]
+
+[[package]]
 name = "scipy"
 version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1276,6 +1292,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "rich" },
     { name = "schemdraw" },
+    { name = "scikit-rf" },
     { name = "scipy" },
     { name = "sqlmodel" },
     { name = "typer" },
@@ -1302,6 +1319,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "rich", specifier = ">=14.3.1" },
     { name = "schemdraw", specifier = ">=0.22" },
+    { name = "scikit-rf", specifier = ">=1.10.0" },
     { name = "scipy", specifier = ">=1.16.3" },
     { name = "sqlmodel", specifier = ">=0.0.31" },
     { name = "typer", specifier = ">=0.12.0" },

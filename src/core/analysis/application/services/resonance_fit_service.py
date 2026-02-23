@@ -10,6 +10,7 @@ from core.analysis.application.services.data_record_management import (
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
 from core.analysis.domain.math.s_parameters import (
+    MultiResonanceVectorFitter,
     fit_notch_s21,
     fit_transmission_s21,
     notch_s21,
@@ -30,6 +31,7 @@ class ResonanceFitService:
         dataset_identifier: str,
         parameter: str = "S21",
         model: str = "notch",
+        resonators: int = 1,
         f_min: float | None = None,
         f_max: float | None = None,
         bias_index: int = 0,
@@ -140,76 +142,104 @@ class ResonanceFitService:
             raise ValueError("Insufficient data points in the specified frequency range to fit.")
 
         # Fit
+        result: dict[str, typing.Any] = {}
         if model == "notch":
             result = fit_notch_s21(f_arr, s21_arr)
             method_name = f"complex_notch_fit_{parameter}"
         elif model == "transmission":
             result = fit_transmission_s21(f_arr, s21_arr)
             method_name = f"transmission_fit_{parameter}"
+        elif model == "vf":
+            fitter = MultiResonanceVectorFitter(f_arr, s21_arr)
+            result = fitter.fit(n_resonators=resonators)
+            method_name = f"vector_fit_{parameter}"
         else:
             raise ValueError(f"Unsupported model: {model}")
 
-        self.param_service.create_or_update_param(
-            dataset.id,
-            name="fr_ghz",
-            value=result["fr"] / 1e9,
-            unit="GHz",
-            device_type="resonator",
-            method=method_name,
-        )
-        self.param_service.create_or_update_param(
-            dataset.id,
-            name="Ql",
-            value=result["Ql"],
-            unit="",
-            device_type="resonator",
-            method=method_name,
-        )
-        self.param_service.create_or_update_param(
-            dataset.id,
-            name="Qc",
-            value=result["Qc_mag"],
-            unit="",
-            device_type="resonator",
-            method=method_name,
-        )
-        self.param_service.create_or_update_param(
-            dataset.id,
-            name="Qi",
-            value=result["Qi"],
-            unit="",
-            device_type="resonator",
-            method=method_name,
-        )
-        self.param_service.create_or_update_param(
-            dataset.id,
-            name="electrical_delay",
-            value=result["tau"] * 1e9,
-            unit="ns",
-            device_type="resonator",
-            method=method_name,
-        )
+        if model in ["notch", "transmission"]:
+            self.param_service.create_or_update_param(
+                dataset.id,
+                name="fr_ghz",
+                value=result["fr"] / 1e9,
+                unit="GHz",
+                device_type="resonator",
+                method=method_name,
+            )
+            self.param_service.create_or_update_param(
+                dataset.id,
+                name="Ql",
+                value=result["Ql"],
+                unit="",
+                device_type="resonator",
+                method=method_name,
+            )
+            self.param_service.create_or_update_param(
+                dataset.id,
+                name="Qc",
+                value=result.get("Qc_mag", float("inf")),
+                unit="",
+                device_type="resonator",
+                method=method_name,
+            )
+            self.param_service.create_or_update_param(
+                dataset.id,
+                name="Qi",
+                value=result.get("Qi", float("inf")),
+                unit="",
+                device_type="resonator",
+                method=method_name,
+            )
+            if "tau" in result:
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name="electrical_delay",
+                    value=result["tau"] * 1e9,
+                    unit="ns",
+                    device_type="resonator",
+                    method=method_name,
+                )
 
-        if model == "notch":
-            model_s21 = notch_s21(
-                f_arr,
-                fr=result["fr"],
-                Ql=result["Ql"],
-                Qc_real=result["Qc_real"],
-                Qc_imag=result["Qc_imag"],
-                a=result["a"],
-                alpha=result["alpha"],
-                tau=result["tau"],
-            )
-        elif model == "transmission":
-            model_s21 = transmission_s21(
-                f_arr,
-                fr=result["fr"],
-                Ql=result["Ql"],
-                a=result["a"],
-                alpha=result["alpha"],
-                tau=result["tau"],
-            )
+            if model == "notch":
+                model_s21 = notch_s21(
+                    f_arr,
+                    fr=result["fr"],
+                    Ql=result["Ql"],
+                    Qc_real=result["Qc_real"],
+                    Qc_imag=result["Qc_imag"],
+                    a=result["a"],
+                    alpha=result["alpha"],
+                    tau=result["tau"],
+                )
+            elif model == "transmission":
+                model_s21 = transmission_s21(
+                    f_arr,
+                    fr=result["fr"],
+                    Ql=result["Ql"],
+                    a=result["a"],
+                    alpha=result["alpha"],
+                    tau=result["tau"],
+                )
+        elif model == "vf":
+            # Persist an array of physical parameters (for multi-pole this needs indexing)
+            for idx, res in enumerate(result["resonances"]):
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"fr_ghz_{idx}",
+                    value=res["fr"] / 1e9,
+                    unit="GHz",
+                    device_type="resonator",
+                    method=method_name,
+                )
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"Ql_{idx}",
+                    value=res["Ql"],
+                    unit="",
+                    device_type="resonator",
+                    method=method_name,
+                )
+
+            model_s21 = result["model_s21"]
 
         return {
             **result,
