@@ -19,6 +19,9 @@ def fit_scattering(
     parameter: Annotated[
         str, typer.Option("--parameter", "-p", help="S-parameter name (e.g. S21, S11)")
     ] = "S21",
+    model: Annotated[
+        str, typer.Option("--model", "-m", help="Fit model (notch, purcell_notch, vf)")
+    ] = "notch",
     f_min: Annotated[
         float | None, typer.Option("--f-min", help="Minimum frequency for fitting range in GHz")
     ] = None,
@@ -42,9 +45,10 @@ def fit_scattering(
         )
         console.print(f"Targeting Parameter: [bold]{parameter}[/bold]")
 
-        result = service.perform_notch_fit(
+        result = service.perform_fit(
             dataset_identifier=dataset_identifier,
             parameter=parameter,
+            model=model,
             f_min=f_min,
             f_max=f_max,
             bias_index=bias_index,

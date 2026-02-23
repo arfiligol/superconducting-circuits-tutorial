@@ -9,7 +9,12 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
-from core.analysis.domain.math.s_parameters import fit_notch_s21, notch_s21
+from core.analysis.domain.math.s_parameters import (
+    fit_notch_s21,
+    fit_purcell_notch_s21,
+    notch_s21,
+    purcell_notch_s21,
+)
 
 
 class ResonanceFitService:
@@ -20,10 +25,11 @@ class ResonanceFitService:
         self.data_record_service = DataRecordManagementService()
         self.param_service = ParameterManagementService()
 
-    def perform_notch_fit(
+    def perform_fit(
         self,
         dataset_identifier: str,
         parameter: str = "S21",
+        model: str = "notch",
         f_min: float | None = None,
         f_max: float | None = None,
         bias_index: int = 0,
@@ -134,10 +140,14 @@ class ResonanceFitService:
             raise ValueError("Insufficient data points in the specified frequency range to fit.")
 
         # Fit
-        result = fit_notch_s21(f_arr, s21_arr)
-
-        # Save derived parameters
-        method_name = f"complex_notch_fit_{parameter}"
+        if model == "notch":
+            result = fit_notch_s21(f_arr, s21_arr)
+            method_name = f"complex_notch_fit_{parameter}"
+        elif model == "purcell_notch":
+            result = fit_purcell_notch_s21(f_arr, s21_arr)
+            method_name = f"purcell_notch_fit_{parameter}"
+        else:
+            raise ValueError(f"Unsupported model: {model}")
 
         self.param_service.create_or_update_param(
             dataset.id,
@@ -180,16 +190,26 @@ class ResonanceFitService:
             method=method_name,
         )
 
-        model_s21 = notch_s21(
-            f_arr,
-            fr=result["fr"],
-            Ql=result["Ql"],
-            Qc_real=result["Qc_real"],
-            Qc_imag=result["Qc_imag"],
-            a=result["a"],
-            alpha=result["alpha"],
-            tau=result["tau"],
-        )
+        if model == "notch":
+            model_s21 = notch_s21(
+                f_arr,
+                fr=result["fr"],
+                Ql=result["Ql"],
+                Qc_real=result["Qc_real"],
+                Qc_imag=result["Qc_imag"],
+                a=result["a"],
+                alpha=result["alpha"],
+                tau=result["tau"],
+            )
+        elif model == "purcell_notch":
+            model_s21 = purcell_notch_s21(
+                f_arr,
+                fr=result["fr"],
+                Ql=result["Ql"],
+                a=result["a"],
+                alpha=result["alpha"],
+                tau=result["tau"],
+            )
 
         return {
             **result,

@@ -221,3 +221,149 @@ def fit_notch_s21(
         "tau": p_opt[6],
         "cost": result.cost,
     }
+
+
+def purcell_notch_s21(
+    f: np.ndarray,
+    fr: float,
+    Ql: float,
+    a: float,
+    alpha: float,
+    tau: float,
+) -> np.ndarray:
+    """
+    Compute the complex S21 transmission of a Purcell filter or inline resonator.
+
+    Arguments:
+        f: Frequency array (Hz).
+        fr: Resonance frequency (Hz).
+        Ql: Loaded quality factor.
+        a: Peak amplitude scaling factor.
+        alpha: Constant phase shift (radians).
+        tau: Electrical delay (seconds).
+
+    Returns:
+        Complex S21 array.
+    """
+    x = (f - fr) / fr
+    baseline = np.exp(1j * alpha) * np.exp(-2j * np.pi * f * tau)
+    peak = a / (1 + 2j * Ql * x)
+    return baseline * peak
+
+
+def estimate_purcell_notch_initial_guess(
+    f: np.ndarray, s21_complex: np.ndarray
+) -> dict[str, float]:
+    """Estimate initial guess parameters for a purcell notch/transmission peak."""
+    s21_mag = np.abs(s21_complex)
+    s21_phase = np.unwrap(np.angle(s21_complex))
+
+    valid_f = f > 0
+    if not np.any(valid_f):
+        valid_f = np.ones_like(f, dtype=bool)
+
+    max_idx_valid = np.argmax(s21_mag[valid_f])
+    fr_guess = float(f[valid_f][max_idx_valid])
+    max_mag = s21_mag[valid_f][max_idx_valid]
+
+    a_guess = float(max_mag)
+
+    # Estimate phase slope (tau) and offset (alpha) from unwrapped phase
+    # For a transmission peak, most of the phase is dominated by delay.
+    num_bg_points = max(1, len(f) // 20)
+    phase_start = np.mean(s21_phase[:num_bg_points])
+    phase_end = np.mean(s21_phase[-num_bg_points:])
+    f_start = np.mean(f[:num_bg_points])
+    f_end = np.mean(f[-num_bg_points:])
+
+    df = f_end - f_start
+    if df != 0:
+        phase_slope = (phase_end - phase_start) / df
+        tau_guess = -phase_slope / (2 * np.pi)
+        alpha_guess = phase_start - phase_slope * f_start
+    else:
+        tau_guess = 0.0
+        alpha_guess = float(np.mean(s21_phase))
+
+    # FWHM for Ql: find frequencies where mag approaches max_mag / sqrt(2)
+    threshold_mag = max_mag / np.sqrt(2)
+    peak_indices = np.where(s21_mag > threshold_mag)[0]
+
+    if len(peak_indices) > 1:
+        f_low = f[peak_indices[0]]
+        f_high = f[peak_indices[-1]]
+        fwhm = f_high - f_low
+        if fwhm == 0:
+            fwhm = fr_guess * 1e-4
+    else:
+        fwhm = fr_guess * 1e-4
+
+    Ql_guess = fr_guess / fwhm
+    if Ql_guess <= 0:
+        Ql_guess = 100.0
+
+    return {
+        "fr": fr_guess,
+        "Ql": Ql_guess,
+        "a": a_guess,
+        "alpha": alpha_guess,
+        "tau": float(tau_guess),
+    }
+
+
+def fit_purcell_notch_s21(
+    f: np.ndarray, s21_complex: np.ndarray, initial_guess: dict[str, float] | None = None
+) -> dict[str, float]:
+    """Fits the Purcell notch (transmission) model to data using least squares."""
+    from scipy.optimize import least_squares
+
+    if initial_guess is None:
+        initial_guess = estimate_purcell_notch_initial_guess(f, s21_complex)
+
+    print(f"DEBUG: initial_guess = {initial_guess}")
+    p0 = [
+        initial_guess["fr"],
+        initial_guess["Ql"],
+        initial_guess["a"],
+        initial_guess["alpha"],
+        initial_guess["tau"],
+    ]
+
+    def residual(p, f_data, s21_data):
+        fr, Ql, a, alpha, tau = p
+        s21_model = purcell_notch_s21(f_data, fr, Ql, a, alpha, tau)
+        diff = s21_model - s21_data
+        return np.concatenate((np.real(diff), np.imag(diff)))
+
+    bounds = (
+        [0, 0, 0, -np.inf, -np.inf],
+        [np.inf, np.inf, np.inf, np.inf, np.inf],
+    )
+
+    result = least_squares(residual, p0, args=(f, s21_complex), bounds=bounds, loss="soft_l1")
+
+    if not result.success:
+        raise ValueError(f"S21 Fit Failed: {result.message}")
+
+    p_opt = result.x
+
+    # Derive Qc and Qi Assuming a = Ql / Qc (standard symmetric transmission resonator)
+    Ql_opt = p_opt[1]
+    a_opt = p_opt[2]
+
+    Qc_mag = Ql_opt / a_opt if a_opt > 0 else np.inf
+    inv_qi = 1.0 / Ql_opt - 1.0 / Qc_mag
+    qi_opt = 1.0 / inv_qi if inv_qi > 0 else np.inf
+
+    return {
+        "fr": p_opt[0],
+        "Ql": Ql_opt,
+        "Qc_real": Qc_mag,
+        "Qc_imag": 0.0,
+        "Qc_mag": Qc_mag,
+        "Qi": qi_opt,
+        "a": a_opt,
+        "alpha": p_opt[3],
+        "tau": p_opt[4],
+        "cost": result.cost,
+    }
