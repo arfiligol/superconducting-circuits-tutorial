@@ -204,7 +204,7 @@ nav:
               - Convert HFSS Admittance: reference/cli/sc-preprocess-admittance.md
               - Convert HFSS Phase: reference/cli/sc-preprocess-phase.md
               - Convert Flux Dependence: reference/cli/sc-convert-flux-dependence.md
-          - Analysis:
+          - Data Analysis:
               - SQUID Model Fit: reference/cli/sc-fit-squid.md
               - Resonance Fitting: reference/cli/sc-analysis-resonance-fit.md
           - Data Plotting:
