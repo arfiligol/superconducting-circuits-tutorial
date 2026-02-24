@@ -24,19 +24,15 @@ template: home.html
     <div class="wave p-2"></div>
     <div class="wave p-3"></div>
   </div>
-
   <div class="sc-hero-content">
     <div class="sc-badge">Open Source Research Framework</div>
-    
     <h1 class="sc-title">
       SC Physics, <span class="gradient-text">Decoded.</span>
     </h1>
-    
     <p class="sc-subtitle">
       <span class="savior-highlight">Paper & Research Savior.</span><br>
       Connecting the essence of physics with engineering implementation.<br>A simulation and design guide built for superconducting circuit researchers.
     </p>
-    
     <div class="sc-cta-group">
       <a href="how-to/" class="btn-primary">Explore Documentation</a>
       <a href="tutorials/" class="btn-secondary">View Demo</a>
