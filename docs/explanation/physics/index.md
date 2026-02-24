@@ -9,31 +9,151 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: 以物理脈絡驅動的 Explanation/Physics 入口頁
-version: v0.5.0
+scope: 超導量子電路物理知識架構總覽
+version: v1.0.0
 last_updated: 2026-02-24
 updated_by: team
 ---
 
-# Physics
+# 物理知識架構 (Physics)
 
-這個章節以**物理脈絡**為主軸，由淺入深建立超導量子電路的理論基礎。每篇文章都包含完整的符號定義、推導鏈與學術引用。
+本章節以**物理脈絡**為主軸，建立超導量子電路從基礎原理到工程實踐的完整知識框架。
 
-## 本章路徑
+每篇文章都以一個**物理問題**出發，包含符號定義、推導鏈、工程映射與學術引用。內容依據 A–I 知識架構組織，由淺入深、可線性閱讀亦可任意切入。
 
-1. [超導體的宏觀波函數](macroscopic-wavefunction.md)
-2. [為什麼磁通量會是量子化的？](why-flux-is-quantized.md)
-3. [為什麼非線性會讓能階間距不一致？](why-nonlinearity-makes-unequal-level-spacing.md)
-4. [拉格朗日力學如何與電路物理結合？](lagrangian-mechanics-and-circuit-physics.md)
-5. [為什麼 SQUID 可以控制非線性電感值？](squid-controls-nonlinear-inductance.md)
+!!! info "撰寫原則"
+    - 所有內容遵循 [Explanation Physics Guardrail](../../reference/guardrails/documentation-design/explanation-physics.md)
+    - 每篇頁面標註節點類型（Principle / Model / Method / Device）
+    - 工具操作步驟不放在此處，請參考 [How-to Guides](../../how-to/index.md)
 
-## 撰寫原則
+---
 
-- 以完整的**知識脈絡**為優先，確保讀者可以從頭到尾理解推導鏈。
-- 每篇包含**符號定義表**、**逐步推導**與 **APA 格式學術引用**。
-- 允許讀者從任一篇切入，但維持前後知識連續性。
+## A. Foundations: The Four Pillars { #a-foundations }
+
+> 四大力學作為超導量子電路的先備基礎。每個主題聚焦於「與電路物理的連結點」。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| A1 | Classical Mechanics → Hamiltonian / Lagrangian mindset | Principle |
+| A2 | Electromagnetism → fields, energy flow, boundary conditions | Principle |
+| A3 | Statistical / Thermal Physics → noise, dissipation, temperature, fluctuation | Principle |
+| A4 | Quantum Mechanics → states, measurement, open systems | Principle |
+
+---
+
+## B. Electromagnetics to Circuits { #b-em-to-circuits }
+
+> 從 Maxwell 方程到可計算的電路模型。這是所有模擬與分析的建模基礎。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| B1 | Lumped vs Distributed | Model |
+| B2 | Transmission Lines & Modes | Model |
+| B3 | Impedance, Admittance, Matching | Model |
+| B4 | Scattering Parameters (S-parameters) | Model |
+| B5 | Resonators & Coupling (Q, κ, bandwidth, ringdown) | Model |
+| B6 | Network Reduction (Kron, port reduction, equivalent circuits) | Model |
+
+---
+
+## C. Superconductivity & Dissipation { #c-superconductivity }
+
+> 超導體的基本物理與各種能量損耗機制。理解這些才能設計出高品質因子的元件。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| C1 | Superconductivity basics (London, BCS, two-fluid intuition) | Principle |
+| C2 | Surface impedance / kinetic inductance | Model |
+| C3 | Loss channels (dielectric, conductor, radiation, quasiparticles, TLS) | Model |
+| C4 | Noise taxonomy (Johnson, 1/f, amplifier noise, quantum noise) | Model |
+
+---
+
+## D. Josephson Physics & Nonlinearity { #d-josephson }
+
+> 約瑟夫森接面是超導量子電路的核心非線性元件。所有量子位元與參數放大器都建立在此基礎之上。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| D1 | Josephson relations & junction models | Device / Model |
+| D2 | SQUID / arrays / tunability | Device |
+| D3 | Nonlinear oscillators & Duffing | Model |
+| D4 | Parametric processes (3-wave / 4-wave mixing) | Model / Method |
+
+---
+
+## E. Quantum Circuits Formalism { #e-quantum-circuits }
+
+> 電路量子化：從古典電路到量子哈密頓量。這是理解 Transmon、色散讀取與 Purcell 效應的核心理論。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| E1 | Circuit quantization (node flux, charge, constraints) | Method |
+| E2 | Lagrangian → Hamiltonian → quantization | Method |
+| E3 | Linearization & black-box quantization intuition | Method |
+| E4 | Open quantum systems (input-output, master equation) | Model |
+| E5 | Dispersive physics (χ, cross-Kerr, Purcell-like channels) | Model |
+
+---
+
+## F. Core Building Blocks { #f-building-blocks }
+
+> 超導量子電路中的核心器件。每個器件解說必須指出其依賴的 Model 與 Principle。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| F1 | Resonators (CPW, lumped, 3D, metamaterial) | Device |
+| F2 | Qubits (transmon family, fluxonium, etc.) | Device |
+| F3 | Couplers & tunable elements | Device |
+| F4 | Readout chain & amplifiers (JPA/JPC/JTWPA/HEMT) | Device |
+
+---
+
+## G. Design & Simulation (原理面) { #g-simulation }
+
+> 模擬工具背後的物理原理與數值方法。工具操作步驟請參考 How-to。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| G1 | Circuit simulators (lumped, harmonic balance, time-domain) | Method |
+| G2 | EM simulation (FEM / MoM) & port definitions | Method |
+| G3 | Parameter extraction (S→Y/Z, mode extraction, energy participation) | Method |
+| G4 | Vector fitting & rational models | Method |
+| G5 | Quantum solvers & when to use them | Method |
+| G6 | Verification strategy (cross-check hierarchy) | Method |
+
+---
+
+## H. Cryogenic RF Engineering (原理面) { #h-cryo-rf }
+
+> 低溫微波量測鏈的物理原理。儀器操作 SOP 請參考 How-to。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| H1 | RF chain architecture (attenuators, isolators, circulators, filters) | Model |
+| H2 | Calibration (power, gain, noise temperature, S-parameter cal) | Method |
+| H3 | Signal generation & digitization (AWG, ADC, IQ mixing) | Model |
+| H4 | DSP for experiments (downconversion, filtering, decimation) | Method |
+| H5 | Stability & grounding & shielding | Principle |
+
+---
+
+## I. Experiments & Protocols (原理面) { #i-experiments }
+
+> 實驗協議背後的物理原理。量測 SOP 請參考 How-to。
+
+| 編號 | 主題 | 節點類型 |
+|------|------|----------|
+| I1 | Resonator characterization | Method |
+| I2 | Qubit spectroscopy / time-domain (Rabi, T1, T2, Ramsey, Echo) | Method |
+| I3 | Readout optimization (SNR, measurement-induced dephasing) | Method |
+| I4 | Amplifier characterization (gain, bandwidth, compression, noise) | Method |
+
+---
 
 ## Related
 
-- [Tutorials](../../tutorials/index.md)
-- [How-to Guides](../../how-to/index.md)
+- [How-to Guides](../../how-to/index.md) — 工具操作、資料匯入、CLI 步驟
+- [Tutorials](../../tutorials/index.md) — 端到端學習流程
+- [Reference](../../reference/index.md) — CLI 規格、資料格式
+- [Notebooks](../../notebooks/) — 研究筆記與早期草稿

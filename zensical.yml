@@ -180,11 +180,6 @@ nav:
       - Overview: explanation/index.md
       - Physics:
           - Overview: explanation/physics/index.md
-          - Macroscopic Wavefunction: explanation/physics/macroscopic-wavefunction.md
-          - Why Flux Is Quantized: explanation/physics/why-flux-is-quantized.md
-          - Why Nonlinearity Creates Unequal Levels: explanation/physics/why-nonlinearity-makes-unequal-level-spacing.md
-          - Lagrangian Mechanics and Circuit Physics: explanation/physics/lagrangian-mechanics-and-circuit-physics.md
-          - Why SQUID Tunes Nonlinear Inductance: explanation/physics/squid-controls-nonlinear-inductance.md
       - Architecture:
           - Pipeline:
               - Overview: explanation/architecture/pipeline/index.md
@@ -255,3 +250,8 @@ nav:
   - Notebooks:
       - Floating Qubit Study: notebooks/floating-qubit-study.md
       - S-Parameter Resonance Fit Theory: notebooks/s-parameter-resonance-fit-theory.md
+      - Macroscopic Wavefunction: notebooks/macroscopic-wavefunction.md
+      - Why Flux Is Quantized: notebooks/why-flux-is-quantized.md
+      - Why Nonlinearity Creates Unequal Levels: notebooks/why-nonlinearity-makes-unequal-level-spacing.md
+      - Lagrangian Mechanics and Circuit Physics: notebooks/lagrangian-mechanics-and-circuit-physics.md
+      - Why SQUID Tunes Nonlinear Inductance: notebooks/squid-controls-nonlinear-inductance.md

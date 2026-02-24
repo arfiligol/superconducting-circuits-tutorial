@@ -27,6 +27,7 @@ src/core/analysis/application/services/database_service.py
 src/core/analysis/application/services/dataset_management.py
 src/core/analysis/application/services/fit_result_persistence.py
 src/core/analysis/application/services/parameter_management.py
+src/core/analysis/application/services/resonance_extract_service.py
 src/core/analysis/application/services/resonance_fit_service.py
 src/core/analysis/application/services/squid_fitting.py
 src/core/analysis/application/services/tag_management.py
@@ -68,6 +69,7 @@ src/sc_app/__init__.py
 src/scripts/__init__.py
 src/scripts/analysis/__init__.py
 src/scripts/analysis/manage_analysis.py
+src/scripts/analysis/manage_resonance_extract.py
 src/scripts/analysis/squid_fit.py
 src/scripts/cli/entry.py
 src/scripts/database/__init__.py
