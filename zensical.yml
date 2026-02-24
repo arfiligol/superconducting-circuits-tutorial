@@ -180,6 +180,7 @@ nav:
       - Overview: explanation/index.md
       - Physics:
           - Overview: explanation/physics/index.md
+          - Macroscopic Wavefunction: explanation/physics/macroscopic-wavefunction.md
           - Why Flux Is Quantized: explanation/physics/why-flux-is-quantized.md
           - Why Nonlinearity Creates Unequal Levels: explanation/physics/why-nonlinearity-makes-unequal-level-spacing.md
           - Lagrangian Mechanics and Circuit Physics: explanation/physics/lagrangian-mechanics-and-circuit-physics.md

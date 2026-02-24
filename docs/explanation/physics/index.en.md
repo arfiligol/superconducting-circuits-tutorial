@@ -1,7 +1,7 @@
 ---
 aliases:
 - Physics Explanation
-- Physics Q&A Backbone
+- 物理問答主幹
 tags:
 - diataxis/explanation
 - audience/team
@@ -9,30 +9,31 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Entry page for question-driven Explanation/Physics
-version: v0.4.0
-last_updated: 2026-02-16
+scope: Narrative-driven Explanation/Physics landing page
+version: v0.5.0
+last_updated: 2026-02-24
 updated_by: team
 ---
 
 # Physics
 
-This section is now question-driven. Each page starts from a core physics question, then connects to historical impact and engineering use.
+This section builds the theoretical foundations of superconducting quantum circuits following a **physical narrative** from fundamentals to applications. Each page includes complete symbol definitions, step-by-step derivations, and academic references.
 
-## Core Path (Question-Driven)
+## Chapter Path
 
-1. [Why Is Magnetic Flux Quantized?](why-flux-is-quantized.en.md)
-2. [Why Does Nonlinearity Create Unequal Level Spacing?](why-nonlinearity-makes-unequal-level-spacing.en.md)
-3. [How Does Lagrangian Mechanics Connect to Circuit Physics?](lagrangian-mechanics-and-circuit-physics.en.md)
-4. [Why Can SQUIDs Control Nonlinear Inductance?](squid-controls-nonlinear-inductance.en.md)
+1. [The Macroscopic Wavefunction of Superconductors](macroscopic-wavefunction.md)
+2. [Why Is Magnetic Flux Quantized?](why-flux-is-quantized.md)
+3. [Why Does Nonlinearity Produce Unequal Level Spacings?](why-nonlinearity-makes-unequal-level-spacing.md)
+4. [How Does Lagrangian Mechanics Connect to Circuit Physics?](lagrangian-mechanics-and-circuit-physics.md)
+5. [Why Can a SQUID Control Nonlinear Inductance?](squid-controls-nonlinear-inductance.md)
 
-## Teaching Principles
+## Writing Principles
 
-- Answer physics-first questions before engineering implementation.
-- Use admonitions to show what each concept solved historically in the community.
-- Allow mid-stream entry while preserving conceptual continuity.
+- Prioritize a complete **knowledge narrative**, ensuring readers can follow the derivation chain from start to finish.
+- Each page includes a **symbol definition table**, **step-by-step derivations**, and **APA-format academic references**.
+- Readers may enter at any page, but conceptual continuity is maintained throughout.
 
 ## Related
 
-- [Tutorials](../../tutorials/index.en.md)
-- [How-to Guides](../../how-to/index.en.md)
+- [Tutorials](../../tutorials/index.md)
+- [How-to Guides](../../how-to/index.md)

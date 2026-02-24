@@ -6,8 +6,8 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from core.analysis.application.analysis.extraction.admittance import (
-    extract_mode_from_admittance,
+from core.analysis.application.services.resonance_extract_service import (
+    ResonanceExtractService,
 )
 from core.shared.logging import setup_logging
 
@@ -17,25 +17,36 @@ app = typer.Typer(help="Resonance Extraction Subcommands.", add_completion=False
 
 @app.command("admittance")
 def extract_admittance(
-    csv_path: Annotated[str, typer.Argument(help="Path to HFSS Admittance CSV file")],
+    dataset_identifier: Annotated[str, typer.Argument(help="Dataset ID or Name")],
+    bias_index: Annotated[
+        int | None,
+        typer.Option(
+            "--bias-index", "-b", help="L_jun bias slice index (default: extract ALL slices)"
+        ),
+    ] = None,
 ) -> None:
     """
-    Extract resonance frequencies from an Admittance CSV using Im(Y)=0 zero-crossing.
+    Extract resonance frequencies from a Database Dataset using Im(Y)=0 zero-crossing.
 
     This is a direct extraction method (no curve fitting). It finds the frequencies
     where the imaginary part of the admittance crosses zero, which correspond to
     the natural resonances of the circuit.
+
+    If the data contains multiple bias points (L_jun), all slices are extracted by default.
+    Use --bias-index to select a specific slice.
     """
     from rich.table import Table
 
+    service = ResonanceExtractService()
     try:
-        console.print(f"[cyan]Extracting resonance modes[/cyan] from: [bold]{csv_path}[/bold]")
+        console.print(
+            f"[cyan]Extracting resonance modes[/cyan] from dataset: [bold]{dataset_identifier}[/bold]"
+        )
 
-        result_df = extract_mode_from_admittance(csv_path)
-
-        if result_df is None or result_df.empty:
-            console.print("[red]No resonance modes found.[/red]")
-            raise typer.Exit(code=1)
+        result = service.extract_admittance(
+            dataset_identifier=dataset_identifier, bias_index=bias_index
+        )
+        result_df = result["results"]
 
         console.print("[green]Extraction completed successfully![/green]\n")
 
@@ -52,6 +63,8 @@ def extract_admittance(
             f"\n[dim]Total: {len(result_df)} bias point(s), "
             f"up to {len(result_df.columns) - 1} mode(s) each.[/dim]"
         )
+
+        console.print("[cyan]These have been saved as Derived Parameters to the database.[/cyan]")
 
     except typer.Exit:
         raise
