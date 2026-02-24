@@ -97,9 +97,13 @@ def fit_scattering(
                 if not sr["resonances"]:
                     console.print("    None found")
                 for idx, res in enumerate(sr["resonances"]):
-                    console.print(
-                        f"    Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
-                    )
+                    q_str = f"Ql = {res['Ql']:.2f}"
+                    if "Qc" in res and res["Qc"] != float("inf"):
+                        q_str += f", Qc = {res['Qc']:.2f}"
+                    if "Qi" in res and res["Qi"] != float("inf"):
+                        q_str += f", Qi = {res['Qi']:.2f}"
+
+                    console.print(f"    Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, {q_str}")
 
                 artifacts = sr.get("artifacts", [])
                 if artifacts:

@@ -442,13 +442,17 @@ class MultiResonanceVectorFitter:
         """
         Extract fr and Ql from the VF poles, separating physical resonances
         from mathematical artifacts (low-Q poles used for background fitting).
+        Also extracts Qc and Qi from the corresponding S21 residues.
         """
         physical = []
         artifacts = []
 
         poles = self.vf_engine.poles
+        # residues shape for a 2-port network mapped as 1D array is (4, N_poles).
+        # We mapped S21 to port [1, 0]. The 1D index is (1*2 + 0) = 2.
+        residues_s21 = self.vf_engine.residues[2, :]
 
-        for p in poles:
+        for i, p in enumerate(poles):
             # Physical resonances are complex conjugate pairs, we only analyze the positive frequency part.
             omega = np.imag(p)
             sigma = -np.real(p)  # skrf poles should be in Left-Half Plane (negative real part)
@@ -462,12 +466,26 @@ class MultiResonanceVectorFitter:
                 continue
 
             fr = omega / (2 * np.pi)
-            Q = omega / (2 * sigma)
+            Q_l = omega / (2 * sigma)
 
-            item = {"fr": float(fr), "Ql": float(Q)}
+            c = residues_s21[i]
+            # For hanger/notch, S21 = 1 - (Ql/Qc)/(1 + 2j*Ql*dw/w)
+            # The residue relates to Qc as: 1/Qc_tilde = -2 * c / omega
+            inv_Qc = np.real(-2 * c / omega)
+            Q_c = 1 / inv_Qc if inv_Qc > 0 else float("inf")
+
+            inv_Qi = (1 / Q_l) - inv_Qc
+            Q_i = 1 / inv_Qi if inv_Qi > 0 else float("inf")
+
+            item = {
+                "fr": float(fr),
+                "Ql": float(Q_l),
+                "Qc": float(Q_c),
+                "Qi": float(Q_i),
+            }
 
             # Filter low-Q artifacts (math padding poles usually have very low Q)
-            if Q > 2.0:
+            if Q_l > 2.0:
                 physical.append(item)
             else:
                 artifacts.append(item)
