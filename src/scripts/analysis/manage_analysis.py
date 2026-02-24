@@ -93,10 +93,21 @@ def fit_scattering(
                 if "tau" in sr:
                     console.print(f"  Elec. Delay (tau)     : {sr['tau'] * 1e9:.4f} ns")
             elif model == "vf":
+                console.print("  [green]Physical Resonances:[/green]")
+                if not sr["resonances"]:
+                    console.print("    None found")
                 for idx, res in enumerate(sr["resonances"]):
                     console.print(
-                        f"  Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
+                        f"    Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
                     )
+
+                artifacts = sr.get("artifacts", [])
+                if artifacts:
+                    console.print("  [yellow]Mathematical/Artifact Poles (Filtered):[/yellow]")
+                    for idx, res in enumerate(artifacts):
+                        console.print(
+                            f"    Pole {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
+                        )
 
             console.print(f"  Model Cost            : {sr['cost']:.4e}\n")
 

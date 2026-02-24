@@ -429,21 +429,22 @@ class MultiResonanceVectorFitter:
         # exactly matches the length of the raw data for plotting.
         model_s21 = self.vf_engine.get_model_response(1, 0, self.f)
 
-        frequencies, q_factors = self._extract_physics()
+        extracted = self._extract_physics()
 
         return {
-            "resonances": [{"fr": f, "Ql": q} for f, q in zip(frequencies, q_factors)],
+            "resonances": extracted["physical"],
+            "artifacts": extracted["artifacts"],
             "model_s21": model_s21,
             "cost": self.vf_engine.get_rms_error(),
         }
 
-    def _extract_physics(self) -> tuple[list[float], list[float]]:
+    def _extract_physics(self) -> dict[str, list[dict[str, float]]]:
         """
-        Extract fr and Ql from the VF poles, filtering out real poles
-        and unphysical/low-Q mathematical artifacts.
+        Extract fr and Ql from the VF poles, separating physical resonances
+        from mathematical artifacts (low-Q poles used for background fitting).
         """
-        frequencies = []
-        q_factors = []
+        physical = []
+        artifacts = []
 
         poles = self.vf_engine.poles
 
@@ -463,14 +464,19 @@ class MultiResonanceVectorFitter:
             fr = omega / (2 * np.pi)
             Q = omega / (2 * sigma)
 
+            item = {"fr": float(fr), "Ql": float(Q)}
+
             # Filter low-Q artifacts (math padding poles usually have very low Q)
             if Q > 2.0:
-                frequencies.append(float(fr))
-                q_factors.append(float(Q))
+                physical.append(item)
+            else:
+                artifacts.append(item)
 
         # Sort by frequency
-        sorted_indices = np.argsort(frequencies)
-        frequencies = [frequencies[i] for i in sorted_indices]
-        q_factors = [q_factors[i] for i in sorted_indices]
+        physical.sort(key=lambda x: x["fr"])
+        artifacts.sort(key=lambda x: x["fr"])
 
-        return frequencies, q_factors
+        return {
+            "physical": physical,
+            "artifacts": artifacts,
+        }
