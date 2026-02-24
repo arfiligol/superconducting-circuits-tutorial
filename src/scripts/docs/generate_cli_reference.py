@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,11 +88,13 @@ This page is auto-generated. Do not edit manually.
 
 def collect_help(command: str) -> str:
     """Collect `--help` output using uv run."""
+    env = dict(os.environ, COLUMNS="120")
     result = subprocess.run(
         ["uv", "run", command, "--help"],
         check=False,
         capture_output=True,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to run '{command} --help': {result.stderr.strip()}")

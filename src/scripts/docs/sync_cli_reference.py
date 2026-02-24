@@ -26,9 +26,9 @@ class DocSpec:
 
 
 DOC_SPECS = [
-    DocSpec("sc-preprocess-admittance", "convert-hfss-admittance"),
-    DocSpec("sc-preprocess-phase", "convert-hfss-phase"),
-    DocSpec("sc-convert-flux-dependence", "convert-flux-dependence"),
+    DocSpec("sc-preprocess-hfss-admittance", "sc-preprocess-hfss-admittance"),
+    DocSpec("sc-preprocess-hfss-scattering", "sc-preprocess-hfss-scattering"),
+    DocSpec("sc-preprocess-vna-flux-dependence", "sc-preprocess-vna-flux-dependence"),
     DocSpec("sc-fit-squid", "squid-model-fit"),
     DocSpec("sc-simulate-lc", "sc-simulate-lc"),
     DocSpec("sc-db", "sc-db"),

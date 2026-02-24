@@ -1,7 +1,7 @@
 ---
 aliases:
-  - "sc-db CLI Reference"
-  - "sc-db 指令參考"
+  - "sc 指令參考"
+  - "sc CLI Reference"
 tags:
   - diataxis/reference
   - status/draft
@@ -11,22 +11,24 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db
+# sc
 
-This page is auto-generated. Do not edit manually.
+此頁面由自動化產生, 請勿手動編輯。
 
 ```text
-Usage: sc-db [OPTIONS] COMMAND [ARGS]...                                                                               
+Usage: sc [OPTIONS] COMMAND [ARGS]...                                                                                  
                                                                                                                         
- Manage SQLite database entities.                                                                                       
+ Superconducting Circuits Analysis Platform CLI                                                                         
                                                                                                                         
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                                          │
+│ --help  -h        Show this message and exit.                                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ dataset-record     Manage Datasets                                                                                   │
-│ tag                Manage Tags                                                                                       │
-│ data-record        Manage Data Records                                                                               │
-│ derived-parameter  Manage Derived Parameters                                                                         │
+│ analysis    Analysis and Fitting Tools                                                                               │
+│ preprocess  Data Ingestion and Preprocessing                                                                         │
+│ db          Database Management                                                                                      │
+│ sim         Julia-based Simulations                                                                                  │
+│ plot        Plotting and Visualization Tools                                                                         │
+│ docs        Documentation Tooling                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```

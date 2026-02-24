@@ -19,9 +19,9 @@ updated_by: docs-team
 
 ## Preprocessing (Data Ingestion)
 
-- [sc preprocess admittance](sc-preprocess-admittance.md) - 轉換 HFSS 虛阻納數據
-- [sc preprocess phase](sc-preprocess-phase.md) - 轉換 HFSS 相位數據
-- [sc preprocess flux](sc-convert-flux-dependence.md) - 轉換 VNA 磁通依賴數據
+- [sc preprocess hfss admittance](sc-preprocess-hfss-admittance.md) - 轉換 HFSS 虛阻納數據
+- [sc preprocess hfss scattering](sc-preprocess-hfss-scattering.md) - 轉換 HFSS S-parameter 及相角數據
+- [sc preprocess vna flux-dependence](sc-preprocess-vna-flux-dependence.md) - 轉換 VNA 磁通依賴數據
 
 ## Analysis (Data Fitting)
 

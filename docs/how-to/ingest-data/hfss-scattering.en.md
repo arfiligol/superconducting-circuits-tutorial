@@ -43,12 +43,12 @@ To ensure consistency in scientific computing, the system assumes the following 
 
 === "CLI"
 
-    Use `sc preprocess phase` to ingest data.
+    Use `sc preprocess hfss scattering` to ingest data.
 
     ### 1. Ingest Single `.csv` File
 
     ```bash
-    uv run sc preprocess phase path/to/your/phase_file.csv
+    uv run sc preprocess hfss scattering path/to/your/phase_file.csv
     ```
 
     ### 2. Batch Ingest a Directory of `.csv` Files
@@ -56,11 +56,11 @@ To ensure consistency in scientific computing, the system assumes the following 
     If you have a series of sweep data, specify the directory:
 
     ```bash
-    uv run sc preprocess phase path/to/data_folder/
+    uv run sc preprocess hfss scattering path/to/data_folder/
     ```
 
     !!! tip "Auto-filtering & Duplicate Check"
-        - In directory mode, the system defaults to only processing `.csv` files that contain `Phase`, `S21`, `deg` or `rad` in their filename. You can use `--match` to customize the filter.
+        - In directory mode, the system defaults to only processing `.csv` files that contain scattering or phase keywords (e.g. `Phase`, `S21`, `deg`, `rad`, `re`, `im`, `mag`) in their filename. You can use `--match` to customize the filter.
         - The system automatically derives the Dataset Name from the filename. If that Dataset already exists in the database, it skips it by default to avoid duplicates.
 
 === "UI (TBD)"

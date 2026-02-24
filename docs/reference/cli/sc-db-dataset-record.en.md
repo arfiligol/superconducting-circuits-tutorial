@@ -11,14 +11,14 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db dataset-record
+# sc db dataset-record
 
 Manage DatasetRecord (read/delete only).
 
 ## Usage
 
 ```bash
-uv run sc-db dataset-record <action> [args]
+uv run sc db dataset-record <action> [args]
 ```
 
 ## Arguments
@@ -38,27 +38,27 @@ uv run sc-db dataset-record <action> [args]
 
 **List**
 ```bash
-uv run sc-db dataset-record list
+uv run sc db dataset-record list
 ```
 
 **Info**
 ```bash
-uv run sc-db dataset-record info <ID_OR_NAME>
+uv run sc db dataset-record info <ID_OR_NAME>
 ```
 
 **Delete**
 ```bash
-uv run sc-db dataset-record delete <ID_OR_NAME>
+uv run sc db dataset-record delete <ID_OR_NAME>
 ```
 
 **Reorder ID**
 ```bash
-uv run sc-db dataset-record auto-reorder
+uv run sc db dataset-record auto-reorder
 ```
 
 **Reorder ID by Name**
 ```bash
-uv run sc-db dataset-record auto-reorder --sort-by name
+uv run sc db dataset-record auto-reorder --sort-by name
 ```
 
 ## Notes

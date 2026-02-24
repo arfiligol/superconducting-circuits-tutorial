@@ -114,6 +114,8 @@ not_in_nav: |
   explanation/s-parameters.en.md
   reference/cli/generated/**
 
+extra_css:
+  - stylesheets/extra.css
 
 extra_javascript:
   - javascripts/lang-switch-same-page.js
@@ -180,6 +182,7 @@ nav:
       - Overview: explanation/index.md
       - Physics:
           - Overview: explanation/physics/index.md
+          - Symbol Glossary: explanation/physics/symbol-glossary.md
       - Architecture:
           - Pipeline:
               - Overview: explanation/architecture/pipeline/index.md
@@ -197,9 +200,9 @@ nav:
           - Simulation:
               - LC Resonator: reference/cli/sc-simulate-lc.md
           - Data Conversion:
-              - Convert HFSS Admittance: reference/cli/sc-preprocess-admittance.md
-              - Convert HFSS Phase: reference/cli/sc-preprocess-phase.md
-              - Convert Flux Dependence: reference/cli/sc-convert-flux-dependence.md
+              - Convert HFSS Admittance: reference/cli/sc-preprocess-hfss-admittance.md
+              - Convert HFSS Scattering: reference/cli/sc-preprocess-hfss-scattering.md
+              - Convert VNA Flux Dependence: reference/cli/sc-preprocess-vna-flux-dependence.md
           - Data Analysis:
               - Resonance Extract: reference/cli/sc-analysis-resonance-extract.md
               - Resonance Fitting: reference/cli/sc-analysis-resonance-fit.md
@@ -238,7 +241,7 @@ nav:
               - Script Authoring: reference/guardrails/code-quality/script-authoring.md
               - Data Handling: reference/guardrails/code-quality/data-handling.md
           - Documentation Design:
-              - Documentation Design: reference/guardrails/documentation-design/documentation.md
+              - Overview: reference/guardrails/documentation-design/documentation.md
               - Standards: reference/guardrails/documentation-design/standards.md
               - Style: reference/guardrails/documentation-design/style.md
               - Maintenance: reference/guardrails/documentation-design/maintenance.md

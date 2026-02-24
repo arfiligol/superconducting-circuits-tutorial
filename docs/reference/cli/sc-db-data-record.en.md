@@ -11,14 +11,14 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db data-record
+# sc db data-record
 
 Manage DataRecord (read/delete only).
 
 ## Usage
 
 ```bash
-uv run sc-db data-record <action> [args]
+uv run sc db data-record <action> [args]
 ```
 
 ## Arguments
@@ -38,27 +38,27 @@ uv run sc-db data-record <action> [args]
 
 **List**
 ```bash
-uv run sc-db data-record list
+uv run sc db data-record list
 ```
 
 **Info**
 ```bash
-uv run sc-db data-record info <ID>
+uv run sc db data-record info <ID>
 ```
 
 **Delete**
 ```bash
-uv run sc-db data-record delete <ID>
+uv run sc db data-record delete <ID>
 ```
 
 **Reorder ID**
 ```bash
-uv run sc-db data-record auto-reorder
+uv run sc db data-record auto-reorder
 ```
 
 **Reorder ID by Name**
 ```bash
-uv run sc-db data-record auto-reorder --sort-by name
+uv run sc db data-record auto-reorder --sort-by name
 ```
 
 ## Notes

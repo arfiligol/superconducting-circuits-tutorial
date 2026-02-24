@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI wrapper for HFSS phase file conversion (DB Only)."""
+"""CLI wrapper for HFSS scattering data conversion (Phase, Re, Im, Mag) (DB Only)."""
 
 from pathlib import Path
 from typing import Annotated
@@ -28,7 +28,7 @@ app = typer.Typer(add_completion=False)
 def main(
     csv: Annotated[
         list[Path] | None,
-        typer.Argument(help="Path(s) to HFSS phase CSV."),
+        typer.Argument(help="Path(s) to HFSS S-Parameter or Phase CSV."),
     ] = None,
     dataset_name: Annotated[
         str | None,
@@ -42,13 +42,12 @@ def main(
         str,
         typer.Option(
             "--match",
-            help="Comma-separated keywords to filter files (e.g., 'Phase,S21,deg,rad'). "
-            "Fits phase naturally.",
+            help="Comma-separated keywords to filter files (e.g., 'Phase,S21,deg,rad,re,im,mag'). ",
         ),
-    ] = "Phase,S21,deg,rad",
+    ] = "Phase,S21,deg,rad,re,im,mag,S11",
 ) -> None:
     """
-    Import HFSS phase CSV to SQLite database.
+    Import HFSS scattering matrix CSV to SQLite database.
 
     Supports both single files and directories.
     - If a directory is provided, scans for all *.csv files.
@@ -106,7 +105,7 @@ def main(
         typer.echo(f"Importing '{raw_path.name}' as '{target_name}'...")
         import_hfss_to_database(
             file_path=raw_path,
-            file_type="phase",
+            file_type="scattering",
             dataset_name=target_name,
             tags=tag_list,
         )

@@ -31,7 +31,7 @@ updated_by: team
 
 === "CLI"
 
-    先在 HFSS 產生 Plot，從 Plot 匯出 `.csv`，再使用 `sc preprocess admittance` 進行匯入。
+    先在 HFSS 產生 Plot，從 Plot 匯出 `.csv`，再使用 `sc preprocess hfss admittance` 進行匯入。
 
     ### 1. 在 HFSS 先畫圖，再匯出 `.csv`
 
@@ -47,7 +47,7 @@ updated_by: team
     若您只需要分析特定的設計檔案：
 
     ```bash
-    uv run sc preprocess admittance path/to/your/file.csv
+    uv run sc preprocess hfss admittance path/to/your/file.csv
     ```
 
     ### 3. 批量匯入資料夾中的 `.csv`
@@ -55,7 +55,7 @@ updated_by: team
     若您有一系列的掃描數據，可以直接指定目錄，系統會自動處理所有支援的檔案：
 
     ```bash
-    uv run sc preprocess admittance path/to/data_folder/
+    uv run sc preprocess hfss admittance path/to/data_folder/
     ```
 
     !!! tip "自動過濾機制與重複檢查"

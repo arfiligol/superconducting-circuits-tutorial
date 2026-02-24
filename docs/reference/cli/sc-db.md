@@ -12,7 +12,7 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db
+# sc db
 
 資料庫管理的單一入口，透過子指令操作各個模型。
 
@@ -28,7 +28,7 @@ owner: I-LI CHIU
 ## Usage
 
 ```bash
-uv run sc-db <model> <action> [args]
+uv run sc db <model> <action> [args]
 ```
 
 ## Arguments
@@ -48,33 +48,33 @@ uv run sc-db <model> <action> [args]
 
 **列出 DatasetRecord**
 ```bash
-uv run sc-db dataset-record list
+uv run sc db dataset-record list
 ```
 
 **查詢 DatasetRecord**
 ```bash
-uv run sc-db dataset-record info <ID_OR_NAME>
+uv run sc db dataset-record info <ID_OR_NAME>
 ```
 
 **刪除 DataRecord**
 ```bash
-uv run sc-db data-record delete <ID>
+uv run sc db data-record delete <ID>
 ```
 
 **新增 Tag**
 ```bash
-uv run sc-db tag create "NewTag"
+uv run sc db tag create "NewTag"
 ```
 
 **更名 Tag**
 ```bash
-uv run sc-db tag update "NewTag" "RenamedTag"
+uv run sc db tag update "NewTag" "RenamedTag"
 ```
 
 ## Notes
 
 !!! note "舊指令已移除"
-    `sc-db list/info/delete` 已移除，請改用 `sc-db <model> <action>`。
+    `sc db list/info/delete` 已移除，請改用 `sc db <model> <action>`。
 
 <!-- CLI-HELP-START -->
 
@@ -100,4 +100,7 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
+
+
+
 

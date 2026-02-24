@@ -19,7 +19,6 @@ src/core/analysis/application/preprocessing/admittance.py
 src/core/analysis/application/preprocessing/dataset_payload.py
 src/core/analysis/application/preprocessing/flux_dependence.py
 src/core/analysis/application/preprocessing/naming.py
-src/core/analysis/application/preprocessing/phase.py
 src/core/analysis/application/preprocessing/s_parameters.py
 src/core/analysis/application/services/data_record_management.py
 src/core/analysis/application/services/database_import.py
@@ -84,8 +83,7 @@ src/scripts/plot/resonance_map.py
 src/scripts/preprocessing/__init__.py
 src/scripts/preprocessing/convert_flux_dependence.py
 src/scripts/preprocessing/convert_hfss_admittance.py
-src/scripts/preprocessing/convert_hfss_phase.py
-src/scripts/preprocessing/convert_hfss_s_parameters.py
+src/scripts/preprocessing/convert_hfss_scattering.py
 src/scripts/sandbox/derived_parameter_table_preview.py
 src/scripts/sandbox/resonance_sweep_table_preview.py
 src/scripts/sandbox/sandbox_plot.py

@@ -19,9 +19,9 @@ Command-line tool reference.
 
 ## Preprocessing (Data Ingestion)
 
-- [sc preprocess admittance](sc-preprocess-admittance.en.md) - Convert HFSS admittance data
-- [sc preprocess phase](sc-preprocess-phase.en.md) - Convert HFSS phase data
-- [sc preprocess flux](sc-convert-flux-dependence.en.md) - Convert VNA flux dependence data
+- [sc preprocess hfss admittance](sc-preprocess-hfss-admittance.en.md) - Convert HFSS admittance data
+- [sc preprocess hfss scattering](sc-preprocess-hfss-scattering.en.md) - Convert HFSS S-parameter and phase data
+- [sc preprocess vna flux-dependence](sc-preprocess-vna-flux-dependence.en.md) - Convert VNA flux dependence data
 
 ## Analysis (Data Fitting)
 

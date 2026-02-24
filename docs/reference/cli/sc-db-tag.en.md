@@ -11,14 +11,14 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db tag
+# sc db tag
 
 Manage Tags (create/update/delete supported).
 
 ## Usage
 
 ```bash
-uv run sc-db tag <action> [args]
+uv run sc db tag <action> [args]
 ```
 
 ## Arguments
@@ -37,27 +37,27 @@ uv run sc-db tag <action> [args]
 
 **List**
 ```bash
-uv run sc-db tag list
+uv run sc db tag list
 ```
 
 **Create**
 ```bash
-uv run sc-db tag create "NewTag"
+uv run sc db tag create "NewTag"
 ```
 
 **Rename (sync links)**
 ```bash
-uv run sc-db tag update "NewTag" "RenamedTag"
+uv run sc db tag update "NewTag" "RenamedTag"
 ```
 
 **Delete**
 ```bash
-uv run sc-db tag delete "RenamedTag"
+uv run sc db tag delete "RenamedTag"
 ```
 
 **Reorder ID**
 ```bash
-uv run sc-db tag auto-reorder
+uv run sc db tag auto-reorder
 ```
 
 ## Notes

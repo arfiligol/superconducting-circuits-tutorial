@@ -12,7 +12,7 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db
+# sc db
 
 Single entrypoint for database management, using model subcommands.
 
@@ -28,7 +28,7 @@ Single entrypoint for database management, using model subcommands.
 ## Usage
 
 ```bash
-uv run sc-db <model> <action> [args]
+uv run sc db <model> <action> [args]
 ```
 
 ## Arguments
@@ -48,33 +48,33 @@ uv run sc-db <model> <action> [args]
 
 **List DatasetRecord**
 ```bash
-uv run sc-db dataset-record list
+uv run sc db dataset-record list
 ```
 
 **Show DatasetRecord**
 ```bash
-uv run sc-db dataset-record info <ID_OR_NAME>
+uv run sc db dataset-record info <ID_OR_NAME>
 ```
 
 **Delete DataRecord**
 ```bash
-uv run sc-db data-record delete <ID>
+uv run sc db data-record delete <ID>
 ```
 
 **Create Tag**
 ```bash
-uv run sc-db tag create "NewTag"
+uv run sc db tag create "NewTag"
 ```
 
 **Rename Tag**
 ```bash
-uv run sc-db tag update "NewTag" "RenamedTag"
+uv run sc db tag update "NewTag" "RenamedTag"
 ```
 
 ## Notes
 
 !!! note "Deprecated"
-    `sc-db list/info/delete` are removed. Use `sc-db <model> <action>`.
+    `sc db list/info/delete` are removed. Use `sc db <model> <action>`.
 
 <!-- CLI-HELP-START -->
 
@@ -100,4 +100,7 @@ Usage: sc-db [OPTIONS] COMMAND [ARGS]...
 ```
 
 <!-- CLI-HELP-END -->
+
+
+
 

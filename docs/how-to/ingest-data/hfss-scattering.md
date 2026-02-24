@@ -44,12 +44,12 @@ updated_by: team
 
 === "CLI"
 
-    使用 `sc preprocess phase` 進行匯入。
+    使用 `sc preprocess hfss scattering` 進行匯入。
 
     ### 1. 匯入單一 `.csv` 檔案
 
     ```bash
-    uv run sc preprocess phase path/to/your/phase_file.csv
+    uv run sc preprocess hfss scattering path/to/your/phase_file.csv
     ```
 
     ### 2. 批量匯入資料夾中的 `.csv`
@@ -57,11 +57,11 @@ updated_by: team
     若您有一系列的相位掃描數據，可以直接指定目錄：
 
     ```bash
-    uv run sc preprocess phase path/to/data_folder/
+    uv run sc preprocess hfss scattering path/to/data_folder/
     ```
 
     !!! tip "自動過濾機制與重複檢查"
-        - 目錄模式下，系統預設只會抓取檔名包含 `Phase`、`S21`、`deg` 或 `rad` 的 `.csv` 檔案。您也可以透過 `--match` 選項來自訂過濾關鍵字。
+        - 目錄模式下，系統預設只會抓取檔名符合散射參數或相角特徵（例如 `Phase`、`S21`、`deg`、`rad`、`re`、`im`、`mag` 等）的 `.csv` 檔案。您也可以透過 `--match` 選項來自訂過濾關鍵字。
         - 系統會透過檔名自動推斷 Dataset Name。如果該 Dataset 已存在資料庫，預設會跳過以避免重複數據。
 
 === "UI (TBD)"

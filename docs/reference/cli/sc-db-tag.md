@@ -11,14 +11,14 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db tag
+# sc db tag
 
 管理 Tag（支援建立、更新、刪除）。
 
 ## Usage
 
 ```bash
-uv run sc-db tag <action> [args]
+uv run sc db tag <action> [args]
 ```
 
 ## Arguments
@@ -37,27 +37,27 @@ uv run sc-db tag <action> [args]
 
 **列出**
 ```bash
-uv run sc-db tag list
+uv run sc db tag list
 ```
 
 **新增**
 ```bash
-uv run sc-db tag create "NewTag"
+uv run sc db tag create "NewTag"
 ```
 
 **更名（同步關聯）**
 ```bash
-uv run sc-db tag update "NewTag" "RenamedTag"
+uv run sc db tag update "NewTag" "RenamedTag"
 ```
 
 **刪除**
 ```bash
-uv run sc-db tag delete "RenamedTag"
+uv run sc db tag delete "RenamedTag"
 ```
 
 **重排 ID**
 ```bash
-uv run sc-db tag auto-reorder
+uv run sc db tag auto-reorder
 ```
 
 ## Notes

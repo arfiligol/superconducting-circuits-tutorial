@@ -30,7 +30,7 @@ This guide explains how to ingest Admittance (Y-parameter) `.csv` data exported 
 
 === "CLI"
 
-    Create the plot in HFSS first, export `.csv` from that plot, then run `sc preprocess admittance`.
+    Create the plot in HFSS first, export `.csv` from that plot, then run `sc preprocess hfss admittance`.
 
     ### 1. Plot in HFSS, then export `.csv`
 
@@ -46,7 +46,7 @@ This guide explains how to ingest Admittance (Y-parameter) `.csv` data exported 
     If you only need to analyze a specific design file:
 
     ```bash
-    uv run sc preprocess admittance path/to/your/file.csv
+    uv run sc preprocess hfss admittance path/to/your/file.csv
     ```
 
     ### 3. Batch Ingest a Directory of `.csv` Files
@@ -54,7 +54,7 @@ This guide explains how to ingest Admittance (Y-parameter) `.csv` data exported 
     If you have a series of sweep data, specify the directory, and the system will process all supported files:
 
     ```bash
-    uv run sc preprocess admittance path/to/data_folder/
+    uv run sc preprocess hfss admittance path/to/data_folder/
     ```
 
     !!! tip "Auto-filtering & Duplicate Check"

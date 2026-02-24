@@ -16,8 +16,7 @@ from scripts.plot import admittance, flux_dependence, resonance_map
 from scripts.preprocessing import (
     convert_flux_dependence,
     convert_hfss_admittance,
-    convert_hfss_phase,
-    convert_hfss_s_parameters,
+    convert_hfss_scattering,
 )
 from scripts.simulation import run_lc
 
@@ -26,6 +25,7 @@ app = typer.Typer(
     help="Superconducting Circuits Analysis Platform CLI",
     add_completion=False,
     no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 # ==========================================
@@ -57,26 +57,28 @@ analysis_app.add_typer(
 preprocess_app = typer.Typer(help="Data Ingestion and Preprocessing")
 app.add_typer(preprocess_app, name="preprocess")
 
-# sc preprocess admittance ...
-preprocess_app.command(name="admittance", help="Import HFSS Admittance CSV to Database.")(
+# --- VNA Subgroup ---
+vna_app = typer.Typer(help="VNA Measurement Data Preprocessing")
+preprocess_app.add_typer(vna_app, name="vna")
+
+# sc preprocess vna flux-dependence ...
+vna_app.command(name="flux-dependence", help="Import VNA Flux Dependence TXT to DB.")(
+    convert_flux_dependence.main
+)
+
+# --- HFSS Subgroup ---
+hfss_app = typer.Typer(help="HFSS Simulation Data Preprocessing")
+preprocess_app.add_typer(hfss_app, name="hfss")
+
+# sc preprocess hfss admittance ...
+hfss_app.command(name="admittance", help="Import HFSS Admittance Matrix CSV (Y-Param) to DB.")(
     convert_hfss_admittance.main
 )
 
-# sc preprocess phase ...
-preprocess_app.command(name="phase", help="Import HFSS Phase CSV to Database.")(
-    convert_hfss_phase.main
-)
-
-# sc preprocess s-parameters ...
-preprocess_app.command(name="s-parameters", help="Import Generic HFSS S-Parameter CSV to DB.")(
-    convert_hfss_s_parameters.main
-)
-
-# sc preprocess flux ...
-# Note: Using 'flux' as shorthand for flux-dependence
-preprocess_app.command(name="flux", help="Import VNA Flux Dependence TXT to Database.")(
-    convert_flux_dependence.main
-)
+# sc preprocess hfss scattering ...
+hfss_app.command(
+    name="scattering", help="Import HFSS Scattering Matrix CSV (S-Param, Phase) to DB."
+)(convert_hfss_scattering.main)
 
 
 # ==========================================

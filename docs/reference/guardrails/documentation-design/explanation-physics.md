@@ -134,23 +134,23 @@ tags:
 
 ---
 
-## 問題驅動優先（Physics Q&A First）
+## 開場驅動（問題句或歷史脈絡）
 
-- 每篇 Physics 必須由一個**物理問題句**作為標題或開場。
-- 問題本身應偏向物理因果，不以「工具怎麼用」或「流程怎麼做」為主。
-- 工程內容只作為物理概念的落地映射，不可喧賓奪主。
+每篇 Physics 的開場應讓讀者立刻理解「這篇在講什麼、為什麼重要」。以下兩種開場方式皆可：
 
-!!! tip "歷史與應用提示（建議）"
-    每篇至少放一個 Admonition，說明該物理概念在社群歷史上解決過的關鍵問題或典型應用。
+1. **物理問題句**：以一個具體的物理因果問題開頭（例如：「為什麼磁通量會是量子化的？」）。適合概念推導型頁面。
+2. **歷史 / 社群脈絡**：說明「什麼時間發生了什麼事，因此研究了 XXX」，再展開成果。適合器件發展、實驗突破、或跨領域融合型頁面。
+
+> 不論哪種方式，開場都不應以「工具怎麼用」或「流程怎麼做」為主。工程內容只作為物理概念的落地映射，不可喧賓奪主。
 
 ---
 
 ## 每頁寫作骨架
 
-1. **本章回答的問題**：用 1–2 句定義核心問題。
-2. **先備知識對照**：對應四大力學中的先備觀念。
+1. **開場（問題或脈絡）**：用物理問題句或歷史脈絡定義本頁的核心主題。
+2. **先備知識對照**（建議）：列出相關的先備觀念（不限四大力學皆要，有對應的就寫）。
 3. **物理核心**：最小必要方程式與假設；所有符號需定義，單位需一致。
-4. **工程映射**：將物理量映射到電路與系統設計量。
+4. **工程映射**（建議）：將物理量映射到電路與系統設計量。純 Principle 頁面若離工程尚有距離，可省略。
 5. **限制與近似**：明確寫出模型適用範圍與失效條件。
 6. **跨文件導航**：依內容相關性提供 1–3 個延伸連結。
 
@@ -162,6 +162,17 @@ tags:
 
 - 格式：文件底部需建立 `## References` 區塊，建議使用 **APA 格式**。
 - 連結寫法：若有 DOI 或 arXiv 連結，應以 Markdown 形式附上。
+
+---
+
+## 符號總表（Symbol Glossary）
+
+為確保跨頁面的符號一致性，符號管理分兩層：
+
+1. **各頁面內的符號定義**：每篇文章中首次使用的符號必須在該頁內定義（行內或表格皆可）。
+2. **全域符號總表**：在 `explanation/physics/index.md`（Overview）中維護一份跨頁面的符號總表，彙整所有頁面使用的主要符號、單位與定義。若總表過長，可獨立為 `explanation/physics/symbol-glossary.md`。
+
+> 當不同頁面的符號慣例有衝突時（例如 $\omega$ 在某頁代表角頻率、在另一頁代表特定模態頻率），總表中需明確標註適用範圍。
 
 ---
 
@@ -185,7 +196,7 @@ tags:
 - **Content boundary**: Physics explains WHY/HOW-IT-WORKS only. Tool usage, CLI steps, workflows → How-to/Tutorials/Reference
 - **Node types**: each page declares node_type in tags (principle/model/method/device). Dependencies flow: Principle → Model → Device/Method
 - **Positioning**: must be both a full learning backbone and reusable concept nodes
-- **Question-driven**: each page starts from a physics question, not an engineering operation question
+- **Opener**: each page starts from either a physics question OR a historical/community narrative — never a tool-operation question
 - **Per-page contract**: question, prerequisites mapping, physics core, engineering mapping, limits/approximations, cross-links
 - **Citations**: physics models and derivations MUST include APA references at bottom
 - **Overview**: `index.md` contains the full A-I roadmap; linked when content exists, plain text when planned

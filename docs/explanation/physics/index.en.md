@@ -18,7 +18,7 @@ updated_by: team
 
 This section builds the theoretical foundation for superconducting quantum circuits, organized from fundamental principles to engineering practice.
 
-Each page starts with a **physics question**, includes symbol definitions, derivation chains, engineering mappings, and academic references. Content follows the A–I knowledge architecture and can be read linearly or entered at any point.
+Each page opens with either a **physics question** or a **historical/community narrative** so readers immediately understand its context. The page skeleton includes sequentially: an opener, prerequisite mapping, physics core (equations and symbol definitions), engineering mapping, limits/approximations, and cross-document navigation links. Content follows the A–I knowledge architecture and can be read linearly or entered at any point.
 
 !!! info "Writing Guidelines"
     - All content follows the [Explanation Physics Guardrail](../../reference/guardrails/documentation-design/explanation-physics.md)
@@ -57,7 +57,7 @@ Each page starts with a **physics question**, includes symbol definitions, deriv
 
 ## C. Superconductivity & Dissipation { #c-superconductivity }
 
-> Fundamental physics of superconductors and energy loss mechanisms.
+> Fundamental physics of superconductors and energy loss mechanisms. Understanding these reveals not only how to design high-Q components, but also why superconductors can function as quantum systems for building quantum computers.
 
 | ID | Topic | Node Type |
 |----|-------|-----------|

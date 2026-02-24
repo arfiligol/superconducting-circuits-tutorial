@@ -11,14 +11,14 @@ tags:
 owner: I-LI CHIU
 ---
 
-# sc-db derived-parameter
+# sc db derived-parameter
 
 管理 DerivedParameter（僅支援讀取與刪除）。
 
 ## Usage
 
 ```bash
-uv run sc-db derived-parameter <action> [args]
+uv run sc db derived-parameter <action> [args]
 ```
 
 ## Arguments
@@ -37,22 +37,22 @@ uv run sc-db derived-parameter <action> [args]
 
 **列出**
 ```bash
-uv run sc-db derived-parameter list
+uv run sc db derived-parameter list
 ```
 
 **查詢**
 ```bash
-uv run sc-db derived-parameter info <ID>
+uv run sc db derived-parameter info <ID>
 ```
 
 **刪除**
 ```bash
-uv run sc-db derived-parameter delete <ID>
+uv run sc db derived-parameter delete <ID>
 ```
 
 **重排 ID**
 ```bash
-uv run sc-db derived-parameter auto-reorder
+uv run sc db derived-parameter auto-reorder
 ```
 
 ## Notes
