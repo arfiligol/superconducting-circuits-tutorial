@@ -267,24 +267,6 @@ class ResonanceFitService:
                         device_type="resonator",
                         method=method_name,
                     )
-                    if res.get("Qc", float("inf")) != float("inf"):
-                        self.param_service.create_or_update_param(
-                            dataset.id,
-                            name=f"Qc_{idx}{suffix}",
-                            value=res["Qc"],
-                            unit="",
-                            device_type="resonator",
-                            method=method_name,
-                        )
-                    if res.get("Qi", float("inf")) != float("inf"):
-                        self.param_service.create_or_update_param(
-                            dataset.id,
-                            name=f"Qi_{idx}{suffix}",
-                            value=res["Qi"],
-                            unit="",
-                            device_type="resonator",
-                            method=method_name,
-                        )
                 model_s21 = result["model_s21"]
 
             l_jun_val = l_jun_values[bi] if l_jun_values and bi < len(l_jun_values) else None
