@@ -34,7 +34,7 @@ class ResonanceFitService:
         resonators: int = 1,
         f_min: float | None = None,
         f_max: float | None = None,
-        bias_index: int = 0,
+        bias_index: int | None = None,
     ) -> dict[str, "typing.Any"]:
         """
         Perform a CPZM notch resonance fit on a given dataset and parameter.
@@ -114,138 +114,186 @@ class ResonanceFitService:
         # Note: Depending on the axes structure from raw HFSS, there might be
         # multiple sweep dimensions. Assuming 1D for simplicity in the current path.
         # If the array is multi-dimensional (e.g. [Freq, L_jun]),
-        # slice the targeted bias point out of the matrix.
+        # extract L_jun axis metadata and slice accordingly.
+        l_jun_values: list[float] | None = None
+        bias_indices: list[int] = [0]
+
         if s21_complex.ndim > 1:
-            if bias_index >= s21_complex.shape[1]:
-                raise ValueError(
-                    f"Selected bias_index {bias_index} is out of bounds "
-                    f"for data with {s21_complex.shape[1]} bias points."
-                )
-            s21_complex = s21_complex[:, bias_index]
+            n_biases = s21_complex.shape[1]
 
-        f_arr = f_axis.flatten() * 1e9
-        s21_arr = s21_complex.flatten()
+            # Try to extract L_jun values from axes[1]
+            any_rep = next(iter(reps.values()))
+            if len(any_rep.axes) > 1 and any_rep.axes[1].get("name") in ("L_jun", "l_jun"):
+                l_jun_values = [float(v) for v in any_rep.axes[1]["values"]]
+            else:
+                l_jun_values = None
 
-        # Mask out NaNs
-        valid = ~np.isnan(f_arr) & ~np.isnan(s21_arr)
+            if bias_index is not None:
+                if bias_index >= n_biases:
+                    raise ValueError(
+                        f"Selected bias_index {bias_index} is out of bounds "
+                        f"for data with {n_biases} bias points."
+                    )
+                bias_indices = [bias_index]
+            else:
+                bias_indices = list(range(n_biases))
+        # Base frequency axis (Hz)
+        f_base = f_axis.flatten() * 1e9
 
-        # Apply user-defined frequency window (converted from GHz to Hz)
-        if f_min is not None:
-            valid &= f_arr >= f_min * 1e9
-        if f_max is not None:
-            valid &= f_arr <= f_max * 1e9
+        # Run fitting per bias slice
+        slice_results: list[dict[str, typing.Any]] = []
 
-        f_arr = f_arr[valid]
-        s21_arr = s21_arr[valid]
+        for bi in bias_indices:
+            # Extract the 1D slice for this bias point
+            if s21_complex.ndim > 1:
+                s21_slice = s21_complex[:, bi].flatten()
+            else:
+                s21_slice = s21_complex.flatten()
 
-        if len(f_arr) < 5:
-            raise ValueError("Insufficient data points in the specified frequency range to fit.")
+            f_arr = f_base.copy()
+            s21_arr = s21_slice
 
-        # Fit
-        result: dict[str, typing.Any] = {}
-        if model == "notch":
-            result = fit_notch_s21(f_arr, s21_arr)
-            method_name = f"complex_notch_fit_{parameter}"
-        elif model == "transmission":
-            result = fit_transmission_s21(f_arr, s21_arr)
-            method_name = f"transmission_fit_{parameter}"
-        elif model == "vf":
-            fitter = MultiResonanceVectorFitter(f_arr, s21_arr)
-            result = fitter.fit(n_resonators=resonators)
-            method_name = f"vector_fit_{parameter}"
-        else:
-            raise ValueError(f"Unsupported model: {model}")
+            # Mask out NaNs
+            valid = ~np.isnan(f_arr) & ~np.isnan(s21_arr)
 
-        if model in ["notch", "transmission"]:
-            self.param_service.create_or_update_param(
-                dataset.id,
-                name="fr_ghz",
-                value=result["fr"] / 1e9,
-                unit="GHz",
-                device_type="resonator",
-                method=method_name,
-            )
-            self.param_service.create_or_update_param(
-                dataset.id,
-                name="Ql",
-                value=result["Ql"],
-                unit="",
-                device_type="resonator",
-                method=method_name,
-            )
-            self.param_service.create_or_update_param(
-                dataset.id,
-                name="Qc",
-                value=result.get("Qc_mag", float("inf")),
-                unit="",
-                device_type="resonator",
-                method=method_name,
-            )
-            self.param_service.create_or_update_param(
-                dataset.id,
-                name="Qi",
-                value=result.get("Qi", float("inf")),
-                unit="",
-                device_type="resonator",
-                method=method_name,
-            )
-            if "tau" in result:
-                self.param_service.create_or_update_param(
-                    dataset.id,
-                    name="electrical_delay",
-                    value=result["tau"] * 1e9,
-                    unit="ns",
-                    device_type="resonator",
-                    method=method_name,
-                )
+            # Apply user-defined frequency window (converted from GHz to Hz)
+            if f_min is not None:
+                valid &= f_arr >= f_min * 1e9
+            if f_max is not None:
+                valid &= f_arr <= f_max * 1e9
 
+            f_arr = f_arr[valid]
+            s21_arr = s21_arr[valid]
+
+            if len(f_arr) < 5:
+                continue  # Skip slices with too few points
+
+            # Fit
+            result: dict[str, typing.Any] = {}
             if model == "notch":
-                model_s21 = notch_s21(
-                    f_arr,
-                    fr=result["fr"],
-                    Ql=result["Ql"],
-                    Qc_real=result["Qc_real"],
-                    Qc_imag=result["Qc_imag"],
-                    a=result["a"],
-                    alpha=result["alpha"],
-                    tau=result["tau"],
-                )
+                result = fit_notch_s21(f_arr, s21_arr)
+                method_name = f"complex_notch_fit_{parameter}"
             elif model == "transmission":
-                model_s21 = transmission_s21(
-                    f_arr,
-                    fr=result["fr"],
-                    Ql=result["Ql"],
-                    a=result["a"],
-                    alpha=result["alpha"],
-                    tau=result["tau"],
-                )
-        elif model == "vf":
-            # Persist an array of physical parameters (for multi-pole this needs indexing)
-            for idx, res in enumerate(result["resonances"]):
+                result = fit_transmission_s21(f_arr, s21_arr)
+                method_name = f"transmission_fit_{parameter}"
+            elif model == "vf":
+                fitter = MultiResonanceVectorFitter(f_arr, s21_arr)
+                result = fitter.fit(n_resonators=resonators)
+                method_name = f"vector_fit_{parameter}"
+            else:
+                raise ValueError(f"Unsupported model: {model}")
+
+            # Persist parameters (suffix with bias index when multiple slices)
+            suffix = f"_b{bi}" if len(bias_indices) > 1 else ""
+
+            if model in ["notch", "transmission"]:
                 self.param_service.create_or_update_param(
                     dataset.id,
-                    name=f"fr_ghz_{idx}",
-                    value=res["fr"] / 1e9,
+                    name=f"fr_ghz{suffix}",
+                    value=result["fr"] / 1e9,
                     unit="GHz",
                     device_type="resonator",
                     method=method_name,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
-                    name=f"Ql_{idx}",
-                    value=res["Ql"],
+                    name=f"Ql{suffix}",
+                    value=result["Ql"],
                     unit="",
                     device_type="resonator",
                     method=method_name,
                 )
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"Qc{suffix}",
+                    value=result.get("Qc_mag", float("inf")),
+                    unit="",
+                    device_type="resonator",
+                    method=method_name,
+                )
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"Qi{suffix}",
+                    value=result.get("Qi", float("inf")),
+                    unit="",
+                    device_type="resonator",
+                    method=method_name,
+                )
+                if "tau" in result:
+                    self.param_service.create_or_update_param(
+                        dataset.id,
+                        name=f"electrical_delay{suffix}",
+                        value=result["tau"] * 1e9,
+                        unit="ns",
+                        device_type="resonator",
+                        method=method_name,
+                    )
 
-            model_s21 = result["model_s21"]
+                if model == "notch":
+                    model_s21 = notch_s21(
+                        f_arr,
+                        fr=result["fr"],
+                        Ql=result["Ql"],
+                        Qc_real=result["Qc_real"],
+                        Qc_imag=result["Qc_imag"],
+                        a=result["a"],
+                        alpha=result["alpha"],
+                        tau=result["tau"],
+                    )
+                elif model == "transmission":
+                    model_s21 = transmission_s21(
+                        f_arr,
+                        fr=result["fr"],
+                        Ql=result["Ql"],
+                        a=result["a"],
+                        alpha=result["alpha"],
+                        tau=result["tau"],
+                    )
+            elif model == "vf":
+                for idx, res in enumerate(result["resonances"]):
+                    self.param_service.create_or_update_param(
+                        dataset.id,
+                        name=f"fr_ghz_{idx}{suffix}",
+                        value=res["fr"] / 1e9,
+                        unit="GHz",
+                        device_type="resonator",
+                        method=method_name,
+                    )
+                    self.param_service.create_or_update_param(
+                        dataset.id,
+                        name=f"Ql_{idx}{suffix}",
+                        value=res["Ql"],
+                        unit="",
+                        device_type="resonator",
+                        method=method_name,
+                    )
+                model_s21 = result["model_s21"]
 
+            l_jun_val = l_jun_values[bi] if l_jun_values and bi < len(l_jun_values) else None
+
+            slice_results.append(
+                {
+                    **result,
+                    "bias_index": bi,
+                    "l_jun": l_jun_val,
+                    "data": {
+                        "f": f_arr,
+                        "s21_raw": s21_arr,
+                        "s21_model": model_s21,
+                    },
+                }
+            )
+
+        if not slice_results:
+            raise ValueError("No valid bias slices found with enough data points to fit.")
+
+        # If single slice, return flat dict for backward compatibility
+        if len(slice_results) == 1:
+            return slice_results[0]
+
+        # Multiple slices — return a list under "slices" key
         return {
-            **result,
-            "data": {
-                "f": f_arr,
-                "s21_raw": s21_arr,
-                "s21_model": model_s21,
-            },
+            "slices": slice_results,
+            "l_jun_values": l_jun_values,
+            "bias_indices": [s["bias_index"] for s in slice_results],
         }

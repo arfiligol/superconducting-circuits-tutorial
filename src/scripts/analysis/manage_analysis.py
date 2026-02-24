@@ -32,14 +32,18 @@ def fit_scattering(
         float | None, typer.Option("--f-max", help="Maximum frequency for fitting range in GHz")
     ] = None,
     bias_index: Annotated[
-        int, typer.Option("--bias-index", "-b", help="L_jun bias slice index to fit")
-    ] = 0,
+        int | None,
+        typer.Option("--bias-index", "-b", help="L_jun bias slice index (default: fit ALL slices)"),
+    ] = None,
 ) -> None:
     """
     Perform a complex resonance fit (Notch model) on a dataset's S-parameters.
 
     The dataset must contain matching data records for the specified parameter
     in representations that allow for building the complex signal (e.g. Re/Im or Mag/Phase).
+
+    If the data contains multiple bias points (L_jun), all slices are fitted by default.
+    Use --bias-index to select a specific slice.
     """
     service = ResonanceFitService()
     try:
@@ -58,41 +62,59 @@ def fit_scattering(
             bias_index=bias_index,
         )
 
-        console.print("[green]Fit completed successfully![/green]\n")
-        console.print("[bold]Extracted Parameters:[/bold]")
+        # Normalize to a list of slices for uniform handling
+        if "slices" in result:
+            slices = result["slices"]
+            console.print(f"[green]Fit completed for {len(slices)} bias slices![/green]\n")
+        else:
+            slices = [result]
+            console.print("[green]Fit completed successfully![/green]\n")
 
-        if model in ["notch", "transmission"]:
-            console.print(f"  Resonance Frequency (fr): {result['fr'] / 1e9:.6f} GHz")
-            console.print(f"  Loaded Q (Ql)         : {result['Ql']:.2f}")
-            if "Qi" in result:
-                console.print(f"  Internal Q (Qi)       : {result['Qi']:.2f}")
-            if "Qc_mag" in result:
-                console.print(f"  Coupling Q (Qc)       : {result['Qc_mag']:.2f}")
-            if "tau" in result:
-                console.print(f"  Elec. Delay (tau)     : {result['tau'] * 1e9:.4f} ns")
-        elif model == "vf":
-            for idx, res in enumerate(result["resonances"]):
+        for sr in slices:
+            # Print bias header if L_jun info is available
+            bi = sr.get("bias_index", 0)
+            l_jun = sr.get("l_jun")
+            if l_jun is not None:
                 console.print(
-                    f"  Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
+                    f"[bold cyan]━━━ Bias Index {bi} │ L_jun = {l_jun:.4f} nH ━━━[/bold cyan]"
                 )
+            elif len(slices) > 1:
+                console.print(f"[bold cyan]━━━ Bias Index {bi} ━━━[/bold cyan]")
 
-        console.print(f"  Model Cost            : {result['cost']:.4e}\n")
+            console.print("[bold]Extracted Parameters:[/bold]")
+
+            if model in ["notch", "transmission"]:
+                console.print(f"  Resonance Frequency (fr): {sr['fr'] / 1e9:.6f} GHz")
+                console.print(f"  Loaded Q (Ql)         : {sr['Ql']:.2f}")
+                if "Qi" in sr:
+                    console.print(f"  Internal Q (Qi)       : {sr['Qi']:.2f}")
+                if "Qc_mag" in sr:
+                    console.print(f"  Coupling Q (Qc)       : {sr['Qc_mag']:.2f}")
+                if "tau" in sr:
+                    console.print(f"  Elec. Delay (tau)     : {sr['tau'] * 1e9:.4f} ns")
+            elif model == "vf":
+                for idx, res in enumerate(sr["resonances"]):
+                    console.print(
+                        f"  Resonator {idx}: fr = {res['fr'] / 1e9:.6f} GHz, Ql = {res['Ql']:.2f}"
+                    )
+
+            console.print(f"  Model Cost            : {sr['cost']:.4e}\n")
+
         console.print("[cyan]These have been saved as Derived Parameters to the database.[/cyan]")
 
-        # Visualization
+        # Visualization — plot the last (or only) slice
+        plot_slice = slices[-1]
         console.print("\n[yellow]Generating interactive Plotly visualization...[/yellow]")
         import numpy as np
         import plotly.graph_objects as go
 
-        data_payload = result["data"]
+        data_payload = plot_slice["data"]
         f_ghz = data_payload["f"] / 1e9
         s21_raw = data_payload["s21_raw"]
         s21_fit = data_payload["s21_model"]
 
         fig = go.Figure()
 
-        # Magnitude vs Frequency
-        # Assuming linear S-parameters are passed, convert to dB for viewing
         mag_raw_db = 20 * np.log10(np.abs(s21_raw))
         mag_fit_db = 20 * np.log10(np.abs(s21_fit))
 
@@ -118,7 +140,7 @@ def fit_scattering(
 
         # Add vertical markers for extracted resonance frequencies
         if model in ["notch", "transmission"]:
-            fr_ghz = result["fr"] / 1e9
+            fr_ghz = plot_slice["fr"] / 1e9
             fig.add_vline(
                 x=fr_ghz,
                 line_dash="dash",
@@ -126,12 +148,21 @@ def fit_scattering(
                 annotation_text=f"fr: {fr_ghz:.4f} GHz",
             )
         elif model == "vf":
-            for res in result["resonances"]:
+            for res in plot_slice["resonances"]:
                 fr_ghz = res["fr"] / 1e9
                 fig.add_vline(x=fr_ghz, line_dash="dash", line_color="green")
 
+        # Build title with bias info
+        bi = plot_slice.get("bias_index", 0)
+        l_jun = plot_slice.get("l_jun")
+        title_suffix = ""
+        if l_jun is not None:
+            title_suffix = f" [b{bi}, L_jun={l_jun:.4f} nH]"
+        elif len(slices) > 1:
+            title_suffix = f" [b{bi}]"
+
         fig.update_layout(
-            title=f"Resonance Fit ({model}): {dataset_identifier} ({parameter})",
+            title=f"Resonance Fit ({model}): {dataset_identifier} ({parameter}){title_suffix}",
             height=600,
             width=800,
             template="plotly_white",
