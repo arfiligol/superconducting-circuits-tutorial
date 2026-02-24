@@ -472,10 +472,10 @@ class MultiResonanceVectorFitter:
             # For hanger/notch, S21 = 1 - (Ql/Qc)/(1 + 2j*Ql*dw/w)
             # The residue relates to Qc as: 1/Qc_tilde = -2 * c / omega
             inv_Qc = np.real(-2 * c / omega)
-            Q_c = 1 / inv_Qc if inv_Qc > 0 else float("inf")
+            Q_c = 1 / inv_Qc if inv_Qc != 0 else float("inf")
 
             inv_Qi = (1 / Q_l) - inv_Qc
-            Q_i = 1 / inv_Qi if inv_Qi > 0 else float("inf")
+            Q_i = 1 / inv_Qi if inv_Qi != 0 else float("inf")
 
             item = {
                 "fr": float(fr),
