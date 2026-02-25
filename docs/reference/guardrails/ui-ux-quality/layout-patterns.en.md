@@ -104,11 +104,11 @@ Use Tailwind's `lg:` prefix to differentiate desktop and mobile.
 # Master-Detail layout
 with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
     # Master: full width on mobile
-    with ui.column().classes("w-full lg:w-[45%]"):
+    with ui.column().classes("w-full lg:w-[60%]"):
         ...
 
     # Detail: stacks below on mobile
-    with ui.column().classes("w-full lg:w-[55%]"):
+    with ui.column().classes("w-full lg:w-[40%]"):
         ...
 ```
 
@@ -150,8 +150,7 @@ Statistics cards + module link grid.
 
 | Property | Value | Notes |
 |---|---|---|
-| Max width | `max-w-7xl` (80rem) | Prevent over-stretching |
-| Centering | `mx-auto` | Horizontal centering |
+| Width | `w-full` | Utilize full screen width |
 | Padding | `px-4 py-3` | Horizontal 16px / Vertical 12px |
 | Gap | `gap-4` | Block gap 16px |
 
@@ -177,11 +176,11 @@ ui.button(
 - Shell Principle: all pages MUST render inside `app_shell(content_builder)`.
 - 8pt Grid: all spacing in multiples of 4px. Use compact density for data-dense views.
 - Card data: `p-3` (12px). Dashboard overview: `p-4` (16px). Section title: `mb-2`.
-- Content area: `px-4 py-3`, `gap-4`. Forbidden: `p-8` or larger on cards/content.
+- Content area: `w-full px-4 py-3`, `gap-4`. Forbidden: `max-w-*` on app_shell, allow full width.
 - Nav drawer: width=220, buttons with `dense` prop.
+- Master/Detail proportions: tables should be `w-[60%]`, visualizations `w-[40%]`.
 - Tables: use `dense` prop for compact row height (~36px).
 - Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
-- Max width: content area is `max-w-7xl mx-auto`.
 - Navigation: add new pages to the left drawer in `layout.py`.
 - Forbidden: standalone pages outside `app_shell()`.
 ```

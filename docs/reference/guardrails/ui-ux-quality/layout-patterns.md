@@ -104,11 +104,11 @@ with ui.column().classes("app-card w-full p-3"):
 # Master-Detail 佈局
 with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
     # Master：在行動裝置上佔滿寬度
-    with ui.column().classes("w-full lg:w-[45%]"):
+    with ui.column().classes("w-full lg:w-[60%]"):
         ...
 
     # Detail：在行動裝置上堆疊在下方
-    with ui.column().classes("w-full lg:w-[55%]"):
+    with ui.column().classes("w-full lg:w-[40%]"):
         ...
 ```
 
@@ -150,8 +150,7 @@ with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
 
 | 屬性 | 值 | 說明 |
 |---|---|---|
-| 最大寬度 | `max-w-7xl` (80rem) | 防止過寬 |
-| 水平置中 | `mx-auto` | 居中對齊 |
+| 最大寬度 | `w-full` | 允許完整利用螢幕寬度 |
 | 內距 | `px-4 py-3` | 水平 16px / 垂直 12px |
 | 元素間距 | `gap-4` | 區塊間 16px |
 
@@ -177,11 +176,11 @@ ui.button(
 - Shell Principle: all pages MUST render inside `app_shell(content_builder)`.
 - 8pt Grid: all spacing in multiples of 4px. Use compact density for data-dense views.
 - Card data: `p-3` (12px). Dashboard overview: `p-4` (16px). Section title: `mb-2`.
-- Content area: `px-4 py-3`, `gap-4`. Forbidden: `p-8` or larger on cards/content.
+- Content area: `w-full px-4 py-3`, `gap-4`. Forbidden: `max-w-*` on app_shell, allow full width.
 - Nav drawer: width=220, buttons with `dense` prop.
+- Master/Detail proportions: tables should be `w-[60%]`, visualizations `w-[40%]`.
 - Tables: use `dense` prop for compact row height (~36px).
 - Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
-- Max width: content area is `max-w-7xl mx-auto`.
 - Navigation: add new pages to the left drawer in `layout.py`.
 - Forbidden: standalone pages outside `app_shell()`.
 ```

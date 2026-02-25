@@ -48,26 +48,26 @@ def app_shell(content_builder):
                     "text-xs text-muted font-bold tracking-wider mb-1 px-2"
                 )
                 ui.button("Home", icon="home", on_click=lambda: ui.navigate.to("/")).classes(
-                    "w-full justify-start"
-                ).props("flat no-caps dense")
+                    "w-full"
+                ).props("flat no-caps dense align=left")
                 ui.button(
                     "Data Browser",
                     icon="analytics",
                     on_click=lambda: ui.navigate.to("/data-browser"),
-                ).classes("w-full justify-start").props("flat no-caps dense")
+                ).classes("w-full").props("flat no-caps dense align=left")
 
                 ui.separator().classes("my-4 bg-border")
 
                 ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-2")
-                ui.button("Analysis", icon="functions").classes("w-full justify-start").props(
-                    "flat no-caps dense disable"
+                ui.button("Analysis", icon="functions").classes("w-full").props(
+                    "flat no-caps dense align=left disable"
                 )
-                ui.button("Simulation", icon="science").classes("w-full justify-start").props(
-                    "flat no-caps dense disable"
+                ui.button("Simulation", icon="science").classes("w-full").props(
+                    "flat no-caps dense align=left disable"
                 )
 
         # Main Content Area
-        with ui.column().classes("w-full max-w-7xl mx-auto px-4 py-3 gap-4"):
+        with ui.column().classes("w-full px-4 py-3 gap-4"):
             content_builder(*args, **kwargs)
 
     return wrapper

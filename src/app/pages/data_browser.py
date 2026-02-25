@@ -130,7 +130,7 @@ def data_browser_page():
 
         with ui.row().classes("w-full h-full gap-4 flex-wrap lg:flex-nowrap"):
             # Master: Table
-            with ui.column().classes("app-card w-full lg:w-[45%] p-3 flex flex-col"):
+            with ui.column().classes("app-card w-full lg:w-[60%] p-3 flex flex-col"):
                 ui.label("Data Records").classes("app-section-title mb-2")
                 ui.label("Select a record to preview data.").classes("text-xs text-muted mb-2")
 
@@ -149,7 +149,7 @@ def data_browser_page():
                 grid.on("rowClick", handle_row_click)
 
             # Detail: Charts and Params
-            with ui.column().classes("w-full lg:w-[55%] flex flex-col gap-4"):
+            with ui.column().classes("w-full lg:w-[40%] flex flex-col gap-4"):
                 # Chart card
                 with ui.column().classes("app-card w-full p-3 flex flex-col"):
                     ui.label("Visualization").classes("app-section-title mb-2")
