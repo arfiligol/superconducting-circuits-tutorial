@@ -55,6 +55,15 @@ tags:
 | [Explanation Physics](./documentation-design/explanation-physics.md) | Explanation/Physics 教學定位與一致性規範 | [#agent-rule](./documentation-design/explanation-physics.md#agent-rule) |
 | [電路繪圖](../../how-to/contributing/circuit-diagrams.md) | Schemdraw 規範 | [#agent-rule](../../how-to/contributing/circuit-diagrams.md#agent-rule) |
 
+### UI/UX 品質
+
+| 規範 | 說明 | Agent Rule |
+|---|---|---|
+| [UI/UX 品質總覽](./ui-ux-quality/index.md) | 技術堆疊與子規範索引 | [#agent-rule](./ui-ux-quality/index.md#agent-rule) |
+| [主題系統](./ui-ux-quality/theming.md) | Design Token、深色模式、Plotly 同步 | [#agent-rule](./ui-ux-quality/theming.md#agent-rule) |
+| [元件規範](./ui-ux-quality/component-guidelines.md) | NiceGUI 元件規則、禁止項目 | [#agent-rule](./ui-ux-quality/component-guidelines.md#agent-rule) |
+| [佈局規範](./ui-ux-quality/layout-patterns.md) | Shell 架構、Card 排版、響應式規則 | [#agent-rule](./ui-ux-quality/layout-patterns.md#agent-rule) |
+
 ---
 
 ## 驗證指令

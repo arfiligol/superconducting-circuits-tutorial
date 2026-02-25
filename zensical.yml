@@ -256,6 +256,11 @@ nav:
               - Explanation Physics: reference/guardrails/documentation-design/explanation-physics.md
               - Circuit Diagrams: how-to/contributing/circuit-diagrams.md
               - CLI Docs Automation: how-to/contributing/cli-docs-automation.md
+          - UI/UX Quality:
+              - Overview: reference/guardrails/ui-ux-quality/index.md
+              - Theming: reference/guardrails/ui-ux-quality/theming.md
+              - Component Guidelines: reference/guardrails/ui-ux-quality/component-guidelines.md
+              - Layout Patterns: reference/guardrails/ui-ux-quality/layout-patterns.md
       - Contributors: reference/contributors.md
       - Plotting Utilities: reference/utilities.md
   - Notebooks:

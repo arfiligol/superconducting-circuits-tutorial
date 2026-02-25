@@ -55,6 +55,15 @@ Development standards that ensure code quality and consistency.
 | [Explanation Physics](./documentation-design/explanation-physics.en.md) | positioning and consistency rules for Explanation/Physics | [#agent-rule](./documentation-design/explanation-physics.en.md#agent-rule) |
 | [Circuit Diagrams](../../how-to/contributing/circuit-diagrams.en.md) | Schemdraw rules | [#agent-rule](../../how-to/contributing/circuit-diagrams.en.md#agent-rule) |
 
+### UI/UX Quality
+
+| Rule | Description | Agent Rule |
+|---|---|---|
+| [UI/UX Quality Overview](./ui-ux-quality/index.en.md) | Tech stack and sub-rule index | [#agent-rule](./ui-ux-quality/index.en.md#agent-rule) |
+| [Theming](./ui-ux-quality/theming.en.md) | Design tokens, dark mode, Plotly sync | [#agent-rule](./ui-ux-quality/theming.en.md#agent-rule) |
+| [Component Guidelines](./ui-ux-quality/component-guidelines.en.md) | NiceGUI component rules, forbidden patterns | [#agent-rule](./ui-ux-quality/component-guidelines.en.md#agent-rule) |
+| [Layout Patterns](./ui-ux-quality/layout-patterns.en.md) | Shell architecture, card layout, responsive rules | [#agent-rule](./ui-ux-quality/layout-patterns.en.md#agent-rule) |
+
 ---
 
 ## Verification Commands
