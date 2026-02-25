@@ -76,6 +76,18 @@ updated_by: team
 匯入完成後，請確認資料是否正確建立：
 
 ```bash
+uv run sc db dataset-record list
+```
+
+如果想要查看特定 Dataset (例如剛匯入的資料) 內的 Data Records：
+
+```bash
+uv run sc db data-record list --dataset "DatasetName"
+```
+
+你也可以不加參數來查看所有的 Data Record：
+
+```bash
 uv run sc db data-record list
 ```
 應該要能在表格看見新增的資料，且其 `Type` 為 `s_parameters`，`Rep` 為 `phase` 或 `unwrapped_phase`。

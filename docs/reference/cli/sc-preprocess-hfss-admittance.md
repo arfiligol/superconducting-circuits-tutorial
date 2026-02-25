@@ -68,72 +68,30 @@ uv run sc preprocess hfss admittance \
     此區塊由 `sc-docs-cli` 產生, 請勿手動修改.
 
 ```text
-Usage:                       
- sc-preprocess-hfss-admittanc 
- e [OPTIONS] [CSV]...         
-                              
- Import HFSS admittance CSV   
- to SQLite database.          
-                              
- Supports both single files   
- and directories.             
- - If a directory is          
- provided, scans for all      
- *.csv files.                 
- - AUTOMATICALLY SKIPS        
- datasets that already exist  
- in the database (by name).   
- - --dataset-name is ignored  
- in batch/directory mode.     
- - --tags are applied to all  
- NEWLY imported datasets in   
- this run.                    
- - --match filters files in   
- directories to only those    
- containing any of the        
- keywords.                    
-                              
-╭─ Arguments ────────────────╮
-│   csv      [CSV].  Path(s) │
-│            ..      to HFSS │
-│                    admitt… │
-│                    CSV     │
-│                    files   │
-│                    or      │
-│                    direct… │
-╰────────────────────────────╯
-╭─ Options ──────────────────╮
-│ --dat…        TEXT  Overr… │
-│                     datas… │
-│                     name   │
-│                     (Sing… │
-│                     file   │
-│                     only)  │
-│ --tags        TEXT  Comma… │
-│                     tags   │
-│                     for    │
-│                     datab… │
-│                     record │
-│ --mat…        TEXT  Comma… │
-│                     keywo… │
-│                     to     │
-│                     filter │
-│                     files  │
-│                     (e.g., │
-│                     'Re_Y… │
-│                     Fits   │
-│                     admit… │
-│                     natur… │
-│                     [defa… │
-│                     Re_Y,… │
-│ --help              Show   │
-│                     this   │
-│                     messa… │
-│                     and    │
-│                     exit.  │
-╰────────────────────────────╯
+Usage: sc-preprocess-hfss-admittance [OPTIONS] [CSV]...                                                                
+                                                                                                                        
+ Import HFSS admittance CSV to SQLite database.                                                                         
+                                                                                                                        
+ Supports both single files and directories.                                                                            
+ - If a directory is provided, scans for all *.csv files.                                                               
+ - AUTOMATICALLY SKIPS datasets that already exist in the database (by name).                                           
+ - --dataset-name is ignored in batch/directory mode.                                                                   
+ - --tags are applied to all NEWLY imported datasets in this run.                                                       
+ - --match filters files in directories to only those containing any of the keywords.                                   
+                                                                                                                        
+╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   csv      [CSV]...  Path(s) to HFSS admittance CSV files or directories.                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --dataset-name        TEXT  Override dataset name (Single file only)                                                 │
+│ --tags                TEXT  Comma-separated tags for database record                                                 │
+│ --match               TEXT  Comma-separated keywords to filter files (e.g., 'Re_Y,Im_Y'). Fits admittance naturally. │
+│                             [default: Re_Y,Im_Y]                                                                     │
+│ --help                      Show this message and exit.                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 <!-- CLI-HELP-END -->
+
 
 

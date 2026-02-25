@@ -33,12 +33,18 @@ uv run sc db data-record <action> [args]
 |---|---|---|
 | `--help` | 顯示說明 | - |
 | `--sort-by` | `auto-reorder` 排序策略：`id` / `name` | `id` |
+| `--dataset` | 過濾特定 Dataset 的 Data Record (支援 ID 或名稱) | `None` |
 
 ## Examples
 
 **列出**
 ```bash
 uv run sc db data-record list
+```
+
+**過濾 Dataset 列出**
+```bash
+uv run sc db data-record list --dataset "PF6FQ_Q0_Readout"
 ```
 
 **查詢**

@@ -90,7 +90,9 @@
 
     if (isEnPage) {
       const expectedZhPath = normalize(enToZhCandidates(current)[0]);
-      const navLinks = document.querySelectorAll('.md-nav__link, .md-tabs__link');
+      const navLinks = Array.from(document.querySelectorAll('.md-nav__link, .md-tabs__link'));
+      const linksToProcess = [];
+      const pathsToResolve = new Set();
 
       navLinks.forEach(link => {
         const href = link.getAttribute('href');
@@ -119,24 +121,37 @@
           }
         }
 
-        // Rewrite Link to English
-        let enHref;
-        if (urlPath === siteBase) {
-          enHref = siteBase + "index.en/";
-        } else if (urlPath.endsWith("/")) {
-          // E.g., /tutorials/ -> /tutorials/index.en/
-          // But if it's already an English link (e.g., hardcoded from marketing.html), do nothing
-          if (urlPath.includes('.en/')) {
-            enHref = urlPath;
-          } else {
-            // Remove trailing slash and add .en/
-            enHref = urlPath.replace(/\/$/, ".en/");
-          }
-        } else {
-          enHref = urlPath.replace(/(\.html)?$/, ".en$1");
-        }
+        linksToProcess.push({ link, urlObj, urlPath });
+        pathsToResolve.add(urlPath);
+      });
 
-        link.setAttribute('href', enHref + urlObj.search + urlObj.hash);
+      // Resolve links in parallel to avoid missing/wrong .en suffixes
+      const resolvedPaths = new Map();
+      await Promise.all(Array.from(pathsToResolve).map(async (urlPath) => {
+        if (urlPath === siteBase) {
+          resolvedPaths.set(urlPath, siteBase + "index.en/");
+        } else if (urlPath.includes('.en/')) {
+          resolvedPaths.set(urlPath, urlPath);
+        } else if (urlPath.endsWith("/")) {
+          const c1 = urlPath.replace(/\/$/, ".en/");
+          const c2 = `${urlPath}index.en/`;
+          const [exists1, exists2] = await Promise.all([urlExists(c1), urlExists(c2)]);
+          if (exists1) resolvedPaths.set(urlPath, c1);
+          else if (exists2) resolvedPaths.set(urlPath, c2);
+          else resolvedPaths.set(urlPath, urlPath);
+        } else {
+          const c = urlPath.replace(/(\.html)?$/, ".en$1");
+          const exists = await urlExists(c);
+          resolvedPaths.set(urlPath, exists ? c : urlPath);
+        }
+      }));
+
+      // Apply updates synchronously
+      linksToProcess.forEach(({ link, urlObj, urlPath }) => {
+        const enHref = resolvedPaths.get(urlPath);
+        if (enHref) {
+          link.setAttribute('href', enHref + urlObj.search + urlObj.hash);
+        }
       });
     }
   }

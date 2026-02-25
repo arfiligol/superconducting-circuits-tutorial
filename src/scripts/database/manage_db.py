@@ -222,16 +222,34 @@ app.add_typer(data_app, name="data-record")
 
 
 @data_app.command("list")
-def list_data() -> None:
-    """List all data records."""
+def list_data(
+    dataset: Annotated[
+        str | None,
+        typer.Option("--dataset", help="Optional dataset ID or Name to filter records"),
+    ] = None,
+) -> None:
+    """List data records, optionally filtered by dataset."""
     service = DataRecordManagementService()
-    records = service.list_records()
+
+    dataset_id = None
+    title = "Data Records"
+
+    if dataset:
+        ds_service = DatasetManagementService()
+        ds = ds_service.get_dataset(dataset)
+        if not ds:
+            console.print(f"[red]Dataset not found:[/red] {dataset}")
+            raise typer.Exit(code=1)
+        dataset_id = ds.id
+        title = f"Data Records for Dataset '{ds.name}'"
+
+    records = service.list_records(dataset_id=dataset_id)
 
     if not records:
         console.print("[yellow]No data records found.[/yellow]")
         return
 
-    table = Table(title=f"Data Records ({len(records)})")
+    table = Table(title=f"{title} ({len(records)})")
     table.add_column("ID", justify="right", style="cyan")
     table.add_column("Dataset ID", style="magenta")
     table.add_column("Type", style="green")

@@ -72,7 +72,19 @@ To ensure consistency in scientific computing, the system assumes the following 
 
 ## Verification
 
-After ingestion, verify that the data has been correctly created:
+After ingestion, verify that the dataset has been correctly created:
+
+```bash
+uv run sc db dataset-record list
+```
+
+To view the Data Records for a specific Dataset (e.g. the newly imported data):
+
+```bash
+uv run sc db data-record list --dataset "DatasetName"
+```
+
+Or view all Data Records:
 
 ```bash
 uv run sc db data-record list

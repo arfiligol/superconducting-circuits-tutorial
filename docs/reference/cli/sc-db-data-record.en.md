@@ -33,12 +33,18 @@ uv run sc db data-record <action> [args]
 |---|---|---|
 | `--help` | Show help | - |
 | `--sort-by` | Sort mode for `auto-reorder`: `id` / `name` | `id` |
+| `--dataset` | Filter Data Records by Dataset (ID or name) | `None` |
 
 ## Examples
 
 **List**
 ```bash
 uv run sc db data-record list
+```
+
+**List by Dataset**
+```bash
+uv run sc db data-record list --dataset "PF6FQ_Q0_Readout"
 ```
 
 **Info**

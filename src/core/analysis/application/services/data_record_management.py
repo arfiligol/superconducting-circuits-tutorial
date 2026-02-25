@@ -13,10 +13,13 @@ from core.shared.persistence.models import DataRecord
 class DataRecordManagementService:
     """Service to manage data records."""
 
-    def list_records(self) -> list[DataRecordSummaryDTO]:
-        """List all data records."""
+    def list_records(self, dataset_id: int | None = None) -> list[DataRecordSummaryDTO]:
+        """List data records, optionally filtered by dataset ID."""
         with get_unit_of_work() as uow:
-            records = uow.data_records.list_all()
+            if dataset_id is not None:
+                records = uow.data_records.list_by_dataset(dataset_id)
+            else:
+                records = uow.data_records.list_all()
             return [self._to_summary(r) for r in records]
 
     def get_record(self, id: int) -> DataRecordDetailDTO | None:
