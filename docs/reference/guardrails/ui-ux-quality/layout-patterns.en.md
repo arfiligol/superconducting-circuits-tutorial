@@ -25,17 +25,20 @@ This project follows an **8pt grid system** — all spacing values must be multi
 |---|---|---|
 | `gap-1` | 4px | Minimum spacing — elements within the same group |
 | `gap-2` / `p-2` | 8px | Tight spacing — between labels and content |
-| `gap-3` / `p-3` | 12px | **Default card padding** — data cards |
-| `gap-4` / `p-4` | 16px | **Default block gap** — Master-Detail, module cards |
-| `gap-6` / `p-6` | 24px | Large spacing — page-level sections only |
+| `gap-6` / `p-6` | 24px | **Default card padding** — data cards, **Default block gap** — Master-Detail, module cards, Large spacing — page-level sections only |
 
 ### Rules
 
-1. **Card padding**: Data cards use `p-3` (12px), Dashboard overview cards use `p-4` (16px)
-2. **Block gap**: Master-Detail gap uses `gap-4` (16px)
-3. **Title to content**: Section title uses `mb-2` (8px)
-4. **Content area padding**: Use `px-4 py-3` (horizontal 16px, vertical 12px)
-5. **Forbidden**: `p-8` (32px) or larger on cards or content areas
+1.  **Space and Margins**:
+    *   **Margin**: The default gap between cards or large blocks is `gap-6`.
+    *   **Padding**: The default internal padding for cards is `p-6`.
+    *   **Layout Direction**: Avoid placing text and charts too closely; maintain appropriate breathing space.
+2.  **App Card (Module Container)**:
+    *   Apply the `.app-card` style.
+    *   By default, use an internal padding of `p-6` (24px) to maintain comfortable breathing room.
+    *   The module title should be placed at the top, applying `.app-section-title` with an `mb-4` bottom margin.
+3. **Content area padding**: Use `px-4 py-3` (horizontal 16px, vertical 12px)
+4. **Forbidden**: `p-8` (32px) or larger on cards or content areas
 
 ### Navigation Density
 
@@ -82,8 +85,8 @@ def my_page():
 Content blocks use `.app-card` wrapper with `.app-section-title` headings.
 
 ```python
-with ui.column().classes("app-card w-full p-3"):
-    ui.label("Section Title").classes("app-section-title mb-2")
+with ui.column().classes("app-card w-full p-6"):
+    ui.label("Section Title").classes("app-section-title mb-4")
     # Content here
 ```
 
@@ -102,13 +105,19 @@ Use Tailwind's `lg:` prefix to differentiate desktop and mobile.
 
 ```python
 # Master-Detail layout
-with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
+with ui.row().classes("w-full gap-6 flex-wrap lg:flex-nowrap"):
     # Master: full width on mobile
     with ui.column().classes("w-full lg:w-[60%]"):
+        # Master Block (List/Table):
+        # Occupies 60% of the width on large screens (`lg:w-[60%]`).
+        # Should be designed to operate independently, without relying on the state of the Detail block.
         ...
 
     # Detail: stacks below on mobile
     with ui.column().classes("w-full lg:w-[40%]"):
+        # Detail Block (Charts/Details):
+        # Occupies the remaining 40% width on large screens (`lg:w-[40%]`).
+        # The state should dynamically update based on the selection in the Master block.
         ...
 ```
 

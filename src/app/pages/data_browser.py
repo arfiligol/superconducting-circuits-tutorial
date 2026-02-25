@@ -128,17 +128,15 @@ def data_browser_page():
             {"name": "repr", "label": "Repr", "field": "representation", "sortable": True},
         ]
 
-        with ui.row().classes("w-full h-full gap-4 flex-wrap lg:flex-nowrap"):
+        with ui.row().classes("w-full h-full gap-6 flex-wrap lg:flex-nowrap"):
             # Master: Table
-            with ui.column().classes("app-card w-full lg:w-[60%] p-3 flex flex-col"):
-                ui.label("Data Records").classes("app-section-title mb-2")
-                ui.label("Select a record to preview data.").classes("text-xs text-muted mb-2")
+            with ui.column().classes("app-card w-full lg:w-[60%] p-6 flex flex-col"):
+                ui.label("Data Records").classes("app-section-title mb-4")
+                ui.label("Select a record to preview data.").classes("text-xs text-muted mb-4")
 
                 # table instance
-                grid = (
-                    ui.table(columns=columns, rows=all_records, row_key="id")
-                    .classes("w-full flex-grow min-h-[500px] cursor-pointer")
-                    .props("dense")
+                grid = ui.table(columns=columns, rows=all_records, row_key="id").classes(
+                    "w-full flex-grow min-h-[500px] cursor-pointer"
                 )
 
                 def handle_row_click(e):
@@ -149,17 +147,17 @@ def data_browser_page():
                 grid.on("rowClick", handle_row_click)
 
             # Detail: Charts and Params
-            with ui.column().classes("w-full lg:w-[40%] flex flex-col gap-4"):
+            with ui.column().classes("w-full lg:w-[40%] flex flex-col gap-6"):
                 # Chart card
-                with ui.column().classes("app-card w-full p-3 flex flex-col"):
-                    ui.label("Visualization").classes("app-section-title mb-2")
+                with ui.column().classes("app-card w-full p-6 flex flex-col"):
+                    ui.label("Visualization").classes("app-section-title mb-4")
                     plot_container = ui.column().classes(
                         "app-plotly-container w-full flex-grow min-h-[400px] flex items-center justify-center"
                     )
 
                 # Params card
-                with ui.column().classes("app-card w-full p-3 flex flex-col"):
-                    ui.label("Derived Parameters").classes("app-section-title mb-2")
+                with ui.column().classes("app-card w-full p-6 flex flex-col"):
+                    ui.label("Derived Parameters").classes("app-section-title mb-4")
                     param_container = ui.column().classes(
                         "app-plotly-container w-full flex-grow min-h-[200px] flex items-center justify-center"
                     )

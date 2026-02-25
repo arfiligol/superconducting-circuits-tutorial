@@ -31,11 +31,17 @@ tags:
 
 ### 規則
 
-1. **Card 內距**：資料卡片使用 `p-3` (12px)，Dashboard 概覽卡片使用 `p-4` (16px)
-2. **區塊間距**：Master-Detail 之間使用 `gap-4` (16px)
-3. **標題與內容**：Section title 下方使用 `mb-2` (8px)
-4. **頁面內距**：內容區域使用 `px-4 py-3` (水平 16px，垂直 12px)
-5. **禁止**：`p-8` (32px) 或更大的間距值用於 Card 或內容區域
+1.  **空間與間距**：
+    *   **外距 (Margin)**：各卡片或大區塊間距預設為 `gap-6`。
+    *   **內距 (Padding)**：卡片內部預設為 `p-6`。
+    *   **排版方向**：避免文字與圖表黏得太緊，保持適當呼吸空間。
+2.  **區塊間距**：Master-Detail 之間使用 `gap-6` (24px)
+3.  **App Card (模組容器)**：
+    *   套用 `.app-card` 樣式。
+    *   預設使用內部間距 `p-6`（24px）以保持舒適的呼吸空間。
+    *   模組標題應置於頂部，套用 `.app-section-title` 與下方 `mb-4` 間隔。
+4.  **頁面內距**：內容區域使用 `px-4 py-3` (水平 16px，垂直 12px)
+5.  **禁止**：`p-8` (32px) 或更大的間距值用於 Card 或內容區域
 
 ### 導航密度
 
@@ -50,7 +56,6 @@ tags:
 
 | 屬性 | 值 | 說明 |
 |---|---|---|
-| 表格 | `dense` prop | 行高 ~36px（預設 ~48px） |
 | 欄位間距 | 16px 最小 | 確保欄位間有足夠分隔 |
 
 ## Shell 原則
@@ -82,8 +87,8 @@ def my_page():
 內容區塊使用 `.app-card` 包裹，搭配 `.app-section-title` 標題。
 
 ```python
-with ui.column().classes("app-card w-full p-3"):
-    ui.label("區塊標題").classes("app-section-title mb-2")
+with ui.column().classes("app-card w-full p-6"):
+    ui.label("區塊標題").classes("app-section-title mb-4")
     # 區塊內容
 ```
 
@@ -102,14 +107,17 @@ with ui.column().classes("app-card w-full p-3"):
 
 ```python
 # Master-Detail 佈局
-with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
-    # Master：在行動裝置上佔滿寬度
-    with ui.column().classes("w-full lg:w-[60%]"):
-        ...
+with ui.row().classes("w-full gap-6 flex-wrap lg:flex-nowrap"):
+    # Master (60%)
+    with ui.column().classes("app-card w-full lg:w-[60%] p-6"):
+        ui.label("Item List").classes("app-section-title mb-4")
+        # DataTable / List...
 
-    # Detail：在行動裝置上堆疊在下方
-    with ui.column().classes("w-full lg:w-[40%]"):
-        ...
+    # Detail (40%)
+    with ui.column().classes("w-full lg:w-[40%] flex flex-col gap-6"):
+        with ui.column().classes("app-card w-full p-6"):
+            ui.label("Item Details").classes("app-section-title mb-4")
+            # Charts / Params...
 ```
 
 ### 斷點
@@ -152,7 +160,7 @@ with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
 |---|---|---|
 | 最大寬度 | `w-full` | 允許完整利用螢幕寬度 |
 | 內距 | `px-4 py-3` | 水平 16px / 垂直 12px |
-| 元素間距 | `gap-4` | 區塊間 16px |
+| 元素間距 | `gap-6` | 區塊間 24px |
 
 ## 導航管理
 
@@ -174,12 +182,15 @@ ui.button(
 ```markdown
 ## Layout Patterns
 - Shell Principle: all pages MUST render inside `app_shell(content_builder)`.
-- 8pt Grid: all spacing in multiples of 4px. Use compact density for data-dense views.
-- Card data: `p-3` (12px). Dashboard overview: `p-4` (16px). Section title: `mb-2`.
-- Content area: `w-full px-4 py-3`, `gap-4`. Forbidden: `max-w-*` on app_shell, allow full width.
+- Spacing:
+    *   Use 8pt grid system.
+    *   Card internal padding is `p-6` for spacious feel.
+    *   Block gaps are `gap-6`.
+    *   Title margins are `mb-4`.
+    *   DO NOT use arbitrary margins like `mt-3` or `px-5`.
+- Content area: `w-full px-4 py-3`, `gap-6`. Forbidden: `max-w-*` on app_shell, allow full width.
 - Nav drawer: width=220, buttons with `dense` prop.
 - Master/Detail proportions: tables should be `w-[60%]`, visualizations `w-[40%]`.
-- Tables: use `dense` prop for compact row height (~36px).
 - Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
 - Navigation: add new pages to the left drawer in `layout.py`.
 - Forbidden: standalone pages outside `app_shell()`.

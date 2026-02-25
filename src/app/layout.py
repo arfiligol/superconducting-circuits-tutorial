@@ -74,7 +74,7 @@ def app_shell(content_builder):
                 nav_btn("Simulation", "science", "", disabled=True)
 
         # Main Content Area
-        with ui.column().classes("w-full px-4 py-3 gap-4"):
+        with ui.column().classes("w-full p-4 md:p-8 gap-6"):
             content_builder(*args, **kwargs)
 
     return wrapper
