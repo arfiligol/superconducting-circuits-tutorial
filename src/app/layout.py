@@ -38,34 +38,36 @@ def app_shell(content_builder):
             ).classes("text-fg")
 
         # Navigation Drawer
-        with ui.left_drawer(elevated=False).classes(
-            "bg-surface text-fg flex flex-col pt-4 gap-2"
-        ) as left_drawer:
-            with ui.column().classes("w-full px-2"):
+        with (
+            ui.left_drawer(elevated=False)
+            .classes("bg-surface text-fg flex flex-col pt-4 gap-2")
+            .props("width=220") as left_drawer
+        ):
+            with ui.column().classes("w-full px-1"):
                 ui.label("NAVIGATION").classes(
-                    "text-xs text-muted font-bold tracking-wider mb-2 px-2"
+                    "text-xs text-muted font-bold tracking-wider mb-1 px-2"
                 )
                 ui.button("Home", icon="home", on_click=lambda: ui.navigate.to("/")).classes(
                     "w-full justify-start"
-                ).props("flat no-caps")
+                ).props("flat no-caps dense")
                 ui.button(
                     "Data Browser",
                     icon="analytics",
                     on_click=lambda: ui.navigate.to("/data-browser"),
-                ).classes("w-full justify-start").props("flat no-caps")
+                ).classes("w-full justify-start").props("flat no-caps dense")
 
                 ui.separator().classes("my-4 bg-border")
 
-                ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-2 px-2")
+                ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-2")
                 ui.button("Analysis", icon="functions").classes("w-full justify-start").props(
-                    "flat no-caps disable"
+                    "flat no-caps dense disable"
                 )
                 ui.button("Simulation", icon="science").classes("w-full justify-start").props(
-                    "flat no-caps disable"
+                    "flat no-caps dense disable"
                 )
 
         # Main Content Area
-        with ui.column().classes("w-full max-w-7xl mx-auto p-4 md:p-8 gap-6"):
+        with ui.column().classes("w-full max-w-7xl mx-auto px-4 py-3 gap-4"):
             content_builder(*args, **kwargs)
 
     return wrapper
