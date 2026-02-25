@@ -11,9 +11,12 @@ def app_shell(content_builder):
     # Load foundational CSS
     ui.add_css(
         """
-        /* Temporary loading of our custom CSS using add_head_html is more robust 
-           for dynamic reloading, but ui.add_css works for direct raw CSS strings. 
-           We'll link the path using app.add_static_files */
+        /* Temporary loading of our custom CSS */
+        .nicegui-content {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding: 0 !important;
+        }
     """,
         shared=True,
     )
@@ -45,26 +48,30 @@ def app_shell(content_builder):
         ):
             with ui.column().classes("w-full px-1"):
                 ui.label("NAVIGATION").classes(
-                    "text-xs text-muted font-bold tracking-wider mb-1 px-2"
+                    "text-xs text-muted font-bold tracking-wider mb-1 px-4"
                 )
-                ui.button("Home", icon="home", on_click=lambda: ui.navigate.to("/")).classes(
-                    "w-full"
-                ).props("flat no-caps dense align=left")
-                ui.button(
-                    "Data Browser",
-                    icon="analytics",
-                    on_click=lambda: ui.navigate.to("/data-browser"),
-                ).classes("w-full").props("flat no-caps dense align=left")
 
-                ui.separator().classes("my-4 bg-border")
+                def nav_btn(label: str, icon_name: str, route: str, disabled: bool = False):
+                    with (
+                        ui.button(
+                            on_click=lambda r=route: ui.navigate.to(r) if not disabled else None
+                        )
+                        .classes("w-full px-4")
+                        .props(f"flat no-caps dense {'disable' if disabled else ''}")
+                    ):
+                        with ui.row().classes("items-center no-wrap w-full"):
+                            with ui.row().classes("w-8 justify-start"):
+                                ui.icon(icon_name, size="sm")
+                            ui.label(label).classes("text-sm")
 
-                ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-2")
-                ui.button("Analysis", icon="functions").classes("w-full").props(
-                    "flat no-caps dense align=left disable"
-                )
-                ui.button("Simulation", icon="science").classes("w-full").props(
-                    "flat no-caps dense align=left disable"
-                )
+                nav_btn("Home", "home", "/")
+                nav_btn("Data Browser", "analytics", "/data-browser")
+
+                ui.separator().classes("my-4 mx-4 bg-border")
+
+                ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
+                nav_btn("Analysis", "functions", "", disabled=True)
+                nav_btn("Simulation", "science", "", disabled=True)
 
         # Main Content Area
         with ui.column().classes("w-full px-4 py-3 gap-4"):
