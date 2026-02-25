@@ -1,78 +1,78 @@
 {% extends "base.html" %}
 
 {% block tabs %}
-  {% set is_en = page.url and ".en/" in page.url %}
-  {% set home_url = ("index.en/" if is_en else "") | url %}
-  {% set about_url = ("about.en/" if is_en else "about/") | url %}
-  {% set docs_url = ("how-to/index.en/" if is_en else "how-to/") | url %}
-  {% set p = page.url | d("", true) %}
-  {% set is_home = (p == "" or p == "index.en/") %}
-  {% set is_about = ("about/" in p or "about.en/" in p) %}
-  <nav class="md-tabs sct-marketing-tabs" aria-label="Tabs" data-md-component="tabs">
-    <div class="md-grid">
-      <ul class="md-tabs__list">
-        <li class="md-tabs__item{% if is_home %} md-tabs__item--active{% endif %}">
-          <a href="{{ home_url }}" class="md-tabs__link">Home</a>
-        </li>
-        <li class="md-tabs__item{% if is_about %} md-tabs__item--active{% endif %}">
-          <a href="{{ about_url }}" class="md-tabs__link">About</a>
-        </li>
-        <li class="md-tabs__item">
-          <a href="{{ docs_url }}" class="md-tabs__link">Documentation</a>
-        </li>
-      </ul>
-    </div>
-  </nav>
+{% set is_en = page.url and ".en/" in page.url %}
+{% set home_url = ("index.en/" if is_en else "") | url %}
+{% set about_url = ("about.en/" if is_en else "about/") | url %}
+{% set docs_url = ("how-to/index.en/" if is_en else "how-to/") | url %}
+{% set p = page.url | d("", true) %}
+{% set is_home = (p == "" or p == "index.en/") %}
+{% set is_about = ("about/" in p or "about.en/" in p) %}
+<nav class="md-tabs sct-marketing-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      <li class="md-tabs__item{% if is_home %} md-tabs__item--active{% endif %}">
+        <a href="{{ home_url }}" class="md-tabs__link">{% if is_en %}Home{% else %}首頁{% endif %}</a>
+      </li>
+      <li class="md-tabs__item{% if is_about %} md-tabs__item--active{% endif %}">
+        <a href="{{ about_url }}" class="md-tabs__link">{% if is_en %}About{% else %}關於本教學{% endif %}</a>
+      </li>
+      <li class="md-tabs__item">
+        <a href="{{ docs_url }}" class="md-tabs__link">{% if is_en %}Documentation{% else %}開發文件{% endif %}</a>
+      </li>
+    </ul>
+  </div>
+</nav>
 {% endblock %}
 
 {% block extrahead %}
-  {{ super() }}
-  <style>
-    .sct-marketing-tabs {
-      display: block !important;
-    }
+{{ super() }}
+<style>
+  .sct-marketing-tabs {
+    display: block !important;
+  }
 
+  .sct-marketing-tabs .md-grid {
+    width: min(100%, 1220px);
+    margin: 0 auto;
+    padding-left: 0.8rem;
+    padding-right: 0.8rem;
+  }
+
+  .sct-marketing-tabs .md-tabs__list {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 0.1rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .sct-marketing-tabs .md-tabs__list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sct-marketing-tabs .md-tabs__item {
+    flex: 0 0 auto;
+  }
+
+  .sct-marketing-tabs .md-tabs__link {
+    white-space: nowrap;
+  }
+
+  @media (max-width: 900px) {
     .sct-marketing-tabs .md-grid {
-      width: min(100%, 1220px);
-      margin: 0 auto;
-      padding-left: 0.8rem;
-      padding-right: 0.8rem;
-    }
-
-    .sct-marketing-tabs .md-tabs__list {
-      display: flex;
-      flex-wrap: nowrap;
-      gap: 0.1rem;
-      overflow-x: auto;
-      overscroll-behavior-x: contain;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-    }
-
-    .sct-marketing-tabs .md-tabs__list::-webkit-scrollbar {
-      display: none;
-    }
-
-    .sct-marketing-tabs .md-tabs__item {
-      flex: 0 0 auto;
+      padding-left: 0.6rem;
+      padding-right: 0.6rem;
     }
 
     .sct-marketing-tabs .md-tabs__link {
-      white-space: nowrap;
+      padding-left: 0.72rem;
+      padding-right: 0.72rem;
     }
-
-    @media (max-width: 900px) {
-      .sct-marketing-tabs .md-grid {
-        padding-left: 0.6rem;
-        padding-right: 0.6rem;
-      }
-
-      .sct-marketing-tabs .md-tabs__link {
-        padding-left: 0.72rem;
-        padding-right: 0.72rem;
-      }
-    }
-  </style>
+  }
+</style>
 {% endblock %}
 
 {% block site_nav %}{% endblock %}

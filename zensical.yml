@@ -59,7 +59,7 @@ plugins:
             language: zh-TW
           nav_translations:
             Home: Home
-            About: About
+            About: 關於本教學
             Documentation: Documentation
             Getting Started: 入門
             Installation: 安裝環境

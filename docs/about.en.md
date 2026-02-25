@@ -1,6 +1,4 @@
 ---
-aliases:
-  - About
 tags:
   - diataxis/reference
   - audience/user
