@@ -84,6 +84,14 @@ plugins:
           name: English
           build: true
           site_name: Superconducting Circuits Tutorial
+          nav_translations:
+            Home: Home
+            About: About
+            Documentation: Documentation
+            How-to Guides: How-to Guides
+            Tutorials: Tutorials
+            Explanation: Explanation
+            Reference: Reference
 
 markdown_extensions:
   - pymdownx.highlight:
