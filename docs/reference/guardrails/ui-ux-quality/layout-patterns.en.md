@@ -9,7 +9,49 @@ tags:
 
 # Guardrails: Layout Patterns
 
-This document defines page structure, shell architecture, and responsive layout rules.
+This document defines page structure, shell architecture, spacing system, and responsive layout rules.
+
+## Spacing Scale
+
+This project follows an **8pt grid system** — all spacing values must be multiples of 4.
+
+!!! important "Data-Dense Dashboard"
+    This application is a data-dense dashboard and should use **Compact Density**,
+    prioritizing smaller spacing values to maximize data display area.
+
+### Spacing Tokens
+
+| Token | Value | Purpose |
+|---|---|---|
+| `gap-1` | 4px | Minimum spacing — elements within the same group |
+| `gap-2` / `p-2` | 8px | Tight spacing — between labels and content |
+| `gap-3` / `p-3` | 12px | **Default card padding** — data cards |
+| `gap-4` / `p-4` | 16px | **Default block gap** — Master-Detail, module cards |
+| `gap-6` / `p-6` | 24px | Large spacing — page-level sections only |
+
+### Rules
+
+1. **Card padding**: Data cards use `p-3` (12px), Dashboard overview cards use `p-4` (16px)
+2. **Block gap**: Master-Detail gap uses `gap-4` (16px)
+3. **Title to content**: Section title uses `mb-2` (8px)
+4. **Content area padding**: Use `px-4 py-3` (horizontal 16px, vertical 12px)
+5. **Forbidden**: `p-8` (32px) or larger on cards or content areas
+
+### Navigation Density
+
+| Property | Value | Notes |
+|---|---|---|
+| Drawer width | 220px | More compact than default 300px |
+| Nav buttons | `dense` prop | Reduces row height to ~32px |
+| Nav padding | `px-1` | Reduces left/right whitespace |
+| Section label gap | `mb-1` | Tighter section separation |
+
+### Table Density
+
+| Property | Value | Notes |
+|---|---|---|
+| Table | `dense` prop | Row height ~36px (default ~48px) |
+| Column spacing | 16px minimum | Ensure adequate column separation |
 
 ## Shell Principle
 
@@ -40,8 +82,8 @@ def my_page():
 Content blocks use `.app-card` wrapper with `.app-section-title` headings.
 
 ```python
-with ui.column().classes("app-card w-full p-4"):
-    ui.label("Section Title").classes("app-section-title mb-4")
+with ui.column().classes("app-card w-full p-3"):
+    ui.label("Section Title").classes("app-section-title mb-2")
     # Content here
 ```
 
@@ -60,7 +102,7 @@ Use Tailwind's `lg:` prefix to differentiate desktop and mobile.
 
 ```python
 # Master-Detail layout
-with ui.row().classes("w-full gap-6 flex-wrap lg:flex-nowrap"):
+with ui.row().classes("w-full gap-4 flex-wrap lg:flex-nowrap"):
     # Master: full width on mobile
     with ui.column().classes("w-full lg:w-[45%]"):
         ...
@@ -110,8 +152,8 @@ Statistics cards + module link grid.
 |---|---|---|
 | Max width | `max-w-7xl` (80rem) | Prevent over-stretching |
 | Centering | `mx-auto` | Horizontal centering |
-| Padding | `p-4 md:p-8` | Mobile / Desktop |
-| Gap | `gap-6` | Uniform spacing |
+| Padding | `px-4 py-3` | Horizontal 16px / Vertical 12px |
+| Gap | `gap-4` | Block gap 16px |
 
 ## Navigation Management
 
@@ -123,7 +165,7 @@ ui.button(
     "New Page",
     icon="icon_name",
     on_click=lambda: ui.navigate.to("/new-page"),
-).classes("w-full justify-start").props("flat no-caps")
+).classes("w-full justify-start").props("flat no-caps dense")
 ```
 
 ---
@@ -133,8 +175,11 @@ ui.button(
 ```markdown
 ## Layout Patterns
 - Shell Principle: all pages MUST render inside `app_shell(content_builder)`.
-- Card pattern: wrap content sections in `.app-card` containers.
-- Section title: use `.app-section-title` for headings inside cards.
+- 8pt Grid: all spacing in multiples of 4px. Use compact density for data-dense views.
+- Card data: `p-3` (12px). Dashboard overview: `p-4` (16px). Section title: `mb-2`.
+- Content area: `px-4 py-3`, `gap-4`. Forbidden: `p-8` or larger on cards/content.
+- Nav drawer: width=220, buttons with `dense` prop.
+- Tables: use `dense` prop for compact row height (~36px).
 - Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
 - Max width: content area is `max-w-7xl mx-auto`.
 - Navigation: add new pages to the left drawer in `layout.py`.
