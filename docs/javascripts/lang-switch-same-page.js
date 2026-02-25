@@ -1,9 +1,21 @@
 (() => {
-  const DEFAULT_ZH = "/";
-  const DEFAULT_EN = "/index.en/";
+  function getSiteBase() {
+    try {
+      const configRaw = document.getElementById('__config');
+      const baseRel = configRaw ? JSON.parse(configRaw.textContent).base : ".";
+      const basePath = new URL(baseRel + "/", window.location.href).pathname;
+      return basePath.endsWith("/") ? basePath : `${basePath}/`;
+    } catch (e) {
+      return "/";
+    }
+  }
+
+  const siteBase = getSiteBase();
+  const DEFAULT_ZH = siteBase;
+  const DEFAULT_EN = siteBase + "index.en/";
 
   function normalize(pathname) {
-    if (!pathname) return "/";
+    if (!pathname) return siteBase;
     return pathname.endsWith("/") ? pathname : `${pathname}/`;
   }
 
