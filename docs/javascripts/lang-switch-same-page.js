@@ -41,21 +41,23 @@
   function zhToEnCandidates(currentPath) {
     const path = normalize(currentPath);
     if (path === DEFAULT_ZH) return [DEFAULT_EN];
-    return [
+    const candidates = [
       path.replace(/\/$/, ".en/"),
       `${path}index.en/`,
       DEFAULT_EN,
     ];
+    return unique(candidates).filter(c => c !== path);
   }
 
   function enToZhCandidates(currentPath) {
     const path = normalize(currentPath);
     if (path === DEFAULT_EN) return [DEFAULT_ZH];
-    return [
+    const candidates = [
       path.replace(/index\.en\/$/, ""),
       path.replace(/\.en\/$/, "/"),
       DEFAULT_ZH,
     ];
+    return unique(candidates).filter(c => c !== path);
   }
 
   async function patchLanguageLinks() {
