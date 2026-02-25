@@ -31,17 +31,23 @@ tags:
 
 ### 規則
 
-1.  **空間與間距**：
-    *   **外距 (Margin)**：各卡片或大區塊間距預設為 `gap-6`。
-    *   **內距 (Padding)**：卡片內部預設為 `p-6`。
-    *   **排版方向**：避免文字與圖表黏得太緊，保持適當呼吸空間。
-2.  **區塊間距**：Master-Detail 之間使用 `gap-6` (24px)
-3.  **App Card (模組容器)**：
+1.  **Master 區塊 (列表/表格)**：
+    *   在大螢幕上佔據 **45%** 寬度 (`lg:w-[45%]`)。
+    *   應設計為可獨立操作，不依賴 Detail 區塊的狀態。
+
+2.  **Detail 區塊 (圖表/詳細資訊)**：
+    *   在大螢幕上佔據剩餘的 **55%** 寬度 (`lg:w-[55%]`)。
+    *   狀態應根據 Master 區塊的選擇進行連動更新。
+
+3.  **間距**：
+    *   Master 與 Detail 之間使用 `gap-6` 分隔。(24px)
+
+4.  **App Card (模組容器)**：
     *   套用 `.app-card` 樣式。
     *   預設使用內部間距 `p-6`（24px）以保持舒適的呼吸空間。
     *   模組標題應置於頂部，套用 `.app-section-title` 與下方 `mb-4` 間隔。
-4.  **頁面內距**：內容區域使用 `px-4 py-3` (水平 16px，垂直 12px)
-5.  **禁止**：`p-8` (32px) 或更大的間距值用於 Card 或內容區域
+5.  **頁面內距**：內容區域使用 `px-4 py-3` (水平 16px，垂直 12px)
+6.  **禁止**：`p-8` (32px) 或更大的間距值用於 Card 或內容區域
 
 ### 導航密度
 
@@ -108,13 +114,13 @@ with ui.column().classes("app-card w-full p-6"):
 ```python
 # Master-Detail 佈局
 with ui.row().classes("w-full gap-6 flex-wrap lg:flex-nowrap"):
-    # Master (60%)
-    with ui.column().classes("app-card w-full lg:w-[60%] p-6"):
+    # Master (45%)
+    with ui.column().classes("app-card w-full lg:w-[45%] p-6"):
         ui.label("Item List").classes("app-section-title mb-4")
         # DataTable / List...
 
-    # Detail (40%)
-    with ui.column().classes("w-full lg:w-[40%] flex flex-col gap-6"):
+    # Detail (55%)
+    with ui.column().classes("w-full lg:w-[55%] flex flex-col gap-6"):
         with ui.column().classes("app-card w-full p-6"):
             ui.label("Item Details").classes("app-section-title mb-4")
             # Charts / Params...
@@ -190,7 +196,7 @@ ui.button(
     *   DO NOT use arbitrary margins like `mt-3` or `px-5`.
 - Content area: `w-full px-4 py-3`, `gap-6`. Forbidden: `max-w-*` on app_shell, allow full width.
 - Nav drawer: width=220, buttons with `dense` prop.
-- Master/Detail proportions: tables should be `w-[60%]`, visualizations `w-[40%]`.
+- Master/Detail proportions: tables should usually be `w-[45%]`, visualizations `w-[55%]`.
 - Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
 - Navigation: add new pages to the left drawer in `layout.py`.
 - Forbidden: standalone pages outside `app_shell()`.

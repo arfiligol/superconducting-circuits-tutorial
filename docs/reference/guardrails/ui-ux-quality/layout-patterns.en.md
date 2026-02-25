@@ -109,14 +109,14 @@ with ui.row().classes("w-full gap-6 flex-wrap lg:flex-nowrap"):
     # Master: full width on mobile
     with ui.column().classes("w-full lg:w-[60%]"):
         # Master Block (List/Table):
-        # Occupies 60% of the width on large screens (`lg:w-[60%]`).
+        # Occupies 45% of the width on large screens (`lg:w-[45%]`).
         # Should be designed to operate independently, without relying on the state of the Detail block.
         ...
 
     # Detail: stacks below on mobile
-    with ui.column().classes("w-full lg:w-[40%]"):
+    with ui.column().classes("w-full lg:w-[55%]"):
         # Detail Block (Charts/Details):
-        # Occupies the remaining 40% width on large screens (`lg:w-[40%]`).
+        # Occupies the remaining 55% width on large screens (`lg:w-[55%]`).
         # The state should dynamically update based on the selection in the Master block.
         ...
 ```

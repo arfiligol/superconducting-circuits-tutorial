@@ -121,16 +121,51 @@ def data_browser_page():
         ui.label("Data Browser Explorer").classes("text-2xl font-bold text-fg mb-4")
 
         columns = [
-            {"name": "id", "label": "ID", "field": "id", "sortable": True},
-            {"name": "dataset", "label": "Dataset", "field": "dataset_name", "sortable": True},
-            {"name": "type", "label": "Type", "field": "data_type", "sortable": True},
-            {"name": "param", "label": "Param", "field": "parameter", "sortable": True},
-            {"name": "repr", "label": "Repr", "field": "representation", "sortable": True},
+            {
+                "name": "id",
+                "label": "ID",
+                "field": "id",
+                "sortable": True,
+                "align": "center",
+                "headerClasses": "text-center",
+                "style": "width: 80px",
+            },
+            {
+                "name": "dataset",
+                "label": "Dataset",
+                "field": "dataset_name",
+                "sortable": True,
+                "align": "left",
+                "headerClasses": "text-center",
+            },
+            {
+                "name": "type",
+                "label": "Type",
+                "field": "data_type",
+                "sortable": True,
+                "align": "center",
+                "headerClasses": "text-center",
+            },
+            {
+                "name": "param",
+                "label": "Param",
+                "field": "parameter",
+                "sortable": True,
+                "align": "center",
+                "headerClasses": "text-center",
+            },
+            {
+                "name": "repr",
+                "label": "Repr",
+                "field": "representation",
+                "sortable": True,
+                "align": "center",
+                "headerClasses": "text-center",
+            },
         ]
-
         with ui.row().classes("w-full h-full gap-6 flex-wrap lg:flex-nowrap"):
             # Master: Table
-            with ui.column().classes("app-card w-full lg:w-[60%] p-6 flex flex-col"):
+            with ui.column().classes("app-card w-full lg:w-[45%] p-6 flex flex-col"):
                 ui.label("Data Records").classes("app-section-title mb-4")
                 ui.label("Select a record to preview data.").classes("text-xs text-muted mb-4")
 
@@ -147,7 +182,7 @@ def data_browser_page():
                 grid.on("rowClick", handle_row_click)
 
             # Detail: Charts and Params
-            with ui.column().classes("w-full lg:w-[40%] flex flex-col gap-6"):
+            with ui.column().classes("w-full lg:w-[55%] flex flex-col gap-6"):
                 # Chart card
                 with ui.column().classes("app-card w-full p-6 flex flex-col"):
                     ui.label("Visualization").classes("app-section-title mb-4")
