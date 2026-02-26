@@ -83,30 +83,36 @@ def app_shell(content_builder):
             """
         <script>
         document.addEventListener('DOMContentLoaded', function() {
+          // Use flattened keys for Plotly.relayout to gracefully merge properties
+          // rather than completely overwriting the server-generated layout (which wipes titles/legends).
           const DARK_LAYOUT = {
-            template: 'plotly_dark',
-            paper_bgcolor: 'rgb(30, 41, 59)',
-            plot_bgcolor: 'rgb(15, 23, 42)',
-            font: { color: 'rgb(226, 232, 240)', family: 'Inter, Arial, sans-serif' },
-            xaxis: { gridcolor: 'rgb(51, 65, 85)', zerolinecolor: 'rgb(51, 65, 85)' },
-            yaxis: { gridcolor: 'rgb(51, 65, 85)', zerolinecolor: 'rgb(51, 65, 85)' }
+            'paper_bgcolor': 'rgb(30, 41, 59)',
+            'plot_bgcolor': 'rgb(15, 23, 42)',
+            'font.color': 'rgb(226, 232, 240)',
+            'font.family': 'Inter, Arial, sans-serif',
+            'xaxis.gridcolor': 'rgb(51, 65, 85)',
+            'xaxis.zerolinecolor': 'rgb(51, 65, 85)',
+            'yaxis.gridcolor': 'rgb(51, 65, 85)',
+            'yaxis.zerolinecolor': 'rgb(51, 65, 85)'
           };
           const LIGHT_LAYOUT = {
-            template: 'plotly_white',
-            paper_bgcolor: 'rgb(255, 255, 255)',
-            plot_bgcolor: 'rgb(248, 250, 252)',
-            font: { color: 'rgb(15, 23, 42)', family: 'Inter, Arial, sans-serif' },
-            xaxis: { gridcolor: 'rgb(226, 232, 240)', zerolinecolor: 'rgb(226, 232, 240)' },
-            yaxis: { gridcolor: 'rgb(226, 232, 240)', zerolinecolor: 'rgb(226, 232, 240)' }
+            'paper_bgcolor': 'rgb(255, 255, 255)',
+            'plot_bgcolor': 'rgb(248, 250, 252)',
+            'font.color': 'rgb(15, 23, 42)',
+            'font.family': 'Inter, Arial, sans-serif',
+            'xaxis.gridcolor': 'rgb(226, 232, 240)',
+            'xaxis.zerolinecolor': 'rgb(226, 232, 240)',
+            'yaxis.gridcolor': 'rgb(226, 232, 240)',
+            'yaxis.zerolinecolor': 'rgb(226, 232, 240)'
           };
 
           function relayoutAll() {
             requestAnimationFrame(function() {
               const isDark = document.body.classList.contains('body--dark');
-              const layout = isDark ? DARK_LAYOUT : LIGHT_LAYOUT;
+              const layoutUpdate = isDark ? DARK_LAYOUT : LIGHT_LAYOUT;
               document.querySelectorAll('.js-plotly-plot').forEach(function(el) {
                 if (typeof Plotly !== 'undefined') {
-                  Plotly.relayout(el, layout);
+                  Plotly.relayout(el, layoutUpdate);
                 }
               });
             });
