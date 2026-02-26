@@ -9,6 +9,7 @@ styles_dir = Path(__file__).parent / "styles"
 app.add_static_files("/styles", str(styles_dir))
 
 import app.pages.characterization
+import app.pages.dashboard
 import app.pages.home
 import app.pages.raw_data
 

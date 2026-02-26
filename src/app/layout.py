@@ -156,8 +156,9 @@ def app_shell(content_builder):
             ui.separator().classes("my-4 mx-4 bg-border")
 
             ui.label("PIPELINE").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
+            nav_btn("Dashboard", "dashboard", "/dashboard")
             nav_btn("Raw Data", "folder_zip", "/raw-data")
-            nav_btn("Characterization", "query_stats", "/characterization")
+            nav_btn("Characterization", "analytics", "/characterization")
 
             ui.separator().classes("my-4 mx-4 bg-border")
 
