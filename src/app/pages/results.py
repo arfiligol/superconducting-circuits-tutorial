@@ -222,11 +222,12 @@ def _render_bias_plotly(df: pd.DataFrame):
 
     # Base layout
     layout_args = dict(
+        title="Mode Frequencies vs. Bias",
         xaxis_title="L_jun (nH)" if has_valid_numeric_x else "Bias Index",
         yaxis_title="Frequency (GHz)",
-        margin=dict(l=60, r=20, t=20, b=60),
+        margin=dict(l=60, r=150, t=60, b=60),
         height=400,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
     )
 
     # Apply App Theme synchronization
