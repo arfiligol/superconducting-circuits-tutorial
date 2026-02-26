@@ -18,7 +18,7 @@ from app.services.analysis_registry import (
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import ParameterDesignation
+from core.shared.persistence.models import DerivedParameter, ParameterDesignation
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -484,6 +484,63 @@ def characterization_page():
                     current_ds_id = list(ds_options.keys())[0]
                     app.storage.user["analysis_current_dataset"] = current_ds_id
 
+                def _render_dashboard_metrics(dataset_id: int):
+                    """Render a summary dashboard of tagged (designated) metrics for the dataset."""
+                    designations = (
+                        uow._session.query(ParameterDesignation)
+                        .filter_by(dataset_id=dataset_id)
+                        .all()
+                    )
+                    if not designations:
+                        return
+
+                    ui.label("Tagged Metrics").classes(
+                        "text-xs font-bold text-muted tracking-widest uppercase mb-2 mt-2"
+                    )
+                    with ui.row().classes("w-full gap-4 flex-wrap mb-6"):
+                        for desig in designations:
+                            # Attempt to resolve the real value from DerivedParameters
+                            resolved_param = (
+                                uow._session.query(DerivedParameter)
+                                .filter_by(
+                                    dataset_id=dataset_id,
+                                    method=desig.source_analysis_type,
+                                    name=desig.source_parameter_name,
+                                )
+                                .first()
+                            )
+
+                            with ui.column().classes(
+                                "app-card p-4 min-w-[200px] flex-grow flex-shrink bg-surface border border-border rounded-xl"
+                            ):
+                                with ui.row().classes("w-full items-center justify-between mb-1"):
+                                    ui.label(desig.designated_name).classes(
+                                        "text-sm text-primary font-bold"
+                                    )
+                                    ui.icon("sell", size="xs").classes("text-muted opacity-50")
+
+                                if resolved_param:
+                                    val = (
+                                        f"{resolved_param.value:.4g}"
+                                        if isinstance(resolved_param.value, float)
+                                        else str(resolved_param.value)
+                                    )
+                                    unit = resolved_param.unit or ""
+                                    with ui.row().classes("items-baseline gap-1"):
+                                        ui.label(val).classes("text-2xl font-bold text-fg")
+                                        if unit:
+                                            ui.label(unit).classes("text-sm text-muted")
+                                    ui.label(f"Source: {desig.source_analysis_type}").classes(
+                                        "text-xs text-muted mt-2"
+                                    )
+                                else:
+                                    ui.label("Value not found").classes(
+                                        "text-sm text-warning italic mt-1"
+                                    )
+                                    ui.label(f"Expected: {desig.source_parameter_name}").classes(
+                                        "text-xs text-muted"
+                                    )
+
                 @ui.refreshable
                 def render_dataset_view():
                     active_id = app.storage.user.get("analysis_current_dataset")
@@ -543,6 +600,7 @@ def characterization_page():
                         "dense outline dark standout"
                     ).classes("w-64")
 
+                _render_dashboard_metrics(current_ds_id)
                 render_dataset_view()
 
         except Exception as e:
