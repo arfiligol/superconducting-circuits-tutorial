@@ -81,15 +81,16 @@ Simulate a custom circuit topology.
 # Returns
 Dict with keys: :frequencies_ghz, :s11_real, :s11_imag
 """
-function run_custom_simulation(topology::Vector,
-    component_values::Dict,
+function run_custom_simulation(topology,
+    component_values,
     f_start_GHz::Float64,
     f_stop_GHz::Float64,
     n_points::Int)
     GHz = 1e9
 
-    # Build circuit from topology
+    # Convert Python types to native Julia types
     circuit = [(t[1], t[2], t[3], t[4]) for t in topology]
+    cv_dict = Dict(component_values)
 
     # Frequency range
     frequencies = range(f_start_GHz, f_stop_GHz, length=n_points) .* GHz
@@ -100,7 +101,7 @@ function run_custom_simulation(topology::Vector,
     sources = [(mode=(1,), port=1, current=0.0)]
 
     # Run simulation
-    sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, component_values)
+    sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, cv_dict)
 
     # Extract S11
     S11 = sol.linearized.S(outputmode=(0,), outputport=1, inputmode=(0,), inputport=1, freqindex=:)
