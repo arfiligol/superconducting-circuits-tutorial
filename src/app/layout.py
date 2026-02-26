@@ -67,8 +67,11 @@ def app_shell(content_builder):
 
             ui.space()
 
-            # Dark mode state management — purely client-side Plotly sync
-            dark = ui.dark_mode()
+            # Dark mode state management — syncs with global app storage & client-side Plotly
+            if "dark_mode" not in app.storage.user or app.storage.user["dark_mode"] is None:
+                app.storage.user["dark_mode"] = True
+
+            dark = ui.dark_mode().bind_value(app.storage.user, "dark_mode")
             ui.button(on_click=dark.toggle).props("flat round tooltip='Toggle Dark Mode'").classes(
                 "text-fg"
             ).bind_icon_from(dark, "value", lambda v: "light_mode" if v else "dark_mode")
