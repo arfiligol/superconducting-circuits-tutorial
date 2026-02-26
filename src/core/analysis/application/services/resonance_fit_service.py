@@ -140,6 +140,13 @@ class ResonanceFitService:
         # Base frequency axis (Hz)
         f_base = f_axis.flatten() * 1e9
 
+        extra_context = {
+            "model": model,
+            "resonators": resonators,
+            "f_min": f_min,
+            "f_max": f_max,
+        }
+
         # Run fitting per bias slice
         slice_results: list[dict[str, typing.Any]] = []
 
@@ -194,6 +201,7 @@ class ResonanceFitService:
                     unit="GHz",
                     device_type="resonator",
                     method=method_name,
+                    extra=extra_context,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
@@ -202,6 +210,7 @@ class ResonanceFitService:
                     unit="",
                     device_type="resonator",
                     method=method_name,
+                    extra=extra_context,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
@@ -210,6 +219,7 @@ class ResonanceFitService:
                     unit="",
                     device_type="resonator",
                     method=method_name,
+                    extra=extra_context,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
@@ -218,6 +228,7 @@ class ResonanceFitService:
                     unit="",
                     device_type="resonator",
                     method=method_name,
+                    extra=extra_context,
                 )
                 if "tau" in result:
                     self.param_service.create_or_update_param(
@@ -227,6 +238,7 @@ class ResonanceFitService:
                         unit="ns",
                         device_type="resonator",
                         method=method_name,
+                        extra=extra_context,
                     )
 
                 if model == "notch":
@@ -258,6 +270,7 @@ class ResonanceFitService:
                         unit="GHz",
                         device_type="resonator",
                         method=method_name,
+                        extra=extra_context,
                     )
                     self.param_service.create_or_update_param(
                         dataset.id,
@@ -266,6 +279,7 @@ class ResonanceFitService:
                         unit="",
                         device_type="resonator",
                         method=method_name,
+                        extra=extra_context,
                     )
                 model_s21 = result["model_s21"]
 

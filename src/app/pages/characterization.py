@@ -301,6 +301,18 @@ def _render_identify_mode(ds, method: str, params: list, bias_df):
 
 def _render_results_body(ds, method_key: str, method_params: list):
     """Render results for one analysis method inside its card."""
+
+    # Render config context if any
+    extra_config = method_params[0].extra if method_params and method_params[0].extra else {}
+    if extra_config:
+        with ui.row().classes("w-full gap-2 mb-4 bg-bg p-3 rounded-lg border border-border"):
+            ui.icon("tune", size="xs").classes("text-muted")
+            for k, v in extra_config.items():
+                if v is not None:
+                    ui.label(f"{k}: {v}").classes(
+                        "text-xs text-muted font-mono bg-surface px-2 py-0.5 rounded"
+                    )
+
     bias_df = _build_bias_dataframe(method_params)
     if bias_df is not None and not bias_df.empty:
         with ui.row().classes("w-full items-center justify-between mt-2 mb-2"):
@@ -378,10 +390,14 @@ def _render_analysis_card(
                         if a["id"] == "admittance_extraction":
                             ResonanceExtractService().extract_admittance(str(d.id))
                         elif a["id"] == "s21_resonance_fit":
+                            # Extract user parameters and pass them
                             ResonanceFitService().perform_fit(
                                 dataset_identifier=str(d.id),
                                 parameter="S21",
-                                model="notch",
+                                model=params.get("model", "notch"),
+                                resonators=int(params.get("resonators", 1) or 1),
+                                f_min=params.get("f_min"),
+                                f_max=params.get("f_max"),
                             )
                         elif a["id"] in ("squid_fitting", "y11_fit"):
                             ui.notify(f"{a['label']} – not yet implemented.", type="warning")
