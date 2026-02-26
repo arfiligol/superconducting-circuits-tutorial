@@ -392,7 +392,9 @@ def _render_analysis_card(
                         ui.notify(f"Failed: {e!s}", type="negative")
 
                 run_label = "🔁 Re-run" if completed else "▶ Run"
-                ui.button(run_label, on_click=do_run).props("unelevated color=primary size=sm")
+                ui.button(run_label, on_click=do_run).props(
+                    "unelevated color=primary size=md"
+                ).classes("px-4 font-bold")
             else:
                 ui.label("Missing required data").classes("text-xs text-danger font-semibold")
 
