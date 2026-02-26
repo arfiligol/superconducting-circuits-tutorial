@@ -76,24 +76,69 @@ ui.column().classes("bg-white text-black bg-blue-500")
 ## Dark Mode
 
 - **Default**: Dark mode is ON (`ui.run(dark=True)`)
-- **Toggle**: `ui.dark_mode().toggle()` flips `.dark` on the root element
+- **Toggle**: `ui.dark_mode().toggle()` flips `.dark` / `body--dark` on the root element
 - **Automatic**: CSS variables switch automatically with `.dark` class — no JavaScript needed
 
 !!! warning "Every component must support dark mode"
     New CSS classes or components must define both `:root` and `.dark` values.
 
-## Plotly Theme Synchronization
+## Dark Mode Toggle Architecture
 
-Plotly chart backgrounds and fonts must sync with the app theme.
+### Core Principle
+
+!!! danger "NEVER trigger server-side re-render on Dark Mode toggle"
+    **Forbidden**: calling `content_area.refresh()` or any DOM-rebuilding operation inside `ui.dark_mode(on_change=...)`.
+    This causes: expanded panels collapsing, form state loss, severe UX degradation.
+
+### Quasar Native Components
+
+NiceGUI components are Quasar-based and automatically follow Dark Mode toggling (via `body--dark` class).
+No extra handling needed.
+
+### Third-Party Chart Libraries (Plotly, etc.)
+
+Plotly and other non-Quasar components do not automatically follow theme changes. The solution is a **client-side MutationObserver**,
+injected as a global `<script>` in `layout.py`, that watches `<body>` class changes and calls `Plotly.relayout()`:
+
+```javascript
+// Injected in layout.py via ui.add_head_html()
+document.addEventListener('DOMContentLoaded', function() {
+  const DARK_LAYOUT  = { template: 'plotly_dark',  paper_bgcolor: '...', ... };
+  const LIGHT_LAYOUT = { template: 'plotly_white', paper_bgcolor: '...', ... };
+
+  function relayoutAll() {
+    requestAnimationFrame(function() {
+      const isDark = document.body.classList.contains('body--dark');
+      document.querySelectorAll('.js-plotly-plot').forEach(function(el) {
+        Plotly.relayout(el, isDark ? DARK_LAYOUT : LIGHT_LAYOUT);
+      });
+    });
+  }
+
+  new MutationObserver(function(mutations) {
+    for (const m of mutations) {
+      if (m.attributeName === 'class') { relayoutAll(); return; }
+    }
+  }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+});
+```
+
+Benefits of this pattern:
+
+- ✅ **Zero server round-trips**: runs entirely in the browser
+- ✅ **Zero state loss**: expanded panels, tabs, and toggles all preserved
+- ✅ **Instant effect**: Plotly chart background and text colors update synchronously
+
+### Initial Render
+
+When initially rendering charts, use `get_plotly_layout()` for the initial theme (server-side, runs once):
 
 ```python
 from core.shared.visualization import get_plotly_layout
 
-# ✅ Correct: use theme sync function
-fig = build_line_chart(record, dark=ui.dark_mode().value)
-
-# ❌ Forbidden: hardcoded Plotly layout colors
-fig.update_layout(paper_bgcolor="white", font_color="black")
+# ✅ Correct: specify theme at initial render
+is_dark = app.storage.user.get("dark_mode", True)
+fig.update_layout(**get_plotly_layout(dark=is_dark))
 ```
 
 `get_plotly_layout(dark=True)` returns:
@@ -104,6 +149,10 @@ fig.update_layout(paper_bgcolor="white", font_color="black")
 - `font.color`: maps to `--fg`
 - `font.family`: `Inter, Arial, sans-serif`
 
+!!! tip "Adding new third-party chart libraries"
+    When introducing chart libraries that don't support Quasar Dark Mode,
+    add corresponding relayout logic to the MutationObserver script in `layout.py`.
+
 ---
 
 ## Agent Rule { #agent-rule }
@@ -113,7 +162,10 @@ fig.update_layout(paper_bgcolor="white", font_color="black")
 - Use CSS variable tokens: `--bg`, `--surface`, `--elevated`, `--fg`, `--muted`, `--border`, `--primary`.
 - Forbidden: hardcoded colors (`bg-white`, `text-black`, `#hex`, `rgb(literal)`).
 - Tailwind is layout-only (flex, p-4, gap-2). Colors = CSS variables.
-- Dark mode: default ON. Toggle flips `.dark` on root, CSS variables auto-switch.
-- Plotly theme sync: always pass `dark=ui.dark_mode().value` to figure builders.
+- Dark mode: default ON. Toggle flips `.dark` / `body--dark` on root, CSS variables auto-switch.
+- CRITICAL: NEVER call `content_area.refresh()` or any server-side re-render on dark mode toggle. This destroys UI state.
+- Plotly theme sync uses a client-side MutationObserver in `layout.py` that watches `body--dark` and calls `Plotly.relayout()`. No server round-trip.
+- Initial chart render: use `get_plotly_layout(dark=app.storage.user.get("dark_mode", True))`.
+- New third-party chart libs must be registered in the MutationObserver script in `layout.py`.
 - New CSS classes must define both `:root` and `.dark` values.
 ```

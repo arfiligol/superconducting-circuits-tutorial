@@ -25,6 +25,11 @@ def app_shell(content_builder):
         # Global body setup (Dark mode handled globally in ui.run(dark=True))
         ui.query("body").classes("bg-bg text-fg")
 
+        # Refreshable content area — re-renders when Active Datasets change
+        @ui.refreshable
+        def content_area():
+            content_builder(*args, **kwargs)
+
         # App Header
         with ui.header(elevated=False).classes(
             "bg-surface text-fg border-b border-border h-16 flex items-center px-4"
@@ -32,49 +37,127 @@ def app_shell(content_builder):
             ui.button(on_click=lambda: left_drawer.toggle(), icon="menu").props("flat").classes(
                 "text-fg"
             )
-            ui.label("🔬 SC Data Browser").classes("text-xl font-semibold ml-2 text-fg")
+            ui.label("🔬 SC Tutorial App").classes("text-xl font-semibold ml-2 text-fg truncate")
+
+            # Dataset Context Selector
+            from core.shared.persistence import get_unit_of_work
+
+            def fetch_dataset_options():
+                try:
+                    with get_unit_of_work() as uow:
+                        datasets = uow.datasets.list_all()
+                        return {ds.id: ds.name for ds in datasets}
+                except Exception:
+                    return {}
+
+            def on_dataset_change(_):
+                content_area.refresh()
+
+            with ui.row().classes("flex-grow mx-4 items-center justify-center max-w-2xl"):
+                ui.select(
+                    options=fetch_dataset_options(),
+                    multiple=True,
+                    with_input=True,
+                    clearable=True,
+                    label="Active Datasets",
+                    on_change=on_dataset_change,
+                ).classes("w-full").bind_value(app.storage.user, "selected_datasets").props(
+                    "use-chips dense dark standout"
+                )
+
             ui.space()
-            # Theme toggle placeholder - assuming dark mode default
-            # NiceGUI dark mode toggle is native
-            ui.button(icon="dark_mode", on_click=lambda: ui.dark_mode().toggle()).props(
-                "flat round tooltip='Toggle Dark Mode'"
-            ).classes("text-fg")
+
+            # Dark mode state management — purely client-side Plotly sync
+            dark = ui.dark_mode()
+            ui.button(on_click=dark.toggle).props("flat round tooltip='Toggle Dark Mode'").classes(
+                "text-fg"
+            ).bind_icon_from(dark, "value", lambda v: "light_mode" if v else "dark_mode")
+
+        # --- Client-side Plotly theme sync via MutationObserver ---
+        # Watches Quasar's body.body--dark class and calls Plotly.relayout()
+        # on every chart. Zero server round-trips, zero state loss.
+        ui.add_head_html(
+            """
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+          const DARK_LAYOUT = {
+            template: 'plotly_dark',
+            paper_bgcolor: 'rgb(30, 41, 59)',
+            plot_bgcolor: 'rgb(15, 23, 42)',
+            font: { color: 'rgb(226, 232, 240)', family: 'Inter, Arial, sans-serif' },
+            xaxis: { gridcolor: 'rgb(51, 65, 85)', zerolinecolor: 'rgb(51, 65, 85)' },
+            yaxis: { gridcolor: 'rgb(51, 65, 85)', zerolinecolor: 'rgb(51, 65, 85)' }
+          };
+          const LIGHT_LAYOUT = {
+            template: 'plotly_white',
+            paper_bgcolor: 'rgb(255, 255, 255)',
+            plot_bgcolor: 'rgb(248, 250, 252)',
+            font: { color: 'rgb(15, 23, 42)', family: 'Inter, Arial, sans-serif' },
+            xaxis: { gridcolor: 'rgb(226, 232, 240)', zerolinecolor: 'rgb(226, 232, 240)' },
+            yaxis: { gridcolor: 'rgb(226, 232, 240)', zerolinecolor: 'rgb(226, 232, 240)' }
+          };
+
+          function relayoutAll() {
+            requestAnimationFrame(function() {
+              const isDark = document.body.classList.contains('body--dark');
+              const layout = isDark ? DARK_LAYOUT : LIGHT_LAYOUT;
+              document.querySelectorAll('.js-plotly-plot').forEach(function(el) {
+                if (typeof Plotly !== 'undefined') {
+                  Plotly.relayout(el, layout);
+                }
+              });
+            });
+          }
+
+          // Watch for Quasar dark-mode class toggle on <body>
+          const observer = new MutationObserver(function(mutations) {
+            for (const m of mutations) {
+              if (m.attributeName === 'class') { relayoutAll(); return; }
+            }
+          });
+          observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+        });
+        </script>
+        """,
+            shared=True,
+        )
 
         # Navigation Drawer
         with (
             ui.left_drawer(elevated=False)
             .classes("bg-surface text-fg flex flex-col pt-4 gap-2")
-            .props("width=220") as left_drawer
+            .props("width=220") as left_drawer,
+            ui.column().classes("w-full px-1"),
         ):
-            with ui.column().classes("w-full px-1"):
-                ui.label("NAVIGATION").classes(
-                    "text-xs text-muted font-bold tracking-wider mb-1 px-4"
-                )
 
-                def nav_btn(label: str, icon_name: str, route: str, disabled: bool = False):
-                    with (
-                        ui.button(
-                            on_click=lambda r=route: ui.navigate.to(r) if not disabled else None
-                        )
-                        .classes("w-full px-4")
-                        .props(f"flat no-caps dense {'disable' if disabled else ''}")
-                    ):
-                        with ui.row().classes("items-center no-wrap w-full"):
-                            with ui.row().classes("w-8 justify-start"):
-                                ui.icon(icon_name, size="sm")
-                            ui.label(label).classes("text-sm")
+            def nav_btn(label: str, icon_name: str, route: str, disabled: bool = False):
+                with (
+                    ui.button(on_click=lambda r=route: ui.navigate.to(r) if not disabled else None)
+                    .classes("w-full px-4")
+                    .props(f"flat no-caps dense {'disable' if disabled else ''}")
+                ):
+                    with ui.row().classes("items-center no-wrap w-full"):
+                        with ui.row().classes("w-8 justify-start"):
+                            ui.icon(icon_name, size="sm")
+                        ui.label(label).classes("text-sm")
 
-                nav_btn("Home", "home", "/")
-                nav_btn("Data Browser", "analytics", "/data-browser")
+            ui.label("DASHBOARD").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
+            nav_btn("Home", "home", "/")
 
-                ui.separator().classes("my-4 mx-4 bg-border")
+            ui.separator().classes("my-4 mx-4 bg-border")
 
-                ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
-                nav_btn("Analysis", "functions", "", disabled=True)
-                nav_btn("Simulation", "science", "", disabled=True)
+            ui.label("DATA").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
+            nav_btn("Raw Data", "folder_zip", "/raw-data")
+            nav_btn("Analysis", "functions", "/analysis")
+            nav_btn("Derived Results", "list_alt", "/results")
+
+            ui.separator().classes("my-4 mx-4 bg-border")
+
+            ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
+            nav_btn("Simulation", "science", "/simulation", disabled=True)
 
         # Main Content Area
         with ui.column().classes("w-full p-4 md:p-8 gap-6"):
-            content_builder(*args, **kwargs)
+            content_area()
 
     return wrapper
