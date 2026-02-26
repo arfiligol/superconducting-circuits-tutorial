@@ -310,38 +310,27 @@ def _render_method_section(ds, method: str, params: list):
         with ui.row().classes(
             "w-full items-end gap-4 mt-2 p-4 bg-bg rounded-xl border border-border"
         ):
-            import contextlib
-
             _MODE_ROW_RE = re.compile(r"^fr_ghz_(\d+)$")
 
-            def format_param_name(name: str) -> str:
+            def extract_base_param(name: str) -> str:
                 m_bias = _BIAS_RE.match(name)
                 if m_bias:
-                    base, b_idx_str = m_bias.group(1), m_bias.group(2)
-                    b_idx = int(b_idx_str)
-                    m_mode = _MODE_ROW_RE.match(base)
-                    base_label = f"Mode {m_mode.group(1)}" if m_mode else base
-
-                    # Try to map the bias index to the actual readable bias value
-                    bias_val_str = f" [b{b_idx}]"
-                    if bias_df is not None and not bias_df.empty:
-                        with contextlib.suppress(IndexError):
-                            # bias_df columns are the formatted bias values
-                            bias_val_str = f" + {bias_df.columns[b_idx]}"
-
-                    return f"{base_label}{bias_val_str}"
+                    return m_bias.group(1)
 
                 m_idx = _IDX_RE.match(name)
                 if m_idx:
-                    base, idx = m_idx.group(1), m_idx.group(2)
-                    m_mode = _MODE_ROW_RE.match(base)
-                    base_label = f"Mode {m_mode.group(1)} (GHz)" if m_mode else base
-                    return f"{base_label} [Res {idx}]"
+                    return m_idx.group(1)
 
-                m_mode = _MODE_ROW_RE.match(name)
-                return f"Mode {m_mode.group(1)} (GHz)" if m_mode else name
+                return name
 
-            param_options = {p.name: format_param_name(p.name) for p in params}
+            def format_base_param(base_name: str) -> str:
+                m_mode = _MODE_ROW_RE.match(base_name)
+                return f"Mode {m_mode.group(1)} (GHz)" if m_mode else base_name
+
+            # Collect unique base parameters (representing the whole mode)
+            unique_bases = {extract_base_param(p.name) for p in params}
+            param_options = {base: format_base_param(base) for base in sorted(unique_bases)}
+
             if not param_options:
                 ui.label("No parameters to tag").classes("text-muted text-sm")
             else:
