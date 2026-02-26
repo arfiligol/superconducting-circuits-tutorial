@@ -51,83 +51,81 @@ def schema_editor_page(schema_id: str):
                 f"Edit Schema: {circuit_record.name}" if circuit_record else "New Circuit Schema"
             ).classes("text-2xl font-bold text-fg")
 
-        with ui.row().classes("w-full gap-6 items-stretch"):
+        with ui.row().classes("w-full gap-6"):
             # Left Column: Circuit Definition Input
-            with ui.column().classes("w-full md:w-1/2"):
-                with ui.card().classes("w-full h-full bg-surface rounded-xl p-6 flex flex-col"):
-                    with ui.row().classes("items-center w-full justify-between mb-4"):
-                        with ui.row().classes("gap-2 items-center"):
-                            ui.icon("science", size="sm").classes("text-primary")
-                            ui.label("Circuit Definition").classes("text-lg font-bold text-fg")
+            with (
+                ui.column().classes("w-full md:w-1/2"),
+                ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[400px]"),
+            ):
+                with ui.row().classes("items-center w-full justify-between mb-4"):
+                    with ui.row().classes("gap-2 items-center"):
+                        ui.icon("science", size="sm").classes("text-primary")
+                        ui.label("Circuit Definition").classes("text-lg font-bold text-fg")
 
-                        def save_schema():
-                            try:
-                                js_data = ast.literal_eval(json_input.value)
-                                circuit_def = CircuitDefinition.model_validate(js_data)
-                                name = circuit_def.name
-                            except Exception as e:
-                                ui.notify(
-                                    f"Invalid Circuit Definition syntax: {e}", type="negative"
-                                )
-                                return
+                    def save_schema():
+                        try:
+                            js_data = ast.literal_eval(json_input.value)
+                            circuit_def = CircuitDefinition.model_validate(js_data)
+                            name = circuit_def.name
+                        except Exception as e:
+                            ui.notify(f"Invalid Circuit Definition syntax: {e}", type="negative")
+                            return
 
-                            if not name:
-                                ui.notify(
-                                    "Name cannot be empty in the dictionary.", type="negative"
-                                )
-                                return
+                        if not name:
+                            ui.notify("Name cannot be empty in the dictionary.", type="negative")
+                            return
 
-                            try:
-                                with get_unit_of_work() as uow:
-                                    if circuit_record:
-                                        db_circuit = uow.circuits.get(circuit_record.id)
-                                        db_circuit.name = name
-                                        db_circuit.definition_json = json_input.value
-                                        uow.commit()
-                                        ui.notify("Schema updated.", type="positive")
-                                    else:
-                                        new_circuit = CircuitRecord(
-                                            name=name, definition_json=json_input.value
-                                        )
-                                        uow.circuits.add(new_circuit)
-                                        uow.commit()
-                                        ui.notify("New schema created.", type="positive")
-                                        ui.navigate.to(f"/schemas/{new_circuit.id}")
-                            except Exception as e:
-                                ui.notify(f"Database Error: {e}", type="negative")
+                        try:
+                            with get_unit_of_work() as uow:
+                                if circuit_record:
+                                    db_circuit = uow.circuits.get(circuit_record.id)
+                                    db_circuit.name = name
+                                    db_circuit.definition_json = json_input.value
+                                    uow.commit()
+                                    ui.notify("Schema updated.", type="positive")
+                                else:
+                                    new_circuit = CircuitRecord(
+                                        name=name, definition_json=json_input.value
+                                    )
+                                    uow.circuits.add(new_circuit)
+                                    uow.commit()
+                                    ui.notify("New schema created.", type="positive")
+                                    ui.navigate.to(f"/schemas/{new_circuit.id}")
+                        except Exception as e:
+                            ui.notify(f"Database Error: {e}", type="negative")
 
-                        ui.button("Save Schema", icon="save", on_click=save_schema).props(
-                            "color=primary size=sm"
-                        )
-
-                    error_label = ui.label("").classes("text-danger text-sm hidden mb-2")
-
-                    def_val = (
-                        circuit_record.definition_json if circuit_record else _DEFAULT_CIRCUIT_STR
+                    ui.button("Save Schema", icon="save", on_click=save_schema).props(
+                        "color=primary size=sm"
                     )
-                    json_input = (
-                        ui.textarea(
-                            "Netlist Dictionary",
-                            value=def_val,
-                        )
-                        .classes("w-full flex-grow font-mono text-sm")
-                        .props('standout dark input-style="height:100%"')
+
+                error_label = ui.label("").classes("text-danger text-sm hidden mb-2")
+
+                def_val = circuit_record.definition_json if circuit_record else _DEFAULT_CIRCUIT_STR
+                json_input = (
+                    ui.textarea(
+                        "Netlist Dictionary",
+                        value=def_val,
                     )
+                    .classes("w-full font-mono text-sm")
+                    .props("rows=15 standout dark")
+                )
 
             # Right Column: Live Schematic Visualization
-            with ui.column().classes("w-full md:w-[45%]"):
-                with ui.card().classes("w-full h-full bg-surface rounded-xl p-6 flex flex-col"):
-                    with ui.row().classes("items-center gap-2 mb-4"):
-                        ui.icon("visibility", size="sm").classes("text-primary")
-                        ui.label("Live Preview").classes("text-lg font-bold text-fg")
+            with (
+                ui.column().classes("w-full md:w-[45%]"),
+                ui.card().classes("w-full h-full bg-surface rounded-xl p-6 min-h-[400px]"),
+            ):
+                with ui.row().classes("items-center gap-2 mb-4"):
+                    ui.icon("visibility", size="sm").classes("text-primary")
+                    ui.label("Live Preview").classes("text-lg font-bold text-fg")
 
-                    ui.label("The schematic updates automatically as you type.").classes(
-                        "text-xs text-muted mb-4"
-                    )
+                ui.label("The schematic updates automatically as you type.").classes(
+                    "text-xs text-muted mb-4"
+                )
 
-                    svg_container = ui.html().classes(
-                        "w-full flex-grow min-h-[350px] flex items-center justify-center bg-white rounded-lg p-4"
-                    )
+                svg_container = ui.html().classes(
+                    "w-full flex-grow flex items-center justify-center bg-white rounded-lg p-4"
+                )
 
         # Function to update schematic based on input
         def update_schematic(e=None):
