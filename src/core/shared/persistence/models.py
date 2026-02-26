@@ -77,6 +77,10 @@ class DatasetRecord(SQLModel, table=True):
         back_populates="dataset",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    designations: list["ParameterDesignation"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 # ===================
@@ -137,3 +141,27 @@ class DerivedParameter(SQLModel, table=True):
 
     # Relationship
     dataset: Optional["DatasetRecord"] = Relationship(back_populates="derived_params")
+
+
+# ===================
+# ParameterDesignation
+# ===================
+class ParameterDesignation(SQLModel, table=True):
+    """Semantic designation for an extracted parameter (e.g., f_q, anharmonicity)."""
+
+    __tablename__ = "parameter_designations"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+
+    # The semantic name assigned by the user
+    designated_name: str = Field(index=True)
+
+    # Coordinates to resolve the actual value from DerivedParameter / AnalysisResult
+    source_analysis_type: str  # e.g., "Admittance Zero-Crossing"
+    source_parameter_name: str  # e.g., "fr_ghz_1"
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    # Relationship
+    dataset: Optional["DatasetRecord"] = Relationship(back_populates="designations")

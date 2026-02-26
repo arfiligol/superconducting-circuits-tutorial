@@ -56,8 +56,7 @@ def _to_matrix(record: DataRecord) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise ValueError("Expected a 2D matrix in DataRecord.values.")
     if matrix.shape != (len(freq), len(bias)):
         raise ValueError(
-            "Matrix shape mismatch. "
-            f"values={matrix.shape}, freq={len(freq)}, bias={len(bias)}."
+            f"Matrix shape mismatch. values={matrix.shape}, freq={len(freq)}, bias={len(bias)}."
         )
     return freq, bias, matrix
 
@@ -404,7 +403,9 @@ def main(
                         slice_fig,
                         show=show,
                         save_html=save_html,
-                        output_path=None if output is None else output.with_stem(
+                        output_path=None
+                        if output is None
+                        else output.with_stem(
                             f"{output.stem}_{dataset.name}_{representation}_slice_freq"
                         ),
                         default_stem=f"plot_flux_dependence_{dataset.name}_{representation}_slice_freq",
@@ -424,7 +425,9 @@ def main(
                         slice_fig,
                         show=show,
                         save_html=save_html,
-                        output_path=None if output is None else output.with_stem(
+                        output_path=None
+                        if output is None
+                        else output.with_stem(
                             f"{output.stem}_{dataset.name}_{representation}_slice_bias"
                         ),
                         default_stem=f"plot_flux_dependence_{dataset.name}_{representation}_slice_bias",

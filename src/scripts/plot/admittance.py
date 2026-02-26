@@ -49,8 +49,7 @@ def _to_matrix(record: DataRecord) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise ValueError("Expected a 2D matrix in DataRecord.values.")
     if matrix.shape != (len(freq), len(l_jun)):
         raise ValueError(
-            "Matrix shape mismatch. "
-            f"values={matrix.shape}, freq={len(freq)}, l_jun={len(l_jun)}."
+            f"Matrix shape mismatch. values={matrix.shape}, freq={len(freq)}, l_jun={len(l_jun)}."
         )
     return freq, l_jun, matrix
 

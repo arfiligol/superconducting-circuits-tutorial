@@ -1,2 +1,1 @@
 """Plotting CLI commands."""
-

@@ -129,9 +129,20 @@ class ResonanceExtractService:
         method_name = "admittance_zero_crossing"
 
         for idx, row in result_df.iterrows():
-            l_jun_val = row["L_jun"] if "L_jun" in row else None
+            l_jun_val = row.get("L_jun", None)
             # Formatting the param name based on bias index
             suffix = f"_b{idx}" if len(result_df) > 1 else ""
+
+            # Persist L_jun if available
+            if l_jun_val is not None and not pd.isna(l_jun_val):
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"L_jun{suffix}",
+                    value=float(l_jun_val),
+                    unit="nH",
+                    device_type="resonator",
+                    method=method_name,
+                )
 
             mode_cols = [c for c in row.index if "Mode" in str(c)]
             for m_idx, mode_col in enumerate(mode_cols):

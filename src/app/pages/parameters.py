@@ -1,4 +1,4 @@
-"""Results page for SC Tutorial App — Derived Parameters Dashboard."""
+"""Parameters page for SC Tutorial App — Circuit & System Parameters Dashboard."""
 
 from __future__ import annotations
 
@@ -303,7 +303,7 @@ def _render_method_section(ds, method: str, params: list):
         # --- Parameter Designation UI ---
         ui.separator().classes("my-4 bg-border")
         with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Assign Semantic Tag").classes(
+            ui.label("Identify Mode").classes(
                 "text-xs text-muted font-bold uppercase tracking-wider"
             )
 
@@ -408,10 +408,8 @@ def _render_dataset_tab(ds, params):
             "w-full p-8 items-center justify-center border-2 border-dashed border-border rounded-xl"
         ):
             ui.icon("science", size="xl").classes("text-muted mb-4 opacity-50")
-            ui.label("No derived results yet").classes("text-lg font-bold text-fg")
-            ui.label("Run an analysis from the Analysis page first.").classes(
-                "text-sm text-muted mt-1"
-            )
+            ui.label("No derived parameters yet").classes("text-lg font-bold text-fg")
+            ui.label("Run characterization first.").classes("text-sm text-muted mt-1")
         return
 
     method_groups = _group_by_method(params)
@@ -474,10 +472,10 @@ def _render_cross_dataset(dataset_params: dict[str, list]):
 # ── Page Entry Point ─────────────────────────────────────────────────────────
 
 
-@ui.page("/results")
-def results_page():
+@ui.page("/parameters")
+def parameters_page():
     def content():
-        ui.label("Derived Results").classes("text-2xl font-bold text-fg mb-2")
+        ui.label("Parameters").classes("text-2xl font-bold text-fg mb-2")
 
         selected_ids = app.storage.user.get("selected_datasets", [])
 

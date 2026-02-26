@@ -60,11 +60,31 @@ def import_hfss_to_database(
         payload = processor(resolved_path)
 
         # Save to database
-        save_dataset_payload_to_db(
+        dataset = save_dataset_payload_to_db(
             payload=payload,
             dataset_name=name,
             tags=tags,
         )
+
+        # Auto-Analysis: Admittance Extraction
+        has_admittance = any(
+            ds.data_type == "y_parameters" and ds.representation in ("imaginary", "imag")
+            for ds in payload.data_records
+        )
+        if has_admittance:
+            try:
+                logger.info("Auto-running Admittance Extraction for %s...", name)
+                from core.analysis.application.services.resonance_extract_service import (
+                    ResonanceExtractService,
+                )
+
+                service = ResonanceExtractService()
+                service.extract_admittance(str(dataset.id))
+                logger.info("Auto-analysis complete for %s.", name)
+            except Exception as extract_err:
+                logger.warning(
+                    "Auto-analysis (Admittance Extraction) failed for %s: %s", name, extract_err
+                )
 
     except Exception as e:
         logger.error("Failed to import %s: %s", resolved_path, e)

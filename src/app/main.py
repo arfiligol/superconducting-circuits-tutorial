@@ -8,9 +8,10 @@ from nicegui import app, ui
 styles_dir = Path(__file__).parent / "styles"
 app.add_static_files("/styles", str(styles_dir))
 
-# Import pages to register route decorators
-import app.pages.data_browser  # noqa: F401
-import app.pages.home  # noqa: F401
+import app.pages.characterization
+import app.pages.home
+import app.pages.parameters
+import app.pages.raw_data
 
 
 def start():
@@ -35,11 +36,12 @@ def start():
     # - show=True: Open browser automatically
     # - port=8080: Standard dev port
     ui.run(
-        title="SC Data Browser",
+        title="SC Tutorial App",
         port=8080,
         dark=True,
         show=False,  # Wait until everything loads cleanly, user can click or we can show later
         reload=False,
+        storage_secret="SC_DATA_BROWSER_SECRET",
     )
 
 

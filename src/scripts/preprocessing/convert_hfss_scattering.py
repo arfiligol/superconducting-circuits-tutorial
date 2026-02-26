@@ -87,7 +87,6 @@ def main(
         return
 
     from core.analysis.application.preprocessing.naming import strip_dataset_suffix
-    from core.shared.persistence import get_unit_of_work
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
 

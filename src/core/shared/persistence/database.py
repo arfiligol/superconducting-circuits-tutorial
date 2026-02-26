@@ -31,6 +31,7 @@ def init_db() -> None:
         DatasetRecord,
         DatasetTagLink,
         DerivedParameter,
+        ParameterDesignation,
         Tag,
     )
 

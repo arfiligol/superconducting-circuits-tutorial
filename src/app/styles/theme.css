@@ -14,7 +14,7 @@
     --ring: 59 130 246;
 }
 
-.dark {
+.body--dark {
     --bg: 15 23 42;
     --surface: 30 41 59;
     --elevated: 51 65 85;

@@ -1,6 +1,5 @@
 """Shared Plotly figure builders for the SC Data Browser."""
 
-from typing import Any
 
 import numpy as np
 import plotly.graph_objects as go
