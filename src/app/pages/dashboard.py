@@ -94,6 +94,33 @@ def dashboard_page():
                                 .first()
                             )
 
+                            # If exact match fails, it might be a bias-swept parameter,
+                            # so try finding the value for the first bias slice (_b0)
+                            if not resolved_param:
+                                resolved_param = (
+                                    uow._session.query(DerivedParameter)
+                                    .filter_by(
+                                        dataset_id=active_id,
+                                        method=desig.source_analysis_type,
+                                        name=f"{desig.source_parameter_name}_b0",
+                                    )
+                                    .first()
+                                )
+
+                            # If still not found, try a LIKE query as a final fallback
+                            if not resolved_param:
+                                resolved_param = (
+                                    uow._session.query(DerivedParameter)
+                                    .filter(
+                                        DerivedParameter.dataset_id == active_id,
+                                        DerivedParameter.method == desig.source_analysis_type,
+                                        DerivedParameter.name.like(
+                                            f"{desig.source_parameter_name}%"
+                                        ),
+                                    )
+                                    .first()
+                                )
+
                             with ui.column().classes(
                                 "app-card p-6 min-w-[240px] flex-grow flex-shrink bg-surface border border-border rounded-xl hover:border-primary transition-colors"
                             ):
