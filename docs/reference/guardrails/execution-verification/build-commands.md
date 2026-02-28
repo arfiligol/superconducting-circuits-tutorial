@@ -52,10 +52,10 @@ uv run sc plot admittance DatasetName
 
 ```bash
 # 預覽 (localhost:8000)
-uv run --group dev zensical serve -f zensical.yml
+uv run --group dev zensical serve
 
 # 建置靜態網站
-uv run --group dev zensical build -f zensical.yml
+uv run --group dev zensical build
 ```
 
 ---
@@ -69,8 +69,8 @@ uv run --group dev zensical build -f zensical.yml
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
-    - Build: `uv run --group dev zensical build -f zensical.yml -c`
-    - Serve: `uv run --group dev zensical serve -f zensical.yml`
+    - Build: `uv run --group dev zensical build -c`
+    - Serve: `uv run --group dev zensical serve`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`
 ```

@@ -12,8 +12,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Clean Architecture 分層與依賴方向說明"
-version: v0.1.0
-last_updated: 2026-01-28
+version: v0.1.1
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
@@ -58,5 +58,5 @@ CLI → Service → Persistence
 
 ## Related
 
-- [Schema Design](schema-design.md) - 資料結構設計
+- [Dataset Schema Design](schema-design.md) - 資料結構設計
 - [Database CLI Reference](../../../reference/cli/sc-db.md) - CLI 指令

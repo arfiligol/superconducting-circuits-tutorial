@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import typing
 
 import numpy as np
@@ -145,14 +146,17 @@ class ResonanceExtractService:
                 )
 
             mode_cols = [c for c in row.index if "Mode" in str(c)]
-            for m_idx, mode_col in enumerate(mode_cols):
+            for m_idx, mode_col in enumerate(mode_cols, start=1):
                 f_ghz = row[mode_col]
                 if pd.isna(f_ghz):
                     continue
 
+                match = re.search(r"(\d+)", str(mode_col))
+                mode_index = int(match.group(1)) if match else m_idx
+
                 self.param_service.create_or_update_param(
                     dataset.id,
-                    name=f"fr_ghz_{m_idx}{suffix}",
+                    name=f"mode_{mode_index}_ghz{suffix}",
                     value=float(f_ghz),
                     unit="GHz",
                     device_type="resonator",

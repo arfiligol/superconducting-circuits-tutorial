@@ -159,9 +159,26 @@ class ParameterDesignation(SQLModel, table=True):
 
     # Coordinates to resolve the actual value from DerivedParameter / AnalysisResult
     source_analysis_type: str  # e.g., "Admittance Zero-Crossing"
-    source_parameter_name: str  # e.g., "fr_ghz_1"
+    source_parameter_name: str  # e.g., "mode_1_ghz"
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     # Relationship
     dataset: Optional["DatasetRecord"] = Relationship(back_populates="designations")
+
+
+# ===================
+# CircuitRecord
+# ===================
+class CircuitRecord(SQLModel, table=True):
+    """Schema definition for a superconducting circuit."""
+
+    __tablename__ = "circuit_records"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+
+    # JSON string representation of the CircuitDefinition components and topology
+    definition_json: str = Field(sa_column=Column(JSON))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)

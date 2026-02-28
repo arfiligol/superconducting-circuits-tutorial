@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from nicegui import ui
+from nicegui import app, ui
 
 from app.layout import app_shell
 from core.shared.persistence import get_unit_of_work
@@ -192,7 +192,8 @@ def raw_data_page():
             )
             nonlocal plot_container
             plot_container = ui.column().classes(
-                "w-full flex-grow app-plotly-container min-h-[400px] flex items-center justify-center"
+                "w-full flex-grow app-plotly-container min-h-[400px] "
+                "flex items-center justify-center"
             )
             render_plot()
 

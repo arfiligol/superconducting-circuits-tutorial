@@ -1,5 +1,6 @@
 """Repositories for persistence layer."""
 
+from core.shared.persistence.repositories.circuit_repository import CircuitRepository
 from core.shared.persistence.repositories.data_record_repository import (
     DataRecordRepository,
 )
@@ -10,6 +11,7 @@ from core.shared.persistence.repositories.derived_parameter_repository import (
 from core.shared.persistence.repositories.tag_repository import TagRepository
 
 __all__ = [
+    "CircuitRepository",
     "DataRecordRepository",
     "DatasetRepository",
     "DerivedParameterRepository",

@@ -45,6 +45,13 @@ def main(
             help="Comma-separated keywords to filter files (e.g., 'Phase,S21,deg,rad,re,im,mag'). ",
         ),
     ] = "Phase,S21,deg,rad,re,im,mag,S11",
+    l_jun: Annotated[
+        float | None,
+        typer.Option(
+            "--l-jun",
+            help="Manual L_jun value in nH when CSV does not include an L_jun column.",
+        ),
+    ] = None,
 ) -> None:
     """
     Import HFSS scattering matrix CSV to SQLite database.
@@ -55,6 +62,7 @@ def main(
     - --dataset-name is ignored in batch/directory mode.
     - --tags are applied to all NEWLY imported datasets in this run.
     - --match filters files in directories to only those containing any of the keywords.
+    - --l-jun injects a constant bias value for single-bias files missing L_jun.
     """
     setup_logging(level="INFO")
 
@@ -107,6 +115,7 @@ def main(
             file_type="scattering",
             dataset_name=target_name,
             tags=tag_list,
+            l_jun=l_jun,
         )
 
 

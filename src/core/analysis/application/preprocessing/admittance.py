@@ -24,6 +24,21 @@ def detect_columns(df: pd.DataFrame) -> tuple[str, str, str]:
     return l_cols[0], freq_cols[0], y_cols[0]
 
 
+def ensure_l_jun_column(df: pd.DataFrame, l_jun: float | None) -> pd.DataFrame:
+    """Ensure an L_jun column exists; inject one for single-bias files when provided."""
+    l_cols = [c for c in df.columns if "l_jun" in c.lower() or "l_ind" in c.lower()]
+    if l_cols:
+        return df
+    if l_jun is None:
+        raise ValueError(
+            "Unable to locate L_jun column. "
+            "For single-bias CSV files, provide --l-jun <nH>."
+        )
+    df_with_bias = df.copy()
+    df_with_bias["L_jun [nH]"] = float(l_jun)
+    return df_with_bias
+
+
 def reshape_matrix(df: pd.DataFrame, l_col: str, freq_col: str, y_col: str) -> pd.DataFrame:
     pivot = df.pivot(index=freq_col, columns=l_col, values=y_col).sort_index()
     # Sort columns (L_jun values) numerically
@@ -73,9 +88,10 @@ def build_dataset_payload(
     )
 
 
-def process_hfss_admittance_file(raw_path: Path) -> DatasetPayload:
+def process_hfss_admittance_file(raw_path: Path, l_jun: float | None = None) -> DatasetPayload:
     """Orchestrate the processing of a single HFSS CSV file into a dataset payload."""
     df = pd.read_csv(raw_path)
+    df = ensure_l_jun_column(df, l_jun)
     l_col, freq_col, y_col = detect_columns(df)
     pivot = reshape_matrix(df, l_col, freq_col, y_col)
     parameter_name = derive_parameter_name(raw_path.name)

@@ -35,7 +35,33 @@ METHOD_LABELS: dict[str, str] = {
 
 _BIAS_RE = re.compile(r"^(.+?)_b(\d+)$")
 _IDX_RE = re.compile(r"^(.+?)_(\d+)$")
-_MODE_ROW_RE = re.compile(r"^fr_ghz_(\d+)$")
+_MODE_CANONICAL_RE = re.compile(r"^mode_(\d+)_ghz$")
+_MODE_LEGACY_INDEX_RE = re.compile(r"^(?:mode_ghz|fr_ghz)_(\d+)$")
+_MODE_LEGACY_SINGLE_RE = re.compile(r"^(?:mode_ghz|fr_ghz)$")
+
+
+def _mode_index_from_key(name: str) -> int | None:
+    match = _MODE_CANONICAL_RE.match(name)
+    if match:
+        return int(match.group(1))
+    match = _MODE_LEGACY_INDEX_RE.match(name)
+    if match:
+        return int(match.group(1)) + 1
+    if _MODE_LEGACY_SINGLE_RE.match(name):
+        return 1
+    return None
+
+
+def _format_mode_label(name: str) -> str | None:
+    mode_index = _mode_index_from_key(name)
+    if mode_index is None:
+        return None
+    return f"Mode {mode_index} (GHz)"
+
+
+def _display_param_name(name: str) -> str:
+    mode_label = _format_mode_label(name)
+    return mode_label if mode_label is not None else name
 
 
 # ---------------------------------------------------------------------------
@@ -83,8 +109,7 @@ def _build_bias_dataframe(params) -> pd.DataFrame | None:
 
     new_index = []
     for idx in df.index:
-        m = _MODE_ROW_RE.match(idx)
-        new_index.append(f"Mode {m.group(1)} (GHz)" if m else idx)
+        new_index.append(_display_param_name(str(idx)))
     df.index = new_index
     df.index.name = "Parameter"
     return df
@@ -95,6 +120,12 @@ def _build_resonator_table(params) -> pd.DataFrame | None:
     for p in params:
         if _BIAS_RE.match(p.name):
             continue
+
+        mode_index = _mode_index_from_key(p.name)
+        if mode_index is not None:
+            cells[mode_index]["mode_ghz"] = p.value
+            continue
+
         m2 = _IDX_RE.match(p.name)
         if m2:
             base, idx = m2.group(1), int(m2.group(2))
@@ -106,7 +137,11 @@ def _build_resonator_table(params) -> pd.DataFrame | None:
     df = pd.DataFrame.from_dict(cells, orient="index")
     df.index.name = "Resonator"
     df = df.sort_index()
-    preferred = ["fr_ghz", "Qi", "Qc", "Ql"]
+
+    if "mode_ghz" in df.columns:
+        df = df.rename(columns={"mode_ghz": "Mode (GHz)"})
+
+    preferred = ["Mode (GHz)", "Qi", "Qc", "Ql"]
     cols_ordered = [c for c in preferred if c in df.columns]
     cols_ordered += [c for c in sorted(df.columns) if c not in cols_ordered]
     return df[cols_ordered]
@@ -124,19 +159,36 @@ def _render_aggrid_df(df: pd.DataFrame, suppress_auto_header: bool = False):
             display[col] = display[col].apply(lambda v: f"{v:.4g}" if pd.notna(v) else "—")
     display = display.reset_index()
 
+    def estimate_col_width(column_name: str) -> int:
+        values = display[column_name].astype(str).tolist()
+        max_len = max([len(str(column_name)), *[len(v) for v in values]])
+        return min(max(120, max_len * 11), 520)
+
+    column_defs = [
+        {
+            "headerName": str(column_name),
+            "field": str(column_name),
+            "minWidth": estimate_col_width(column_name),
+            "width": estimate_col_width(column_name),
+            "resizable": True,
+        }
+        for column_name in display.columns
+    ]
+
     grid = ui.aggrid.from_pandas(display).classes("w-full")
     grid.props("domLayout='autoHeight'")
-    if suppress_auto_header:
-        col_defs = [{"headerName": str(c), "field": str(c)} for c in display.columns]
-        grid.options["columnDefs"] = col_defs
-        grid.update()
+    grid.options["columnDefs"] = column_defs
+    grid.options["defaultColDef"] = {"resizable": True, "sortable": True}
+    grid.update()
 
 
 def _render_metric_cards(params):
     with ui.row().classes("w-full gap-4 flex-wrap"):
         for p in sorted(params, key=lambda x: x.name):
             with ui.column().classes("app-card p-4 min-w-[140px] flex-grow flex-shrink"):
-                ui.label(p.name).classes("text-xs text-muted font-bold uppercase")
+                ui.label(_display_param_name(p.name)).classes(
+                    "text-xs text-muted font-bold uppercase"
+                )
                 val = f"{p.value:.4g}" if isinstance(p.value, float) else str(p.value)
                 with ui.row().classes("items-baseline gap-1 mt-1"):
                     ui.label(val).classes("text-xl font-bold text-fg")
@@ -172,7 +224,8 @@ def _render_bias_plotly(df: pd.DataFrame):
             go.Scatter(
                 x=x_data,
                 y=row.values,
-                mode="lines+markers",
+                mode="markers",
+                marker={"size": 8},
                 name=mode_label,
                 hovertemplate=(
                     f"<b>{mode_label}</b><br>Bias: %{{x}}<br>Freq: %{{y:.4g}} GHz<extra></extra>"
@@ -223,8 +276,7 @@ def _render_identify_mode(ds, method: str, params: list, bias_df):
             return name
 
         def format_base_param(base_name: str) -> str:
-            m_mode = _MODE_ROW_RE.match(base_name)
-            return f"Mode {m_mode.group(1)} (GHz)" if m_mode else base_name
+            return _display_param_name(base_name)
 
         unique_bases = {extract_base_param(p.name) for p in params}
         param_options = {base: format_base_param(base) for base in sorted(unique_bases)}

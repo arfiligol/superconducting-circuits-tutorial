@@ -27,6 +27,7 @@ def import_hfss_to_database(
     file_type: str,
     dataset_name: str | None = None,
     tags: list[str] | None = None,
+    l_jun: float | None = None,
 ) -> None:
     """
     Import an HFSS file directly to SQLite database.
@@ -36,6 +37,7 @@ def import_hfss_to_database(
         file_type: Either 'admittance' or 'scattering'
         dataset_name: Optional dataset name override (defaults to filename)
         tags: Optional list of tags to attach to the dataset
+        l_jun: Optional manual L_jun value (nH) when CSV lacks an L_jun column
     """
     # Determine paths and processor
     search_dir = RAW_LAYOUT_SIMULATION_DIR
@@ -57,7 +59,7 @@ def import_hfss_to_database(
 
     try:
         # Process the file to dataset payload
-        payload = processor(resolved_path)
+        payload = processor(resolved_path, l_jun=l_jun)
 
         # Save to database
         dataset = save_dataset_payload_to_db(

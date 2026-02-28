@@ -21,6 +21,21 @@ def derive_parameter_name(input_str: str) -> str:
     raise ValueError(f"Unable to derive phase parameter name (S11, S21, etc.) from '{input_str}'")
 
 
+def ensure_l_jun_column(df: pd.DataFrame, l_jun: float | None) -> pd.DataFrame:
+    """Ensure an L_jun column exists; inject one for single-bias files when provided."""
+    l_cols = [c for c in df.columns if "l_jun" in c.lower() or "l_ind" in c.lower()]
+    if l_cols:
+        return df
+    if l_jun is None:
+        raise ValueError(
+            "Unable to locate L_jun column. "
+            "For single-bias CSV files, provide --l-jun <nH>."
+        )
+    df_with_bias = df.copy()
+    df_with_bias["L_jun [nH]"] = float(l_jun)
+    return df_with_bias
+
+
 def detect_representation(filename: str, df: pd.DataFrame) -> tuple[str, str, str, str]:
     """Detect l_col, freq_col, data_col, and representation from the dataframe and filename."""
     l_cols = [c for c in df.columns if "l_jun" in c.lower() or "l_ind" in c.lower()]
@@ -64,9 +79,10 @@ def reshape_matrix(df: pd.DataFrame, l_col: str, freq_col: str, data_col: str) -
     return pivot
 
 
-def process_hfss_s_parameters(raw_path: Path) -> DatasetPayload:
+def process_hfss_s_parameters(raw_path: Path, l_jun: float | None = None) -> DatasetPayload:
     """Orchestrate the processing of a generic HFSS S-Parameter CSV file."""
     df = pd.read_csv(raw_path)
+    df = ensure_l_jun_column(df, l_jun)
     l_col, freq_col, data_col, representation = detect_representation(raw_path.name, df)
 
     parameter_name = derive_parameter_name(raw_path.name)
@@ -75,7 +91,7 @@ def process_hfss_s_parameters(raw_path: Path) -> DatasetPayload:
     # Unit conversion for phase
     if representation in ["phase", "unwrapped_phase"]:
         combined = f"{raw_path.name} {data_col}".lower()
-        is_degrees = True if ("rad" not in combined or "deg" in combined) else False
+        is_degrees = bool("rad" not in combined or "deg" in combined)
         if is_degrees:
             pivot = pd.DataFrame(np.deg2rad(pivot), index=pivot.index, columns=pivot.columns)
 

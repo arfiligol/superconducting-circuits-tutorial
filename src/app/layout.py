@@ -162,8 +162,11 @@ def app_shell(content_builder):
 
             ui.separator().classes("my-4 mx-4 bg-border")
 
-            ui.label("TOOLS").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
-            nav_btn("Simulation", "science", "/simulation", disabled=True)
+            ui.label("CIRCUIT SIMULATION").classes(
+                "text-xs text-muted font-bold tracking-wider mb-1 px-4"
+            )
+            nav_btn("Schemas", "account_tree", "/schemas")
+            nav_btn("Simulation", "science", "/simulation")
 
         # Main Content Area
         with ui.column().classes("w-full p-4 md:p-8 gap-6"):

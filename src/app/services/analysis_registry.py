@@ -84,8 +84,8 @@ ANALYSIS_REGISTRY = [
                 "name": "parameter",
                 "label": "Parameter",
                 "type": "select",
-                "options": ["fr_ghz", "Qi", "Qc", "Ls_nH", "C_pF"],
-                "default": "fr_ghz",
+                "options": ["mode_1_ghz", "mode_ghz", "fr_ghz", "Qi", "Qc", "Ls_nH", "C_pF"],
+                "default": "mode_1_ghz",
             }
         ],
         "scope": "cross_dataset",

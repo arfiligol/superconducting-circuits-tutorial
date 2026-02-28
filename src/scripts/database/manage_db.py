@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """CLI for managing the SQLite database (Multi-model)."""
 
+import re
 from typing import Annotated, Literal
 
 import typer
@@ -388,6 +389,115 @@ def auto_reorder_params() -> None:
     service = ParameterManagementService()
     count = service.auto_reorder()
     console.print(f"[green]Reordered {count} parameters.[/green]")
+
+
+@param_app.command("migrate-mode-key")
+def migrate_mode_key(
+    apply: Annotated[
+        bool,
+        typer.Option(
+            "--apply/--dry-run",
+            help="Apply migration changes. Defaults to dry-run.",
+        ),
+    ] = False,
+) -> None:
+    """Migrate resonance parameter keys to canonical mode_<N>_ghz format."""
+    from sqlmodel import select
+
+    from core.shared.persistence import get_unit_of_work
+    from core.shared.persistence.models import DerivedParameter, ParameterDesignation
+
+    canonical_re = re.compile(r"^mode_(\d+)_ghz(?:_b(\d+))?$")
+    legacy_indexed_re = re.compile(r"^(?:mode_ghz|fr_ghz)_(\d+)(?:_b(\d+))?$")
+    legacy_single_re = re.compile(r"^(?:mode_ghz|fr_ghz)(?:_b(\d+))?$")
+
+    def normalize_mode_name(name: str) -> str:
+        canonical_match = canonical_re.match(name)
+        if canonical_match:
+            return name
+
+        indexed_match = legacy_indexed_re.match(name)
+        if indexed_match:
+            mode_idx_1based = int(indexed_match.group(1)) + 1
+            bias_suffix = f"_b{indexed_match.group(2)}" if indexed_match.group(2) else ""
+            return f"mode_{mode_idx_1based}_ghz{bias_suffix}"
+
+        single_match = legacy_single_re.match(name)
+        if single_match:
+            bias_suffix = f"_b{single_match.group(1)}" if single_match.group(1) else ""
+            return f"mode_1_ghz{bias_suffix}"
+
+        return name
+
+    with get_unit_of_work() as uow:
+        params = uow.derived_params.list_all()
+        designations = list(uow._session.exec(select(ParameterDesignation)).all())
+
+        renamed_params = 0
+        removed_param_dupes = 0
+        renamed_designations = 0
+        removed_designation_dupes = 0
+
+        for param in params:
+            new_name = normalize_mode_name(param.name)
+            if new_name == param.name:
+                continue
+
+            existing = uow._session.exec(
+                select(DerivedParameter).where(
+                    DerivedParameter.dataset_id == param.dataset_id,
+                    DerivedParameter.name == new_name,
+                )
+            ).first()
+
+            if existing and existing.id != param.id:
+                removed_param_dupes += 1
+                if apply:
+                    uow.derived_params.delete(param)
+                continue
+
+            renamed_params += 1
+            if apply:
+                param.name = new_name
+                uow._session.add(param)
+
+        for designation in designations:
+            new_source_name = normalize_mode_name(designation.source_parameter_name)
+            if new_source_name == designation.source_parameter_name:
+                continue
+
+            duplicate = uow._session.exec(
+                select(ParameterDesignation).where(
+                    ParameterDesignation.dataset_id == designation.dataset_id,
+                    ParameterDesignation.designated_name == designation.designated_name,
+                    ParameterDesignation.source_analysis_type == designation.source_analysis_type,
+                    ParameterDesignation.source_parameter_name == new_source_name,
+                    ParameterDesignation.id != designation.id,
+                )
+            ).first()
+
+            if duplicate:
+                removed_designation_dupes += 1
+                if apply:
+                    uow._session.delete(designation)
+                continue
+
+            renamed_designations += 1
+            if apply:
+                designation.source_parameter_name = new_source_name
+                uow._session.add(designation)
+
+        if apply:
+            uow.commit()
+
+    mode = "APPLY" if apply else "DRY-RUN"
+    console.print(f"[bold cyan]Migration mode:[/bold cyan] {mode}")
+    console.print(f"DerivedParameter rename candidates: {renamed_params}")
+    console.print(f"DerivedParameter duplicates to remove: {removed_param_dupes}")
+    console.print(f"ParameterDesignation rename candidates: {renamed_designations}")
+    console.print(f"ParameterDesignation duplicates to remove: {removed_designation_dupes}")
+    if not apply:
+        console.print("[yellow]No database changes were applied. Re-run with --apply.[/yellow]")
 
 
 def main() -> None:

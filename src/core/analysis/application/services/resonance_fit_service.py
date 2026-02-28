@@ -196,7 +196,7 @@ class ResonanceFitService:
             if model in ["notch", "transmission"]:
                 self.param_service.create_or_update_param(
                     dataset.id,
-                    name=f"fr_ghz{suffix}",
+                    name=f"mode_1_ghz{suffix}",
                     value=result["fr"] / 1e9,
                     unit="GHz",
                     device_type="resonator",
@@ -262,10 +262,10 @@ class ResonanceFitService:
                         tau=result["tau"],
                     )
             elif model == "vf":
-                for idx, res in enumerate(result["resonances"]):
+                for idx, res in enumerate(result["resonances"], start=1):
                     self.param_service.create_or_update_param(
                         dataset.id,
-                        name=f"fr_ghz_{idx}{suffix}",
+                        name=f"mode_{idx}_ghz{suffix}",
                         value=res["fr"] / 1e9,
                         unit="GHz",
                         device_type="resonator",

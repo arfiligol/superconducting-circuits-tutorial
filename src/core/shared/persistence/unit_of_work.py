@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from core.shared.persistence.database import get_session, init_db
 from core.shared.persistence.repositories import (
+    CircuitRepository,
     DataRecordRepository,
     DatasetRepository,
     DerivedParameterRepository,
@@ -39,6 +40,11 @@ class SqliteUnitOfWork:
     def derived_params(self) -> DerivedParameterRepository:
         """Access DerivedParameter repository."""
         return DerivedParameterRepository(self._session)
+
+    @property
+    def circuits(self) -> CircuitRepository:
+        """Access CircuitRecord repository."""
+        return CircuitRepository(self._session)
 
     def __enter__(self) -> "SqliteUnitOfWork":
         """Enter context manager."""

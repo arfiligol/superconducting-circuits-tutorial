@@ -52,16 +52,16 @@ uv run pytest
 ```
 
 ### 預覽文件
-我們使用 `zensical`，並以 `zensical.yml` 作為文件設定檔。
+我們使用 `zensical`，並以原生的 `zensical.toml` 作為單一文件設定檔。
 
 預設埠（`localhost:8000`）：
 ```bash
-uv run --group dev zensical serve -f zensical.yml
+uv run --group dev zensical serve
 ```
 
 指定 IP 與 Port（例如 `localhost:9000`）：
 ```bash
-uv run --group dev zensical serve -f zensical.yml -a localhost:9000
+uv run --group dev zensical serve -a localhost:9000
 ```
 
 `zensical serve` 支援 Hot Reload，儲存文件後頁面會自動重新整理。

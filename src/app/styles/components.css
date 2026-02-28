@@ -120,3 +120,67 @@
     --ag-row-hover-color: rgb(var(--elevated));
     --ag-odd-row-background-color: rgb(var(--surface));
 }
+
+/* Circuit netlist editor */
+.app-netlist-editor {
+    --editor-lines: 20;
+    --editor-font-size: 0.9rem;
+    --editor-line-height: 1.45;
+    background: rgb(var(--elevated));
+    border: 1px solid rgb(var(--border));
+    border-radius: 0.75rem;
+    overflow: hidden;
+    height: calc(var(--editor-lines) * var(--editor-font-size) * var(--editor-line-height) + 0.4rem);
+}
+
+.app-netlist-editor .cm-editor {
+    height: 100%;
+}
+
+.app-netlist-editor .cm-scroller {
+    font-family: "SFMono-Regular", "Menlo", "Monaco", "Consolas", "Liberation Mono", monospace;
+    font-size: var(--editor-font-size);
+    line-height: var(--editor-line-height);
+    overflow: auto !important;
+    overscroll-behavior: contain;
+}
+
+/* Schematic preview canvas */
+.app-schematic-preview {
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
+}
+
+.app-schematic-preview .schematic-panzoom-viewport {
+    position: relative;
+    min-width: 100%;
+    min-height: 16rem;
+    overflow: auto;
+    touch-action: none;
+    outline: none;
+}
+
+.app-schematic-preview .schematic-panzoom-stage {
+    transform-origin: 0 0;
+    width: fit-content;
+    height: fit-content;
+    will-change: transform;
+}
+
+.app-schematic-preview .schematic-panzoom-stage.is-panning {
+    cursor: grabbing;
+}
+
+.app-schematic-preview .schematic-panzoom-host {
+    width: fit-content;
+    height: fit-content;
+}
+
+.app-schematic-preview svg {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: none;
+    min-height: 16rem;
+}

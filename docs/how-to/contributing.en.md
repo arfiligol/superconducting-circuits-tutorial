@@ -51,16 +51,16 @@ uv run pytest
 ```
 
 ### Building Documentation
-We use `zensical` with the dedicated `zensical.yml` config.
+We use `zensical` with a single native `zensical.toml` config.
 
 Default port (`localhost:8000`):
 ```bash
-uv run --group dev zensical serve -f zensical.yml
+uv run --group dev zensical serve
 ```
 
 Custom IP and port (for example, `localhost:9000`):
 ```bash
-uv run --group dev zensical serve -f zensical.yml -a localhost:9000
+uv run --group dev zensical serve -a localhost:9000
 ```
 
 `zensical serve` supports hot reload. After saving files, the page refreshes automatically.

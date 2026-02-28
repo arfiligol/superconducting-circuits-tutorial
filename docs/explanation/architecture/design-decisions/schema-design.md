@@ -1,5 +1,7 @@
 ---
 aliases:
+- Dataset Schema Design
+- 資料集 Schema 設計
 - Schema Design
 - Schema 設計
 tags:
@@ -11,13 +13,13 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: Pydantic Schema 設計細節
-version: v0.1.0
-last_updated: 2026-01-28
+scope: DatasetRecord/DataRecord 的資料集 Schema 設計細節
+version: v0.2.0
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
-# Schema Design
+# Dataset Schema Design
 
 目前的標準資料格式以 **SQLite Dataset** 為核心，使用 `DatasetRecord`/`DataRecord` 存放資料與關聯資訊。
 

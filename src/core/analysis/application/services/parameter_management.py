@@ -1,6 +1,6 @@
 """Service for managing DerivedParameters."""
 
-from typing import cast
+from typing import Any, cast
 
 from core.analysis.application.dto.parameter_dtos import (
     DerivedParameterDetailDTO,
@@ -27,6 +27,7 @@ class ParameterManagementService:
         unit: str = "",
         device_type: str | None = None,
         method: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> DerivedParameterDetailDTO:
         """Create or update a derived parameter for a dataset."""
         with get_unit_of_work() as uow:
@@ -43,6 +44,8 @@ class ParameterManagementService:
                 existing.value = value
                 existing.unit = unit
                 existing.method = method
+                if extra is not None:
+                    existing.extra = extra
                 param = existing
             else:
                 param = DerivedParameter(
@@ -52,6 +55,7 @@ class ParameterManagementService:
                     unit=unit,
                     device_type=device_type,
                     method=method,
+                    extra=extra or {},
                 )
                 uow.derived_params.add(param)
             uow.commit()

@@ -10,8 +10,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Writing style, tone, and visual elements (Zensical)"
-version: v0.1.0
-last_updated: 2026-02-08
+version: v0.1.1
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
@@ -132,7 +132,7 @@ flowchart TD
 
 | Check | Command | Required |
 |---|---|---|
-| Docs build | `uv run --group dev zensical build -f zensical.yml` | ✅ |
+| Docs build | `uv run --group dev zensical build` | ✅ |
 
 ---
 

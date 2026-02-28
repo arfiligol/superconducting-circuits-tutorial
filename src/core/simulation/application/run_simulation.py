@@ -32,11 +32,7 @@ def run_simulation(
         SimulationResult with S-parameter data.
     """
     if config is None:
-        config = SimulationConfig(
-            pump_freq_ghz=5.0,
-            n_modulation_harmonics=10,
-            n_pump_harmonics=20,
-        )
+        config = SimulationConfig()
 
     simulator = JuliaSimulator()
     return simulator.run_hbsolve(circuit, freq_range, config)

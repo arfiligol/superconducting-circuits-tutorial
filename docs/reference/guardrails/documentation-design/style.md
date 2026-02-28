@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "撰寫風格、語氣調性與視覺元素使用規範（Zensical）"
-version: v0.1.0
-last_updated: 2026-02-08
+version: v0.1.1
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
@@ -133,7 +133,7 @@ flowchart TD
 
 | 檢查項目 | 指令 | 必要性 |
 |---|---|---|
-| Docs build | `uv run --group dev zensical build -f zensical.yml` | ✅ |
+| Docs build | `uv run --group dev zensical build` | ✅ |
 
 ---
 

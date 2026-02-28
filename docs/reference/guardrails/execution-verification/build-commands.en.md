@@ -8,8 +8,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Common build and execution commands"
-version: v2.0.0
-last_updated: 2026-02-08
+version: v2.1.0
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
@@ -58,10 +58,10 @@ uv run sc plot admittance DatasetName
 
 ```bash
 # Preview (localhost:8000)
-uv run --group dev zensical serve -f zensical.yml
+uv run --group dev zensical serve
 
 # Build static site
-uv run --group dev zensical build -f zensical.yml
+uv run --group dev zensical build
 ```
 
 ---
@@ -75,8 +75,8 @@ uv run --group dev zensical build -f zensical.yml
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
-    - Build: `uv run --group dev zensical build -f zensical.yml -c`
-    - Serve: `uv run --group dev zensical serve -f zensical.yml`
+    - Build: `uv run --group dev zensical build -c`
+    - Serve: `uv run --group dev zensical serve`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`
 ```

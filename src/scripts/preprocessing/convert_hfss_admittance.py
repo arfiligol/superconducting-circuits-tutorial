@@ -48,6 +48,13 @@ def main(
             "Fits admittance naturally.",
         ),
     ] = "Re_Y,Im_Y",
+    l_jun: Annotated[
+        float | None,
+        typer.Option(
+            "--l-jun",
+            help="Manual L_jun value in nH when CSV does not include an L_jun column.",
+        ),
+    ] = None,
 ) -> None:
     """
     Import HFSS admittance CSV to SQLite database.
@@ -58,6 +65,7 @@ def main(
     - --dataset-name is ignored in batch/directory mode.
     - --tags are applied to all NEWLY imported datasets in this run.
     - --match filters files in directories to only those containing any of the keywords.
+    - --l-jun injects a constant bias value for single-bias files missing L_jun.
     """
     setup_logging(level="INFO")
 
@@ -115,6 +123,7 @@ def main(
             # We pass specific name here to ensure consistency
             dataset_name=target_name,
             tags=tag_list,
+            l_jun=l_jun,
         )
 
 

@@ -33,7 +33,7 @@ tags:
 
 | 規範 | 說明 | Agent Rule |
 |---|---|---|
-| [執行指令](./execution-verification/build-commands.md) | `uv sync`, `uv run --group dev zensical serve -f zensical.yml`, 腳本執行 | [#agent-rule](./execution-verification/build-commands.md#agent-rule) |
+| [執行指令](./execution-verification/build-commands.md) | `uv sync`, `uv run --group dev zensical serve`, 腳本執行 | [#agent-rule](./execution-verification/build-commands.md#agent-rule) |
 | [Linting & Formatting](./execution-verification/linting.md) | Ruff, Pre-commit, BasedPyright | [#agent-rule](./execution-verification/linting.md#agent-rule) |
 | [測試規範](./execution-verification/testing.md) | Pytest, Julia Pkg.test | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI 品質關卡](./execution-verification/ci-gates.md) | 合併前必通過的檢查 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
@@ -79,5 +79,5 @@ uv run basedpyright src
 uv run pytest
 
 # Docs
-uv run --group dev zensical build -f zensical.yml
+uv run --group dev zensical build
 ```

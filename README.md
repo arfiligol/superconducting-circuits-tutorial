@@ -23,7 +23,7 @@ uv sync
 ### 2. 本地預覽文件
 
 ```bash
-uv run --group dev zensical serve -f zensical.yml
+uv run --group dev zensical serve
 ```
 
 ## 📁 專案結構

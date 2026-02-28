@@ -10,23 +10,24 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: 架構決策與技術選型理由
-version: v0.1.0
-last_updated: 2026-01-28
+scope: 舊版索引導引頁，導向新的 Architecture 結構
+version: v0.5.0
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
 # Design Decisions
 
-架構決策與技術選型理由，說明為什麼採用目前的分層與資料流程。
+此頁為舊版索引保留。新版導覽已整併到 [Architecture Overview](../index.md)。
 
-## Topics
+!!! info "新版結構"
+    Architecture 現在統一為四個主題：  
+    1) Clean Architecture  
+    2) Pipeline  
+    3) Circuit Simulation  
+    4) Visualization Backend
 
-- [Clean Architecture](clean-architecture.md) - 分層、依賴方向與組合位置
-- [Schema Design](schema-design.md) - Pydantic Schema 設計理由
-- [Visualization Backend](visualization-backend.md) - Plotly vs Matplotlib 選擇
+## Current Entry Points
 
-## Related
-
-- [Pipeline](../pipeline/index.md) - 管線設計概念
-- [Guardrails](../../../reference/guardrails/index.md) - 開發規範
+- [Architecture Overview](../index.md)
+- [Circuit Simulation](../circuit-simulation/index.md)

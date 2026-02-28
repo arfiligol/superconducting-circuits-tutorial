@@ -12,66 +12,62 @@ status: stable
 owner: docs-team
 audience: team
 scope: 分析管線的數據流程：Raw -> Dataset -> Analyzed
-version: v0.1.0
-last_updated: 2026-01-28
+version: v0.2.0
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
 # Data Flow
 
-本專案採用三階段的數據處理流程，確保數據的一致性與可追溯性。
+本專案使用「單一分析流程、雙輸出結果」的資料流：每次分析同時產生結構化結果與可視化。
 
 <div align="center">
 
 ```mermaid
 flowchart TB
-    Raw["Raw Data\n(CSV/TXT)"] -->|Convert / Ingest| Pre["Dataset\n(SQLite)"]
-    Pre -->|Analyze| Result["Analysis Result\n(Dict/Table)"]
-    Result -->|Visualize| Report["Report\n(HTML/PNG)"]
+    Raw["Raw Input (CSV/TXT/Simulator Export)"] -->|Ingest + Normalize| Dataset["Dataset (SQLite SoT)"]
+    Dataset -->|Run Analysis Method| Result["Structured Result (metrics/series/table)"]
+    Result -->|Render in same run| Viz["Visualization (Plot/Table/Card)"]
+    Result --> Persist["Save Result Artifact (optional)"]
+    Viz --> Persist
 ```
 
 </div>
 
-## 1. Raw Data (`data/raw/`)
+## Pipeline Contracts
 
-**來源**：ANSYS HFSS 匯出、VNA 測量數據。
+### 1. Ingestion Contract
 
-**格式**：CSV, TXT。
+- 輸入來源可以異質（HFSS、VNA、其他模擬輸出）。
+- 進入分析前必須先轉為 Dataset Schema（SQLite）以統一欄位與單位。
 
-**特性**：
+### 2. Analysis Contract
 
-- **唯讀 (Read-Only)**：永遠不修改原始檔案。
-- **格式混亂**：不同機器、不同版本軟體匯出的格式差異大。
-- **非結構化**：缺乏 metadata（如 Dataset 名稱、掃描參數）。
+- 分析方法以 Dataset 為唯一輸入來源（Source of Truth）。
+- 每個分析方法回傳結構化結果（例如 metrics、series、table）。
 
-## 2. Dataset (`data/database.db`)
+### 3. Visualization Contract
 
-**來源**：由 `convert-*`/匯入流程從 Raw 轉換而來。
+- 視覺化不是獨立管線，而是分析結果的同次渲染。
+- UI: 以卡片直接呈現 Plot/Table/Metric。  
+  CLI: 以終端摘要 + 圖檔/報表輸出呈現相同分析語意。
 
-**格式**：SQLite（Dataset / DataRecord 等結構）。
+### 4. Persistence Contract
 
-**特性**：
+- 儲存資料集與儲存分析結果是兩個獨立動作。
+- 是否落盤不影響當次可視化顯示，但影響可追溯性與重現性。
 
-- **標準化**：不論來源是 HFSS 還是量測，都轉成一致的資料表結構。
-- **自包含**：包含所有必要 metadata（Bias 軸、頻率軸、單位）。
-- **Source of Truth**：後續分析（擬合、繪圖）以資料庫為準，不再回頭讀取 Raw。
+!!! warning "不要再做語意切割"
+    不論 UI 或 CLI，都不應把「先分析、再另外可視化」當成兩個不連動功能。  
+    正確模型是：分析完成時，視覺化也已具備可展示資料。
 
-## 3. Analysis Reports (`data/processed/reports/`)
+## Practical Mapping
 
-**來源**：由 `squid-model-fit` 等分析腳本生成。
-
-**格式**：
-
-- 控制台輸出 (Table)
-- 視覺化圖表 (HTML/PNG)
-- 分析參數 (JSON)
-
-**特性**：
-
-- **可重現**：只要 Dataset 不變，分析結果應一致。
-- **決策依據**：提供最終的物理參數 ($L_s, C$) 供設計參考。
+- UI 的 Characterization 頁面採 registry 驅動，每個 method 直接綁定配置、執行與結果渲染。
+- CLI 的 analysis 指令沿用同一分析語意，輸出通道改為終端與檔案。
 
 ## Related
 
 - [Raw Data Layout](../../../reference/data-formats/raw-data-layout.md) - 目錄結構
+- [Analysis Result](../../../reference/data-formats/analysis-result.md) - 分析輸出格式
 - [Preprocessing Rationale](preprocessing-rationale.md) - 為什麼需要中間層

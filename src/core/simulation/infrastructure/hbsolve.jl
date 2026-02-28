@@ -57,8 +57,16 @@ function run_lc_simulation(L_nH::Float64, C_pF::Float64,
     # Run simulation
     sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, circuitdefs)
 
-    # Extract S11
-    S11 = sol.linearized.S(outputmode=(0,), outputport=1, inputmode=(0,), inputport=1, freqindex=:)
+    # Extract small-signal S11 at the zero-mixing output/input mode.
+    # Mode dimensionality must match number of pump tones.
+    zero_mode = Tuple(fill(0, length(wp)))
+    S11 = sol.linearized.S(
+        outputmode=zero_mode,
+        outputport=1,
+        inputmode=zero_mode,
+        inputport=1,
+        freqindex=:
+    )
 
     return Dict(
         :frequencies_ghz => collect(frequencies ./ GHz),
@@ -69,14 +77,23 @@ end
 
 
 """
-    run_custom_simulation(topology, component_values, f_start_GHz, f_stop_GHz, n_points)
+    run_custom_simulation(topology, component_values, f_start_GHz, f_stop_GHz, n_points,
+        pump_freqs_GHz, source_currents_A, source_ports, source_modes,
+        n_modulation_harmonics, n_pump_harmonics,
+        dc, threewavemixing, fourwavemixing,
+        max_intermod_order, max_iterations, ftol, switchofflinesearchtol, alphamin)
 
 Simulate a custom circuit topology.
 
 # Arguments
 - `topology`: Vector of tuples (name, node1, node2, value_key)
 - `component_values`: Dict mapping value keys to actual values (with units)
-- `f_start_GHz`, `f_stop_GHz`, `n_points`: Frequency sweep parameters
+- `f_start_GHz`, `f_stop_GHz`, `n_points`: Signal frequency sweep parameters
+- `pump_freqs_GHz`: Pump frequency list
+- `source_currents_A`, `source_ports`, `source_modes`: Source list entries
+- `n_modulation_harmonics`, `n_pump_harmonics`: Harmonic truncation settings
+- `dc`, `threewavemixing`, `fourwavemixing`: hbsolve keyword toggles
+- `max_intermod_order`, `max_iterations`, `ftol`, `switchofflinesearchtol`, `alphamin`: Solver controls
 
 # Returns
 Dict with keys: :frequencies_ghz, :s11_real, :s11_imag
@@ -85,7 +102,21 @@ function run_custom_simulation(topology,
     component_values,
     f_start_GHz::Float64,
     f_stop_GHz::Float64,
-    n_points::Int)
+    n_points::Int,
+    pump_freqs_GHz,
+    source_currents_A,
+    source_ports,
+    source_modes,
+    n_modulation_harmonics::Int,
+    n_pump_harmonics::Int,
+    dc::Bool,
+    threewavemixing::Bool,
+    fourwavemixing::Bool,
+    max_intermod_order::Int,
+    max_iterations::Int,
+    ftol::Float64,
+    switchofflinesearchtol::Float64,
+    alphamin::Float64)
     GHz = 1e9
 
     # Convert Python types to native Julia types
@@ -96,15 +127,71 @@ function run_custom_simulation(topology,
     frequencies = range(f_start_GHz, f_stop_GHz, length=n_points) .* GHz
     ws = 2π .* frequencies
 
-    # Pump configuration
-    wp = (2π * 5.0GHz,)
-    sources = [(mode=(1,), port=1, current=0.0)]
+    # Pump/source configuration
+    pump_freqs = [Float64(v) for v in pump_freqs_GHz]
+    currents = [Float64(v) for v in source_currents_A]
+    ports = [Int(v) for v in source_ports]
+    modes = [Tuple(Int(v) for v in mode_vec) for mode_vec in source_modes]
+    if !(length(currents) == length(ports) == length(modes))
+        error(
+            "Source vector length mismatch: currents=$(length(currents)), "
+            * "ports=$(length(ports)), modes=$(length(modes))."
+        )
+    end
+    if isempty(currents)
+        error("At least one source is required.")
+    end
+    if isempty(pump_freqs)
+        error("At least one pump frequency is required.")
+    end
+
+    for (idx, mode) in enumerate(modes)
+        if length(mode) != length(pump_freqs)
+            error(
+                "source_modes[$idx] length $(length(mode)) does not match "
+                * "number of pump frequencies $(length(pump_freqs))."
+            )
+        end
+    end
+
+    wp = Tuple(2π * pump_freq * GHz for pump_freq in pump_freqs)
+    sources = [
+        (mode=modes[i], port=ports[i], current=ComplexF64(currents[i], 0.0))
+        for i in eachindex(currents)
+    ]
+    Nmodulationharmonics = Tuple(fill(n_modulation_harmonics, length(wp)))
+    Npumpharmonics = Tuple(fill(n_pump_harmonics, length(wp)))
+    maxintermodorder = max_intermod_order < 0 ? Inf : float(max_intermod_order)
 
     # Run simulation
-    sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, cv_dict)
+    sol = hbsolve(
+        ws,
+        wp,
+        sources,
+        Nmodulationharmonics,
+        Npumpharmonics,
+        circuit,
+        cv_dict;
+        dc=dc,
+        threewavemixing=threewavemixing,
+        fourwavemixing=fourwavemixing,
+        maxintermodorder=maxintermodorder,
+        iterations=max_iterations,
+        ftol=ftol,
+        switchofflinesearchtol=switchofflinesearchtol,
+        alphamin=alphamin
+    )
 
-    # Extract S11
-    S11 = sol.linearized.S(outputmode=(0,), outputport=1, inputmode=(0,), inputport=1, freqindex=:)
+    # Extract small-signal S11 at the zero-mixing output/input mode.
+    # Mode dimensionality must match number of pump tones.
+    zero_mode = Tuple(fill(0, length(wp)))
+    S11 = sol.linearized.S(
+        outputmode=zero_mode,
+        outputport=1,
+        inputmode=zero_mode,
+        inputport=1,
+        freqindex=:
+    )
 
     return Dict(
         :frequencies_ghz => collect(frequencies ./ GHz),

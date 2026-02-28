@@ -33,7 +33,7 @@ Development standards that ensure code quality and consistency.
 
 | Rule | Description | Agent Rule |
 |---|---|---|
-| [Build Commands](./execution-verification/build-commands.en.md) | `uv sync`, `uv run --group dev zensical serve -f zensical.yml`, script runs | [#agent-rule](./execution-verification/build-commands.en.md#agent-rule) |
+| [Build Commands](./execution-verification/build-commands.en.md) | `uv sync`, `uv run --group dev zensical serve`, script runs | [#agent-rule](./execution-verification/build-commands.en.md#agent-rule) |
 | [Linting & Formatting](./execution-verification/linting.en.md) | Ruff, Pre-commit, BasedPyright | [#agent-rule](./execution-verification/linting.en.md#agent-rule) |
 | [Testing](./execution-verification/testing.en.md) | Pytest, Julia Pkg.test | [#agent-rule](./execution-verification/testing.en.md#agent-rule) |
 | [CI Gates](./execution-verification/ci-gates.en.md) | Required checks before merge | [#agent-rule](./execution-verification/ci-gates.en.md#agent-rule) |
@@ -79,5 +79,5 @@ uv run basedpyright src
 uv run pytest
 
 # Docs
-uv run --group dev zensical build -f zensical.yml
+uv run --group dev zensical build
 ```

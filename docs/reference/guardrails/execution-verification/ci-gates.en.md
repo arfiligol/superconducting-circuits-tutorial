@@ -8,8 +8,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Quality gates and CI checks"
-version: v1.0.0
-last_updated: 2026-02-08
+version: v1.1.0
+last_updated: 2026-02-27
 updated_by: docs-team
 ---
 
@@ -37,7 +37,7 @@ uv run pre-commit run --all-files
 ### 2. Documentation Build
 
 ```bash
-uv run --group dev zensical build -f zensical.yml
+uv run --group dev zensical build
 ```
 
 !!! note "Allowed Warnings"
@@ -57,10 +57,10 @@ uv run pytest
 ## CI Gates
 - **Mandatory Checks**:
     1. **Pre-commit**: `ruff format` + `ruff check` + `basedpyright`.
-    2. **Build**: `uv run --group dev zensical build -f zensical.yml` must pass.
+    2. **Build**: `uv run --group dev zensical build` must pass.
     3. **Test**: `pytest` must pass.
 - **Tolerance**:
-    - `uv run --group dev zensical build -f zensical.yml`: Allow `404` warnings logic.
+    - `uv run --group dev zensical build`: Allow `404` warnings logic.
     - Code Coverage: Not strictly enforced yet.
 - **Fast Fail**: Any lint error fails the pipeline immediately.
 ```

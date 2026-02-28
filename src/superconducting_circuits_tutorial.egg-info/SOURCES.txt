@@ -1,5 +1,17 @@
 README.md
 pyproject.toml
+src/app/__init__.py
+src/app/layout.py
+src/app/main.py
+src/app/pages/__init__.py
+src/app/pages/characterization.py
+src/app/pages/dashboard.py
+src/app/pages/home.py
+src/app/pages/raw_data.py
+src/app/pages/schema_editor.py
+src/app/pages/schemas.py
+src/app/pages/simulation.py
+src/app/services/analysis_registry.py
 src/core/__init__.py
 src/core/analysis/__init__.py
 src/core/analysis/application/__init__.py
@@ -50,6 +62,7 @@ src/core/shared/persistence/database.py
 src/core/shared/persistence/models.py
 src/core/shared/persistence/unit_of_work.py
 src/core/shared/persistence/repositories/__init__.py
+src/core/shared/persistence/repositories/circuit_repository.py
 src/core/shared/persistence/repositories/data_record_repository.py
 src/core/shared/persistence/repositories/dataset_repository.py
 src/core/shared/persistence/repositories/derived_parameter_repository.py
@@ -57,8 +70,11 @@ src/core/shared/persistence/repositories/tag_repository.py
 src/core/shared/utils/__init__.py
 src/core/shared/utils/units.py
 src/core/shared/visualization/__init__.py
+src/core/shared/visualization/figure_builders.py
+src/core/shared/visualization/plotly_theme.py
 src/core/simulation/__init__.py
 src/core/simulation/application/__init__.py
+src/core/simulation/application/circuit_visualizer.py
 src/core/simulation/application/run_simulation.py
 src/core/simulation/domain/__init__.py
 src/core/simulation/domain/circuit.py

@@ -20,6 +20,9 @@ Requires-Dist: scikit-rf>=1.10.0
 Requires-Dist: scipy>=1.16.3
 Requires-Dist: sqlmodel>=0.0.31
 Requires-Dist: typer>=0.12.0
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: bs4>=0.0.2
+Requires-Dist: lxml>=6.0.2
 
 # Superconducting Circuits Tutorial
 
