@@ -37,7 +37,12 @@ uv run pre-commit run --all-files
 ### 2. Documentation Build
 
 ```bash
+./scripts/prepare_docs_locales.sh
 uv run --group dev zensical build
+uv run --group dev zensical build -f zensical.en.toml
+
+# Canonical CI entrypoint
+./scripts/build_docs_sites.sh
 ```
 
 !!! note "Allowed Warnings"
@@ -57,10 +62,10 @@ uv run pytest
 ## CI Gates
 - **Mandatory Checks**:
     1. **Pre-commit**: `ruff format` + `ruff check` + `basedpyright`.
-    2. **Build**: `uv run --group dev zensical build` must pass.
+    2. **Build**: `./scripts/build_docs_sites.sh` must pass.
     3. **Test**: `pytest` must pass.
 - **Tolerance**:
-    - `uv run --group dev zensical build`: Allow `404` warnings logic.
+    - `zensical build` during docs preview: allow benign `404` warnings logic.
     - Code Coverage: Not strictly enforced yet.
 - **Fast Fail**: Any lint error fails the pipeline immediately.
 ```

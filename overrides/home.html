@@ -1,11 +1,11 @@
 {% extends "marketing.html" %}
 
-{% set is_en = page.url and ".en/" in page.url %}
-{% set about_url = ("about.en/" if is_en else "about/") | url %}
-{% set docs_url = ("how-to/index.en/" if is_en else "how-to/") | url %}
-{% set tutorials_url = ("tutorials/index.en/" if is_en else "tutorials/") | url %}
-{% set explanation_url = ("explanation/index.en/" if is_en else "explanation/") | url %}
-{% set reference_url = ("reference/index.en/" if is_en else "reference/") | url %}
+{% set is_en = config.theme.language == "en" %}
+{% set about_url = "about/" | url %}
+{% set docs_url = "how-to/" | url %}
+{% set tutorials_url = "tutorials/" | url %}
+{% set explanation_url = "explanation/" | url %}
+{% set reference_url = "reference/" | url %}
 
 {% block container %}
 <main class="sct-home" data-home-template="dynamic">

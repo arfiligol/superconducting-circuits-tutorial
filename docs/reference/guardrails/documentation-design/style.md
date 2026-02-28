@@ -133,7 +133,7 @@ flowchart TD
 
 | 檢查項目 | 指令 | 必要性 |
 |---|---|---|
-| Docs build | `uv run --group dev zensical build` | ✅ |
+| Docs build | `./scripts/build_docs_sites.sh` | ✅ |
 
 ---
 

@@ -51,16 +51,21 @@ uv run pytest
 ```
 
 ### Building Documentation
-We use `zensical` with a single native `zensical.toml` config.
+We use native Zensical Separate Builds: `zensical.toml` (zh-TW) and `zensical.en.toml` (English).
 
-Default port (`localhost:8000`):
+Generate the locale staging trees first:
+```bash
+./scripts/prepare_docs_locales.sh
+```
+
+Default port (`localhost:8000`, zh-TW site):
 ```bash
 uv run --group dev zensical serve
 ```
 
-Custom IP and port (for example, `localhost:9000`):
+English site (for example, `localhost:8001`):
 ```bash
-uv run --group dev zensical serve -a localhost:9000
+uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
 ```
 
 `zensical serve` supports hot reload. After saving files, the page refreshes automatically.

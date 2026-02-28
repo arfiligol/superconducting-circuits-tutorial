@@ -132,7 +132,7 @@ flowchart TD
 
 | Check | Command | Required |
 |---|---|---|
-| Docs build | `uv run --group dev zensical build` | ✅ |
+| Docs build | `./scripts/build_docs_sites.sh` | ✅ |
 
 ---
 

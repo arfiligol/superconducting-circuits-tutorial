@@ -23,7 +23,14 @@ uv sync
 ### 2. 本地預覽文件
 
 ```bash
+# 先產生 zh-TW / en staging tree
+./scripts/prepare_docs_locales.sh
+
+# 繁中站
 uv run --group dev zensical serve
+
+# 英文站
+uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
 ```
 
 ## 📁 專案結構

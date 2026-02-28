@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: Live Preview 的語意驅動渲染策略、Panzoom 互動契約、可觀測性與驗證規則
-version: v0.5.2
-last_updated: 2026-02-27
+version: v0.5.5
+last_updated: 2026-02-28
 updated_by: docs-team
 ---
 
@@ -49,8 +49,24 @@ updated_by: docs-team
     偵測到 JTWPA/JJTWPA 這類重複 cell 結構時，走 ladder-first。  
     classifier 信心不足時必須退回 generic orthogonal，不可硬套 ladder。
 
+!!! success "已實作到程式的第一階段（2026-02-28）"
+    目前 `circuit_visualizer` 已落地以下行為：  
+    - 粗粒度 profile classifier：`generic` / `jpa_like` / `jtwpa_like`  
+    - 簡單鏈狀 topology 會先抽出固定的 signal backbone（主幹 node anchor）  
+    - 依 signal node 建立 shunt cluster metadata（同節點多個垂直支路可辨識）  
+    - 高密度 shunt 會以 branch offset 從 backbone 向左右展開，而不是把主幹往前擠  
+    - 垂直支路標籤改為 cluster-aware 的左右外擴標示，而非固定堆疊在元件旁
+
 !!! warning "Bridge 可觀測性要求"
     每段 bridge 必須記錄 `bridge_id`, `conflict_reason`, `involved_nets`, `final_geometry`，否則不可視為可維護行為。
+
+!!! warning "已知缺口（2026-02-28）"
+    目前程式實作仍未完成以下契約：  
+    - 真正的 `Net/Hyperedge` 主幹模型（目前只有「simple chain backbone」特例）  
+    - 局部約束式 label 選址（目前僅是 cluster-aware outward placement）  
+    - 完整的 pattern-aware routing（目前只先影響 backbone / spacing / 標註）  
+    - bridge observability metadata（尚未輸出 `bridge_id` 等診斷資訊）  
+    因此在更高密度的三支路以上 shunt、超長數值字串、或混合耦合元件區，仍可能出現文字互相逼近或與線段距離不足的情況。
 
 ## Panzoom Contract
 

@@ -17,7 +17,7 @@ updated_by: docs-team
 
 # Documentation Design
 
-Index for documentation design rules (aligned with this repo’s `Native Single-Build Bilingual Pages` architecture).
+Index for documentation design rules (aligned with this repo’s `Native Separate Builds` architecture).
 
 ---
 
@@ -36,14 +36,14 @@ Index for documentation design rules (aligned with this repo’s `Native Single-
 
 The formal name for this project's bilingual documentation-site architecture is:
 
-- `Native Single-Build Bilingual Pages`
+- `Native Separate Builds`
 
 This means:
 
-- one native `zensical.toml`
-- one native build
-- paired `.md` / `.en.md` content pages
-- same-page language switching, but not a full Separate Builds setup
+- two native configs: `zensical.toml` (zh-TW) and `zensical.en.toml` (en)
+- two native builds, emitted to `/` and `/en/`
+- paired `.md` / `.en.md` source pages with generated `docs_zh/` / `docs_en/` build trees
+- same-path language switching with each language shell rendered at build time
 
 ---
 
@@ -64,6 +64,6 @@ This means:
 - **Style**: tone + visual elements (admonitions/tabs/mermaid) (see `style.md`)
 - **Maintenance**: bilingual sync + frontmatter updates + Zensical checks (see `maintenance.md`)
 - **Explanation Physics**: teaching position, chapter skeleton, and cross-linking rules (see `explanation-physics.md`)
-- **Architecture Term**: the formal name of this bilingual docs architecture is `Native Single-Build Bilingual Pages`
+- **Architecture Term**: the formal name of this bilingual docs architecture is `Native Separate Builds`
 - Treat sub-pages as source of truth for details.
 ```

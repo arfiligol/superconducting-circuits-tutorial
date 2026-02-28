@@ -1,8 +1,8 @@
 [project]
-site_name = "超導電路教學"
-site_url = "https://arfiligol.github.io/superconducting-circuits-tutorial/"
-docs_dir = "docs_zh"
-site_dir = "site"
+site_name = "Superconducting Circuits Tutorial"
+site_url = "https://arfiligol.github.io/superconducting-circuits-tutorial/en/"
+docs_dir = "docs_en"
+site_dir = "site/en"
 repo_url = "https://github.com/arfiligol/superconducting-circuits-tutorial"
 repo_name = "arfiligol/superconducting-circuits-tutorial"
 copyright = """
@@ -180,7 +180,7 @@ nav = [
 
 [project.theme]
 custom_dir = "overrides"
-language = "zh-TW"
+language = "en"
 features = [
   "content.code.copy",
   "content.code.annotate",
@@ -225,7 +225,7 @@ name = "Switch to system preference"
 
 [project.extra]
 alternate = [
-  { "name" = "繁體中文", "link" = "https://arfiligol.github.io/superconducting-circuits-tutorial/", "lang" = "zh-TW" },
+  { "name" = "Traditional Chinese", "link" = "https://arfiligol.github.io/superconducting-circuits-tutorial/", "lang" = "zh-TW" },
   { "name" = "English", "link" = "https://arfiligol.github.io/superconducting-circuits-tutorial/en/", "lang" = "en" },
 ]
 social = [

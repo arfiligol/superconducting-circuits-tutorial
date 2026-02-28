@@ -26,16 +26,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev --frozen
 
-      - name: Build docs (ZH-TW)
-        run: uv run --group dev zensical build -f zensical.yml
-
-      - name: Prepare EN docs folder
-        run: |
-          cp -a docs docs_en
-          find docs_en -depth -name "*.en.md" -exec sh -c 'mv "$1" "${1%.en.md}.md"' _ {} \;
-
-      - name: Build docs (EN)
-        run: uv run --group dev zensical build -f zensical.en.yml
+      - name: Build docs sites
+        run: ./scripts/build_docs_sites.sh
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

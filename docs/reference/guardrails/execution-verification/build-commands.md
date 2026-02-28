@@ -51,11 +51,23 @@ uv run sc plot admittance DatasetName
 ## 文件
 
 ```bash
-# 預覽 (localhost:8000)
+# 先產生語言 staging tree
+./scripts/prepare_docs_locales.sh
+
+# 預覽繁中站 (localhost:8000)
 uv run --group dev zensical serve
 
-# 建置靜態網站
+# 預覽英文站 (localhost:8001)
+uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
+
+# 建置繁中站
 uv run --group dev zensical build
+
+# 建置英文站
+uv run --group dev zensical build -f zensical.en.toml
+
+# 正式靜態輸出（含 /en 資產同步）
+./scripts/build_docs_sites.sh
 ```
 
 ---
@@ -69,8 +81,12 @@ uv run --group dev zensical build
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
-    - Build: `uv run --group dev zensical build -c`
-    - Serve: `uv run --group dev zensical serve`
+    - Prepare: `./scripts/prepare_docs_locales.sh`
+    - Build (zh-TW): `uv run --group dev zensical build`
+    - Build (en): `uv run --group dev zensical build -f zensical.en.toml`
+    - Build (static artifact): `./scripts/build_docs_sites.sh`
+    - Serve (zh-TW): `uv run --group dev zensical serve`
+    - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`
 ```

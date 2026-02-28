@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: Qubit/JPA/JTWPA/Quantum Memory 的 preview 語意設定與分文件決策
-version: v0.1.1
-last_updated: 2026-02-27
+version: v0.1.3
+last_updated: 2026-02-28
 updated_by: docs-team
 ---
 
@@ -47,6 +47,13 @@ updated_by: docs-team
 | `hard_constraints` | 不可破壞規則 |
 | `soft_preferences` | 可調整偏好 |
 | `validation_cases` | 回歸測試案例 |
+
+!!! tip "目前已落地的最低可行實作"
+    目前程式已先把 profile 契約落成「粗粒度分類 + spacing / label hints」：  
+    - `jtwpa_like`：在 simple chain 上放大主幹與 cell 間距  
+    - `jpa_like`：讓 dense shunt 區從 signal backbone 向左右展開，核心並聯支路標籤往外移  
+    - `generic`：維持保守的通用 layout heuristic  
+    這代表 profile 已開始影響畫面，但仍不是完整的 topology-aware routing engine，也還不是通用 net/hyperedge 模型。
 
 ## Domain Profiles
 
@@ -113,6 +120,13 @@ updated_by: docs-team
     目前資料不足，先保留 profile 介面。  
     在缺乏可重現案例前，不可覆寫 A/B/C 的既有規則。  
     目前 validation case 暫缺。
+
+!!! warning "目前仍未實作的 profile 能力"
+    雖然 profile 已開始影響 spacing 與標註，但以下能力仍待補齊：  
+    - 真正的 pattern-aware cell packing（目前只有 simple chain backbone）  
+    - profile-specific routing（例如 JTWPA 的固定 ladder backbone）  
+    - profile-specific label constraint solving（不只是左右外擴）  
+    因此本頁仍應視為設計契約與增量路線圖，不是已完全交付的功能清單。
 
 ## Shared Rules and Split Criteria
 

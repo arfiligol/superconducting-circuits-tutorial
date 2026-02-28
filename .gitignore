@@ -52,6 +52,8 @@ cover/
 
 # Documentation
 site/
+docs_zh/
+docs_en/
 mkdocs_structure.txt
 
 # --- Julia ---

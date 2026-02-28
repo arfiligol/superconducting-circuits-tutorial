@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
 {% block tabs %}
-{% set is_en = page.url and ".en/" in page.url %}
-{% set home_url = ("index.en/" if is_en else "") | url %}
-{% set about_url = ("about.en/" if is_en else "about/") | url %}
-{% set docs_url = ("how-to/index.en/" if is_en else "how-to/") | url %}
+{% set is_en = config.theme.language == "en" %}
+{% set home_url = "" | url %}
+{% set about_url = "about/" | url %}
+{% set docs_url = "how-to/" | url %}
 {% set p = page.url | d("", true) %}
-{% set is_home = (p == "" or p == "index.en/") %}
-{% set is_about = ("about/" in p or "about.en/" in p) %}
+{% set is_home = (p == "") %}
+{% set is_about = ("about/" in p) %}
 <nav class="md-tabs sct-marketing-tabs" aria-label="Tabs" data-md-component="tabs">
   <div class="md-grid">
     <ul class="md-tabs__list">

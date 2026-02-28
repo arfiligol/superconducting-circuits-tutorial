@@ -18,7 +18,7 @@ updated_by: docs-team
 
 # Documentation Design
 
-文件設計規範索引，確保文件的一致性與可維護性（對齊本專案 `Native Single-Build Bilingual Pages` 架構）。
+文件設計規範索引，確保文件的一致性與可維護性（對齊本專案 `Native Separate Builds` 架構）。
 
 ---
 
@@ -37,14 +37,14 @@ updated_by: docs-team
 
 本專案在文件層的雙語站點架構，正式名稱為：
 
-- `Native Single-Build Bilingual Pages`
+- `Native Separate Builds`
 
 此術語代表：
 
-- 使用單一原生 `zensical.toml`
-- 使用單次原生 build
-- 使用成對的 `.md` / `.en.md` 內容頁
-- 允許同頁語言切換，但不等於完整的 Separate Builds
+- 使用兩份原生設定檔：`zensical.toml`（zh-TW）與 `zensical.en.toml`（en）
+- 使用兩次原生 build，分別輸出到 `/` 與 `/en/`
+- 使用成對的 `.md` / `.en.md` 內容頁，並在建置前產生 `docs_zh/` / `docs_en/`
+- 使用同一路徑的語言切換，且兩個語言的站點殼層由各自 build-time 產生
 
 ---
 
@@ -65,6 +65,6 @@ updated_by: docs-team
 - **Style**: 語氣/風格 + 視覺元素（Admonitions/Tabs/Mermaid）（見 `style.md`）
 - **Maintenance**: 雙語同步 + Frontmatter 更新 + Zensical 檢查（見 `maintenance.md`）
 - **Explanation Physics**: 教學定位、章節骨架、跨文件引用規範（見 `explanation-physics.md`）
-- **Architecture Term**: 本專案雙語文件架構的正式名稱是 `Native Single-Build Bilingual Pages`
+- **Architecture Term**: 本專案雙語文件架構的正式名稱是 `Native Separate Builds`
 - 詳細規範請以各子文件為準。
 ```
