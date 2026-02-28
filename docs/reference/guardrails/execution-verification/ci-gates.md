@@ -35,7 +35,7 @@ uv run pre-commit run --all-files
 uv run --group dev zensical build
 uv run --group dev zensical build -f zensical.en.toml
 
-# 正式 CI 入口
+# 正式 CI 入口（產出 `docs/site/`）
 ./scripts/build_docs_sites.sh
 ```
 

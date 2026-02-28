@@ -43,7 +43,7 @@ updated_by: docs-team
 
 - 使用兩份原生設定檔：`zensical.toml`（zh-TW）與 `zensical.en.toml`（en）
 - 使用兩次原生 build，分別輸出到 `/` 與 `/en/`
-- 使用成對的 `.md` / `.en.md` 內容頁，並在建置前產生 `docs_zh/` / `docs_en/`
+- 使用成對的 `.md` / `.en.md` 內容頁，並在建置前產生 `docs/docs_zhtw/` / `docs/docs_en/`
 - 使用同一路徑的語言切換，且兩個語言的站點殼層由各自 build-time 產生
 
 ---

@@ -42,7 +42,7 @@ This means:
 
 - two native configs: `zensical.toml` (zh-TW) and `zensical.en.toml` (en)
 - two native builds, emitted to `/` and `/en/`
-- paired `.md` / `.en.md` source pages with generated `docs_zh/` / `docs_en/` build trees
+- paired `.md` / `.en.md` source pages with generated `docs/docs_zhtw/` / `docs/docs_en/` build trees
 - same-path language switching with each language shell rendered at build time
 
 ---

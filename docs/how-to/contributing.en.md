@@ -68,6 +68,11 @@ English site (for example, `localhost:8001`):
 uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
 ```
 
+The canonical static artifact is emitted to `docs/site/`:
+```bash
+./scripts/build_docs_sites.sh
+```
+
 `zensical serve` supports hot reload. After saving files, the page refreshes automatically.
 
 > Need more customization? See the [Zensical Official Documentation](https://zensical.org/docs/).

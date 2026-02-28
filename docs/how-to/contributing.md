@@ -69,6 +69,11 @@ uv run --group dev zensical serve
 uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
 ```
 
+正式靜態輸出會產生在 `docs/site/`：
+```bash
+./scripts/build_docs_sites.sh
+```
+
 `zensical serve` 支援 Hot Reload，儲存文件後頁面會自動重新整理。
 
 > 需要更多客製化？請參考 [Zensical 官方文件](https://zensical.org/docs/)。

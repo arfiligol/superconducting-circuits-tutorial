@@ -28,8 +28,8 @@ updated_by: docs-team
 
 - 設定檔：`zensical.toml`（zh-TW）與 `zensical.en.toml`（en）
 - 文件原始碼：`.md` 與 `.en.md` 並存
-- 建置暫存目錄：`docs_zh/` 與 `docs_en/`（由 `./scripts/prepare_docs_locales.sh` 產生）
-- 網站輸出：`site/`（zh-TW）與 `site/en/`（en）
+- 建置暫存目錄：`docs/docs_zhtw/` 與 `docs/docs_en/`（由 `./scripts/prepare_docs_locales.sh` 產生）
+- 網站輸出：`docs/site/`（zh-TW）與 `docs/site/en/`（en）
 
 !!! info "原生 Zensical 寫法"
     文件規範全面採用 Zensical 原生 TOML 設定。  
@@ -39,7 +39,7 @@ updated_by: docs-team
     - 新增文件：必須同時新增 `.en.md`
     - 修改內容：必須同步更新對應語言版本
     - 刪除/移動：必須同步處理兩個版本，並更新所有引用連結
-    - 不可直接手動修改 `docs_zh/` 或 `docs_en/`，它們是建置前自動產生的 staging tree
+    - 不可直接手動修改 `docs/docs_zhtw/` 或 `docs/docs_en/`，它們是建置前自動產生的 staging tree
 
 ---
 
@@ -89,8 +89,8 @@ updated_by: docs-team
 
 - 雙原生設定檔：`zensical.toml`（zh-TW）與 `zensical.en.toml`（en）
 - 雙語來源檔：`.md` 與 `.en.md` 成對
-- 建置前以 `./scripts/prepare_docs_locales.sh` 產生 `docs_zh/` / `docs_en/`
-- 兩次 build，分別輸出 `site/` 與 `site/en/`
+- 建置前以 `./scripts/prepare_docs_locales.sh` 產生 `docs/docs_zhtw/` / `docs/docs_en/`
+- 兩次 build，分別輸出 `docs/site/` 與 `docs/site/en/`
 
 !!! info "同頁切換實作"
     `Native Separate Builds` 下，Zensical 原生 `extra.alternate` 仍是站點層設定。  
@@ -126,7 +126,7 @@ uv run --group dev zensical build -f zensical.en.toml
 
 !!! tip "常見問題"
     - 若本地無法直接執行 `zensical serve/build`，先確認專案根目錄同時存在 `zensical.toml` 與 `zensical.en.toml`。
-    - 若 build 失敗並提示找不到 `docs_zh/` 或 `docs_en/`，先重新執行 `./scripts/prepare_docs_locales.sh`。
+    - 若 build 失敗並提示找不到 `docs/docs_zhtw/` 或 `docs/docs_en/`，先重新執行 `./scripts/prepare_docs_locales.sh`。
     - 若雙語導覽異常，先檢查兩份 TOML 的 `nav` 是否仍保持一致。
 
 ---
@@ -136,7 +136,7 @@ uv run --group dev zensical build -f zensical.en.toml
 ```markdown
 ## Documentation Maintenance
 - **Bilingual sync**: `.md` changes require matching `.en.md` changes (and vice versa)
-- **Generated Trees**: never edit `docs_zh/` or `docs_en/` directly; regenerate them via `./scripts/prepare_docs_locales.sh`
+- **Generated Trees**: never edit `docs/docs_zhtw/` or `docs/docs_en/` directly; regenerate them via `./scripts/prepare_docs_locales.sh`
 - **Config SoT**: site-level config is split across `zensical.toml` and `zensical.en.toml`
 - **Frontmatter**: update `last_updated` and `updated_by` on content changes
 - **Versioning**: patch/minor/major bumps for doc changes

@@ -31,6 +31,9 @@ uv run --group dev zensical serve
 
 # 英文站
 uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
+
+# 靜態建置輸出到 docs/site/
+./scripts/build_docs_sites.sh
 ```
 
 ## 📁 專案結構

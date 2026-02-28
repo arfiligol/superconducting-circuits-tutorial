@@ -66,7 +66,7 @@ uv run --group dev zensical build
 # 建置英文站
 uv run --group dev zensical build -f zensical.en.toml
 
-# 正式靜態輸出（含 /en 資產同步）
+# 正式靜態輸出（輸出到 `docs/site/`，含 /en 資產同步）
 ./scripts/build_docs_sites.sh
 ```
 
@@ -84,7 +84,7 @@ uv run --group dev zensical build -f zensical.en.toml
     - Prepare: `./scripts/prepare_docs_locales.sh`
     - Build (zh-TW): `uv run --group dev zensical build`
     - Build (en): `uv run --group dev zensical build -f zensical.en.toml`
-    - Build (static artifact): `./scripts/build_docs_sites.sh`
+    - Build (static artifact, outputs to `docs/site/`): `./scripts/build_docs_sites.sh`
     - Serve (zh-TW): `uv run --group dev zensical serve`
     - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).

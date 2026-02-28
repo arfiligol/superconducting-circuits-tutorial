@@ -72,7 +72,7 @@ uv run --group dev zensical build
 # Build English site
 uv run --group dev zensical build -f zensical.en.toml
 
-# Canonical static output (includes /en asset sync)
+# Canonical static output (emits to `docs/site/`, includes /en asset sync)
 ./scripts/build_docs_sites.sh
 ```
 
@@ -90,7 +90,7 @@ uv run --group dev zensical build -f zensical.en.toml
     - Prepare: `./scripts/prepare_docs_locales.sh`
     - Build (zh-TW): `uv run --group dev zensical build`
     - Build (en): `uv run --group dev zensical build -f zensical.en.toml`
-    - Build (static artifact): `./scripts/build_docs_sites.sh`
+    - Build (static artifact, emits to `docs/site/`): `./scripts/build_docs_sites.sh`
     - Serve (zh-TW): `uv run --group dev zensical serve`
     - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).

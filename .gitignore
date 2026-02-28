@@ -51,9 +51,9 @@ cover/
 .ipynb_checkpoints
 
 # Documentation
-site/
-docs_zh/
-docs_en/
+docs/site/
+docs/docs_zhtw/
+docs/docs_en/
 mkdocs_structure.txt
 
 # --- Julia ---
