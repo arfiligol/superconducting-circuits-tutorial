@@ -58,7 +58,7 @@ updated_by: docs-team
 - Dataset 作為 SoT，可重跑分析並比對結果差異。
 
 !!! info "一體化不等於無分層"
-    「分析直接對應可視化」是執行語意的一體化；  
+    「分析直接對應可視化」是執行語意的一體化；
     「Raw -> Dataset -> Analysis」仍是資料責任的分層。
 
 ## Related

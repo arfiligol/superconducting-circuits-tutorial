@@ -15,8 +15,14 @@ def test_shared_frontend_tooling_head_html_includes_helpers() -> None:
 
     assert "window.scCircuitPreview" in head_html
     assert "window.scSchemaFormatter" in head_html
-    assert "@panzoom/panzoom" in head_html
     assert "@astral-sh/ruff-wasm-web" in head_html
+    assert "@panzoom/panzoom" not in head_html
+    assert "parseViewBox" in head_html
+    assert "buildViewBoxForZoom" in head_html
+    assert "fitPreview(state)" in head_html
+    assert "panPreviewByPixels" in head_html
+    assert "event.shiftKey" in head_html
+    assert "const MAX_ZOOM = 20.0;" in head_html
 
 
 def test_build_schematic_preview_render_js_escapes_payload() -> None:
@@ -26,12 +32,14 @@ def test_build_schematic_preview_render_js_escapes_payload() -> None:
         label_id="preview-label",
         svg_content='<svg viewBox="0 0 10 10"></svg>',
         schema_key='schema:"demo"',
+        empty_html="<div>Invalid</div>",
     )
 
     assert "window.scCircuitPreview?.render(" in command
     assert '"rootId": "preview-root"' in command
     assert '"labelId": "preview-label"' in command
     assert '\\"demo\\"' in command
+    assert '"emptyHtml": "<div>Invalid</div>"' in command
 
 
 def test_build_schematic_preview_action_js_validates_action() -> None:

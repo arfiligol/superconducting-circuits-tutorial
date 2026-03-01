@@ -7,6 +7,191 @@ It simplifies the interface between Python domain models and Julia's hbsolve.
 
 using JosephsonCircuits
 
+function is_zero_mode(mode)
+    return all(v == 0 for v in mode)
+end
+
+function mode_token(mode)
+    return join(string.(Int.(collect(mode))), ",")
+end
+
+function mode_trace_label(outputmode, outputport, inputmode, inputport)
+    return "om=$(mode_token(outputmode))|op=$(Int(outputport))|im=$(mode_token(inputmode))|ip=$(Int(inputport))"
+end
+
+function cm_trace_label(outputmode, outputport)
+    return "om=$(mode_token(outputmode))|op=$(Int(outputport))"
+end
+
+function flattened_mode_port_index(mode_index, port_index, mode_count)
+    return mode_index + (port_index - 1) * mode_count
+end
+
+function collect_mode_parameter_traces(parameter_array, modes, portnumbers)
+    traces_real = Dict{String, Vector{Float64}}()
+    traces_imag = Dict{String, Vector{Float64}}()
+
+    if isempty(parameter_array)
+        return traces_real, traces_imag
+    end
+
+    mode_count = length(modes)
+    for outputmode_index in eachindex(modes)
+        outputmode = modes[outputmode_index]
+        for outputport_index in eachindex(portnumbers)
+            outputport = portnumbers[outputport_index]
+            row_index = flattened_mode_port_index(outputmode_index, outputport_index, mode_count)
+            for inputmode_index in eachindex(modes)
+                inputmode = modes[inputmode_index]
+                for inputport_index in eachindex(portnumbers)
+                    inputport = portnumbers[inputport_index]
+                    column_index = flattened_mode_port_index(
+                        inputmode_index,
+                        inputport_index,
+                        mode_count
+                    )
+                    label = mode_trace_label(outputmode, outputport, inputmode, inputport)
+                    trace = vec(parameter_array[row_index, column_index, :])
+                    traces_real[label] = collect(real.(trace))
+                    traces_imag[label] = collect(imag.(trace))
+                end
+            end
+        end
+    end
+
+    return traces_real, traces_imag
+end
+
+function collect_mode_scalar_traces(parameter_array, modes, portnumbers)
+    traces = Dict{String, Vector{Float64}}()
+
+    if isempty(parameter_array)
+        return traces
+    end
+
+    mode_count = length(modes)
+    for outputmode_index in eachindex(modes)
+        outputmode = modes[outputmode_index]
+        for outputport_index in eachindex(portnumbers)
+            outputport = portnumbers[outputport_index]
+            row_index = flattened_mode_port_index(outputmode_index, outputport_index, mode_count)
+            for inputmode_index in eachindex(modes)
+                inputmode = modes[inputmode_index]
+                for inputport_index in eachindex(portnumbers)
+                    inputport = portnumbers[inputport_index]
+                    column_index = flattened_mode_port_index(
+                        inputmode_index,
+                        inputport_index,
+                        mode_count
+                    )
+                    label = mode_trace_label(outputmode, outputport, inputmode, inputport)
+                    trace = vec(parameter_array[row_index, column_index, :])
+                    traces[label] = collect(Float64.(trace))
+                end
+            end
+        end
+    end
+
+    return traces
+end
+
+function collect_mode_cm_traces(parameter_array, modes, portnumbers)
+    traces = Dict{String, Vector{Float64}}()
+
+    if isempty(parameter_array)
+        return traces
+    end
+
+    mode_count = length(modes)
+    for outputmode_index in eachindex(modes)
+        outputmode = modes[outputmode_index]
+        for outputport_index in eachindex(portnumbers)
+            outputport = portnumbers[outputport_index]
+            row_index = flattened_mode_port_index(outputmode_index, outputport_index, mode_count)
+            label = cm_trace_label(outputmode, outputport)
+            trace = vec(parameter_array[row_index, :])
+            traces[label] = collect(Float64.(trace))
+        end
+    end
+
+    return traces
+end
+
+function collect_mode_admittance_traces(z_parameter_array, modes, portnumbers)
+    y_traces_real = Dict{String, Vector{Float64}}()
+    y_traces_imag = Dict{String, Vector{Float64}}()
+
+    if isempty(z_parameter_array)
+        return y_traces_real, y_traces_imag
+    end
+
+    frequency_count = size(z_parameter_array, 3)
+    matrix_size = size(z_parameter_array, 1)
+    nan_value = ComplexF64(NaN, NaN)
+    y_parameter_array = Array{ComplexF64}(undef, matrix_size, matrix_size, frequency_count)
+
+    for frequency_index in 1:frequency_count
+        z_matrix = z_parameter_array[:, :, frequency_index]
+        y_parameter_array[:, :, frequency_index] = try
+            JosephsonCircuits.ZtoY(z_matrix)
+        catch
+            fill(nan_value, matrix_size, matrix_size)
+        end
+    end
+
+    return collect_mode_parameter_traces(y_parameter_array, modes, portnumbers)
+end
+
+function collect_zero_mode_sparameters_from_raw(s_parameter_array, modes, portnumbers, requested_port_indices)
+    s_traces_real = Dict{String, Vector{Float64}}()
+    s_traces_imag = Dict{String, Vector{Float64}}()
+
+    if isempty(s_parameter_array)
+        return s_traces_real, s_traces_imag
+    end
+
+    zero_mode_index = findfirst(is_zero_mode, modes)
+    if isnothing(zero_mode_index)
+        return s_traces_real, s_traces_imag
+    end
+
+    mode_count = length(modes)
+    port_lookup = Dict(Int(portnumbers[idx]) => idx for idx in eachindex(portnumbers))
+    for output_port in sort(Int.(collect(requested_port_indices)))
+        outputport_index = get(port_lookup, output_port, nothing)
+        if isnothing(outputport_index)
+            continue
+        end
+        row_index = flattened_mode_port_index(zero_mode_index, outputport_index, mode_count)
+        for input_port in sort(Int.(collect(requested_port_indices)))
+            inputport_index = get(port_lookup, input_port, nothing)
+            if isnothing(inputport_index)
+                continue
+            end
+            column_index = flattened_mode_port_index(zero_mode_index, inputport_index, mode_count)
+            label = "S$(output_port)$(input_port)"
+            trace = vec(s_parameter_array[row_index, column_index, :])
+            s_traces_real[label] = collect(real.(trace))
+            s_traces_imag[label] = collect(imag.(trace))
+        end
+    end
+
+    return s_traces_real, s_traces_imag
+end
+
+function resolve_compatibility_trace(s_traces_real, s_traces_imag)
+    if haskey(s_traces_real, "S11") && haskey(s_traces_imag, "S11")
+        return s_traces_real["S11"], s_traces_imag["S11"]
+    end
+
+    if isempty(s_traces_real) || isempty(s_traces_imag)
+        return Float64[], Float64[]
+    end
+
+    first_label = sort(collect(keys(s_traces_real)))[1]
+    return s_traces_real[first_label], s_traces_imag[first_label]
+end
+
 """
     run_lc_simulation(L_nH, C_pF, f_start_GHz, f_stop_GHz, n_points)
 
@@ -55,23 +240,77 @@ function run_lc_simulation(L_nH::Float64, C_pF::Float64,
     sources = [(mode=(1,), port=1, current=0.0)]
 
     # Run simulation
-    sol = hbsolve(ws, wp, sources, (10,), (20,), circuit, circuitdefs)
-
-    # Extract small-signal S11 at the zero-mixing output/input mode.
-    # Mode dimensionality must match number of pump tones.
-    zero_mode = Tuple(fill(0, length(wp)))
-    S11 = sol.linearized.S(
-        outputmode=zero_mode,
-        outputport=1,
-        inputmode=zero_mode,
-        inputport=1,
-        freqindex=:
+    sol = hbsolve(
+        ws,
+        wp,
+        sources,
+        (10,),
+        (20,),
+        circuit,
+        circuitdefs;
+        returnZ=true,
+        returnQE=true,
+        returnCM=true,
+        keyedarrays=Val(false)
     )
+
+    port_indices = [1]
+    mode_indices = [Int.(collect(mode)) for mode in sol.linearized.modes]
+    s_traces_real, s_traces_imag = collect_zero_mode_sparameters_from_raw(
+        sol.linearized.S,
+        sol.linearized.modes,
+        sol.linearized.portnumbers,
+        port_indices
+    )
+    s_mode_real, s_mode_imag = collect_mode_parameter_traces(
+        sol.linearized.S,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    z_mode_real, z_mode_imag = collect_mode_parameter_traces(
+        sol.linearized.Z,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    y_mode_real, y_mode_imag = collect_mode_admittance_traces(
+        sol.linearized.Z,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    qe_mode = collect_mode_scalar_traces(
+        sol.linearized.QE,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    qe_ideal_mode = collect_mode_scalar_traces(
+        sol.linearized.QEideal,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    cm_mode = collect_mode_cm_traces(
+        sol.linearized.CM,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    s11_real, s11_imag = resolve_compatibility_trace(s_traces_real, s_traces_imag)
 
     return Dict(
         :frequencies_ghz => collect(frequencies ./ GHz),
-        :s11_real => real.(S11),
-        :s11_imag => imag.(S11)
+        :s11_real => s11_real,
+        :s11_imag => s11_imag,
+        :port_indices => port_indices,
+        :mode_indices => mode_indices,
+        :s_parameter_real => s_traces_real,
+        :s_parameter_imag => s_traces_imag,
+        :s_parameter_mode_real => s_mode_real,
+        :s_parameter_mode_imag => s_mode_imag,
+        :z_parameter_mode_real => z_mode_real,
+        :z_parameter_mode_imag => z_mode_imag,
+        :y_parameter_mode_real => y_mode_real,
+        :y_parameter_mode_imag => y_mode_imag,
+        :qe_parameter_mode => qe_mode,
+        :qe_ideal_parameter_mode => qe_ideal_mode,
+        :cm_parameter_mode => cm_mode
     )
 end
 
@@ -81,7 +320,8 @@ end
         pump_freqs_GHz, source_currents_A, source_ports, source_modes,
         n_modulation_harmonics, n_pump_harmonics,
         dc, threewavemixing, fourwavemixing,
-        max_intermod_order, max_iterations, ftol, switchofflinesearchtol, alphamin)
+        max_intermod_order, max_iterations, ftol, switchofflinesearchtol, alphamin,
+        port_indices)
 
 Simulate a custom circuit topology.
 
@@ -116,7 +356,8 @@ function run_custom_simulation(topology,
     max_iterations::Int,
     ftol::Float64,
     switchofflinesearchtol::Float64,
-    alphamin::Float64)
+    alphamin::Float64,
+    port_indices)
     GHz = 1e9
 
     # Convert Python types to native Julia types
@@ -179,24 +420,70 @@ function run_custom_simulation(topology,
         iterations=max_iterations,
         ftol=ftol,
         switchofflinesearchtol=switchofflinesearchtol,
-        alphamin=alphamin
+        alphamin=alphamin,
+        returnZ=true,
+        returnQE=true,
+        returnCM=true,
+        keyedarrays=Val(false)
     )
 
-    # Extract small-signal S11 at the zero-mixing output/input mode.
-    # Mode dimensionality must match number of pump tones.
-    zero_mode = Tuple(fill(0, length(wp)))
-    S11 = sol.linearized.S(
-        outputmode=zero_mode,
-        outputport=1,
-        inputmode=zero_mode,
-        inputport=1,
-        freqindex=:
+    sorted_port_indices = sort(Int.(collect(port_indices)))
+    mode_indices = [Int.(collect(mode)) for mode in sol.linearized.modes]
+    s_traces_real, s_traces_imag = collect_zero_mode_sparameters_from_raw(
+        sol.linearized.S,
+        sol.linearized.modes,
+        sol.linearized.portnumbers,
+        sorted_port_indices
     )
+    s_mode_real, s_mode_imag = collect_mode_parameter_traces(
+        sol.linearized.S,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    z_mode_real, z_mode_imag = collect_mode_parameter_traces(
+        sol.linearized.Z,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    y_mode_real, y_mode_imag = collect_mode_admittance_traces(
+        sol.linearized.Z,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    qe_mode = collect_mode_scalar_traces(
+        sol.linearized.QE,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    qe_ideal_mode = collect_mode_scalar_traces(
+        sol.linearized.QEideal,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    cm_mode = collect_mode_cm_traces(
+        sol.linearized.CM,
+        sol.linearized.modes,
+        sol.linearized.portnumbers
+    )
+    s11_real, s11_imag = resolve_compatibility_trace(s_traces_real, s_traces_imag)
 
     return Dict(
         :frequencies_ghz => collect(frequencies ./ GHz),
-        :s11_real => real.(S11),
-        :s11_imag => imag.(S11)
+        :s11_real => s11_real,
+        :s11_imag => s11_imag,
+        :port_indices => sorted_port_indices,
+        :mode_indices => mode_indices,
+        :s_parameter_real => s_traces_real,
+        :s_parameter_imag => s_traces_imag,
+        :s_parameter_mode_real => s_mode_real,
+        :s_parameter_mode_imag => s_mode_imag,
+        :z_parameter_mode_real => z_mode_real,
+        :z_parameter_mode_imag => z_mode_imag,
+        :y_parameter_mode_real => y_mode_real,
+        :y_parameter_mode_imag => y_mode_imag,
+        :qe_parameter_mode => qe_mode,
+        :qe_ideal_parameter_mode => qe_ideal_mode,
+        :cm_parameter_mode => cm_mode
     )
 end
 

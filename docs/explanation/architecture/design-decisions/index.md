@@ -21,10 +21,10 @@ updated_by: docs-team
 此頁為舊版索引保留。新版導覽已整併到 [Architecture Overview](../index.md)。
 
 !!! info "新版結構"
-    Architecture 現在統一為四個主題：  
-    1) Clean Architecture  
-    2) Pipeline  
-    3) Circuit Simulation  
+    Architecture 現在統一為四個主題：
+    1) Clean Architecture
+    2) Pipeline
+    3) Circuit Simulation
     4) Visualization Backend
 
 ## Current Entry Points

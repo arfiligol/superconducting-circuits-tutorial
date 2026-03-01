@@ -21,7 +21,7 @@ updated_by: docs-team
 Pipeline 的核心不是把 Analysis 與 Visualization 拆成兩個階段，而是把它們視為同一個分析單元的兩種輸出（數值 + 圖像）。
 
 !!! tip "統一原則"
-    一次 analysis run 應同時產生可驗證的數值結果與可讀的視覺化結果。  
+    一次 analysis run 應同時產生可驗證的數值結果與可讀的視覺化結果。
     UI 與 CLI 的差異只在呈現通道，不在分析語意。
 
 ## Why This Matters

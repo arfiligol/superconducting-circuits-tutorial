@@ -21,13 +21,13 @@ updated_by: docs-team
 
 ## Sections
 
-- [Clean Architecture](design-decisions/clean-architecture.md)  
+- [Clean Architecture](design-decisions/clean-architecture.md)
   分層邊界、依賴方向、組合位置。
-- [Pipeline](pipeline/index.md)  
+- [Pipeline](pipeline/index.md)
   分析與可視化一體化的資料與執行流程。
-- [Circuit Simulation](circuit-simulation/index.md)  
+- [Circuit Simulation](circuit-simulation/index.md)
   Schema 編輯、Live Preview、領域語意與互動策略。
-- [Visualization Backend](design-decisions/visualization-backend.md)  
+- [Visualization Backend](design-decisions/visualization-backend.md)
   Plotly / Matplotlib 的定位與取捨。
 
 ## Related

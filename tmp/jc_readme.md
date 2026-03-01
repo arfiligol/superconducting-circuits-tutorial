@@ -8,7 +8,7 @@
 
 [JosephsonCircuits.jl](https://github.com/kpobrien/JosephsonCircuits.jl) is a high-performance frequency domain simulator for nonlinear circuits containing Josephson junctions, capacitors, inductors, mutual inductors, and resistors. [JosephsonCircuits.jl](https://github.com/kpobrien/JosephsonCircuits.jl) simulates the frequency domain behavior using a variant [1] of nodal analysis [2] and the harmonic balance method [3-5] with an analytic Jacobian. Noise performance, quantified by quantum efficiency, is efficiently simulated through an adjoint method.
 
-Frequency dependent circuit parameters are supported to model realistic impedance environments or dissipative components. Dissipation can be modeled by capacitors with an imaginary capacitance or frequency dependent resistors. 
+Frequency dependent circuit parameters are supported to model realistic impedance environments or dissipative components. Dissipation can be modeled by capacitors with an imaginary capacitance or frequency dependent resistors.
 
 [JosephsonCircuits.jl](https://github.com/kpobrien/JosephsonCircuits.jl) supports the following:
 * Nonlinear simulations in which the user defines a circuit, the drive current, frequency, and number of harmonics and the code calculates the node flux or node voltage at each harmonic.
@@ -119,7 +119,7 @@ plot(
 ![JPA simulation with JosephsonCircuits.jl](https://qce.mit.edu/JosephsonCircuits.jl/jpa.png)
 
 
-Compare with WRspice. Please note that on Linux you can install the [XicTools_jll](https://github.com/JuliaBinaryWrappers/XicTools_jll.jl/) package which provides WRspice for x86_64. For other operating systems and platforms, you can install WRspice yourself and substitute `XicTools_jll.wrspice()` with `JosephsonCircuits.wrspice_cmd()` which will attempt to provide the path to your WRspice executable. 
+Compare with WRspice. Please note that on Linux you can install the [XicTools_jll](https://github.com/JuliaBinaryWrappers/XicTools_jll.jl/) package which provides WRspice for x86_64. For other operating systems and platforms, you can install WRspice yourself and substitute `XicTools_jll.wrspice()` with `JosephsonCircuits.wrspice_cmd()` which will attempt to provide the path to your WRspice executable.
 
 ```julia
 using XicTools_jll
@@ -248,7 +248,7 @@ circuit = [
     ("P1","1","0",1),
     ("R1","1","0",R),
     # a very large inductor so the DC node flux of this node isn't floating
-    ("L0","1","0",Lg), 
+    ("L0","1","0",Lg),
     ("C1","1","2",Cc),
     ("L1","2","3",Lr),
     ("C2","2","0",Cr),
@@ -257,22 +257,22 @@ circuit = [
     ("L2","3","4",Ll),
     ("Lj2","4","0",Lj),
     ("Cj2","4","0",Cj),
-    ("L3","5","0",Ldc), 
+    ("L3","5","0",Ldc),
     ("K1","L2","L3",K),
     # a port with a very large resistor so we can apply the bias across the port
     ("P2","5","0",2),
     ("R2","5","0",1000.0),
-] 
+]
 
 circuitdefs = Dict(
     Lj =>219.63e-12,
     Lr =>0.4264e-9,
     Lg =>100.0e-9,
     Cc => 16.0e-15,
-    Cj => 10.0e-15, 
+    Cj => 10.0e-15,
     Cr => 0.4e-12,
-    R => 50.0, 
-    Ll => 34e-12, 
+    R => 50.0,
+    Ll => 34e-12,
     K => 0.999, # the inverse inductance matrix for K=1.0 diverges, so set K<1.0
     Ldc => 0.74e-12,
 )
@@ -409,7 +409,7 @@ circuit = [
     ("P1","1","0",1),
     ("R1","1","0",R),
     # a very large inductor so the DC node flux of this node isn't floating
-    ("L0","1","0",Lg), 
+    ("L0","1","0",Lg),
     ("C1","1","2",Cc),
     ("L1","2","3",Lr),
     ("C2","2","0",Cr),
@@ -422,22 +422,22 @@ circuit = [
     ("Cj3","5","6",Cj),
     ("Lj4","6","0",Lj),
     ("Cj4","6","0",Cj),
-    ("L3","7","0",Ldc), 
+    ("L3","7","0",Ldc),
     ("K1","L2","L3",K),
     # a port with a very large resistor so we can apply the bias across the port
     ("P2","7","0",2),
     ("R2","7","0",1000.0),
-] 
+]
 
 circuitdefs = Dict(
     Lj => 60e-12,
-    Cj => 10.0e-15, 
+    Cj => 10.0e-15,
     Lr =>0.4264e-9*1.25,
     Cr => 0.4e-12*1.25,
     Lg => 100.0e-9,
     Cc => 0.048e-12,
-    R => 50.0, 
-    Ll => 34e-12, 
+    R => 50.0,
+    Ll => 34e-12,
     K => 0.999, # the inverse inductance matrix for K=1.0 diverges, so set K<1.0
     Ldc => 0.74e-12,
 )
@@ -601,12 +601,12 @@ pmrpitch = 4
 #first half cap to ground
 push!(circuit,("C$(1)_$(0)","1","0",Cg/2))
 #middle caps and jj's
-push!(circuit,("Lj$(1)_$(2)","1","2",Lj)) 
-push!(circuit,("C$(1)_$(2)","1","2",Cj)) 
+push!(circuit,("Lj$(1)_$(2)","1","2",Lj))
+push!(circuit,("C$(1)_$(2)","1","2",Cj))
 
 j=2
 for i = 2:Nj-1
-    
+
     if mod(i,pmrpitch) == pmrpitch÷2
 
         # make the jj cell with modified capacitance to ground
@@ -614,12 +614,12 @@ for i = 2:Nj-1
         push!(circuit,("Lj$(j)_$(j+2)","$(j)","$(j+2)",Lj))
 
         push!(circuit,("C$(j)_$(j+2)","$(j)","$(j+2)",Cj))
-        
+
         #make the pmr
         push!(circuit,("C$(j)_$(j+1)","$(j)","$(j+1)",Cc))
         push!(circuit,("C$(j+1)_$(0)","$(j+1)","$(0)",Cr))
         push!(circuit,("L$(j+1)_$(0)","$(j+1)","$(0)",Lr))
-        
+
         # increment the index
         j+=1
     else
@@ -627,7 +627,7 @@ for i = 2:Nj-1
         push!(circuit,("Lj$(j)_$(j+1)","$(j)","$(j+1)",Lj))
         push!(circuit,("C$(j)_$(j+1)","$(j)","$(j+1)",Cj))
     end
-    
+
     # increment the index
     j+=1
 
@@ -690,7 +690,7 @@ plot!(ws/(2*pi*1e9),
     )
 
 p2=plot(ws/(2*pi*1e9),
-    rpm.linearized.QE((0,),2,(0,),1,:)./rpm.linearized.QEideal((0,),2,(0,),1,:),    
+    rpm.linearized.QE((0,),2,(0,),1,:)./rpm.linearized.QEideal((0,),2,(0,),1,:),
     ylim=(0,1.05),
     title="Quantum efficiency",legend=false,
     ylabel="QE/QE_ideal",xlabel="Signal Frequency (GHz)");
@@ -704,7 +704,7 @@ p3=plot(ws/(2*pi*1e9),
     ylabel="dB")
 
 p4=plot(ws/(2*pi*1e9),
-    1 .- rpm.linearized.CM((0,),2,:),    
+    1 .- rpm.linearized.CM((0,),2,:),
     legend=false,title="Commutation \n relation error",
     ylabel="Commutation \n relation error",xlabel="Signal Frequency (GHz)");
 
@@ -749,12 +749,12 @@ push!(circuit,("R$(1)_$(0)","1","0",Rleft))
 #first half cap to ground
 push!(circuit,("C$(1)_$(0)","1","0",Cg/2*weight(1-0.5,Nj,weightwidth)))
 #middle caps and jj's
-push!(circuit,("Lj$(1)_$(2)","1","2",Lj*weight(1,Nj,weightwidth))) 
-push!(circuit,("C$(1)_$(2)","1","2",Cj/weight(1,Nj,weightwidth))) 
-    
+push!(circuit,("Lj$(1)_$(2)","1","2",Lj*weight(1,Nj,weightwidth)))
+push!(circuit,("C$(1)_$(2)","1","2",Cj/weight(1,Nj,weightwidth)))
+
 j=2
 for i = 2:Nj-1
-    
+
     if mod(i,pmrpitch) == pmrpitch÷2
 
         # make the jj cell with modified capacitance to ground
@@ -762,12 +762,12 @@ for i = 2:Nj-1
         push!(circuit,("Lj$(j)_$(j+2)","$(j)","$(j+2)",Lj*weight(i,Nj,weightwidth)))
 
         push!(circuit,("C$(j)_$(j+2)","$(j)","$(j+2)",Cj/weight(i,Nj,weightwidth)))
-        
+
         #make the pmr
         push!(circuit,("C$(j)_$(j+1)","$(j)","$(j+1)",Cc*weight(i-0.5,Nj,weightwidth)))
         push!(circuit,("C$(j+1)_$(0)","$(j+1)","$(0)",Cr))
         push!(circuit,("L$(j+1)_$(0)","$(j+1)","$(0)",Lr))
-        
+
         # increment the index
         j+=1
     else
@@ -775,7 +775,7 @@ for i = 2:Nj-1
         push!(circuit,("Lj$(j)_$(j+1)","$(j)","$(j+1)",Lj*weight(i,Nj,weightwidth)))
         push!(circuit,("C$(j)_$(j+1)","$(j)","$(j+1)",Cj/weight(i,Nj,weightwidth)))
     end
-    
+
     # increment the index
     j+=1
 
@@ -795,7 +795,7 @@ circuitdefs = Dict(
     Cr =>  1.533e-12,
     Lr => 2.47e-10,
     Cj => 40e-15,
-)  
+)
 
 ws=2*pi*(1.0:0.1:14)*1e9
 wp=(2*pi*7.9*1e9,)
@@ -831,7 +831,7 @@ plot!(ws/(2*pi*1e9),
     )
 
 p2=plot(ws/(2*pi*1e9),
-    floquet.linearized.QE((0,),2,(0,),1,:)./floquet.linearized.QEideal((0,),2,(0,),1,:),    
+    floquet.linearized.QE((0,),2,(0,),1,:)./floquet.linearized.QEideal((0,),2,(0,),1,:),
     ylim=(0.99,1.001),
     title="Quantum efficiency",legend=false,
     ylabel="QE/QE_ideal",xlabel="Signal Frequency (GHz)");
@@ -883,7 +883,7 @@ for tandelta in tandeltas
         Cr => 1.533e-12/(1+im*tandelta),
         Lr => 2.47e-10,
         Cj => 40e-15,
-    )  
+    )
     wp=(2*pi*7.9*1e9,)
     ws=2*pi*(1.0:0.1:14)*1e9
     Ip=1.1e-6*(1+125*tandelta)
@@ -1144,7 +1144,7 @@ end
 """
     add_snake!(circuit,start_node,skip_nodes,L1,L2,Lj,Nstages)
 
-Add a `snake` a tunable inductor made of two rf-SQUID arrays 
+Add a `snake` a tunable inductor made of two rf-SQUID arrays
 in parallel as detailed in arXiv:2209.07757 and PhysRevLett.109.137003
 to the netlist contained in `circuit`. See also [`add_snake_squid!`](@ref).
 
@@ -1175,14 +1175,14 @@ start_node     start_node
 function add_snake!(circuit,start_node,skip_nodes,L1,L2,Lj,Nstages)
     # add examples, fix behavior for skip_nodes
     # check that returned end_node skip_node behavior correct
-    
+
     # add the SNAKE
     j=start_node+skip_nodes
     # add the first stage outside of the loop
     # so we can keep the same pattern in the array
-    
+
     # L1 linear inductor at the start of the stage
-    push!(circuit,("L$(start_node)_$(j+1)","$(start_node)","$(j+1)",L1))    
+    push!(circuit,("L$(start_node)_$(j+1)","$(start_node)","$(j+1)",L1))
     # the L1 linear inductor at the end of the stage
     push!(circuit,("L$(j+2)_$(j+3)","$(j+2)","$(j+3)",L1))
     # the JJ
@@ -1219,11 +1219,11 @@ end
 
 """
     add_snake_squid!(circuit,start_node,skip_nodes,L1,L2,L3,Lj,Lb,K,R,Nstages)
-    
-Add a SQUID made of four `snakes` (tunable inductors made of two rf-SQUID arrays 
+
+Add a SQUID made of four `snakes` (tunable inductors made of two rf-SQUID arrays
 in parallel) as detailed in arXiv:2209.07757 and PhysRevLett.109.137003
 to the netlist contained in `circuit`. See also [`add_snake!`](@ref).
-    
+
      start_node o
                 |
                 |
@@ -1264,39 +1264,39 @@ L3               ---              L3
 function add_snake_squid!(circuit,start_node,skip_nodes,L1,L2,L3,Lj,Lb,K,R,Nstages)
     # add examples, fix behavior for skip_nodes
     # check that returned end_node skip_node behavior correct
-    
+
     # first snake
     # start_node = 1
     # skip_nodes = 0
     end_node,skip_nodes = add_snake!(circuit,start_node,skip_nodes,L1,L2,Lj,Nstages)
     j = end_node
-    
+
     # linear inductor in between the snakes
     push!(circuit,("L$(j)_$(j+1)","$(j)","$(j+1)",L3))
     j+=1
-    
+
     # second snake
     start_node = j
     skip_nodes = 0
     end_node,skip_nodes = add_snake!(circuit,start_node,skip_nodes,L1,L2,Lj,Nstages)
     j = end_node
-    
+
     # add the coupling to bias inductors Lb1
     push!(circuit,("L$(j)_$(0)","$(j)","0",Lb))
     push!(circuit,("Kb1","L$(j)_$(0)","Lb1",K))
     j+=1
-    
+
     # add the second arm of the snake
     # third snake
     start_node = 1
     skip_nodes = j-start_node-1
     end_node,skip_nodes = add_snake!(circuit,start_node,skip_nodes,L1,L2,Lj,Nstages)
     j = end_node
-    
+
     # linear inductor in between the snakes
     push!(circuit,("L$(j)_$(j+1)","$(j)","$(j+1)",L3))
     j+=1
-    
+
     # fourth snake
     start_node = j
     skip_nodes = 0
@@ -1307,11 +1307,11 @@ function add_snake_squid!(circuit,start_node,skip_nodes,L1,L2,L3,Lj,Lb,K,R,Nstag
     push!(circuit,("L$(j)_$(0)","$(j)","0",Lb))
     push!(circuit,("Kb2","L$(j)_$(0)","Lb2",K))
     j+=1
-    
+
     # bias across this port
     push!(circuit,("P2","$(j)","$(0)",2))
     push!(circuit,("R$(j)_$(0)","$(j)","$(0)",R))
-            
+
     # add the two bias inductors
     push!(circuit,("Lb1","$(j)","$(j+1)",Lb))
     push!(circuit,("Lb2","$(j+1)","0",Lb))
@@ -1328,7 +1328,7 @@ end
 Add an LC ladder that approximates a transmission line to the netlist
 contained in `circuit`. The transmission line starts and ends with
 half an inductor.
-    
+
 start_node       start_node+skip_nodes+1
           o--L/2--o- ... --L--- ... ---L/2--o
                   |           |
@@ -1364,7 +1364,7 @@ function add_tline!(circuit,start_node,skip_nodes,theta,w0,wc,Z0)
     # based on the rounded number of cells, revise the cutoff frequency
     # and compute the capacitance and inductance per unit cell
     wc = Ncells*2*w0/theta
-        
+
     # inductance and capacitance per cell
     L = 2*Z0/wc
     C = 2/(wc*Z0)
@@ -1445,8 +1445,8 @@ circuitdefs = Dict(
     C7 => 0.265e-12,
     PLCC => 0.654e-12,
     PLCL => 0.650e-9,
-    R => 50.0, 
-    Lb => 60e-12, 
+    R => 50.0,
+    Lb => 60e-12,
     K => 0.5*50/sqrt(60*60),
 )
 
@@ -1518,7 +1518,7 @@ We welcome contributions in the form of issues/bug reports or pull requests. Thi
 
 # References:
 
-1. Andrew J. Kerman "Efficient numerical simulation of complex Josephson quantum circuits" [arXiv:2010.14929 (2020)](https://doi.org/10.48550/arXiv.2010.14929) 
+1. Andrew J. Kerman "Efficient numerical simulation of complex Josephson quantum circuits" [arXiv:2010.14929 (2020)](https://doi.org/10.48550/arXiv.2010.14929)
 2. Ji&#345;&#237; Vlach and Kishore Singhal "Computer Methods for Circuit Analysis and Design" 2nd edition, [Springer New York, NY (1993)](https://link.springer.com/book/9780442011949)
 3. Stephen A. Maas "Nonlinear Microwave and RF Circuits" 2nd edition, [Artech House (1997)](https://us.artechhouse.com/Nonlinear-Microwave-and-RF-Circuits-Second-Edition-P1097.aspx)
 4. Jos&#233; Carlos Pedro, David E. Root, Jianjun Xu, and Lu&#237;s C&#243;timos Nunes. "Nonlinear Circuit Simulation and Modeling: Fundamentals for Microwave Design" The Cambridge RF and Microwave Engineering Series, [Cambridge University Press (2018)](https://www.cambridge.org/core/books/nonlinear-circuit-simulation-and-modeling/1705F3B449B4313A2BE890599DAC0E38)
@@ -1528,7 +1528,7 @@ We welcome contributions in the form of issues/bug reports or pull requests. Thi
 
 # Philosophy:
 
-The motivation for developing this package is to simulate the gain and noise performance of ultra low noise amplifiers for quantum computing applications such as the [Josephson traveling-wave parametric amplifier](https://www.science.org/doi/10.1126/science.aaa8525), which have thousands of linear and nonlinear circuit elements. 
+The motivation for developing this package is to simulate the gain and noise performance of ultra low noise amplifiers for quantum computing applications such as the [Josephson traveling-wave parametric amplifier](https://www.science.org/doi/10.1126/science.aaa8525), which have thousands of linear and nonlinear circuit elements.
 
 We prioritize speed (including compile time and time to first use), simplicity, and scalability.
 
@@ -1540,7 +1540,7 @@ We prioritize speed (including compile time and time to first use), simplicity, 
 
 # Related packages and software:
 * [Xyce.jl](https://github.com/JuliaComputing/Xyce.jl) provides a wrapper for [Xyce](https://xyce.sandia.gov/), the open source parallel circuit simulator from Sandia National Laboratories which can perform time domain and harmonic balance method simulations.
-* [NgSpice.jl](https://github.com/JuliaComputing/Ngspice.jl) and [LTspice.jl](https://github.com/cstook/LTspice.jl) provide wrappers for [NgSpice](http://ngspice.sourceforge.net/) and [LTspice](https://www.analog.com/en/design-center/design-tools-and-calculators/ltspice-simulator.html), respectively.  
+* [NgSpice.jl](https://github.com/JuliaComputing/Ngspice.jl) and [LTspice.jl](https://github.com/cstook/LTspice.jl) provide wrappers for [NgSpice](http://ngspice.sourceforge.net/) and [LTspice](https://www.analog.com/en/design-center/design-tools-and-calculators/ltspice-simulator.html), respectively.
 * [ModelingToolkit.jl](https://github.com/SciML/ModelingToolkit.jl) supports time domain circuit simulations from [scratch](https://mtk.sciml.ai/stable/tutorials/acausal_components) and using their [standard library](https://docs.sciml.ai/ModelingToolkitStandardLibrary/stable/tutorials/rc_circuit/)
 * [ACME.jl](https://github.com/HSU-ANT/ACME.jl) simulates electrical circuits in the time domain with an emphasis on audio effect circuits.
 * [Cedar EDA](https://cedar-eda.com) is a Julia-based commercial cloud service for circuit simulations.

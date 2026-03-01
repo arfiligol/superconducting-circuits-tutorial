@@ -8,8 +8,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: 技術規格索引，涵蓋 CLI、Schema、開發規範
-version: v0.1.0
-last_updated: 2026-01-12
+version: v0.2.0
+last_updated: 2026-03-01
 updated_by: docs-team
 ---
 
@@ -18,3 +18,5 @@ updated_by: docs-team
 ---
 
 # Reference
+
+- [UI Reference](ui/index.md)

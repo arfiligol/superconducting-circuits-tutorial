@@ -52,7 +52,7 @@ def dashboard_page():
                         render_dashboard.refresh()
 
                     ui.select(options=ds_options, value=current_ds_id, on_change=on_change).props(
-                        "dense outline dark standout"
+                        "dense outlined options-dense"
                     ).classes("w-64")
 
                 # --- Layout: Main Body ---

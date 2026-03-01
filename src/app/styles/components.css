@@ -85,6 +85,83 @@
     color: rgb(var(--primary));
 }
 
+/* Quasar form controls: keep selector/input contrast aligned with theme tokens */
+.q-field__control {
+    background: rgb(var(--surface));
+    color: rgb(var(--fg));
+}
+
+.q-field--outlined .q-field__control::before {
+    border-color: rgb(var(--border));
+}
+
+.q-field--outlined.q-field--highlighted .q-field__control::after,
+.q-field--outlined.q-field--focused .q-field__control::after {
+    border-color: rgb(var(--primary));
+}
+
+.q-field__native,
+.q-field__input,
+.q-field__label,
+.q-field__marginal,
+.q-select__dropdown-icon {
+    color: rgb(var(--fg)) !important;
+}
+
+.q-field__label {
+    color: rgb(var(--muted)) !important;
+}
+
+.q-field__native::placeholder,
+.q-field__input::placeholder {
+    color: rgb(var(--muted) / 0.9) !important;
+}
+
+/* Safari/WebKit native number spinners overlap Quasar field text in narrow inputs */
+.q-field input[type="number"]::-webkit-outer-spin-button,
+.q-field input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.q-field input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.q-field--readonly .q-field__native,
+.q-field--readonly .q-field__input,
+.q-field--disabled .q-field__native,
+.q-field--disabled .q-field__input,
+.q-field--disabled .q-field__label,
+.q-field--disabled .q-field__marginal {
+    color: rgb(var(--muted)) !important;
+}
+
+.q-menu,
+.q-menu .q-item {
+    background: rgb(var(--surface));
+    color: rgb(var(--fg));
+}
+
+.q-item__label,
+.q-item__section {
+    color: inherit;
+}
+
+.q-chip {
+    background: rgb(var(--elevated));
+    color: rgb(var(--fg));
+    border: 1px solid rgb(var(--border));
+}
+
+.q-chip .q-chip__content,
+.q-chip .q-icon,
+.q-chip .q-chip__icon,
+.q-chip .q-chip__icon--remove {
+    color: inherit !important;
+}
+
 /* Plotly container: seamless theme integration */
 .app-plotly-container {
     background: rgb(var(--surface));
@@ -147,40 +224,32 @@
 
 /* Schematic preview canvas */
 .app-schematic-preview {
-    overflow: auto;
+    overflow: hidden;
     overscroll-behavior: contain;
-    scrollbar-gutter: stable both-edges;
 }
 
 .app-schematic-preview .schematic-panzoom-viewport {
     position: relative;
-    min-width: 100%;
+    width: 100%;
     min-height: 16rem;
-    overflow: auto;
+    overflow: hidden;
     touch-action: none;
     outline: none;
+    cursor: grab;
 }
 
-.app-schematic-preview .schematic-panzoom-stage {
-    transform-origin: 0 0;
-    width: fit-content;
-    height: fit-content;
-    will-change: transform;
-}
-
-.app-schematic-preview .schematic-panzoom-stage.is-panning {
+.app-schematic-preview .schematic-panzoom-viewport[data-dragging="1"] {
     cursor: grabbing;
 }
 
 .app-schematic-preview .schematic-panzoom-host {
-    width: fit-content;
-    height: fit-content;
+    width: 100%;
+    min-height: 16rem;
 }
 
 .app-schematic-preview svg {
     display: block;
-    width: auto;
-    height: auto;
+    width: 100%;
     max-width: none;
     min-height: 16rem;
 }

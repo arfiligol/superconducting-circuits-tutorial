@@ -108,7 +108,7 @@ def _format_circuit_definition(circuit: CircuitDefinition) -> str:
         if not spec.sweepable:
             parts.append('"sweepable": False')
         suffix = "," if index < len(parameter_items) - 1 else ""
-        lines.append(f'        {_quote(param_name)}: {{{", ".join(parts)}}}{suffix}')
+        lines.append(f"        {_quote(param_name)}: {{{', '.join(parts)}}}{suffix}")
 
     lines.append("    },")
     lines.append('    "topology": [')
@@ -167,8 +167,22 @@ def schema_editor_page(schema_id: str):
                 )
             )
 
+        def show_invalid_preview() -> None:
+            if zoom_label is None:
+                return
+            ui.run_javascript(
+                build_schematic_preview_render_js(
+                    root_id=svg_container.html_id,
+                    label_id=zoom_label.html_id,
+                    svg_content="",
+                    schema_key=f"schema-editor:{schema_id}",
+                    empty_html=(
+                        "<div class='text-gray-400 text-sm'>Invalid Circuit Definition</div>"
+                    ),
+                )
+            )
+
         with ui.row().classes("w-full gap-6"):
-            # Left Column: Circuit Definition Input
             with (
                 ui.column().classes("w-full md:w-1/2"),
                 ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[400px]"),
@@ -292,7 +306,6 @@ def schema_editor_page(schema_id: str):
                 )
                 ui.label("Shortcut: Ctrl/Cmd + Shift + F").classes("text-xs text-muted mt-1")
 
-            # Right Column: Live Schematic Visualization
             with (
                 ui.column().classes("w-full md:w-[45%]"),
                 ui.card().classes("w-full h-full bg-surface rounded-xl p-6 min-h-[400px]"),
@@ -335,8 +348,7 @@ def schema_editor_page(schema_id: str):
                 )
 
                 svg_container = ui.html().classes(
-                    "w-full flex-grow bg-white rounded-lg p-4 "
-                    "app-schematic-preview"
+                    "w-full flex-grow bg-white rounded-lg p-4 app-schematic-preview"
                 )
 
         with ui.card().classes("w-full bg-surface rounded-xl p-6 mt-2"):
@@ -377,14 +389,11 @@ def schema_editor_page(schema_id: str):
 
             except Exception as e:
                 error_label.text = (
-                    "Error Parsing Definition (required: name + parameters + topology): "
-                    f"{e!s}"
+                    f"Error Parsing Definition (required: name + parameters + topology): {e!s}"
                 )
                 error_label.classes(add="block", remove="hidden")
                 latest_svg = ""
-                svg_container.content = (
-                    "<div class='text-gray-400'>Invalid Circuit Definition</div>"
-                )
+                show_invalid_preview()
 
         # Update it once on load
         update_schematic()

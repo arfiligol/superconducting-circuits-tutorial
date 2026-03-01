@@ -31,8 +31,7 @@ def ensure_l_jun_column(df: pd.DataFrame, l_jun: float | None) -> pd.DataFrame:
         return df
     if l_jun is None:
         raise ValueError(
-            "Unable to locate L_jun column. "
-            "For single-bias CSV files, provide --l-jun <nH>."
+            "Unable to locate L_jun column. For single-bias CSV files, provide --l-jun <nH>."
         )
     df_with_bias = df.copy()
     df_with_bias["L_jun [nH]"] = float(l_jun)

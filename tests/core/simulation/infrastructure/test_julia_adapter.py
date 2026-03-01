@@ -130,6 +130,25 @@ def test_run_hbsolve_returns_result_when_julia_succeeds():
             "frequencies_ghz": [1.0, 2.0],
             "s11_real": [0.1, 0.2],
             "s11_imag": [-0.1, -0.2],
+            "port_indices": [1, 2],
+            "mode_indices": [(0,), (1,)],
+            "s_parameter_real": {"S11": [0.1, 0.2], "S21": [0.3, 0.4]},
+            "s_parameter_imag": {"S11": [-0.1, -0.2], "S21": [0.0, 0.1]},
+            "s_parameter_mode_real": {
+                "om=0|op=1|im=0|ip=1": [0.1, 0.2],
+                "om=1|op=2|im=0|ip=1": [0.5, 0.6],
+            },
+            "s_parameter_mode_imag": {
+                "om=0|op=1|im=0|ip=1": [-0.1, -0.2],
+                "om=1|op=2|im=0|ip=1": [0.0, 0.1],
+            },
+            "z_parameter_mode_real": {"om=0|op=1|im=0|ip=1": [50.0, 51.0]},
+            "z_parameter_mode_imag": {"om=0|op=1|im=0|ip=1": [0.0, 1.0]},
+            "y_parameter_mode_real": {"om=0|op=1|im=0|ip=1": [0.02, 0.03]},
+            "y_parameter_mode_imag": {"om=0|op=1|im=0|ip=1": [0.0, 0.0]},
+            "qe_parameter_mode": {"om=1|op=2|im=0|ip=1": [0.8, 0.85]},
+            "qe_ideal_parameter_mode": {"om=1|op=2|im=0|ip=1": [0.9, 0.95]},
+            "cm_parameter_mode": {"om=1|op=2": [1.0, 1.0]},
         }
 
     simulator = _build_simulator(_ok)
@@ -142,6 +161,13 @@ def test_run_hbsolve_returns_result_when_julia_succeeds():
     assert result.frequencies_ghz == [1.0, 2.0]
     assert result.s11_real == [0.1, 0.2]
     assert result.s11_imag == [-0.1, -0.2]
+    assert result.available_port_indices == [1, 2]
+    assert result.available_mode_indices == [(0,), (1,)]
+    assert result.get_s_parameter_real(2, 1) == [0.3, 0.4]
+    assert result.get_s_parameter_imag(2, 1) == [0.0, 0.1]
+    assert result.get_mode_s_parameter_real((1,), 2, (0,), 1) == [0.5, 0.6]
+    assert result.get_mode_qe((1,), 2, (0,), 1) == [0.8, 0.85]
+    assert result.get_mode_cm((1,), 2) == [1.0, 1.0]
 
 
 def test_run_hbsolve_rejects_source_port_not_declared_in_schema():
@@ -223,3 +249,113 @@ def test_run_hbsolve_forwards_hbsolve_config_parameters():
     assert args[16] == pytest.approx(1e-9)
     assert args[17] == pytest.approx(1e-6)
     assert args[18] == pytest.approx(1e-5)
+    assert args[19] == [1]
+
+
+def test_run_hbsolve_supports_explicit_dc_and_pump_sources_on_same_port() -> None:
+    circuit = CircuitDefinition(
+        name="explicit-modes",
+        parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
+        topology=[
+            ("P1", "1", "0", 1),
+            ("P2", "2", "0", 2),
+            ("R50_1", "1", "0", "R50"),
+            ("R50_2", "2", "0", "R50"),
+        ],
+    )
+    captured = {}
+
+    def _capture(*args):
+        captured["args"] = args
+        return {
+            "frequencies_ghz": [1.0],
+            "s11_real": [0.0],
+            "s11_imag": [0.0],
+        }
+
+    simulator = _build_simulator(_capture)
+    config = SimulationConfig(
+        sources=[
+            DriveSourceConfig(
+                pump_freq_ghz=16.0,
+                port=2,
+                current_amp=1.59e-4,
+                mode_components=(0,),
+            ),
+            DriveSourceConfig(
+                pump_freq_ghz=16.0,
+                port=2,
+                current_amp=4.4e-6,
+                mode_components=(1,),
+            ),
+        ],
+        n_modulation_harmonics=8,
+        n_pump_harmonics=16,
+        include_dc=True,
+        enable_three_wave_mixing=True,
+    )
+
+    simulator.run_hbsolve(
+        circuit,
+        FrequencyRange(start_ghz=7.8, stop_ghz=8.2, points=401),
+        config,
+    )
+
+    args = captured["args"]
+    assert args[5] == pytest.approx([16.0])
+    assert args[6] == pytest.approx([1.59e-4, 4.4e-6])
+    assert args[7] == [2, 2]
+    assert args[8] == [[0], [1]]
+
+
+def test_run_hbsolve_rejects_mixed_implicit_and_explicit_source_modes() -> None:
+    circuit = CircuitDefinition(
+        name="mixed-modes",
+        parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
+        topology=[("P1", "1", "0", 1), ("R50", "1", "0", "R50")],
+    )
+    simulator = _build_simulator(lambda *_: pytest.fail("Julia should not be called"))
+    config = SimulationConfig(
+        sources=[
+            DriveSourceConfig(pump_freq_ghz=5.0, port=1, current_amp=0.0, mode_components=(1,)),
+            DriveSourceConfig(pump_freq_ghz=6.0, port=1, current_amp=0.0),
+        ]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="SimulationInputError: once any source uses an explicit mode tuple",
+    ):
+        simulator.run_hbsolve(
+            circuit,
+            FrequencyRange(start_ghz=1.0, stop_ghz=2.0, points=2),
+            config,
+        )
+
+
+class _FakeSymbolKey:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def __str__(self) -> str:
+        return self.text
+
+
+def test_build_simulation_result_accepts_julia_symbol_style_keys() -> None:
+    raw_payload = {
+        _FakeSymbolKey("Julia: :frequencies_ghz"): [1.0],
+        _FakeSymbolKey("Julia: :s11_real"): [0.1],
+        _FakeSymbolKey("Julia: :s11_imag"): [0.0],
+        _FakeSymbolKey("Julia: :port_indices"): [1],
+        _FakeSymbolKey("Julia: :mode_indices"): [[0], [1]],
+        _FakeSymbolKey("Julia: :s_parameter_real"): {"S11": [0.1]},
+        _FakeSymbolKey("Julia: :s_parameter_imag"): {"S11": [0.0]},
+        _FakeSymbolKey("Julia: :s_parameter_mode_real"): {"om=1|op=1|im=0|ip=1": [0.5]},
+        _FakeSymbolKey("Julia: :s_parameter_mode_imag"): {"om=1|op=1|im=0|ip=1": [0.0]},
+    }
+
+    result = JuliaSimulator._build_simulation_result(raw_payload)
+
+    assert result.frequencies_ghz == [1.0]
+    assert result.available_mode_indices == [(0,), (1,)]
+    assert result.get_mode_s_parameter_real((1,), 1, (0,), 1) == [0.5]

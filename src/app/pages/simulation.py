@@ -29,6 +29,935 @@ from core.simulation.domain.circuit import (
 
 _SIM_SETUP_STORAGE_KEY = "simulation_saved_setups_by_schema"
 _SIM_SETUP_SELECTED_KEY = "simulation_selected_setup_id_by_schema"
+_JOSEPHSON_EXAMPLE_PREFIX = "JosephsonCircuits Examples: "
+_RESULT_FAMILY_OPTIONS = {
+    "s": "S",
+    "gain": "Gain",
+    "impedance": "Impedance (Z)",
+    "admittance": "Admittance (Y)",
+    "qe": "Quantum Efficiency (QE)",
+    "cm": "Commutation (CM)",
+    "complex": "Complex Plane",
+}
+_RESULT_METRIC_OPTIONS = {
+    "s": {
+        "magnitude_linear": "Magnitude (linear)",
+        "magnitude_db": "Magnitude (dB)",
+        "phase_deg": "Phase (deg)",
+        "real": "Real",
+        "imag": "Imaginary",
+    },
+    "gain": {
+        "gain_db": "Gain (dB)",
+        "gain_linear": "Gain (linear)",
+    },
+    "impedance": {
+        "real": "Real(Z)",
+        "imag": "Imag(Z)",
+        "magnitude": "|Z|",
+    },
+    "admittance": {
+        "real": "Real(Y)",
+        "imag": "Imag(Y)",
+        "magnitude": "|Y|",
+    },
+    "qe": {
+        "linear": "QE",
+    },
+    "cm": {
+        "value": "Value",
+    },
+    "complex": {
+        "trajectory": "Trajectory",
+    },
+}
+_RESULT_TRACE_OPTIONS = {
+    "s": {"s": "S-Parameter"},
+    "gain": {"s": "Power Gain from S"},
+    "impedance": {"z": "Impedance"},
+    "admittance": {"y": "Admittance"},
+    "qe": {
+        "qe": "QE",
+        "qe_ideal": "QE (Ideal)",
+    },
+    "cm": {"cm": "CM"},
+    "complex": {
+        "s": "S",
+        "z": "Z",
+        "y": "Y",
+    },
+}
+
+
+def _build_setup_payload(
+    *,
+    start_ghz: float,
+    stop_ghz: float,
+    points: int,
+    n_modulation_harmonics: int,
+    n_pump_harmonics: int,
+    sources: list[dict[str, Any]],
+    include_dc: bool = False,
+    enable_three_wave_mixing: bool = False,
+    enable_four_wave_mixing: bool = True,
+    max_intermod_order: int = -1,
+    max_iterations: int = 1000,
+    f_tol: float = 1e-8,
+    line_search_switch_tol: float = 1e-5,
+    alpha_min: float = 1e-4,
+) -> dict[str, Any]:
+    """Build a saved-setup payload matching the UI save format."""
+    return {
+        "freq_range": {
+            "start_ghz": start_ghz,
+            "stop_ghz": stop_ghz,
+            "points": points,
+        },
+        "harmonics": {
+            "n_modulation_harmonics": n_modulation_harmonics,
+            "n_pump_harmonics": n_pump_harmonics,
+        },
+        "sources": sources,
+        "advanced": {
+            "include_dc": include_dc,
+            "enable_three_wave_mixing": enable_three_wave_mixing,
+            "enable_four_wave_mixing": enable_four_wave_mixing,
+            "max_intermod_order": max_intermod_order,
+            "max_iterations": max_iterations,
+            "f_tol": f_tol,
+            "line_search_switch_tol": line_search_switch_tol,
+            "alpha_min": alpha_min,
+        },
+    }
+
+
+def _build_source_payload(
+    *,
+    pump_freq_ghz: float,
+    port: int,
+    current_amp: float,
+    mode: tuple[int, ...] | list[int],
+) -> dict[str, Any]:
+    """Build one saved-setup source payload entry."""
+    return {
+        "pump_freq_ghz": float(pump_freq_ghz),
+        "port": int(port),
+        "current_amp": float(current_amp),
+        "mode": [int(value) for value in mode],
+    }
+
+
+def _format_source_mode_text(mode: tuple[int, ...] | list[int] | None) -> str:
+    """Format one source mode tuple for the UI text field."""
+    if mode is None:
+        return ""
+    values = tuple(int(value) for value in mode)
+    if not values:
+        return ""
+    return ", ".join(str(value) for value in values)
+
+
+def _parse_source_mode_text(raw_value: object) -> tuple[int, ...] | None:
+    """Parse the UI/source-payload mode field into a normalized tuple."""
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, (list, tuple)):
+        parsed = tuple(int(value) for value in raw_value)
+        return parsed or None
+
+    text = str(raw_value).strip()
+    if not text:
+        return None
+
+    normalized = text.strip("()[]")
+    normalized = normalized.replace(";", ",")
+    if not normalized:
+        return None
+
+    parts = [part.strip() for part in normalized.split(",") if part.strip()]
+    if not parts:
+        return None
+
+    return tuple(int(part) for part in parts)
+
+
+_JOSEPHSON_BUILTIN_SETUP_PAYLOADS: dict[str, dict[str, Any]] = {
+    "Josephson Parametric Amplifier (JPA)": _build_setup_payload(
+        start_ghz=4.5,
+        stop_ghz=5.0,
+        points=501,
+        n_modulation_harmonics=8,
+        n_pump_harmonics=16,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=4.75001,
+                port=1,
+                current_amp=0.00565e-6,
+                mode=(1,),
+            )
+        ],
+    ),
+    "Double-pumped Josephson Parametric Amplifier (JPA)": _build_setup_payload(
+        start_ghz=4.5,
+        stop_ghz=5.0,
+        points=501,
+        n_modulation_harmonics=8,
+        n_pump_harmonics=8,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=4.65001,
+                port=1,
+                current_amp=0.00565e-6 * 1.7,
+                mode=(1, 0),
+            ),
+            _build_source_payload(
+                pump_freq_ghz=4.85001,
+                port=1,
+                current_amp=0.00565e-6 * 1.7,
+                mode=(0, 1),
+            ),
+        ],
+    ),
+    "Flux-pumped Josephson Parametric Amplifier (JPA)": _build_setup_payload(
+        start_ghz=9.7,
+        stop_ghz=9.8,
+        points=1001,
+        n_modulation_harmonics=8,
+        n_pump_harmonics=16,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=19.50,
+                port=2,
+                current_amp=140.3e-6,
+                mode=(0,),
+            ),
+            _build_source_payload(
+                pump_freq_ghz=19.50,
+                port=2,
+                current_amp=0.7e-6,
+                mode=(1,),
+            ),
+        ],
+        include_dc=True,
+        enable_three_wave_mixing=True,
+    ),
+    "SNAIL Parametric Amplifier": _build_setup_payload(
+        start_ghz=7.8,
+        stop_ghz=8.2,
+        points=401,
+        n_modulation_harmonics=8,
+        n_pump_harmonics=16,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=16.0,
+                port=2,
+                current_amp=0.000159,
+                mode=(0,),
+            ),
+            _build_source_payload(
+                pump_freq_ghz=16.0,
+                port=2,
+                current_amp=4.4e-6,
+                mode=(1,),
+            ),
+        ],
+        include_dc=True,
+        enable_three_wave_mixing=True,
+    ),
+    "Josephson Traveling Wave Parametric Amplifier (JTWPA)": _build_setup_payload(
+        start_ghz=1.0,
+        stop_ghz=14.0,
+        points=131,
+        n_modulation_harmonics=10,
+        n_pump_harmonics=20,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=7.12,
+                port=1,
+                current_amp=1.85e-6,
+                mode=(1,),
+            )
+        ],
+    ),
+    "Floquet JTWPA": _build_setup_payload(
+        start_ghz=1.0,
+        stop_ghz=14.0,
+        points=131,
+        n_modulation_harmonics=10,
+        n_pump_harmonics=20,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=7.9,
+                port=1,
+                current_amp=1.1e-6,
+                mode=(1,),
+            )
+        ],
+    ),
+    "Floquet JTWPA with Dissipation": _build_setup_payload(
+        start_ghz=1.0,
+        stop_ghz=14.0,
+        points=131,
+        n_modulation_harmonics=10,
+        n_pump_harmonics=20,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=7.9,
+                port=1,
+                current_amp=1.1e-6 * (1 + 125e-6),
+                mode=(1,),
+            )
+        ],
+    ),
+    "Flux-Driven Josephson Traveling-Wave Parametric Amplifier (JTWPA)": _build_setup_payload(
+        start_ghz=5.0,
+        stop_ghz=25.0,
+        points=500,
+        n_modulation_harmonics=4,
+        n_pump_harmonics=8,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=20.0,
+                port=3,
+                current_amp=0.00019921960989995077,
+                mode=(0,),
+            ),
+            _build_source_payload(
+                pump_freq_ghz=20.0,
+                port=3,
+                current_amp=1.1953176593997045e-05,
+                mode=(1,),
+            ),
+        ],
+        include_dc=True,
+        enable_three_wave_mixing=True,
+        max_iterations=200,
+        line_search_switch_tol=0.0,
+        alpha_min=1e-7,
+    ),
+    "Impedance-engineered JPA": _build_setup_payload(
+        start_ghz=4.0,
+        stop_ghz=5.8,
+        points=181,
+        n_modulation_harmonics=4,
+        n_pump_harmonics=8,
+        sources=[
+            _build_source_payload(
+                pump_freq_ghz=9.8001,
+                port=2,
+                current_amp=0.686e-3,
+                mode=(0,),
+            ),
+            _build_source_payload(
+                pump_freq_ghz=9.8001,
+                port=2,
+                current_amp=0.247e-3,
+                mode=(1,),
+            ),
+        ],
+        include_dc=True,
+        enable_three_wave_mixing=True,
+        max_iterations=200,
+        line_search_switch_tol=0.0,
+        alpha_min=1e-7,
+    ),
+}
+
+
+def _builtin_saved_setups_for_schema(schema_name: str) -> list[dict[str, Any]]:
+    """Return built-in saved setups for known JosephsonCircuits example schemas."""
+    if not schema_name.startswith(_JOSEPHSON_EXAMPLE_PREFIX):
+        return []
+
+    example_name = schema_name.removeprefix(_JOSEPHSON_EXAMPLE_PREFIX).strip()
+    payload = _JOSEPHSON_BUILTIN_SETUP_PAYLOADS.get(example_name)
+    if payload is None:
+        return []
+
+    setup_slug = (
+        example_name.lower().replace(" ", "-").replace("(", "").replace(")", "").replace(",", "")
+    )
+    return [
+        {
+            "id": f"builtin:{setup_slug}:official-example",
+            "name": "Official Example",
+            "saved_at": "builtin",
+            "payload": payload,
+        }
+    ]
+
+
+def _merge_saved_setups_with_builtin(
+    existing_setups: list[dict[str, Any]],
+    builtin_setups: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Merge built-in saved setups while preserving user-created setups."""
+    if not builtin_setups:
+        return existing_setups
+
+    builtin_ids = {str(setup.get("id")) for setup in builtin_setups if setup.get("id")}
+    user_setups = [s for s in existing_setups if str(s.get("id")) not in builtin_ids]
+    return [*builtin_setups, *user_setups]
+
+
+def _ensure_builtin_saved_setups(schema_id: int, schema_name: str) -> list[dict[str, Any]]:
+    """Persist built-in example setups into user storage and return merged list."""
+    existing_setups = _load_saved_setups_for_schema(schema_id)
+    builtin_setups = _builtin_saved_setups_for_schema(schema_name)
+    merged_setups = _merge_saved_setups_with_builtin(existing_setups, builtin_setups)
+    if merged_setups != existing_setups:
+        _save_saved_setups_for_schema(schema_id, merged_setups)
+    return merged_setups
+
+
+def _has_selected_setup_entry(schema_id: int) -> bool:
+    """Return True when user storage already tracks a selected setup for this schema."""
+    raw_map = app.storage.user.get(_SIM_SETUP_SELECTED_KEY, {})
+    return isinstance(raw_map, dict) and str(schema_id) in raw_map
+
+
+def _result_metric_options_for_family(view_family: str) -> dict[str, str]:
+    """Return metric selector options for a result-view family."""
+    return dict(_RESULT_METRIC_OPTIONS.get(view_family, _RESULT_METRIC_OPTIONS["s"]))
+
+
+def _result_trace_options_for_family(view_family: str) -> dict[str, str]:
+    """Return trace selector options for a result-view family."""
+    return dict(_RESULT_TRACE_OPTIONS.get(view_family, _RESULT_TRACE_OPTIONS["s"]))
+
+
+def _result_port_options(result: SimulationResult) -> dict[int, str]:
+    """Return available output/input port options for the current result bundle."""
+    return {port: str(port) for port in result.available_port_indices}
+
+
+def _format_mode_label(mode: tuple[int, ...]) -> str:
+    """Return a readable label for one signal/idler mode tuple."""
+    values = ", ".join(str(value) for value in mode)
+    if all(value == 0 for value in mode):
+        return f"Signal ({values})"
+    return f"Sideband ({values})"
+
+
+def _result_mode_options(result: SimulationResult) -> dict[str, str]:
+    """Return mode selector options for the current result bundle."""
+    return {
+        SimulationResult.mode_token(mode): _format_mode_label(mode)
+        for mode in result.available_mode_indices
+    }
+
+
+def _first_option_key(options: dict[str, str]) -> str:
+    """Return the first key from a non-empty options dict."""
+    return next(iter(options))
+
+
+def _finite_float_or_none(value: float) -> float | None:
+    """Return value only when finite, otherwise None for Plotly gaps."""
+    import math
+
+    return value if math.isfinite(value) else None
+
+
+def _complex_component_series(
+    values: list[complex],
+    component: str,
+) -> list[float | None]:
+    """Project complex values to the requested scalar component."""
+    import math
+
+    if component == "real":
+        return [_finite_float_or_none(value.real) for value in values]
+    if component == "imag":
+        return [_finite_float_or_none(value.imag) for value in values]
+    if component == "magnitude":
+        return [_finite_float_or_none(abs(value)) for value in values]
+    if component == "phase_deg":
+        return [
+            _finite_float_or_none(math.degrees(math.atan2(value.imag, value.real)))
+            for value in values
+        ]
+    raise ValueError(f"Unsupported complex component: {component}")
+
+
+def _format_export_suffix(
+    output_mode: tuple[int, ...],
+    input_mode: tuple[int, ...] | None = None,
+) -> str:
+    """Build a concise mode suffix for exported dataset parameter names."""
+    if input_mode is None:
+        if all(value == 0 for value in output_mode):
+            return ""
+        return f" [om={output_mode}]"
+
+    if all(value == 0 for value in output_mode) and all(value == 0 for value in input_mode):
+        return ""
+    return f" [om={output_mode}, im={input_mode}]"
+
+
+def _format_mode_matrix_parameter_name(
+    prefix: str,
+    label: str,
+) -> str:
+    """Convert an internal mode-aware trace key into a user-facing parameter name."""
+    parsed = SimulationResult._parse_mode_trace_label(label)
+    if parsed is None:
+        return f"{prefix}?"
+    output_mode, output_port, input_mode, input_port = parsed
+    base = f"{prefix}{output_port}{input_port}"
+    return f"{base}{_format_export_suffix(output_mode, input_mode)}"
+
+
+def _format_mode_cm_parameter_name(label: str) -> str:
+    """Convert an internal CM trace key into a user-facing parameter name."""
+    parsed = SimulationResult._parse_cm_trace_label(label)
+    if parsed is None:
+        return "CM?"
+    output_mode, output_port = parsed
+    base = f"CM{output_port}"
+    return f"{base}{_format_export_suffix(output_mode)}"
+
+
+def _build_mode_complex_data_records(
+    *,
+    dataset_id: int,
+    data_type: str,
+    parameter_prefix: str,
+    real_map: dict[str, list[float]],
+    imag_map: dict[str, list[float]],
+    frequencies_ghz: list[float],
+) -> list[DataRecord]:
+    """Convert one complex-valued bundle into DataRecord rows."""
+    frequency_axis = [{"name": "frequency", "unit": "GHz", "values": frequencies_ghz}]
+    records: list[DataRecord] = []
+
+    for label in sorted(set(real_map) & set(imag_map)):
+        parameter_name = _format_mode_matrix_parameter_name(parameter_prefix, label)
+        records.append(
+            DataRecord(
+                dataset_id=dataset_id,
+                data_type=data_type,
+                parameter=parameter_name,
+                representation="real",
+                axes=frequency_axis,
+                values=real_map[label],
+            )
+        )
+        records.append(
+            DataRecord(
+                dataset_id=dataset_id,
+                data_type=data_type,
+                parameter=parameter_name,
+                representation="imaginary",
+                axes=frequency_axis,
+                values=imag_map[label],
+            )
+        )
+
+    return records
+
+
+def _build_mode_scalar_data_records(
+    *,
+    dataset_id: int,
+    data_type: str,
+    parameter_prefix: str,
+    values_map: dict[str, list[float]],
+    frequencies_ghz: list[float],
+) -> list[DataRecord]:
+    """Convert one scalar-valued bundle into DataRecord rows."""
+    frequency_axis = [{"name": "frequency", "unit": "GHz", "values": frequencies_ghz}]
+    records: list[DataRecord] = []
+
+    for label in sorted(values_map):
+        parameter_name = (
+            _format_mode_cm_parameter_name(label)
+            if parameter_prefix == "CM"
+            else _format_mode_matrix_parameter_name(parameter_prefix, label)
+        )
+        records.append(
+            DataRecord(
+                dataset_id=dataset_id,
+                data_type=data_type,
+                parameter=parameter_name,
+                representation="value",
+                axes=frequency_axis,
+                values=values_map[label],
+            )
+        )
+
+    return records
+
+
+def _build_simulation_result_figure(
+    result: SimulationResult,
+    view_family: str,
+    metric: str,
+    trace: str,
+    output_mode: tuple[int, ...],
+    output_port: int,
+    input_mode: tuple[int, ...],
+    input_port: int,
+    reference_impedance_ohm: float,
+    dark_mode: bool,
+) -> go.Figure:
+    """Build the selected simulation result figure from the cached result bundle."""
+    freq_values = result.frequencies_ghz
+    mode_suffix = _format_export_suffix(output_mode, input_mode)
+    s_label = f"S{output_port}{input_port}{mode_suffix}"
+    z_label = f"Z{output_port}{input_port}{mode_suffix}"
+    y_label = f"Y{output_port}{input_port}{mode_suffix}"
+
+    fig = go.Figure()
+    line_style = dict(color="rgb(99, 102, 241)", width=2)
+    x_axis_title = "Frequency (GHz)"
+    y_axis_title = "Value"
+    title = "Simulation Result"
+
+    if view_family == "s":
+        if metric == "magnitude_db":
+            y_values = result.get_mode_s_parameter_db(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+            y_axis_title = "Magnitude (dB)"
+            title = f"{s_label} Magnitude (dB)"
+        elif metric == "phase_deg":
+            y_values = result.get_mode_s_parameter_phase_deg(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+            y_axis_title = "Phase (deg)"
+            title = f"{s_label} Phase"
+        elif metric == "real":
+            y_values = result.get_mode_s_parameter_real(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+            y_axis_title = "Real"
+            title = f"{s_label} Real Part"
+        elif metric == "imag":
+            y_values = result.get_mode_s_parameter_imag(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+            y_axis_title = "Imaginary"
+            title = f"{s_label} Imaginary Part"
+        else:
+            y_values = result.get_mode_s_parameter_magnitude(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+            y_axis_title = "Magnitude (linear)"
+            title = f"{s_label} Magnitude"
+
+        fig.add_trace(
+            go.Scatter(
+                x=freq_values,
+                y=y_values,
+                mode="lines",
+                name=s_label,
+                line=line_style,
+            )
+        )
+    elif view_family == "gain":
+        if metric == "gain_linear":
+            y_values = result.get_mode_gain_linear(output_mode, output_port, input_mode, input_port)
+            y_axis_title = "Gain (linear)"
+            title = f"Gain from {s_label}"
+        else:
+            y_values = result.get_mode_gain_db(output_mode, output_port, input_mode, input_port)
+            y_axis_title = "Gain (dB)"
+            title = f"Gain (dB) from {s_label}"
+
+        fig.add_trace(
+            go.Scatter(
+                x=freq_values,
+                y=y_values,
+                mode="lines",
+                name=s_label,
+                line=line_style,
+            )
+        )
+    elif view_family == "impedance":
+        try:
+            z_values = result.get_mode_z_parameter_complex(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+        except KeyError:
+            z_values = result.calculate_input_impedance_ohm(
+                reference_impedance_ohm,
+                port=output_port,
+            )
+        y_values = _complex_component_series(z_values, metric)
+        unit_label = "Ohm"
+        if metric == "real":
+            title = f"{z_label} Real Part"
+            y_axis_title = f"Real ({unit_label})"
+        elif metric == "imag":
+            title = f"{z_label} Imaginary Part"
+            y_axis_title = f"Imaginary ({unit_label})"
+        else:
+            title = f"{z_label} Magnitude"
+            y_axis_title = f"Magnitude ({unit_label})"
+
+        fig.add_trace(
+            go.Scatter(
+                x=freq_values,
+                y=y_values,
+                mode="lines",
+                name=z_label,
+                line=line_style,
+            )
+        )
+    elif view_family == "admittance":
+        try:
+            y_values_complex = result.get_mode_y_parameter_complex(
+                output_mode,
+                output_port,
+                input_mode,
+                input_port,
+            )
+        except KeyError:
+            y_values_complex = result.calculate_input_admittance_s(
+                reference_impedance_ohm,
+                port=output_port,
+            )
+        y_values = _complex_component_series(y_values_complex, metric)
+        unit_label = "S"
+        if metric == "real":
+            title = f"{y_label} Real Part"
+            y_axis_title = f"Real ({unit_label})"
+        elif metric == "imag":
+            title = f"{y_label} Imaginary Part"
+            y_axis_title = f"Imaginary ({unit_label})"
+        else:
+            title = f"{y_label} Magnitude"
+            y_axis_title = f"Magnitude ({unit_label})"
+
+        fig.add_trace(
+            go.Scatter(
+                x=freq_values,
+                y=y_values,
+                mode="lines",
+                name=y_label,
+                line=line_style,
+            )
+        )
+    elif view_family == "qe":
+        if trace == "qe_ideal":
+            y_values = result.get_mode_qe_ideal(output_mode, output_port, input_mode, input_port)
+            title = f"QE Ideal {output_port}{input_port}{mode_suffix}"
+        else:
+            y_values = result.get_mode_qe(output_mode, output_port, input_mode, input_port)
+            title = f"QE {output_port}{input_port}{mode_suffix}"
+        y_axis_title = "Quantum Efficiency"
+        fig.add_trace(
+            go.Scatter(
+                x=freq_values,
+                y=y_values,
+                mode="lines",
+                name=title,
+                line=line_style,
+            )
+        )
+    elif view_family == "cm":
+        y_values = result.get_mode_cm(output_mode, output_port)
+        title = f"CM{output_port}{_format_export_suffix(output_mode)}"
+        y_axis_title = "Commutation"
+        fig.add_trace(
+            go.Scatter(
+                x=freq_values,
+                y=y_values,
+                mode="lines",
+                name=title,
+                line=line_style,
+            )
+        )
+    elif view_family == "complex":
+        s_values = result.get_mode_s_parameter_complex(
+            output_mode,
+            output_port,
+            input_mode,
+            input_port,
+        )
+        if trace == "z":
+            try:
+                complex_values = result.get_mode_z_parameter_complex(
+                    output_mode,
+                    output_port,
+                    input_mode,
+                    input_port,
+                )
+            except KeyError:
+                complex_values = result.calculate_input_impedance_ohm(
+                    reference_impedance_ohm,
+                    port=output_port,
+                )
+            trace_name = z_label
+            title = f"{z_label} Complex Plane"
+        elif trace == "y":
+            try:
+                complex_values = result.get_mode_y_parameter_complex(
+                    output_mode,
+                    output_port,
+                    input_mode,
+                    input_port,
+                )
+            except KeyError:
+                complex_values = result.calculate_input_admittance_s(
+                    reference_impedance_ohm,
+                    port=output_port,
+                )
+            trace_name = y_label
+            title = f"{y_label} Complex Plane"
+        else:
+            complex_values = s_values
+            trace_name = s_label
+            title = f"{s_label} Complex Plane"
+
+        fig.add_trace(
+            go.Scatter(
+                x=[_finite_float_or_none(value.real) for value in complex_values],
+                y=[_finite_float_or_none(value.imag) for value in complex_values],
+                mode="lines+markers",
+                name=trace_name,
+                line=line_style,
+                marker=dict(size=5),
+                customdata=freq_values,
+                hovertemplate=("Re=%{x}<br>Im=%{y}<br>f=%{customdata:.6f} GHz<extra></extra>"),
+            )
+        )
+        x_axis_title = "Real"
+        y_axis_title = "Imaginary"
+    else:
+        raise ValueError(f"Unsupported result view family: {view_family}")
+
+    theme_layout = get_plotly_layout(dark=dark_mode)
+    fig.update_layout(
+        title=title,
+        xaxis_title=x_axis_title,
+        yaxis_title=y_axis_title,
+        margin=dict(l=40, r=20, t=40, b=40),
+        showlegend=True,
+        hovermode="closest" if view_family == "complex" else "x unified",
+        **theme_layout,
+    )
+    return fig
+
+
+def _build_s_parameter_data_records(dataset_id: int, result: SimulationResult) -> list[DataRecord]:
+    """Convert the cached zero-mode S-parameter bundle into DataRecord rows."""
+    frequency_axis = [{"name": "frequency", "unit": "GHz", "values": result.frequencies_ghz}]
+    records: list[DataRecord] = []
+
+    for trace_label in result.available_s_parameter_labels:
+        records.append(
+            DataRecord(
+                dataset_id=dataset_id,
+                data_type="s_params",
+                parameter=trace_label,
+                representation="real",
+                axes=frequency_axis,
+                values=result.get_s_parameter_real_by_label(trace_label),
+            )
+        )
+        records.append(
+            DataRecord(
+                dataset_id=dataset_id,
+                data_type="s_params",
+                parameter=trace_label,
+                representation="imaginary",
+                axes=frequency_axis,
+                values=result.get_s_parameter_imag_by_label(trace_label),
+            )
+        )
+
+    return records
+
+
+def _build_result_bundle_data_records(
+    dataset_id: int,
+    result: SimulationResult,
+) -> list[DataRecord]:
+    """Convert all cached simulation bundles into DataRecord rows."""
+    records: list[DataRecord] = []
+
+    records.extend(
+        _build_mode_complex_data_records(
+            dataset_id=dataset_id,
+            data_type="s_params",
+            parameter_prefix="S",
+            real_map=result.s_parameter_mode_real or result._resolved_mode_s_parameter_real(),
+            imag_map=result.s_parameter_mode_imag or result._resolved_mode_s_parameter_imag(),
+            frequencies_ghz=result.frequencies_ghz,
+        )
+    )
+    records.extend(
+        _build_mode_complex_data_records(
+            dataset_id=dataset_id,
+            data_type="z_params",
+            parameter_prefix="Z",
+            real_map=result.z_parameter_mode_real,
+            imag_map=result.z_parameter_mode_imag,
+            frequencies_ghz=result.frequencies_ghz,
+        )
+    )
+    records.extend(
+        _build_mode_complex_data_records(
+            dataset_id=dataset_id,
+            data_type="y_params",
+            parameter_prefix="Y",
+            real_map=result.y_parameter_mode_real,
+            imag_map=result.y_parameter_mode_imag,
+            frequencies_ghz=result.frequencies_ghz,
+        )
+    )
+    records.extend(
+        _build_mode_scalar_data_records(
+            dataset_id=dataset_id,
+            data_type="qe",
+            parameter_prefix="QE",
+            values_map=result.qe_parameter_mode,
+            frequencies_ghz=result.frequencies_ghz,
+        )
+    )
+    records.extend(
+        _build_mode_scalar_data_records(
+            dataset_id=dataset_id,
+            data_type="qe_ideal",
+            parameter_prefix="QEideal",
+            values_map=result.qe_ideal_parameter_mode,
+            frequencies_ghz=result.frequencies_ghz,
+        )
+    )
+    records.extend(
+        _build_mode_scalar_data_records(
+            dataset_id=dataset_id,
+            data_type="commutation",
+            parameter_prefix="CM",
+            values_map=result.cm_parameter_mode,
+            frequencies_ghz=result.frequencies_ghz,
+        )
+    )
+
+    if not records:
+        records.extend(_build_s_parameter_data_records(dataset_id, result))
+
+    return records
 
 
 def _summarize_simulation_error(error: Exception | str) -> tuple[str, str]:
@@ -121,6 +1050,10 @@ def _detect_harmonic_grid_coincidences(
 
     hits: list[tuple[int, int, float, int]] = []
     for source_index, source in enumerate(sources, start=1):
+        if source.mode_components is not None and all(
+            value == 0 for value in source.mode_components
+        ):
+            continue
         fp = float(source.pump_freq_ghz)
         if fp <= 0:
             continue
@@ -252,7 +1185,7 @@ def _render_simulation_environment():
 
             ui.select(
                 options=circuit_options, value=active_circuit_id, on_change=on_circuit_change
-            ).props("dense outline dark standout").classes("w-64")
+            ).props("dense outlined options-dense").classes("w-64")
 
         # Get active record
         active_record = next((c for c in circuits if c.id == active_circuit_id), circuits[0])
@@ -374,7 +1307,8 @@ def _render_simulation_environment():
                 render_preview()
 
             with ui.card().classes("w-full bg-surface rounded-xl p-6"):
-                saved_setups = _load_saved_setups_for_schema(active_record.id)
+                had_selected_setup_entry = _has_selected_setup_entry(active_record.id)
+                saved_setups = _ensure_builtin_saved_setups(active_record.id, active_record.name)
                 saved_setup_by_id = {
                     str(setup.get("id")): setup
                     for setup in saved_setups
@@ -388,8 +1322,17 @@ def _render_simulation_environment():
                     }
                 )
                 selected_setup_id = _load_selected_setup_id(active_record.id)
+                builtin_setup_ids = [
+                    str(setup.get("id"))
+                    for setup in saved_setups
+                    if str(setup.get("saved_at")) == "builtin" and setup.get("id")
+                ]
+                default_builtin_setup_id = builtin_setup_ids[0] if builtin_setup_ids else ""
                 if selected_setup_id not in saved_setup_options:
-                    selected_setup_id = ""
+                    selected_setup_id = default_builtin_setup_id or ""
+                elif not had_selected_setup_entry and default_builtin_setup_id:
+                    selected_setup_id = default_builtin_setup_id
+                _save_selected_setup_id(active_record.id, selected_setup_id)
 
                 with ui.row().classes("w-full items-center justify-between mb-4"):
                     with ui.row().classes("items-center gap-2"):
@@ -457,7 +1400,13 @@ def _render_simulation_environment():
                             return
 
                 def add_source_form(initial: DriveSourceConfig | None = None) -> None:
-                    source_defaults = initial or DriveSourceConfig()
+                    if initial is None:
+                        next_index = len(source_forms)
+                        fallback_mode = [0] * (next_index + 1)
+                        fallback_mode[next_index] = 1
+                        source_defaults = DriveSourceConfig(mode_components=tuple(fallback_mode))
+                    else:
+                        source_defaults = initial
                     with (
                         sources_container,
                         ui.card().classes(
@@ -485,6 +1434,11 @@ def _render_simulation_environment():
                                 "Source Current Ip (A)",
                                 value=float(source_defaults.current_amp),
                             ).classes("flex-grow")
+                            mode_input = ui.input(
+                                "Source Mode",
+                                value=_format_source_mode_text(source_defaults.mode_components),
+                                placeholder="e.g. 1 or 0, 1",
+                            ).classes("flex-grow")
 
                     source_forms.append(
                         {
@@ -494,6 +1448,7 @@ def _render_simulation_environment():
                             "source_pump_freq_input": source_pump_freq_input,
                             "port_input": port_input,
                             "current_input": current_input,
+                            "mode_input": mode_input,
                         }
                     )
                     refresh_source_forms()
@@ -504,7 +1459,14 @@ def _render_simulation_environment():
                         "outline color=primary size=sm"
                     )
 
-                add_source_form(DriveSourceConfig(pump_freq_ghz=5.0, port=1, current_amp=0.0))
+                add_source_form(
+                    DriveSourceConfig(
+                        pump_freq_ghz=5.0,
+                        port=1,
+                        current_amp=0.0,
+                        mode_components=(1,),
+                    )
+                )
 
                 def collect_current_setup_payload() -> dict[str, Any] | None:
                     required_values = [
@@ -523,6 +1485,7 @@ def _render_simulation_environment():
                         source_pump_freq_input = source_form["source_pump_freq_input"]
                         port_input = source_form["port_input"]
                         current_input = source_form["current_input"]
+                        mode_input = source_form["mode_input"]
 
                         if (
                             source_pump_freq_input.value is None
@@ -532,12 +1495,25 @@ def _render_simulation_environment():
                             ui.notify(f"Source {idx} has missing parameters.", type="warning")
                             return None
 
+                        try:
+                            parsed_mode = _parse_source_mode_text(mode_input.value)
+                        except ValueError:
+                            ui.notify(
+                                (
+                                    f"Source {idx} has an invalid mode tuple. "
+                                    "Use comma-separated integers, for example 0 or 1, 0."
+                                ),
+                                type="warning",
+                            )
+                            return None
+
                         setup_sources.append(
-                            {
-                                "pump_freq_ghz": float(source_pump_freq_input.value),
-                                "port": int(port_input.value),
-                                "current_amp": float(current_input.value),
-                            }
+                            _build_source_payload(
+                                pump_freq_ghz=float(source_pump_freq_input.value),
+                                port=int(port_input.value),
+                                current_amp=float(current_input.value),
+                                mode=parsed_mode or (1,),
+                            )
                         )
 
                     return {
@@ -617,12 +1593,23 @@ def _render_simulation_environment():
                         if not valid_sources:
                             valid_sources = [{"pump_freq_ghz": 5.0, "port": 1, "current_amp": 0.0}]
 
-                        for source in valid_sources:
+                        generated_mode_width = max(len(valid_sources), 1)
+                        for source_index, source in enumerate(valid_sources, start=1):
+                            raw_mode = source.get("mode")
+                            try:
+                                parsed_mode = _parse_source_mode_text(raw_mode)
+                            except ValueError:
+                                parsed_mode = None
+                            if parsed_mode is None:
+                                fallback_mode = [0] * generated_mode_width
+                                fallback_mode[source_index - 1] = 1
+                                parsed_mode = tuple(fallback_mode)
                             add_source_form(
                                 DriveSourceConfig(
                                     pump_freq_ghz=float(source["pump_freq_ghz"]),
                                     port=int(source["port"]),
                                     current_amp=float(source["current_amp"]),
+                                    mode_components=parsed_mode,
                                 )
                             )
                     finally:
@@ -630,7 +1617,10 @@ def _render_simulation_environment():
 
                 def refresh_saved_setup_select(preferred_id: str | None = None) -> None:
                     nonlocal saved_setups, saved_setup_by_id
-                    saved_setups = _load_saved_setups_for_schema(active_record.id)
+                    saved_setups = _ensure_builtin_saved_setups(
+                        active_record.id,
+                        active_record.name,
+                    )
                     saved_setup_by_id = {
                         str(setup.get("id")): setup
                         for setup in saved_setups
@@ -798,6 +1788,7 @@ def _render_simulation_environment():
                             source_pump_freq_input = source_form["source_pump_freq_input"]
                             port_input = source_form["port_input"]
                             current_input = source_form["current_input"]
+                            mode_input = source_form["mode_input"]
 
                             if (
                                 source_pump_freq_input.value is None
@@ -812,11 +1803,29 @@ def _render_simulation_environment():
                                 ui.notify(f"Source {idx} has missing parameters", type="warning")
                                 return
 
+                            try:
+                                parsed_mode = _parse_source_mode_text(mode_input.value)
+                            except ValueError:
+                                reset_status()
+                                append_status(
+                                    "warning",
+                                    (
+                                        f"Source {idx} has an invalid mode tuple. "
+                                        "Use comma-separated integers."
+                                    ),
+                                )
+                                ui.notify(
+                                    (f"Source {idx} has an invalid mode tuple (e.g. 0 or 1, 0)."),
+                                    type="warning",
+                                )
+                                return
+
                             sources.append(
                                 DriveSourceConfig(
                                     pump_freq_ghz=float(source_pump_freq_input.value),
                                     port=int(port_input.value),
                                     current_amp=float(current_input.value),
+                                    mode_components=parsed_mode,
                                 )
                             )
 
@@ -895,11 +1904,17 @@ def _render_simulation_environment():
                             ),
                         )
                         for source_idx, source in enumerate(sources, start=1):
+                            mode_label = (
+                                str(source.mode_components)
+                                if source.mode_components is not None
+                                else "auto"
+                            )
                             append_status(
                                 "info",
                                 (
                                     f"S{source_idx}: fp={source.pump_freq_ghz:.5f} GHz, "
-                                    f"port={source.port}, Ip={source.current_amp:.3e} A."
+                                    f"port={source.port}, mode={mode_label}, "
+                                    f"Ip={source.current_amp:.3e} A."
                                 ),
                             )
                         append_status(
@@ -948,19 +1963,6 @@ def _render_simulation_environment():
                             sim_button.props(remove="loading")
                             return
 
-                        # Plot Results
-                        fig = go.Figure()
-
-                        fig.add_trace(
-                            go.Scatter(
-                                x=result.frequencies_ghz,
-                                y=result.s11_magnitude,
-                                mode="lines",
-                                name="|S11|",
-                                line=dict(color="rgb(99, 102, 241)", width=2),
-                            )
-                        )
-
                         # Save state for persistence
                         last_sim_result = result
                         last_freq_range = freq_range
@@ -972,19 +1974,6 @@ def _render_simulation_environment():
                             ),
                         )
 
-                        theme_layout = get_plotly_layout(
-                            dark=app.storage.user.get("dark_mode", True)
-                        )
-                        fig.update_layout(
-                            title="S11 Magnitude Response",
-                            xaxis_title="Frequency (GHz)",
-                            yaxis_title="Magnitude (linear)",
-                            margin=dict(l=40, r=20, t=40, b=40),
-                            showlegend=True,
-                            hovermode="x unified",
-                            **theme_layout,
-                        )
-
                         def on_save_click():
                             _save_simulation_results_dialog(
                                 latest_record,
@@ -994,13 +1983,233 @@ def _render_simulation_environment():
 
                         results_container.clear()
                         with results_container:
-                            with ui.row().classes("w-full justify-end mb-2"):
+                            view_family_to_label = {
+                                family: label for family, label in _RESULT_FAMILY_OPTIONS.items()
+                            }
+                            view_label_to_family = {
+                                label: family for family, label in _RESULT_FAMILY_OPTIONS.items()
+                            }
+
+                            with ui.row().classes(
+                                "w-full items-center justify-between gap-3 mb-3 flex-wrap"
+                            ):
+                                ui.label(
+                                    "All cached mode families come from one hbsolve run. "
+                                    "Changing view, ports, or modes does not rerun the simulation."
+                                ).classes("text-xs text-muted")
                                 ui.button(
                                     "Save Results to Dataset",
                                     icon="save",
                                     on_click=on_save_click,
                                 ).props("outline color=primary size=sm")
-                            ui.plotly(fig).classes("w-full h-full min-h-[400px]")
+                            with ui.row().classes("w-full gap-3 items-end mb-3 flex-wrap"):
+                                view_toggle = ui.toggle(
+                                    list(view_label_to_family),
+                                    value=view_family_to_label["s"],
+                                ).props("unelevated no-caps")
+                                metric_select = (
+                                    ui.select(
+                                        label="Metric",
+                                        options=_result_metric_options_for_family("s"),
+                                        value="magnitude_linear",
+                                    )
+                                    .props("dense outlined options-dense")
+                                    .classes("w-52")
+                                )
+                                trace_select = (
+                                    ui.select(
+                                        label="Trace",
+                                        options=_result_trace_options_for_family("s"),
+                                        value="s",
+                                    )
+                                    .props("dense outlined options-dense")
+                                    .classes("w-60")
+                                )
+                                mode_options = _result_mode_options(last_sim_result)
+                                default_mode = next(iter(mode_options))
+                                output_mode_select = (
+                                    ui.select(
+                                        label="Output Mode",
+                                        options=mode_options,
+                                        value=default_mode,
+                                    )
+                                    .props("dense outlined options-dense")
+                                    .classes("w-48")
+                                )
+                                input_mode_select = (
+                                    ui.select(
+                                        label="Input Mode",
+                                        options=mode_options,
+                                        value=default_mode,
+                                    )
+                                    .props("dense outlined options-dense")
+                                    .classes("w-48")
+                                )
+                                port_options = _result_port_options(last_sim_result)
+                                default_port = next(iter(port_options))
+                                output_port_select = (
+                                    ui.select(
+                                        label="Output Port",
+                                        options=port_options,
+                                        value=default_port,
+                                    )
+                                    .props("dense outlined")
+                                    .classes("w-32")
+                                )
+                                input_port_select = (
+                                    ui.select(
+                                        label="Input Port",
+                                        options=port_options,
+                                        value=default_port,
+                                    )
+                                    .props("dense outlined")
+                                    .classes("w-32")
+                                )
+                                reference_impedance_input = ui.number(
+                                    "Z0 (Ohm)",
+                                    value=50.0,
+                                    format="%.6g",
+                                ).classes("w-36")
+
+                            helper_label = ui.label("").classes("w-full text-xs text-muted mb-2")
+                            plot_host = ui.column().classes("w-full min-h-[400px]")
+
+                            def render_result_view() -> None:
+                                current_family = view_label_to_family.get(
+                                    str(view_toggle.value or ""),
+                                    "s",
+                                )
+                                metric_options = _result_metric_options_for_family(current_family)
+                                trace_options = _result_trace_options_for_family(current_family)
+
+                                metric_select.options = metric_options
+                                if metric_select.value not in metric_options:
+                                    metric_select.value = _first_option_key(metric_options)
+
+                                trace_select.options = trace_options
+                                if trace_select.value not in trace_options:
+                                    trace_select.value = _first_option_key(trace_options)
+
+                                selected_output_mode_token = str(
+                                    output_mode_select.value or default_mode
+                                )
+                                selected_input_mode_token = str(
+                                    input_mode_select.value or default_mode
+                                )
+                                selected_output_mode = SimulationResult.parse_mode_token(
+                                    selected_output_mode_token
+                                )
+                                selected_input_mode = SimulationResult.parse_mode_token(
+                                    selected_input_mode_token
+                                )
+                                selected_output_port = int(output_port_select.value or default_port)
+                                selected_input_port = int(input_port_select.value or default_port)
+                                selected_trace = str(trace_select.value)
+
+                                output_mode_select.options = mode_options
+                                input_mode_select.options = mode_options
+                                input_port_select.options = port_options
+                                output_port_select.options = port_options
+
+                                lock_input_selectors = current_family == "cm"
+                                if current_family == "cm":
+                                    if selected_input_mode != selected_output_mode:
+                                        selected_input_mode = selected_output_mode
+                                        input_mode_select.value = SimulationResult.mode_token(
+                                            selected_output_mode
+                                        )
+                                    if selected_input_port != selected_output_port:
+                                        selected_input_port = selected_output_port
+                                        input_port_select.value = selected_output_port
+
+                                if current_family in {"impedance", "admittance"} or (
+                                    current_family == "complex" and selected_trace in {"z", "y"}
+                                ):
+                                    lock_input_selectors = True
+                                    if selected_input_port != selected_output_port:
+                                        selected_input_port = selected_output_port
+                                        input_port_select.value = selected_input_port
+                                    if selected_input_mode != selected_output_mode:
+                                        selected_input_mode = selected_output_mode
+                                        input_mode_select.value = SimulationResult.mode_token(
+                                            selected_output_mode
+                                        )
+                                if lock_input_selectors:
+                                    input_port_select.disable()
+                                    input_mode_select.disable()
+                                else:
+                                    input_port_select.enable()
+                                    input_mode_select.enable()
+
+                                z0_value = float(reference_impedance_input.value or 50.0)
+                                if z0_value <= 0:
+                                    z0_value = 50.0
+                                    reference_impedance_input.value = z0_value
+
+                                figure = _build_simulation_result_figure(
+                                    result=last_sim_result,
+                                    view_family=current_family,
+                                    metric=str(metric_select.value),
+                                    trace=selected_trace,
+                                    output_mode=selected_output_mode,
+                                    output_port=selected_output_port,
+                                    input_mode=selected_input_mode,
+                                    input_port=selected_input_port,
+                                    reference_impedance_ohm=z0_value,
+                                    dark_mode=app.storage.user.get("dark_mode", True),
+                                )
+
+                                if current_family in {"impedance", "admittance"}:
+                                    family_prefix = "Z" if current_family == "impedance" else "Y"
+                                    helper_label.text = (
+                                        f"{current_family.title()} is using the native "
+                                        f"{family_prefix}{selected_output_port}"
+                                        f"{selected_input_port} "
+                                        f"trace for mode {selected_output_mode}."
+                                    )
+                                elif current_family == "qe":
+                                    helper_label.text = (
+                                        "QE uses the cached linearized hbsolve bundle. "
+                                        "Select non-zero modes to inspect idler/sideband QE."
+                                    )
+                                elif current_family == "cm":
+                                    helper_label.text = (
+                                        "CM is indexed by output mode and output port only. "
+                                        "Input selectors are fixed to match."
+                                    )
+                                elif current_family == "complex":
+                                    if selected_trace == "s":
+                                        helper_label.text = (
+                                            "Complex plane is showing the selected cached "
+                                            f"S{selected_output_port}{selected_input_port} trace."
+                                        )
+                                    else:
+                                        helper_label.text = (
+                                            "Complex plane is showing the selected cached "
+                                            f"{selected_trace.upper()}{selected_output_port}"
+                                            f"{selected_input_port} trace."
+                                        )
+                                else:
+                                    helper_label.text = (
+                                        "Select non-zero modes to inspect idler/sideband "
+                                        "traces without rerunning the solver."
+                                    )
+
+                                plot_host.clear()
+                                with plot_host:
+                                    ui.plotly(figure).classes("w-full h-full min-h-[400px]")
+
+                            view_toggle.on_value_change(lambda _e: render_result_view())
+                            metric_select.on_value_change(lambda _e: render_result_view())
+                            trace_select.on_value_change(lambda _e: render_result_view())
+                            output_mode_select.on_value_change(lambda _e: render_result_view())
+                            input_mode_select.on_value_change(lambda _e: render_result_view())
+                            output_port_select.on_value_change(lambda _e: render_result_view())
+                            input_port_select.on_value_change(lambda _e: render_result_view())
+                            reference_impedance_input.on_value_change(
+                                lambda _e: render_result_view()
+                            )
+                            render_result_view()
 
                     except Exception as e:
                         summary, detail = _summarize_simulation_error(e)
@@ -1058,8 +2267,23 @@ def _save_simulation_results_dialog(
     circuit_record: CircuitRecord, freq_range: FrequencyRange, result: SimulationResult
 ):
     """Dialog for saving SimulationResult into DataRecords."""
+    bundle_records = _build_result_bundle_data_records(dataset_id=0, result=result)
+    bundle_trace_count = len(
+        {
+            (
+                record.data_type,
+                record.parameter,
+            )
+            for record in bundle_records
+        }
+    )
+
     with ui.dialog() as dialog, ui.card().classes("w-full max-w-lg bg-surface"):
         ui.label("Save Simulation Results").classes("text-xl font-bold mb-4")
+        ui.label(
+            "This saves the cached result bundle "
+            f"({bundle_trace_count} trace(s), including sidebands / QE / CM when available)."
+        ).classes("text-sm text-muted mb-3")
 
         try:
             with get_unit_of_work() as uow:
@@ -1077,7 +2301,7 @@ def _save_simulation_results_dialog(
         name_input = (
             ui.input("New Dataset Name", value=default_name)
             .classes("w-full mb-4 text-lg")
-            .props("standout dark")
+            .props("outlined")
         ).bind_visibility_from(mode_toggle, "value", value="Create New")
 
         dataset_options = {d.id: d.name for d in datasets}
@@ -1085,7 +2309,7 @@ def _save_simulation_results_dialog(
         dataset_select = (
             ui.select(options=dataset_options, label="Select Existing Dataset")
             .classes("w-full mb-4")
-            .props("standout dark")
+            .props("outlined options-dense")
             .bind_visibility_from(mode_toggle, "value", value="Append to Existing")
         )
 
@@ -1123,32 +2347,15 @@ def _save_simulation_results_dialog(
                         ds_id = dataset_select.value
                         ds_name = dataset_options[ds_id]
 
-                    # Create DataRecords for real and imaginary parts of S11
-                    dr_real = DataRecord(
-                        dataset_id=ds_id,
-                        data_type="s_params",
-                        parameter="S11",
-                        representation="real",
-                        axes=[
-                            {"name": "frequency", "unit": "GHz", "values": result.frequencies_ghz}
-                        ],
-                        values=result.s11_real,
-                    )
-                    dr_imag = DataRecord(
-                        dataset_id=ds_id,
-                        data_type="s_params",
-                        parameter="S11",
-                        representation="imaginary",
-                        axes=[
-                            {"name": "frequency", "unit": "GHz", "values": result.frequencies_ghz}
-                        ],
-                        values=result.s11_imag,
-                    )
-                    uow.data_records.add(dr_real)
-                    uow.data_records.add(dr_imag)
+                    data_records = _build_result_bundle_data_records(ds_id, result)
+                    for data_record in data_records:
+                        uow.data_records.add(data_record)
                     uow.commit()  # Commit all data records
 
-                ui.notify(f"Saved results to: {ds_name}", type="positive")
+                ui.notify(
+                    (f"Saved {bundle_trace_count} trace(s) to: {ds_name}"),
+                    type="positive",
+                )
                 dialog.close()
             except Exception as e:
                 if "UNIQUE constraint failed" in str(e):

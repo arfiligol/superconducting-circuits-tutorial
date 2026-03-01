@@ -46,26 +46,26 @@ updated_by: docs-team
 | Parameter Binding | 顯示值固定來自 `value_ref -> parameters` |
 
 !!! tip "Pattern-aware vs Generic fallback"
-    偵測到 JTWPA/JJTWPA 這類重複 cell 結構時，走 ladder-first。  
+    偵測到 JTWPA/JJTWPA 這類重複 cell 結構時，走 ladder-first。
     classifier 信心不足時必須退回 generic orthogonal，不可硬套 ladder。
 
 !!! success "已實作到程式的第一階段（2026-02-28）"
-    目前 `circuit_visualizer` 已落地以下行為：  
-    - 粗粒度 profile classifier：`generic` / `jpa_like` / `jtwpa_like`  
-    - 簡單鏈狀 topology 會先抽出固定的 signal backbone（主幹 node anchor）  
-    - 依 signal node 建立 shunt cluster metadata（同節點多個垂直支路可辨識）  
-    - 高密度 shunt 會以 branch offset 從 backbone 向左右展開，而不是把主幹往前擠  
+    目前 `circuit_visualizer` 已落地以下行為：
+    - 粗粒度 profile classifier：`generic` / `jpa_like` / `jtwpa_like`
+    - 簡單鏈狀 topology 會先抽出固定的 signal backbone（主幹 node anchor）
+    - 依 signal node 建立 shunt cluster metadata（同節點多個垂直支路可辨識）
+    - 高密度 shunt 會以 branch offset 從 backbone 向左右展開，而不是把主幹往前擠
     - 垂直支路標籤改為 cluster-aware 的左右外擴標示，而非固定堆疊在元件旁
 
 !!! warning "Bridge 可觀測性要求"
     每段 bridge 必須記錄 `bridge_id`, `conflict_reason`, `involved_nets`, `final_geometry`，否則不可視為可維護行為。
 
 !!! warning "已知缺口（2026-02-28）"
-    目前程式實作仍未完成以下契約：  
-    - 真正的 `Net/Hyperedge` 主幹模型（目前只有「simple chain backbone」特例）  
-    - 局部約束式 label 選址（目前僅是 cluster-aware outward placement）  
-    - 完整的 pattern-aware routing（目前只先影響 backbone / spacing / 標註）  
-    - bridge observability metadata（尚未輸出 `bridge_id` 等診斷資訊）  
+    目前程式實作仍未完成以下契約：
+    - 真正的 `Net/Hyperedge` 主幹模型（目前只有「simple chain backbone」特例）
+    - 局部約束式 label 選址（目前僅是 cluster-aware outward placement）
+    - 完整的 pattern-aware routing（目前只先影響 backbone / spacing / 標註）
+    - bridge observability metadata（尚未輸出 `bridge_id` 等診斷資訊）
     因此在更高密度的三支路以上 shunt、超長數值字串、或混合耦合元件區，仍可能出現文字互相逼近或與線段距離不足的情況。
 
 ## Panzoom Contract
@@ -79,11 +79,11 @@ updated_by: docs-team
 | Control Sync | 滾輪/拖曳/鍵盤/`+ - reset` 按鈕必須共用同一個 panzoom state 與 update callback |
 
 !!! warning "縮放狀態保留條件"
-    只有在尺寸相容時保留 transform；不相容就 `fit` 或 `reset`。  
+    只有在尺寸相容時保留 transform；不相容就 `fit` 或 `reset`。
     建議門檻：長寬比差異 <= 5%，寬高差異各 <= 15%。
 
 !!! tip "按鈕與直接操作同步規則"
-    `+`、`-`、`Reset` 不可自行維護獨立縮放值，必須呼叫同一個 panzoom instance API。  
+    `+`、`-`、`Reset` 不可自行維護獨立縮放值，必須呼叫同一個 panzoom instance API。
     UI 百分比顯示（例如 `120%`）只能來自同一個 `onTransform` 事件，避免狀態分裂。
 
 ```mermaid
@@ -114,9 +114,9 @@ flowchart TD
 | Label torture test | 100%/150% 下 label 不可大面積遮元件 |
 
 !!! success "硬性非回歸約束"
-    1) 每個 node 只標註一次  
-    2) 顯示值來源固定為 `value_ref -> parameters`  
-    3) 禁止導線穿過元件符號  
+    1) 每個 node 只標註一次
+    2) 顯示值來源固定為 `value_ref -> parameters`
+    3) 禁止導線穿過元件符號
     4) Reset Zoom 必須穩定回到預設視角
 
 ## Related

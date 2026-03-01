@@ -16,15 +16,15 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc-fit-squid [OPTIONS] [DATASETS]...                                                                            
-                                                                                                                        
- Fit SQUID LC parameters (Ls, C) from admittance data.                                                                  
-                                                                                                                        
- Models:                                                                                                                
- - Default: Fits with Series Inductance (Ls).                                                                           
- - --no-ls: Fits WITHOUT Series Inductance (ideal LC).                                                                  
- - --fixed-c <VAL>: Fits Ls with Fixed Capacitance.                                                                     
-                                                                                                                        
+Usage: sc-fit-squid [OPTIONS] [DATASETS]...
+
+ Fit SQUID LC parameters (Ls, C) from admittance data.
+
+ Models:
+ - Default: Fits with Series Inductance (Ls).
+ - --no-ls: Fits WITHOUT Series Inductance (ideal LC).
+ - --fixed-c <VAL>: Fits Ls with Fixed Capacitance.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   datasets      [DATASETS]...  Dataset names or IDs.                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

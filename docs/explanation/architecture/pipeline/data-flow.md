@@ -49,7 +49,7 @@ flowchart TB
 ### 3. Visualization Contract
 
 - 視覺化不是獨立管線，而是分析結果的同次渲染。
-- UI: 以卡片直接呈現 Plot/Table/Metric。  
+- UI: 以卡片直接呈現 Plot/Table/Metric。
   CLI: 以終端摘要 + 圖檔/報表輸出呈現相同分析語意。
 
 ### 4. Persistence Contract
@@ -58,7 +58,7 @@ flowchart TB
 - 是否落盤不影響當次可視化顯示，但影響可追溯性與重現性。
 
 !!! warning "不要再做語意切割"
-    不論 UI 或 CLI，都不應把「先分析、再另外可視化」當成兩個不連動功能。  
+    不論 UI 或 CLI，都不應把「先分析、再另外可視化」當成兩個不連動功能。
     正確模型是：分析完成時，視覺化也已具備可展示資料。
 
 ## Practical Mapping

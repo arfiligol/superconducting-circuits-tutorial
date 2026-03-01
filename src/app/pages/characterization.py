@@ -13,12 +13,11 @@ from app.layout import app_shell
 from app.services.analysis_registry import (
     ANALYSIS_REGISTRY,
     get_available_analyses,
-    is_analysis_completed,
 )
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import DerivedParameter, ParameterDesignation
+from core.shared.persistence.models import ParameterDesignation
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -592,7 +591,7 @@ def characterization_page():
                         render_dataset_view.refresh()
 
                     ui.select(options=ds_options, value=current_ds_id, on_change=on_change).props(
-                        "dense outline dark standout"
+                        "dense outlined options-dense"
                     ).classes("w-64")
 
                 render_dataset_view()

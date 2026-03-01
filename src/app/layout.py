@@ -62,7 +62,7 @@ def app_shell(content_builder):
                     label="Active Datasets",
                     on_change=on_dataset_change,
                 ).classes("w-full").bind_value(app.storage.user, "selected_datasets").props(
-                    "use-chips dense dark standout"
+                    "use-chips dense outlined options-dense"
                 )
 
             ui.space()

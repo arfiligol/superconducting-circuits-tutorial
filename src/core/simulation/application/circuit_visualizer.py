@@ -7,6 +7,7 @@ into an SVG string using the Schemdraw library.
 
 import re
 from collections import defaultdict
+from itertools import pairwise
 
 import schemdraw
 import schemdraw.elements as elm
@@ -117,8 +118,119 @@ def _build_shunt_cluster_metadata(circuit: CircuitDefinition) -> dict[int, tuple
     return metadata
 
 
+def _estimate_component_slot_width(
+    comp_name: str,
+    name_label: str,
+    value_label: str | None,
+    layout_mode: str,
+) -> float:
+    """Estimate horizontal space a shunt branch should reserve around its anchor."""
+    name_lower = comp_name.lower()
+    longest_label = max(len(name_label), len(value_label or ""))
+    label_span = max(1.2, (0.16 * longest_label) + 0.9)
+    symbol_span = 1.35
+
+    if name_lower.startswith("p"):
+        symbol_span = 1.8
+    elif name_lower.startswith("r"):
+        symbol_span = 1.5
+    elif name_lower.startswith("lj"):
+        symbol_span = 1.55
+    elif name_lower.startswith("c"):
+        symbol_span = 1.35
+    elif name_lower.startswith("l"):
+        symbol_span = 1.45
+
+    slot_width = max(symbol_span, label_span)
+    if value_label:
+        slot_width += 0.3
+    if layout_mode == "jtwpa_like":
+        slot_width += 0.2
+    elif layout_mode == "jpa_like":
+        slot_width += 0.1
+    return slot_width
+
+
+def _build_shunt_branch_offsets(circuit: CircuitDefinition, layout_mode: str) -> dict[int, float]:
+    """Reserve horizontal slots for each shunt branch to avoid label crowding."""
+    shunt_indices_by_node: dict[str, list[int]] = defaultdict(list)
+
+    for index, (_, node1_raw, node2_raw, _) in enumerate(circuit.topology):
+        node1_str = str(node1_raw)
+        node2_str = str(node2_raw)
+        is_gnd1 = _is_ground(node1_str)
+        is_gnd2 = _is_ground(node2_str)
+        if is_gnd1 == is_gnd2:
+            continue
+
+        signal_node = node2_str if is_gnd1 else node1_str
+        shunt_indices_by_node[signal_node].append(index)
+
+    branch_offsets: dict[int, float] = {}
+    inter_slot_gap = 0.4
+    if layout_mode == "jpa_like":
+        inter_slot_gap = 0.5
+    elif layout_mode == "jtwpa_like":
+        inter_slot_gap = 0.6
+
+    for indices in shunt_indices_by_node.values():
+        if len(indices) <= 1:
+            branch_offsets[indices[0]] = 0.0
+            continue
+
+        slot_widths: list[float] = []
+        for topo_index in indices:
+            comp_name, _, _, value_ref = circuit.topology[topo_index]
+            name_label, value_label = _component_label_parts(circuit, comp_name, value_ref)
+            slot_widths.append(
+                _estimate_component_slot_width(
+                    comp_name=comp_name,
+                    name_label=name_label,
+                    value_label=value_label,
+                    layout_mode=layout_mode,
+                )
+            )
+
+        total_width = sum(slot_widths) + (inter_slot_gap * (len(indices) - 1))
+        cursor = -total_width / 2.0
+        for topo_index, slot_width in zip(indices, slot_widths, strict=False):
+            cursor += slot_width / 2.0
+            branch_offsets[topo_index] = cursor
+            cursor += (slot_width / 2.0) + inter_slot_gap
+
+    return branch_offsets
+
+
+def _build_signal_node_padding(
+    shunt_cluster_metadata: dict[int, tuple[str, int, int]],
+    shunt_branch_offsets: dict[int, float],
+) -> dict[str, tuple[float, float]]:
+    """Estimate left/right horizontal padding needed around each signal node."""
+    node_padding: dict[str, tuple[float, float]] = {}
+    branch_margin = 0.4
+
+    for topo_index, (signal_node, _, _) in shunt_cluster_metadata.items():
+        offset = shunt_branch_offsets.get(topo_index, 0.0)
+        left_pad, right_pad = node_padding.get(signal_node, (0.0, 0.0))
+
+        if offset < 0.0:
+            left_pad = max(left_pad, abs(offset) + branch_margin)
+        elif offset > 0.0:
+            right_pad = max(right_pad, offset + branch_margin)
+        else:
+            left_pad = max(left_pad, branch_margin)
+            right_pad = max(right_pad, branch_margin)
+
+        node_padding[signal_node] = (left_pad, right_pad)
+
+    return node_padding
+
+
 def _build_backbone_positions(
-    circuit: CircuitDefinition, dx: float, origin_x: float = 1.8
+    circuit: CircuitDefinition,
+    dx: float,
+    origin_x: float = 1.8,
+    node_padding: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, float] | None:
     """Return fixed x positions for simple chain-like signal backbones."""
     adjacency: dict[str, list[str]] = defaultdict(list)
@@ -166,9 +278,7 @@ def _build_backbone_positions(
             order.append(current)
             visited.add(current)
             next_candidates = [
-                node
-                for node in adjacency[current]
-                if node != previous and node not in visited
+                node for node in adjacency[current] if node != previous and node not in visited
             ]
             if not next_candidates:
                 break
@@ -182,7 +292,20 @@ def _build_backbone_positions(
     missing_signal_nodes = [node for node in sorted(signal_nodes) if node not in order]
     order.extend(missing_signal_nodes)
 
-    return {node: origin_x + index * dx for index, node in enumerate(order)}
+    if not order:
+        return None
+
+    positions: dict[str, float] = {order[0]: origin_x}
+    padding_by_node = node_padding or {}
+    spacing_scale = 0.7
+
+    for previous_node, current_node in pairwise(order):
+        previous_right = padding_by_node.get(previous_node, (0.0, 0.0))[1]
+        current_left = padding_by_node.get(current_node, (0.0, 0.0))[0]
+        segment_dx = dx + (spacing_scale * (previous_right + current_left))
+        positions[current_node] = positions[previous_node] + segment_dx
+
+    return positions
 
 
 def _shunt_branch_offset(
@@ -207,8 +330,8 @@ def _shunt_label_plan(
     """Return side, x offset, name y, value y for vertical-branch labels."""
     if cluster_total <= 1:
         if comp_name.lower().startswith("c"):
-            return ("left", -0.78, 1.95, 1.05)
-        return ("right", 0.82, 1.95, 1.05)
+            return ("left", -0.78, 1.44, 1.14)
+        return ("right", 0.82, 1.44, 1.14)
 
     split_at = (cluster_total + 1) // 2
     side = "left" if cluster_index < split_at else "right"
@@ -219,7 +342,99 @@ def _shunt_label_plan(
     if side == "left":
         x_offset *= -1.0
 
-    return (side, x_offset, 1.82, 1.12)
+    return (side, x_offset, 1.44, 1.14)
+
+
+def _estimate_label_group_box(
+    x: float,
+    x_offset: float,
+    name_label: str,
+    value_label: str | None,
+    name_y: float,
+    value_y: float,
+) -> tuple[float, float, float, float]:
+    """Approximate bbox for a two-line shunt label group in schematic coordinates."""
+    longest = max(len(name_label), len(value_label or ""))
+    width = max(1.0, (0.18 * longest) + 0.7)
+    x_center = x + x_offset
+    y_min = min(name_y, value_y) - 0.18
+    y_max = max(name_y, value_y) + 0.18
+    return (x_center - (width / 2.0), y_min, x_center + (width / 2.0), y_max)
+
+
+def _boxes_overlap(
+    left: tuple[float, float, float, float],
+    right: tuple[float, float, float, float],
+    padding: float = 0.08,
+) -> bool:
+    """Return True when two approximate label boxes overlap."""
+    left_x1, left_y1, left_x2, left_y2 = left
+    right_x1, right_y1, right_x2, right_y2 = right
+    return not (
+        (left_x2 + padding) < right_x1
+        or (right_x2 + padding) < left_x1
+        or (left_y2 + padding) < right_y1
+        or (right_y2 + padding) < left_y1
+    )
+
+
+def _resolve_shunt_label_layout(
+    x: float,
+    comp_name: str,
+    name_label: str,
+    value_label: str | None,
+    cluster_index: int,
+    cluster_total: int,
+    layout_mode: str,
+    occupied_boxes: list[tuple[float, float, float, float]],
+) -> tuple[str, float, float, float, tuple[float, float, float, float]]:
+    """Choose the first non-overlapping candidate layout for a shunt label group."""
+    base_side, base_offset, base_name_y, base_value_y = _shunt_label_plan(
+        comp_name=comp_name,
+        cluster_index=cluster_index,
+        cluster_total=cluster_total,
+        layout_mode=layout_mode,
+    )
+    alternate_side = "right" if base_side == "left" else "left"
+    base_magnitude = abs(base_offset)
+
+    candidates: list[tuple[str, float, float, float]] = []
+    for side in (base_side, alternate_side):
+        sign = -1.0 if side == "left" else 1.0
+        for outward in (0.0, 0.35, 0.7):
+            candidate_offset = sign * (base_magnitude + outward)
+            for y_shift in (0.0, 0.16, -0.16, 0.3, -0.3):
+                name_y = min(2.0, max(1.2, base_name_y + y_shift))
+                value_y = min(1.6, max(0.82, base_value_y + y_shift))
+                candidates.append((side, candidate_offset, name_y, value_y))
+
+    for side, x_offset, name_y, value_y in candidates:
+        candidate_box = _estimate_label_group_box(
+            x=x,
+            x_offset=x_offset,
+            name_label=name_label,
+            value_label=value_label,
+            name_y=name_y,
+            value_y=value_y,
+        )
+        if not any(_boxes_overlap(candidate_box, box) for box in occupied_boxes):
+            return side, x_offset, name_y, value_y, candidate_box
+
+    side, x_offset, name_y, value_y = candidates[-1]
+    return (
+        side,
+        x_offset,
+        name_y,
+        value_y,
+        _estimate_label_group_box(
+            x=x,
+            x_offset=x_offset,
+            name_label=name_label,
+            value_label=value_label,
+            name_y=name_y,
+            value_y=value_y,
+        ),
+    )
 
 
 def _ensure_node_label(
@@ -233,7 +448,14 @@ def _ensure_node_label(
     """Render each node label at most once."""
     if node_str in labeled_nodes:
         return
-    drawing.add(elm.Label().at((x, y)).label(node_str, loc=loc, color="gray", fontsize=8))
+
+    if _is_ground(node_str) and loc in {"top", "bottom"}:
+        label_y = y + 0.34 if loc == "top" else y - 0.4
+        drawing.add(
+            elm.Label().at((x, label_y)).label(node_str, loc="center", color="gray", fontsize=8)
+        )
+    else:
+        drawing.add(elm.Label().at((x, y)).label(node_str, loc=loc, color="gray", fontsize=8))
     labeled_nodes.add(node_str)
 
 
@@ -246,13 +468,18 @@ def _add_shunt_labels(
     cluster_index: int,
     cluster_total: int,
     layout_mode: str,
+    occupied_boxes: list[tuple[float, float, float, float]],
 ) -> None:
     """Place shunt labels with cluster-aware offsets to reduce overlap."""
-    side, x_offset, name_y, value_y = _shunt_label_plan(
+    side, x_offset, name_y, value_y, candidate_box = _resolve_shunt_label_layout(
+        x=x,
         comp_name=comp_name,
+        name_label=name_label,
+        value_label=value_label,
         cluster_index=cluster_index,
         cluster_total=cluster_total,
         layout_mode=layout_mode,
+        occupied_boxes=occupied_boxes,
     )
     halign = "right" if side == "left" else "left"
 
@@ -267,6 +494,7 @@ def _add_shunt_labels(
             .at((x + x_offset, value_y))
             .label(value_label, loc="center", fontsize=10, halign=halign)
         )
+    occupied_boxes.append(candidate_box)
 
 
 def _label_element(
@@ -324,7 +552,16 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
         gap = 2.0
 
     shunt_cluster_metadata = _build_shunt_cluster_metadata(circuit)
-    backbone_positions = _build_backbone_positions(circuit, dx=dx)
+    shunt_branch_offsets = _build_shunt_branch_offsets(circuit, layout_mode)
+    signal_node_padding = _build_signal_node_padding(
+        shunt_cluster_metadata,
+        shunt_branch_offsets,
+    )
+    backbone_positions = _build_backbone_positions(
+        circuit,
+        dx=dx,
+        node_padding=signal_node_padding,
+    )
     use_backbone_layout = backbone_positions is not None
 
     node_latest_x: dict[str, float] = {}
@@ -332,6 +569,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
     tip_node_top = None
     next_bridge_y = 4.5
     labeled_nodes: set[str] = set()
+    occupied_shunt_label_boxes: list[tuple[float, float, float, float]] = []
 
     def wire_node(node_str: str, target_x: float, target_y: float) -> None:
         nonlocal next_bridge_y
@@ -404,11 +642,14 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
 
             if use_backbone_layout:
                 node_anchor_x = backbone_positions[signal_node]
-                branch_x = node_anchor_x + _shunt_branch_offset(
-                    comp_name=comp_name,
-                    cluster_index=cluster_index,
-                    cluster_total=cluster_total,
-                    layout_mode=layout_mode,
+                branch_x = node_anchor_x + shunt_branch_offsets.get(
+                    topo_index,
+                    _shunt_branch_offset(
+                        comp_name=comp_name,
+                        cluster_index=cluster_index,
+                        cluster_total=cluster_total,
+                        layout_mode=layout_mode,
+                    ),
                 )
             else:
                 node_anchor_x = x_pos
@@ -440,6 +681,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
                         cluster_index=cluster_index,
                         cluster_total=cluster_total,
                         layout_mode=layout_mode,
+                        occupied_boxes=occupied_shunt_label_boxes,
                     )
 
             if use_backbone_layout and abs(branch_x - node_anchor_x) > 0.1:

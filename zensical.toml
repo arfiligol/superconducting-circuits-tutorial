@@ -86,6 +86,7 @@ nav = [
         { "Circuit Schema Live Preview" = "explanation/architecture/design-decisions/circuit-schema-live-preview.md" },
         { "Schema Editor Formatting" = "explanation/architecture/design-decisions/schema-editor-formatting.md" },
         { "Live Preview Domain Semantics Profiles" = "explanation/architecture/design-decisions/live-preview-domain-semantics.md" },
+        { "Simulation Result Views" = "explanation/architecture/circuit-simulation/simulation-result-views.md" },
       ] },
       { "Visualization Backend" = "explanation/architecture/design-decisions/visualization-backend.md" },
     ] },
@@ -120,6 +121,10 @@ nav = [
         { "sc-db tag" = "reference/cli/sc-db-tag.md" },
       ] },
     ] },
+    { "App" = [
+      { "Overview" = "reference/ui/index.md" },
+      { "Circuit Simulation" = "reference/ui/circuit-simulation.md" },
+    ] },
     { "Data Formats" = [
       { "Overview" = "reference/data-formats/index.md" },
       { "Dataset Record" = "reference/data-formats/dataset-record.md" },
@@ -128,8 +133,8 @@ nav = [
       { "Analysis Result" = "reference/data-formats/analysis-result.md" },
     ] },
     { "Guardrails" = [
+      { "Overview" = "reference/guardrails/index.md" },
       { "Project Basics" = [
-        { "Overview" = "reference/guardrails/index.md" },
         { "Project Overview" = "reference/guardrails/project-basics/project-overview.md" },
         { "Tech Stack" = "reference/guardrails/project-basics/tech-stack.md" },
         { "Folder Structure" = "reference/guardrails/project-basics/folder-structure.md" },
@@ -185,7 +190,6 @@ features = [
   "content.code.copy",
   "content.code.annotate",
   "navigation.tabs",
-  "navigation.sections",
   "navigation.top",
   "search.highlight",
 ]

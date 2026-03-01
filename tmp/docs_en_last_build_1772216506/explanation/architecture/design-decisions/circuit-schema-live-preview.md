@@ -46,7 +46,7 @@ updated_by: docs-team
 | Parameter Binding | 顯示值固定來自 `value_ref -> parameters` |
 
 !!! tip "Pattern-aware vs Generic fallback"
-    偵測到 JTWPA/JJTWPA 這類重複 cell 結構時，走 ladder-first。  
+    偵測到 JTWPA/JJTWPA 這類重複 cell 結構時，走 ladder-first。
     classifier 信心不足時必須退回 generic orthogonal，不可硬套 ladder。
 
 !!! warning "Bridge 可觀測性要求"
@@ -63,11 +63,11 @@ updated_by: docs-team
 | Control Sync | 滾輪/拖曳/鍵盤/`+ - reset` 按鈕必須共用同一個 panzoom state 與 update callback |
 
 !!! warning "縮放狀態保留條件"
-    只有在尺寸相容時保留 transform；不相容就 `fit` 或 `reset`。  
+    只有在尺寸相容時保留 transform；不相容就 `fit` 或 `reset`。
     建議門檻：長寬比差異 <= 5%，寬高差異各 <= 15%。
 
 !!! tip "按鈕與直接操作同步規則"
-    `+`、`-`、`Reset` 不可自行維護獨立縮放值，必須呼叫同一個 panzoom instance API。  
+    `+`、`-`、`Reset` 不可自行維護獨立縮放值，必須呼叫同一個 panzoom instance API。
     UI 百分比顯示（例如 `120%`）只能來自同一個 `onTransform` 事件，避免狀態分裂。
 
 ```mermaid
@@ -98,9 +98,9 @@ flowchart TD
 | Label torture test | 100%/150% 下 label 不可大面積遮元件 |
 
 !!! success "硬性非回歸約束"
-    1) 每個 node 只標註一次  
-    2) 顯示值來源固定為 `value_ref -> parameters`  
-    3) 禁止導線穿過元件符號  
+    1) 每個 node 只標註一次
+    2) 顯示值來源固定為 `value_ref -> parameters`
+    3) 禁止導線穿過元件符號
     4) Reset Zoom 必須穩定回到預設視角
 
 ## Related

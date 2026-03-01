@@ -16,10 +16,10 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc-db [OPTIONS] COMMAND [ARGS]...                                                                               
-                                                                                                                        
- Manage SQLite database entities.                                                                                       
-                                                                                                                        
+Usage: sc-db [OPTIONS] COMMAND [ARGS]...
+
+ Manage SQLite database entities.
+
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help          Show this message and exit.                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

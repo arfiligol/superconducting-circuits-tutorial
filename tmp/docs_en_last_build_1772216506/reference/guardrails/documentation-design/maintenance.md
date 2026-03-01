@@ -38,7 +38,7 @@ Language switching:
 - use Zensical-native `extra.alternate` links between the two sites.
 
 !!! info "Source layout vs build input"
-    Source files stay as `.md` + `.en.md` side-by-side for authoring parity.  
+    Source files stay as `.md` + `.en.md` side-by-side for authoring parity.
     For EN builds, CI prepares `docs_en/` and renames `.en.md` to `.md` before running `zensical.en.yml`.
 
 !!! warning "Sync rules"

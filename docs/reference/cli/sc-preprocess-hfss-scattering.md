@@ -56,17 +56,17 @@ uv run sc preprocess hfss scattering data/raw/phase/LJPAL658_S11_Phase.csv
     此區塊由 `sc-docs-cli` 產生, 請勿手動修改.
 
 ```text
-Usage: sc-preprocess-hfss-scattering [OPTIONS] [CSV]...                                                                
-                                                                                                                        
- Import HFSS scattering matrix CSV to SQLite database.                                                                  
-                                                                                                                        
- Supports both single files and directories.                                                                            
- - If a directory is provided, scans for all *.csv files.                                                               
- - AUTOMATICALLY SKIPS datasets that already exist in the database (by name).                                           
- - --dataset-name is ignored in batch/directory mode.                                                                   
- - --tags are applied to all NEWLY imported datasets in this run.                                                       
- - --match filters files in directories to only those containing any of the keywords.                                   
-                                                                                                                        
+Usage: sc-preprocess-hfss-scattering [OPTIONS] [CSV]...
+
+ Import HFSS scattering matrix CSV to SQLite database.
+
+ Supports both single files and directories.
+ - If a directory is provided, scans for all *.csv files.
+ - AUTOMATICALLY SKIPS datasets that already exist in the database (by name).
+ - --dataset-name is ignored in batch/directory mode.
+ - --tags are applied to all NEWLY imported datasets in this run.
+ - --match filters files in directories to only those containing any of the keywords.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   csv      [CSV]...  Path(s) to HFSS S-Parameter or Phase CSV.                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -80,6 +80,3 @@ Usage: sc-preprocess-hfss-scattering [OPTIONS] [CSV]...
 ```
 
 <!-- CLI-HELP-END -->
-
-
-

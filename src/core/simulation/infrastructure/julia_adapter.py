@@ -108,12 +108,7 @@ class JuliaSimulator:
             int(freq_range.points),
         )
 
-        # Convert Julia Dict to Python
-        return SimulationResult(
-            frequencies_ghz=list(result["frequencies_ghz"]),
-            s11_real=list(result["s11_real"]),
-            s11_imag=list(result["s11_imag"]),
-        )
+        return self._build_simulation_result(result)
 
     def run_hbsolve(
         self,
@@ -152,6 +147,8 @@ class JuliaSimulator:
             config.max_intermod_order if config.max_intermod_order is not None else -1
         )
 
+        pump_freqs_ghz, source_mode_vectors = self._resolve_pump_frequencies_and_modes(sources)
+
         try:
             # Call Julia function
             result = self._jl.run_custom_simulation(
@@ -160,10 +157,10 @@ class JuliaSimulator:
                 float(freq_range.start_ghz),
                 float(freq_range.stop_ghz),
                 int(freq_range.points),
-                [float(src.pump_freq_ghz) for src in sources],
+                pump_freqs_ghz,
                 [float(src.current_amp) for src in sources],
                 [int(src.port) for src in sources],
-                self._build_source_mode_vectors(len(sources)),
+                source_mode_vectors,
                 int(config.n_modulation_harmonics),
                 int(config.n_pump_harmonics),
                 bool(config.include_dc),
@@ -174,6 +171,7 @@ class JuliaSimulator:
                 float(config.f_tol),
                 float(config.line_search_switch_tol),
                 float(config.alpha_min),
+                sorted(available_ports) or [1],
             )
         except Exception as e:
             detail = str(e)
@@ -192,10 +190,82 @@ class JuliaSimulator:
                 ) from e
             raise
 
+        return self._build_simulation_result(result)
+
+    @staticmethod
+    def _as_python_mapping(value: object) -> dict[object, object]:
+        """Convert Julia/Python mapping-like values into a plain Python dict."""
+        if isinstance(value, dict):
+            return value
+        try:
+            return dict(value)  # type: ignore[arg-type]
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _normalize_mapping_key(key: object) -> str:
+        """Normalize Python and Julia Symbol-like keys into plain strings."""
+        text = str(key)
+        if text.startswith("Julia: :"):
+            return text.removeprefix("Julia: :")
+        if text.startswith(":"):
+            return text[1:]
+        return text
+
+    @classmethod
+    def _mapping_get(cls, mapping: dict[object, object], key: str, default: object) -> object:
+        """Read a mapping entry by matching either Python strings or Julia Symbol keys."""
+        for candidate_key, candidate_value in mapping.items():
+            if cls._normalize_mapping_key(candidate_key) == key:
+                return candidate_value
+        return default
+
+    @classmethod
+    def _extract_trace_map(cls, result: object, *, key: str) -> dict[str, list[float]]:
+        """Extract one trace map from the Julia bridge payload."""
+        result_mapping = cls._as_python_mapping(result)
+        raw_trace_map = cls._mapping_get(result_mapping, key, {})
+        trace_map = cls._as_python_mapping(raw_trace_map)
+        normalized: dict[str, list[float]] = {}
+
+        for trace_label, values in trace_map.items():
+            normalized[str(trace_label)] = list(values)
+        return normalized
+
+    @classmethod
+    def _extract_scalar_trace_map(cls, result: object, *, key: str) -> dict[str, list[float]]:
+        """Extract a scalar trace map from the Julia bridge payload."""
+        return cls._extract_trace_map(result, key=key)
+
+    @classmethod
+    def _build_simulation_result(cls, result: object) -> SimulationResult:
+        """Convert a Julia bridge payload into SimulationResult."""
+        result_mapping = cls._as_python_mapping(result)
+        raw_ports = list(cls._mapping_get(result_mapping, "port_indices", [1]))
+        port_indices = [int(port) for port in raw_ports]
+        raw_modes = cls._mapping_get(result_mapping, "mode_indices", [[0]])
+        mode_indices = [tuple(int(value) for value in mode) for mode in list(raw_modes)] or [(0,)]
+
         return SimulationResult(
-            frequencies_ghz=list(result["frequencies_ghz"]),
-            s11_real=list(result["s11_real"]),
-            s11_imag=list(result["s11_imag"]),
+            frequencies_ghz=list(cls._mapping_get(result_mapping, "frequencies_ghz", [])),
+            s11_real=list(cls._mapping_get(result_mapping, "s11_real", [])),
+            s11_imag=list(cls._mapping_get(result_mapping, "s11_imag", [])),
+            port_indices=port_indices or [1],
+            s_parameter_real=cls._extract_trace_map(result, key="s_parameter_real"),
+            s_parameter_imag=cls._extract_trace_map(result, key="s_parameter_imag"),
+            mode_indices=mode_indices,
+            s_parameter_mode_real=cls._extract_trace_map(result, key="s_parameter_mode_real"),
+            s_parameter_mode_imag=cls._extract_trace_map(result, key="s_parameter_mode_imag"),
+            z_parameter_mode_real=cls._extract_trace_map(result, key="z_parameter_mode_real"),
+            z_parameter_mode_imag=cls._extract_trace_map(result, key="z_parameter_mode_imag"),
+            y_parameter_mode_real=cls._extract_trace_map(result, key="y_parameter_mode_real"),
+            y_parameter_mode_imag=cls._extract_trace_map(result, key="y_parameter_mode_imag"),
+            qe_parameter_mode=cls._extract_scalar_trace_map(result, key="qe_parameter_mode"),
+            qe_ideal_parameter_mode=cls._extract_scalar_trace_map(
+                result,
+                key="qe_ideal_parameter_mode",
+            ),
+            cm_parameter_mode=cls._extract_scalar_trace_map(result, key="cm_parameter_mode"),
         )
 
     @staticmethod
@@ -289,6 +359,74 @@ class JuliaSimulator:
             mode[idx] = 1
             mode_vectors.append(mode)
         return mode_vectors
+
+    @classmethod
+    def _resolve_pump_frequencies_and_modes(
+        cls,
+        sources: list[DriveSourceConfig],
+    ) -> tuple[list[float], list[list[int]]]:
+        """Resolve hbsolve pump-frequency tuple and source mode vectors from the source list."""
+        if not sources:
+            return ([5.0], [[1]])
+
+        explicit_modes = [source.mode_components for source in sources]
+        if all(mode is None for mode in explicit_modes):
+            return (
+                [float(source.pump_freq_ghz) for source in sources],
+                cls._build_source_mode_vectors(len(sources)),
+            )
+
+        if any(mode is None for mode in explicit_modes):
+            raise ValueError(
+                "SimulationInputError: once any source uses an explicit mode tuple, "
+                "all sources must define one."
+            )
+
+        normalized_modes = [tuple(int(value) for value in mode or ()) for mode in explicit_modes]
+        mode_lengths = {len(mode) for mode in normalized_modes}
+        if len(mode_lengths) != 1 or 0 in mode_lengths:
+            raise ValueError(
+                "SimulationInputError: all source mode tuples must have the same non-zero length."
+            )
+
+        tone_count = mode_lengths.pop()
+        pump_freqs_ghz: list[float | None] = [None] * tone_count
+
+        for index, source in enumerate(sources, start=1):
+            mode = normalized_modes[index - 1]
+            nonzero_indices = [idx for idx, value in enumerate(mode) if value != 0]
+            if not nonzero_indices:
+                continue
+
+            if len(nonzero_indices) != 1 or mode[nonzero_indices[0]] < 0:
+                raise ValueError(
+                    "SimulationInputError: only DC sources (all zeros) and one-hot positive "
+                    "source mode tuples are currently supported."
+                )
+
+            tone_index = nonzero_indices[0]
+            pump_freq = float(source.pump_freq_ghz)
+            assigned = pump_freqs_ghz[tone_index]
+            if assigned is None:
+                pump_freqs_ghz[tone_index] = pump_freq
+                continue
+
+            if abs(assigned - pump_freq) > 1e-12:
+                raise ValueError(
+                    "SimulationInputError: conflicting pump frequencies were provided for "
+                    f"mode slot {tone_index + 1}."
+                )
+
+        if any(freq is None for freq in pump_freqs_ghz):
+            raise ValueError(
+                "SimulationInputError: each non-zero mode slot needs at least one source "
+                "to define its pump frequency."
+            )
+
+        return (
+            [float(freq) for freq in pump_freqs_ghz if freq is not None],
+            [list(mode) for mode in normalized_modes],
+        )
 
     @staticmethod
     def _validate_solver_config(

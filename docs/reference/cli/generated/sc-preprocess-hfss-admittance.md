@@ -16,17 +16,17 @@ owner: I-LI CHIU
 此頁面由自動化產生, 請勿手動編輯。
 
 ```text
-Usage: sc-preprocess-hfss-admittance [OPTIONS] [CSV]...                                                                
-                                                                                                                        
- Import HFSS admittance CSV to SQLite database.                                                                         
-                                                                                                                        
- Supports both single files and directories.                                                                            
- - If a directory is provided, scans for all *.csv files.                                                               
- - AUTOMATICALLY SKIPS datasets that already exist in the database (by name).                                           
- - --dataset-name is ignored in batch/directory mode.                                                                   
- - --tags are applied to all NEWLY imported datasets in this run.                                                       
- - --match filters files in directories to only those containing any of the keywords.                                   
-                                                                                                                        
+Usage: sc-preprocess-hfss-admittance [OPTIONS] [CSV]...
+
+ Import HFSS admittance CSV to SQLite database.
+
+ Supports both single files and directories.
+ - If a directory is provided, scans for all *.csv files.
+ - AUTOMATICALLY SKIPS datasets that already exist in the database (by name).
+ - --dataset-name is ignored in batch/directory mode.
+ - --tags are applied to all NEWLY imported datasets in this run.
+ - --match filters files in directories to only those containing any of the keywords.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   csv      [CSV]...  Path(s) to HFSS admittance CSV files or directories.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

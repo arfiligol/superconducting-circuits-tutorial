@@ -36,10 +36,10 @@ updated_by: docs-team
 ## Integration Contract
 
 !!! success "必須滿足的整合契約"
-    1. `Format` Button 與快捷鍵必須走同一個 formatter pipeline。  
-    2. 成功格式化後用同一個 CodeMirror transaction 回寫。  
-    3. 失敗時不得覆蓋原始內容。  
-    4. 格式化不應阻塞一般輸入互動。  
+    1. `Format` Button 與快捷鍵必須走同一個 formatter pipeline。
+    2. 成功格式化後用同一個 CodeMirror transaction 回寫。
+    3. 失敗時不得覆蓋原始內容。
+    4. 格式化不應阻塞一般輸入互動。
     5. 格式化結果需可被既有 schema 驗證流程接續使用。
 
 ```mermaid

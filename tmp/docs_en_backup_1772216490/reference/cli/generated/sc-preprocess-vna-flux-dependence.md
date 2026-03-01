@@ -16,10 +16,10 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc-preprocess-vna-flux-dependence [OPTIONS] [TXT]...                                                            
-                                                                                                                        
- Convert Flux Dependence TXT to SQLite database.                                                                        
-                                                                                                                        
+Usage: sc-preprocess-vna-flux-dependence [OPTIONS] [TXT]...
+
+ Convert Flux Dependence TXT to SQLite database.
+
 ╭─ Arguments ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │   txt      [TXT]...  Path(s) to Flux Dependence TXT file.                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

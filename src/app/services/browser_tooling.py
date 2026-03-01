@@ -4,44 +4,169 @@ from __future__ import annotations
 
 import json
 
-_PANZOOM_CDN_URL = "https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.6.0/dist/panzoom.min.js"
 _RUFF_WASM_WEB_URL = "https://unpkg.com/@astral-sh/ruff-wasm-web@0.15.4/ruff_wasm.js"
 
 
 def shared_frontend_tooling_head_html() -> str:
-    """Return shared <head> HTML for Panzoom and Ruff WASM helpers."""
+    """Return shared <head> HTML for interactive SVG preview and Ruff WASM helpers."""
     return f"""
-    <script src="{_PANZOOM_CDN_URL}"></script>
     <script>
     (() => {{
       if (window.scCircuitPreview) return;
 
       const previewStates = new Map();
-      const MIN_SCALE = 0.4;
-      const MAX_SCALE = 4.0;
+      const MIN_ZOOM = 1.0;
+      const MAX_ZOOM = 20.0;
+      const ZOOM_STEP = 1.2;
 
-      const clampScale = (value) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number(value) || 1));
-      const zoomText = (value) => `${{Math.round(clampScale(value) * 100)}}%`;
+      const clampZoom = (value) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(value) || 1));
+      const zoomText = (value) => `${{Math.round(clampZoom(value) * 100)}}%`;
+
+      function parseViewBox(svg) {{
+        const raw = svg?.getAttribute("viewBox");
+        if (raw) {{
+          const parts = raw
+            .trim()
+            .split(/[\\s,]+/)
+            .map(Number);
+          if (parts.length === 4 && parts.every(Number.isFinite)) {{
+            return {{ x: parts[0], y: parts[1], width: parts[2], height: parts[3] }};
+          }}
+        }}
+
+        const width =
+          Number(svg?.getAttribute("width")?.replace(/pt$/, "")) ||
+          Number(svg?.dataset?.width) ||
+          100;
+        const height =
+          Number(svg?.getAttribute("height")?.replace(/pt$/, "")) ||
+          Number(svg?.dataset?.height) ||
+          100;
+        return {{ x: 0, y: 0, width, height }};
+      }}
+
+      function viewBoxToString(viewBox) {{
+        return `${{viewBox.x}} ${{viewBox.y}} ${{viewBox.width}} ${{viewBox.height}}`;
+      }}
+
+      function cloneViewBox(viewBox) {{
+        return {{ x: viewBox.x, y: viewBox.y, width: viewBox.width, height: viewBox.height }};
+      }}
 
       function updateZoomLabel(state) {{
         if (!state || !state.labelId) return;
         const label = document.getElementById(state.labelId);
-        if (label) label.textContent = zoomText(state.scale);
+        if (label) label.textContent = zoomText(state.zoom);
+      }}
+
+      function syncViewportSize(state) {{
+        if (!state?.svg || !state?.viewport) return;
+        state.svg.style.display = "block";
+        state.svg.style.width = "100%";
+        state.svg.style.height = `${{Math.max(state.viewport.clientHeight || 0, 256)}}px`;
+        state.svg.style.maxWidth = "none";
+        state.svg.style.userSelect = "none";
+        state.svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
       }}
 
       function syncState(state) {{
-        if (!state) return;
-        if (state.panzoom) {{
-          state.scale = clampScale(state.panzoom.getScale());
-          const pan = state.panzoom.getPan();
-          state.x = Math.round((pan?.x ?? 0) * 100) / 100;
-          state.y = Math.round((pan?.y ?? 0) * 100) / 100;
-        }} else {{
-          state.scale = 1;
-          state.x = 0;
-          state.y = 0;
+        if (!state || !state.currentViewBox || !state.sourceViewBox) {{
+          if (state) {{
+            state.zoom = 1;
+            updateZoomLabel(state);
+          }}
+          return;
         }}
+        state.zoom = clampZoom(state.sourceViewBox.width / state.currentViewBox.width);
         updateZoomLabel(state);
+      }}
+
+      function clampViewBoxToSource(state, candidate) {{
+        const source = state.sourceViewBox;
+        const width = Math.min(candidate.width, source.width);
+        const height = Math.min(candidate.height, source.height);
+        const minX = source.x;
+        const maxX = source.x + source.width - width;
+        const minY = source.y;
+        const maxY = source.y + source.height - height;
+        return {{
+          x: Math.min(maxX, Math.max(minX, candidate.x)),
+          y: Math.min(maxY, Math.max(minY, candidate.y)),
+          width,
+          height,
+        }};
+      }}
+
+      function applyViewBox(state, viewBox) {{
+        if (!state?.svg) return false;
+        const nextViewBox = clampViewBoxToSource(state, viewBox);
+        state.currentViewBox = nextViewBox;
+        state.svg.setAttribute("viewBox", viewBoxToString(nextViewBox));
+        syncState(state);
+        return true;
+      }}
+
+      function getCenterRatios(state) {{
+        const source = state.sourceViewBox;
+        const current = state.currentViewBox || source;
+        return {{
+          x: ((current.x + current.width / 2) - source.x) / source.width,
+          y: ((current.y + current.height / 2) - source.y) / source.height,
+        }};
+      }}
+
+      function buildViewBoxForZoom(state, zoom, centerRatios) {{
+        const source = state.sourceViewBox;
+        const nextZoom = clampZoom(zoom);
+        const width = source.width / nextZoom;
+        const height = source.height / nextZoom;
+        const centerX = source.x + source.width * (centerRatios?.x ?? 0.5);
+        const centerY = source.y + source.height * (centerRatios?.y ?? 0.5);
+        return {{
+          x: centerX - width / 2,
+          y: centerY - height / 2,
+          width,
+          height,
+        }};
+      }}
+
+      function fitPreview(state) {{
+        if (!state) return false;
+        return applyViewBox(state, cloneViewBox(state.sourceViewBox));
+      }}
+
+      function refreshPreview(state, preserveRelative = true) {{
+        if (!state) return false;
+        syncViewportSize(state);
+        if (!preserveRelative || !state.currentViewBox || !state.sourceViewBox) {{
+          return fitPreview(state);
+        }}
+        const centerRatios = getCenterRatios(state);
+        const nextViewBox = buildViewBoxForZoom(state, state.zoom || 1, centerRatios);
+        return applyViewBox(state, nextViewBox);
+      }}
+
+      function zoomPreview(state, factor) {{
+        if (!state || !state.sourceViewBox) return false;
+        const centerRatios = getCenterRatios(state);
+        return applyViewBox(
+          state,
+          buildViewBoxForZoom(state, clampZoom((state.zoom || 1) * factor), centerRatios)
+        );
+      }}
+
+      function panPreviewByPixels(state, deltaX, deltaY) {{
+        if (!state || !state.currentViewBox || !state.viewport) return false;
+        const viewportWidth = Math.max(state.viewport.clientWidth || 0, 1);
+        const viewportHeight = Math.max(state.viewport.clientHeight || 0, 1);
+        const unitsPerPixelX = state.currentViewBox.width / viewportWidth;
+        const unitsPerPixelY = state.currentViewBox.height / viewportHeight;
+        return applyViewBox(state, {{
+          x: state.currentViewBox.x + deltaX * unitsPerPixelX,
+          y: state.currentViewBox.y + deltaY * unitsPerPixelY,
+          width: state.currentViewBox.width,
+          height: state.currentViewBox.height,
+        }});
       }}
 
       function ensureState(rootId, labelId) {{
@@ -57,80 +182,107 @@ def shared_frontend_tooling_head_html() -> str:
         if (!state) {{
           root.innerHTML = `
             <div class="schematic-panzoom-viewport" tabindex="0">
-              <div class="schematic-panzoom-stage">
-                <div class="schematic-panzoom-host"></div>
-              </div>
+              <div class="schematic-panzoom-host"></div>
             </div>
           `;
 
           const viewport = root.querySelector(".schematic-panzoom-viewport");
-          const stage = root.querySelector(".schematic-panzoom-stage");
           const host = root.querySelector(".schematic-panzoom-host");
-          const panzoom =
-            typeof window.Panzoom === "function"
-              ? window.Panzoom(stage, {{
-                  minScale: MIN_SCALE,
-                  maxScale: MAX_SCALE,
-                  step: 0.2,
-                  contain: "outside",
-                  cursor: "grab",
-                }})
-              : null;
 
           state = {{
             root,
             viewport,
-            stage,
             host,
-            panzoom,
+            svg: null,
             labelId: labelId || "",
             schemaKey: "",
-            scale: 1,
-            x: 0,
-            y: 0,
+            sourceViewBox: null,
+            currentViewBox: null,
+            zoom: 1,
+            dragPointerId: null,
+            dragLastX: 0,
+            dragLastY: 0,
           }};
 
-          if (panzoom) {{
-            stage.addEventListener("panzoompan", () => syncState(state));
-            stage.addEventListener("panzoomzoom", () => syncState(state));
-            stage.addEventListener("panzoomreset", () => syncState(state));
-
-            viewport.addEventListener(
-              "wheel",
-              (event) => {{
-                if (!event.ctrlKey) return;
+          viewport.addEventListener(
+            "wheel",
+            (event) => {{
+              if (!state.svg) return;
+              if (event.ctrlKey || event.metaKey) {{
                 event.preventDefault();
-                panzoom.zoomWithWheel(event);
-                syncState(state);
-              }},
-              {{ passive: false }}
-            );
-
-            viewport.addEventListener("pointerdown", () => {{
-              viewport.focus();
-            }});
-
-            viewport.addEventListener("keydown", (event) => {{
-              if (!(event.ctrlKey || event.metaKey)) return;
-              const key = event.key;
-              if (key === "0") {{
-                event.preventDefault();
-                panzoom.reset({{ animate: false, force: true }});
-                syncState(state);
+                const factor = event.deltaY < 0 ? ZOOM_STEP : (1 / ZOOM_STEP);
+                zoomPreview(state, factor);
                 return;
               }}
-              if (key === "+" || key === "=") {{
-                event.preventDefault();
-                panzoom.zoomIn({{ animate: false }});
-                syncState(state);
-                return;
-              }}
-              if (key === "-") {{
-                event.preventDefault();
-                panzoom.zoomOut({{ animate: false }});
-                syncState(state);
+
+              event.preventDefault();
+              const deltaX = event.shiftKey && !event.deltaX ? event.deltaY : event.deltaX;
+              const deltaY = event.shiftKey && !event.deltaX ? 0 : event.deltaY;
+              panPreviewByPixels(state, deltaX, deltaY);
+            }},
+            {{ passive: false }}
+          );
+
+          viewport.addEventListener("pointerdown", (event) => {{
+            if (!state.svg) return;
+            state.dragPointerId = event.pointerId;
+            state.dragLastX = event.clientX;
+            state.dragLastY = event.clientY;
+            viewport.setPointerCapture(event.pointerId);
+            viewport.focus();
+            viewport.dataset.dragging = "1";
+          }});
+
+          viewport.addEventListener("pointermove", (event) => {{
+            if (state.dragPointerId !== event.pointerId) return;
+            const deltaX = event.clientX - state.dragLastX;
+            const deltaY = event.clientY - state.dragLastY;
+            state.dragLastX = event.clientX;
+            state.dragLastY = event.clientY;
+            panPreviewByPixels(state, -deltaX, -deltaY);
+          }});
+
+          const finishDrag = (event) => {{
+            if (state.dragPointerId !== event.pointerId) return;
+            state.dragPointerId = null;
+            viewport.dataset.dragging = "0";
+            try {{
+              viewport.releasePointerCapture(event.pointerId);
+            }} catch (_error) {{
+              // Ignore if capture already released.
+            }}
+          }};
+
+          viewport.addEventListener("pointerup", finishDrag);
+          viewport.addEventListener("pointercancel", finishDrag);
+
+          viewport.addEventListener("keydown", (event) => {{
+            if (!(event.ctrlKey || event.metaKey)) return;
+            const key = event.key;
+            if (key === "0") {{
+              event.preventDefault();
+              fitPreview(state);
+              return;
+            }}
+            if (key === "+" || key === "=") {{
+              event.preventDefault();
+              zoomPreview(state, ZOOM_STEP);
+              return;
+            }}
+            if (key === "-") {{
+              event.preventDefault();
+              zoomPreview(state, 1 / ZOOM_STEP);
+            }}
+          }});
+
+          if (window.ResizeObserver) {{
+            const resizeObserver = new ResizeObserver(() => {{
+              if (state.svg) {{
+                refreshPreview(state, true);
               }}
             }});
+            resizeObserver.observe(viewport);
+            state.resizeObserver = resizeObserver;
           }}
 
           previewStates.set(rootId, state);
@@ -140,20 +292,13 @@ def shared_frontend_tooling_head_html() -> str:
           state.labelId = labelId;
         }}
 
-        syncState(state);
+        updateZoomLabel(state);
         return state;
       }}
 
       function resetPreview(state) {{
         if (!state) return false;
-        if (state.panzoom) {{
-          state.panzoom.reset({{ animate: false, force: true }});
-        }}
-        state.scale = 1;
-        state.x = 0;
-        state.y = 0;
-        syncState(state);
-        return true;
+        return fitPreview(state);
       }}
 
       window.scCircuitPreview = {{
@@ -163,30 +308,49 @@ def shared_frontend_tooling_head_html() -> str:
 
           const nextSchemaKey = String(payload.schemaKey || "");
           const schemaChanged = state.schemaKey !== nextSchemaKey;
+          const previousZoom = state.zoom || 1;
+          const previousCenter =
+            state.currentViewBox && state.sourceViewBox
+              ? getCenterRatios(state)
+              : {{ x: 0.5, y: 0.5 }};
+
           state.host.innerHTML =
-            payload.svgContent || "<div class='text-muted text-sm'>No preview</div>";
+            payload.svgContent ||
+            payload.emptyHtml ||
+            "<div class='text-muted text-sm'>No preview</div>";
+          state.svg = state.host.querySelector("svg");
           state.schemaKey = nextSchemaKey;
+
+          if (!state.svg) {{
+            state.sourceViewBox = null;
+            state.currentViewBox = null;
+            state.zoom = 1;
+            updateZoomLabel(state);
+            return true;
+          }}
+
+          syncViewportSize(state);
+          state.sourceViewBox = parseViewBox(state.svg);
+          state.currentViewBox = cloneViewBox(state.sourceViewBox);
+          state.svg.setAttribute("viewBox", viewBoxToString(state.sourceViewBox));
 
           if (schemaChanged) {{
             resetPreview(state);
           }} else {{
-            syncState(state);
+            applyViewBox(
+              state,
+              buildViewBoxForZoom(state, previousZoom, previousCenter)
+            );
           }}
           return true;
         }},
         zoomIn(rootId) {{
           const state = ensureState(rootId, "");
-          if (!state || !state.panzoom) return false;
-          state.panzoom.zoomIn({{ animate: false }});
-          syncState(state);
-          return true;
+          return zoomPreview(state, ZOOM_STEP);
         }},
         zoomOut(rootId) {{
           const state = ensureState(rootId, "");
-          if (!state || !state.panzoom) return false;
-          state.panzoom.zoomOut({{ animate: false }});
-          syncState(state);
-          return true;
+          return zoomPreview(state, 1 / ZOOM_STEP);
         }},
         reset(rootId) {{
           const state = ensureState(rootId, "");
@@ -268,7 +432,12 @@ def shared_frontend_tooling_head_html() -> str:
 
 
 def build_schematic_preview_render_js(
-    *, root_id: str, label_id: str, svg_content: str, schema_key: str
+    *,
+    root_id: str,
+    label_id: str,
+    svg_content: str,
+    schema_key: str,
+    empty_html: str | None = None,
 ) -> str:
     """Build client-side render call for a schematic preview."""
     payload = {
@@ -277,6 +446,8 @@ def build_schematic_preview_render_js(
         "svgContent": svg_content,
         "schemaKey": schema_key,
     }
+    if empty_html is not None:
+        payload["emptyHtml"] = empty_html
     return f"window.scCircuitPreview?.render({json.dumps(payload)});"
 
 
@@ -295,6 +466,5 @@ def build_schema_formatter_js(source_text: str) -> str:
 def build_schema_formatter_hotkey_js(*, button_id: str, scope_id: str) -> str:
     """Build client-side hotkey binding call for the schema formatter."""
     return (
-        "window.scSchemaFormatter?.attachHotkey("
-        f"{json.dumps(button_id)}, {json.dumps(scope_id)});"
+        f"window.scSchemaFormatter?.attachHotkey({json.dumps(button_id)}, {json.dumps(scope_id)});"
     )

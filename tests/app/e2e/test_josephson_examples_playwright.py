@@ -249,7 +249,7 @@ def _configure_sources(page: Page, sources: tuple[tuple[float, int, float], ...]
 def _run_and_expect_success(page: Page) -> None:
     page.get_by_role("button", name="Run Simulation").click()
     expect(page.get_by_text("Simulation completed successfully")).to_be_visible(timeout=180000)
-    expect(page.get_by_text("S11 Magnitude Response")).to_be_visible(timeout=60000)
+    expect(page.get_by_text("S11 Magnitude")).to_be_visible(timeout=60000)
     expect(page.get_by_text("Numerical solver error", exact=False)).to_have_count(0)
 
 

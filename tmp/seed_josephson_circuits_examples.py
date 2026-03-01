@@ -133,16 +133,16 @@ def jtwp_uniform_topology(nj: int, pmrpitch: int) -> list[tuple[str, str, str, s
     for i in range(2, nj):
         if i % pmrpitch == (pmrpitch // 2):
             topology.append((f"C{j}_0", str(j), "0", "Cg_minus_Cc"))
-            topology.append((f"Lj{j}_{j+2}", str(j), str(j + 2), "Lj"))
-            topology.append((f"C{j}_{j+2}", str(j), str(j + 2), "Cj"))
-            topology.append((f"C{j}_{j+1}", str(j), str(j + 1), "Cc"))
-            topology.append((f"C{j+1}_0", str(j + 1), "0", "Cr"))
-            topology.append((f"L{j+1}_0", str(j + 1), "0", "Lr"))
+            topology.append((f"Lj{j}_{j + 2}", str(j), str(j + 2), "Lj"))
+            topology.append((f"C{j}_{j + 2}", str(j), str(j + 2), "Cj"))
+            topology.append((f"C{j}_{j + 1}", str(j), str(j + 1), "Cc"))
+            topology.append((f"C{j + 1}_0", str(j + 1), "0", "Cr"))
+            topology.append((f"L{j + 1}_0", str(j + 1), "0", "Lr"))
             j += 1
         else:
             topology.append((f"C{j}_0", str(j), "0", "Cg"))
-            topology.append((f"Lj{j}_{j+1}", str(j), str(j + 1), "Lj"))
-            topology.append((f"C{j}_{j+1}", str(j), str(j + 1), "Cj"))
+            topology.append((f"Lj{j}_{j + 1}", str(j), str(j + 1), "Lj"))
+            topology.append((f"C{j}_{j + 1}", str(j), str(j + 1), "Cj"))
         j += 1
 
     topology.append((f"C{j}_0", str(j), "0", "Cg_half"))
@@ -237,8 +237,8 @@ def flux_driven_jtwp_schema(nr_cells: int = 24) -> tuple[str, str]:
         topology.append(
             (
                 f"K{node}",
-                f"L{node}_{node+2}",
-                f"L{node+1}_{node+4}",
+                f"L{node}_{node + 2}",
+                f"L{node + 1}_{node + 4}",
                 "kappa",
             )
         )
@@ -282,19 +282,19 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
 
     def add_snake(start_node: int, skip_nodes: int) -> tuple[int, int]:
         j = start_node + skip_nodes
-        push(f"L{start_node}_{j+1}", start_node, j + 1, "L1")
-        push(f"L{j+2}_{j+3}", j + 2, j + 3, "L1")
-        push(f"Lj{start_node}_{j+2}", start_node, j + 2, "Lj")
-        push(f"L{j+1}_{j+3}", j + 1, j + 3, "L2")
+        push(f"L{start_node}_{j + 1}", start_node, j + 1, "L1")
+        push(f"L{j + 2}_{j + 3}", j + 2, j + 3, "L1")
+        push(f"Lj{start_node}_{j + 2}", start_node, j + 2, "Lj")
+        push(f"L{j + 1}_{j + 3}", j + 1, j + 3, "L2")
         j += 2
         for i in range(2, nstages_snake + 1):
-            push(f"L{j+2}_{j+3}", j + 2, j + 3, "L1")
+            push(f"L{j + 2}_{j + 3}", j + 2, j + 3, "L1")
             if i % 2 == 1:
-                push(f"Lj{j}_{j+2}", j, j + 2, "Lj")
-                push(f"L{j+1}_{j+3}", j + 1, j + 3, "L2")
+                push(f"Lj{j}_{j + 2}", j, j + 2, "Lj")
+                push(f"L{j + 1}_{j + 3}", j + 1, j + 3, "L2")
             else:
-                push(f"L{j}_{j+2}", j, j + 2, "L2")
-                push(f"Lj{j+1}_{j+3}", j + 1, j + 3, "Lj")
+                push(f"L{j}_{j + 2}", j, j + 2, "L2")
+                push(f"Lj{j + 1}_{j + 3}", j + 1, j + 3, "Lj")
             j += 2
         return j + 1, 0
 
@@ -302,7 +302,7 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
         end_node, skip_nodes = add_snake(start_node, skip_nodes)
         j = end_node
 
-        push(f"L{j}_{j+1}", j, j + 1, "L3")
+        push(f"L{j}_{j + 1}", j, j + 1, "L3")
         j += 1
 
         end_node, skip_nodes = add_snake(j, 0)
@@ -315,7 +315,7 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
         end_node, skip_nodes = add_snake(1, j - 2)
         j = end_node
 
-        push(f"L{j}_{j+1}", j, j + 1, "L3")
+        push(f"L{j}_{j + 1}", j, j + 1, "L3")
         j += 1
 
         end_node, skip_nodes = add_snake(j, 0)
@@ -333,7 +333,9 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
 
         return j + 1, 0
 
-    def add_tline(start_node: int, theta: float, w0: float, wc: float, z0: float) -> tuple[int, int]:
+    def add_tline(
+        start_node: int, theta: float, w0: float, wc: float, z0: float
+    ) -> tuple[int, int]:
         n_cells = math.ceil(theta * wc / (2 * w0))
         wc_eff = n_cells * 2 * w0 / theta
         l_cell = 2 * z0 / wc_eff
@@ -344,7 +346,7 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
             if i == 1:
                 key_l_half_a = f"TL_Lhalf_{j}_a"
                 parameters[key_l_half_a] = {"default": l_cell / 2, "unit": "H"}
-                push(f"L{j}_{j+1}", j, j + 1, key_l_half_a)
+                push(f"L{j}_{j + 1}", j, j + 1, key_l_half_a)
                 j += 1
 
             key_c = f"TL_C_{j}"
@@ -354,11 +356,11 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
             if i == n_cells:
                 key_l_half_b = f"TL_Lhalf_{j}_b"
                 parameters[key_l_half_b] = {"default": l_cell / 2, "unit": "H"}
-                push(f"L{j}_{j+1}", j, j + 1, key_l_half_b)
+                push(f"L{j}_{j + 1}", j, j + 1, key_l_half_b)
             else:
                 key_l = f"TL_L_{j}"
                 parameters[key_l] = {"default": l_cell, "unit": "H"}
-                push(f"L{j}_{j+1}", j, j + 1, key_l)
+                push(f"L{j}_{j + 1}", j, j + 1, key_l)
             j += 1
 
         return j, 0
@@ -367,12 +369,12 @@ def lesa_schema(nstages_snake: int = 10) -> tuple[str, str]:
     j = end_node
     start_node = 1
     push(f"C{start_node}_0", start_node, 0, "C1")
-    push(f"C{start_node}_{j+1}", start_node, j + 1, "C6")
+    push(f"C{start_node}_{j + 1}", start_node, j + 1, "C6")
     j += 1
 
     push(f"C{j}_0", j, 0, "PLCC")
     push(f"L{j}_0", j, 0, "PLCL")
-    push(f"C{j}_{j+1}", j, j + 1, "C7")
+    push(f"C{j}_{j + 1}", j, j + 1, "C7")
     j += 1
 
     theta = 32.6 * math.pi / 180

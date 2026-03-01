@@ -16,10 +16,10 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc-simulate-lc [OPTIONS]                                                                                        
-                                                                                                                        
- Simulate an LC resonator and compute S11.                                                                              
-                                                                                                                        
+Usage: sc-simulate-lc [OPTIONS]
+
+ Simulate an LC resonator and compute S11.
+
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ --inductance   -L      FLOAT    Inductance in nH (default: 10) [default: 10.0]                                       │
 │ --capacitance  -C      FLOAT    Capacitance in pF (default: 1) [default: 1.0]                                        │

@@ -8,8 +8,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: 技術規格索引，涵蓋 CLI、Schema、開發規範
-version: v0.1.0
-last_updated: 2026-01-12
+version: v0.2.0
+last_updated: 2026-03-01
 updated_by: docs-team
 ---
 
@@ -20,6 +20,7 @@ updated_by: docs-team
 ## Categories
 
 - [CLI Reference](cli/index.md) - 命令列工具
+- [UI Reference](ui/index.md) - 使用者介面規格與控制項
 - [Data Formats](data-formats/index.md) - 數據格式與 Schema
 - [Guardrails](guardrails/index.md) - 開發規範與指引，類型檢查、程式風格、數據處理規則。
 

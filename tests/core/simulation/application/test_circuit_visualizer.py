@@ -4,8 +4,13 @@ import re
 
 from core.simulation.application.circuit_visualizer import (
     _add_svg_padding,
+    _boxes_overlap,
     _build_backbone_positions,
+    _build_shunt_branch_offsets,
+    _build_signal_node_padding,
     _classify_layout_mode,
+    _estimate_component_slot_width,
+    _resolve_shunt_label_layout,
     _shunt_branch_offset,
     _shunt_label_plan,
     generate_circuit_svg,
@@ -201,6 +206,55 @@ def test_build_backbone_positions_extracts_simple_chain_path():
     assert positions["1"] < positions["2"]
 
 
+def test_build_backbone_positions_expands_when_adjacent_nodes_have_shunt_padding():
+    """Backbone spacing should grow when nearby shunt branches consume horizontal space."""
+    circuit = CircuitDefinition(
+        name="Padded Chain",
+        parameters={
+            "R50": {"default": 50.0, "unit": "Ohm"},
+            "L1p": {"default": 10.0, "unit": "nH"},
+            "C1p": {"default": 1.0, "unit": "pF"},
+        },
+        topology=[
+            ("P1", "1", "0", 1),
+            ("R1", "1", "0", "R50"),
+            ("L1", "1", "2", "L1p"),
+            ("C1", "2", "0", "C1p"),
+        ],
+    )
+
+    shunt_metadata = {
+        0: ("1", 0, 2),
+        1: ("1", 1, 2),
+        3: ("2", 0, 1),
+    }
+    shunt_offsets = _build_shunt_branch_offsets(circuit, "generic")
+    node_padding = _build_signal_node_padding(shunt_metadata, shunt_offsets)
+
+    positions = _build_backbone_positions(circuit, dx=3.0, node_padding=node_padding)
+
+    assert positions is not None
+    assert (positions["2"] - positions["1"]) > 3.5
+
+
+def test_estimate_component_slot_width_grows_for_long_value_labels():
+    """Longer value labels should reserve more horizontal space."""
+    short_slot = _estimate_component_slot_width(
+        comp_name="C2",
+        name_label="C2",
+        value_label="1 pF",
+        layout_mode="jpa_like",
+    )
+    long_slot = _estimate_component_slot_width(
+        comp_name="Lj1",
+        name_label="Lj1",
+        value_label="2.1963e-10 H",
+        layout_mode="jpa_like",
+    )
+
+    assert long_slot > short_slot
+
+
 def test_shunt_label_plan_spreads_dense_cluster_labels_outward():
     """Dense shunt clusters should push labels to opposite sides."""
     left_side = _shunt_label_plan("Lj1", cluster_index=0, cluster_total=2, layout_mode="jpa_like")
@@ -210,6 +264,60 @@ def test_shunt_label_plan_spreads_dense_cluster_labels_outward():
     assert left_side[1] < 0.0
     assert right_side[0] == "right"
     assert right_side[1] > 0.0
+
+
+def test_build_shunt_branch_offsets_reserves_more_space_for_dense_jpa_cluster():
+    """Dense JPA-like shunt clusters should get wider branch separation."""
+    circuit = CircuitDefinition(
+        name="JPA Branch Spacing",
+        parameters={
+            "R50": {"default": 50.0, "unit": "Ohm"},
+            "C1": {"default": 0.1, "unit": "pF"},
+            "Lj_core": {"default": 1e-9, "unit": "H"},
+            "C_shunt": {"default": 1e-12, "unit": "F"},
+        },
+        topology=[
+            ("P1", "1", "0", 1),
+            ("R1", "1", "0", "R50"),
+            ("C1", "1", "2", "C1"),
+            ("Lj1", "2", "0", "Lj_core"),
+            ("C2", "2", "0", "C_shunt"),
+        ],
+    )
+
+    offsets = _build_shunt_branch_offsets(circuit, "jpa_like")
+
+    assert offsets[3] < 0.0
+    assert offsets[4] > 0.0
+    assert offsets[4] - offsets[3] > 2.0
+
+
+def test_resolve_shunt_label_layout_avoids_previously_occupied_label_box():
+    """Second shunt label group should choose a non-overlapping candidate layout."""
+    occupied: list[tuple[float, float, float, float]] = []
+    _, _, _, _, first_box = _resolve_shunt_label_layout(
+        x=5.0,
+        comp_name="Lj1",
+        name_label="Lj1",
+        value_label="2.1963e-10 H",
+        cluster_index=0,
+        cluster_total=2,
+        layout_mode="jpa_like",
+        occupied_boxes=occupied,
+    )
+    occupied.append(first_box)
+    _, _, _, _, second_box = _resolve_shunt_label_layout(
+        x=5.5,
+        comp_name="C2",
+        name_label="C2",
+        value_label="4e-13 F",
+        cluster_index=1,
+        cluster_total=2,
+        layout_mode="jpa_like",
+        occupied_boxes=occupied,
+    )
+
+    assert not _boxes_overlap(first_box, second_box)
 
 
 def test_generate_circuit_svg_does_not_duplicate_port_label_in_shunt_clusters():
@@ -226,6 +334,31 @@ def test_generate_circuit_svg_does_not_duplicate_port_label_in_shunt_clusters():
     svg_str = generate_circuit_svg(circuit)
 
     assert len(re.findall(r">P1</tspan>", svg_str)) == 1
+
+
+def test_generate_circuit_svg_places_ground_node_label_below_ground_line():
+    """Ground node labels should not sit on top of the ground conductor."""
+    circuit = CircuitDefinition(
+        name="Ground Label",
+        parameters={
+            "R50": {"default": 50.0, "unit": "Ohm"},
+            "C1": {"default": 1.0, "unit": "pF"},
+        },
+        topology=[
+            ("P1", "1", "0", 1),
+            ("R50", "1", "0", "R50"),
+            ("C1", "1", "0", "C1"),
+        ],
+    )
+
+    svg_str = generate_circuit_svg(circuit)
+    zero_label_match = re.search(
+        r'<text x="[^"]+" y="([0-9.eE+-]+)"[^>]*><tspan[^>]*>0</tspan>',
+        svg_str,
+    )
+
+    assert zero_label_match is not None
+    assert float(zero_label_match.group(1)) > 0.0
 
 
 def test_shunt_branch_offset_spreads_dense_clusters_around_anchor():

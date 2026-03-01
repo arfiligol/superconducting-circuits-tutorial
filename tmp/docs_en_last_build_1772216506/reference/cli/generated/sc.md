@@ -16,10 +16,10 @@ owner: I-LI CHIU
 This page is auto-generated. Do not edit manually.
 
 ```text
-Usage: sc [OPTIONS] COMMAND [ARGS]...                                                                                  
-                                                                                                                        
- Superconducting Circuits Analysis Platform CLI                                                                         
-                                                                                                                        
+Usage: sc [OPTIONS] COMMAND [ARGS]...
+
+ Superconducting Circuits Analysis Platform CLI
+
 ╭─ Options ────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ --help  -h        Show this message and exit.                                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
