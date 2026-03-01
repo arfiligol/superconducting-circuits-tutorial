@@ -2,7 +2,54 @@
 
 import pytest
 
-from core.simulation.domain.circuit import SimulationResult
+from core.simulation.domain.circuit import (
+    CircuitDefinition,
+    SimulationResult,
+    migrate_legacy_circuit_definition,
+)
+from core.simulation.domain.compiler import compile_simulation_topology
+
+
+def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]) -> CircuitDefinition:
+    return CircuitDefinition.model_validate(
+        migrate_legacy_circuit_definition(
+            {"name": name, "parameters": parameters, "topology": topology}
+        )
+    )
+
+
+def test_circuit_definition_compiles_to_explicit_ir() -> None:
+    circuit = _legacy_circuit(
+        name="IR Compile",
+        parameters={
+            "R50": {"default": 50.0, "unit": "Ohm"},
+            "L1": {"default": 10.0, "unit": "nH"},
+            "C1": {"default": 1.0, "unit": "pF"},
+        },
+        topology=[
+            ("P1", "1", "0", 1),
+            ("R1", "1", "0", "R50"),
+            ("L1", "1", "2", "L1"),
+            ("C1", "2", "0", "C1"),
+        ],
+    )
+
+    compiled_ir = circuit.to_ir()
+
+    assert compiled_ir.circuit_name == "IR Compile"
+    assert compiled_ir.layout_direction == "lr"
+    assert compiled_ir.layout_profile == "generic"
+    assert compiled_ir.available_port_indices == (1,)
+    assert [element.name for element in compiled_ir.elements] == ["P1", "R1", "L1", "C1"]
+    assert compile_simulation_topology(
+        compiled_ir,
+        is_ground_node=lambda node: circuit.is_ground_node(node),
+    ) == [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R50"),
+        ("L1", "1", "2", "L1"),
+        ("C1", "2", "0", "C1"),
+    ]
 
 
 def test_simulation_result_derives_s11_views() -> None:

@@ -6,11 +6,13 @@ import ast
 import json
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pprint import pformat
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
+
+from core.simulation.domain.compiler import compile_simulation_topology
+from core.simulation.domain.ir import CircuitElement, CircuitIR
 
 SUPPORTED_SCHEMA_VERSION = "0.1"
 SUPPORTED_PORT_ROLES = {"signal", "readout", "pump", "flux", "bias"}
@@ -37,26 +39,6 @@ SUPPORTED_INSTANCE_ROLES = {
 SUPPORTED_LAYOUT_DIRECTIONS = {"lr", "tb"}
 SUPPORTED_LAYOUT_PROFILES = {"generic", "qubit_readout", "jpa", "jtwpa"}
 GROUND_TOKENS = {"0", "gnd"}
-
-
-@dataclass(frozen=True)
-class CircuitElement:
-    """Lowered internal element representation for preview and compilation."""
-
-    name: str
-    kind: str
-    node1: str
-    node2: str
-    value_ref: str | int
-    role: str | None = None
-
-    @property
-    def is_port(self) -> bool:
-        return self.kind == "port"
-
-    @property
-    def is_mutual_coupling(self) -> bool:
-        return self.kind == "mutual_coupling"
 
 
 class ParameterSpec(BaseModel):
@@ -181,38 +163,14 @@ class CircuitDefinition(BaseModel):
     @property
     def effective_layout_direction(self) -> str:
         """Return the configured layout direction, with a stable fallback."""
-        return self.layout.direction or "lr"
+        return self.to_ir().layout_direction
 
     @property
     def effective_layout_profile(self) -> str:
         """Return the configured preview profile, with heuristic fallback."""
-        if self.layout.profile is not None:
-            return self.layout.profile
+        return self.to_ir().layout_profile
 
-        series_inductive = 0
-        shunt_capacitive = 0
-        shunt_josephson = 0
-
-        for element in self.lowered_elements():
-            if element.is_port:
-                continue
-            is_shunt = self.is_ground_node(element.node1) ^ self.is_ground_node(element.node2)
-            if not is_shunt:
-                if element.kind in {"inductor", "josephson_junction"}:
-                    series_inductive += 1
-                continue
-            if element.kind == "capacitor":
-                shunt_capacitive += 1
-            if element.kind == "josephson_junction":
-                shunt_josephson += 1
-
-        if series_inductive >= 3 and shunt_capacitive >= 2:
-            return "jtwpa"
-        if self.ports and shunt_capacitive >= 1 and shunt_josephson >= 1:
-            return "jpa"
-        return "generic"
-
-    def lowered_elements(self) -> list[CircuitElement]:
+    def _build_lowered_elements(self) -> tuple[CircuitElement, ...]:
         """Lower public ports/instances into a single internal element stream."""
         elements: list[CircuitElement] = []
         for port in sorted(self.ports, key=lambda spec: spec.index):
@@ -237,30 +195,57 @@ class CircuitDefinition(BaseModel):
                     role=instance.role,
                 )
             )
-        return elements
+        return tuple(elements)
+
+    def _infer_layout_profile(self, elements: tuple[CircuitElement, ...]) -> str:
+        """Infer a stable preview profile when the schema does not declare one."""
+        if self.layout.profile is not None:
+            return self.layout.profile
+
+        series_inductive = 0
+        shunt_capacitive = 0
+        shunt_josephson = 0
+
+        for element in elements:
+            if element.is_port:
+                continue
+            is_shunt = self.is_ground_node(element.node1) ^ self.is_ground_node(element.node2)
+            if not is_shunt:
+                if element.kind in {"inductor", "josephson_junction"}:
+                    series_inductive += 1
+                continue
+            if element.kind == "capacitor":
+                shunt_capacitive += 1
+            if element.kind == "josephson_junction":
+                shunt_josephson += 1
+
+        if series_inductive >= 3 and shunt_capacitive >= 2:
+            return "jtwpa"
+        if self.ports and shunt_capacitive >= 1 and shunt_josephson >= 1:
+            return "jpa"
+        return "generic"
+
+    def to_ir(self) -> CircuitIR:
+        """Compile the public schema into a stable internal representation."""
+        elements = self._build_lowered_elements()
+        return CircuitIR(
+            circuit_name=self.name,
+            layout_direction=self.layout.direction or "lr",
+            layout_profile=self._infer_layout_profile(elements),
+            available_port_indices=tuple(self.available_port_indices),
+            elements=elements,
+        )
+
+    def lowered_elements(self) -> list[CircuitElement]:
+        """Compatibility facade returning lowered preview/compiler elements."""
+        return self.to_ir().lowered_elements()
 
     def lowered_topology(self) -> list[tuple[str, str, str, str | int]]:
-        """Lower the public model into the legacy tuple representation for simulation."""
-        numeric_nodes: dict[str, str] = {}
-
-        def to_sim_node(token: str) -> str:
-            canonical = self.canonical_node_token(token)
-            if self.is_ground_node(canonical):
-                return "0"
-            if canonical not in numeric_nodes:
-                numeric_nodes[canonical] = str(len(numeric_nodes) + 1)
-            return numeric_nodes[canonical]
-
-        lowered: list[tuple[str, str, str, str | int]] = []
-        for element in self.lowered_elements():
-            if element.kind == "mutual_coupling":
-                node1 = str(element.node1)
-                node2 = str(element.node2)
-            else:
-                node1 = to_sim_node(element.node1)
-                node2 = to_sim_node(element.node2)
-            lowered.append((element.name, node1, node2, element.value_ref))
-        return lowered
+        """Compatibility facade returning lowered simulation tuples."""
+        return compile_simulation_topology(
+            self.to_ir(),
+            is_ground_node=lambda node: self.is_ground_node(node),
+        )
 
 
 def _coerce_mapping(payload: object) -> dict[str, Any]:

@@ -14,6 +14,7 @@ from core.simulation.domain.circuit import (
     SimulationConfig,
     SimulationResult,
 )
+from core.simulation.domain.compiler import compile_simulation_topology
 
 # Path to the Julia bridge file
 _JULIA_BRIDGE_PATH = Path(__file__).parent / "hbsolve.jl"
@@ -135,8 +136,11 @@ class JuliaSimulator:
         sources = self._build_effective_sources(config)
         self._validate_solver_config(config, sources, available_ports)
 
-        # Convert public Schematic Netlist into Julia-compatible tuples.
-        topology = circuit.lowered_topology()
+        # Convert CircuitIR into Julia-compatible tuples at the compiler boundary.
+        topology = compile_simulation_topology(
+            circuit.to_ir(),
+            is_ground_node=lambda node: circuit.is_ground_node(node),
+        )
 
         component_values = {
             param_name: param_spec.default * self._get_unit_multiplier(param_spec.unit)

@@ -15,6 +15,7 @@ from core.simulation.application.circuit_visualizer import (
     _shunt_label_plan,
     generate_circuit_svg,
 )
+from core.simulation.application.layout_plan import build_layout_plan
 from core.simulation.domain.circuit import CircuitDefinition, migrate_legacy_circuit_definition
 
 
@@ -61,6 +62,32 @@ def test_generate_circuit_svg_basic():
     assert "L1" in svg_str
     assert "C1" in svg_str
     assert "Lj1" in svg_str
+
+
+def test_build_layout_plan_exposes_explicit_backbone_contract():
+    """Layout planning should materialize an explicit contract before rendering."""
+    circuit = _legacy_circuit(
+        name="Planned Circuit",
+        parameters={
+            "R50": {"default": 50.0, "unit": "Ohm"},
+            "L1": {"default": 10.0, "unit": "nH"},
+            "C1": {"default": 1.0, "unit": "pF"},
+        },
+        topology=[
+            ("P1", "1", "0", 1),
+            ("R1", "1", "0", "R50"),
+            ("L1", "1", "2", "L1"),
+            ("C1", "2", "0", "C1"),
+        ],
+    )
+
+    plan = build_layout_plan(circuit)
+
+    assert plan.circuit_ir.circuit_name == "Planned Circuit"
+    assert plan.layout_mode == "generic"
+    assert plan.use_backbone_layout is True
+    assert plan.backbone_positions is not None
+    assert plan.backbone_positions["1"] < plan.backbone_positions["2"]
 
 
 def test_generate_circuit_svg_mutual_coupling_marker():
