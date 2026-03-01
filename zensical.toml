@@ -83,7 +83,7 @@ nav = [
       ] },
       { "Circuit Simulation" = [
         { "Overview" = "explanation/architecture/circuit-simulation/index.md" },
-        { "Circuit Schema Live Preview" = "explanation/architecture/design-decisions/circuit-schema-live-preview.md" },
+        { "Schematic Netlist Live Preview" = "explanation/architecture/design-decisions/circuit-schema-live-preview.md" },
         { "Schema Editor Formatting" = "explanation/architecture/design-decisions/schema-editor-formatting.md" },
         { "Live Preview Domain Semantics Profiles" = "explanation/architecture/design-decisions/live-preview-domain-semantics.md" },
         { "Simulation Result Views" = "explanation/architecture/circuit-simulation/simulation-result-views.md" },
@@ -93,6 +93,10 @@ nav = [
   ] },
   { "Reference" = [
     { "Overview" = "reference/index.md" },
+    { "Architecture" = [
+      { "Overview" = "reference/architecture/index.md" },
+      { "Schematic Netlist Core" = "reference/architecture/schematic-netlist-core.md" },
+    ] },
     { "CLI Options" = [
       { "Overview" = "reference/cli/index.md" },
       { "Simulation" = [
@@ -128,7 +132,7 @@ nav = [
     { "Data Formats" = [
       { "Overview" = "reference/data-formats/index.md" },
       { "Dataset Record" = "reference/data-formats/dataset-record.md" },
-      { "Circuit Netlist" = "reference/data-formats/circuit-netlist.md" },
+      { "Schematic Netlist" = "reference/data-formats/circuit-netlist.md" },
       { "Raw Data Layout" = "reference/data-formats/raw-data-layout.md" },
       { "Analysis Result" = "reference/data-formats/analysis-result.md" },
     ] },

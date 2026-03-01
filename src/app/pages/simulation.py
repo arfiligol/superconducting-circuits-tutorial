@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 from datetime import datetime
 from typing import Any
 
@@ -25,6 +24,8 @@ from core.simulation.domain.circuit import (
     FrequencyRange,
     SimulationConfig,
     SimulationResult,
+    format_circuit_definition,
+    parse_circuit_definition_source,
 )
 
 _SIM_SETUP_STORAGE_KEY = "simulation_saved_setups_by_schema"
@@ -179,6 +180,41 @@ def _parse_source_mode_text(raw_value: object) -> tuple[int, ...] | None:
         return None
 
     return tuple(int(part) for part in parts)
+
+
+def _normalize_source_mode_components(
+    mode: tuple[int, ...] | list[int] | None,
+    *,
+    source_index: int,
+    source_count: int,
+) -> tuple[int, ...]:
+    """Normalize one source mode tuple to the current source-count width."""
+    width = max(int(source_count), 1)
+    clamped_index = min(max(int(source_index), 0), width - 1)
+
+    if mode is None:
+        fallback = [0] * width
+        fallback[clamped_index] = 1
+        return tuple(fallback)
+
+    normalized = tuple(int(value) for value in mode)
+    if not normalized:
+        fallback = [0] * width
+        fallback[clamped_index] = 1
+        return tuple(fallback)
+
+    if all(value == 0 for value in normalized):
+        return tuple(0 for _ in range(width))
+
+    nonzero_indices = [idx for idx, value in enumerate(normalized) if value != 0]
+    if len(nonzero_indices) == 1 and normalized[nonzero_indices[0]] > 0:
+        if len(normalized) == width:
+            return normalized
+        fallback = [0] * width
+        fallback[clamped_index] = 1
+        return tuple(fallback)
+
+    return normalized
 
 
 _JOSEPHSON_BUILTIN_SETUP_PAYLOADS: dict[str, dict[str, Any]] = {
@@ -1004,33 +1040,29 @@ def _load_latest_circuit_definition(schema_id: int) -> tuple[CircuitRecord, Circ
         raise ValueError(f"SimulationInputError: schema id={schema_id} was not found.")
 
     try:
-        js_data = ast.literal_eval(latest_record.definition_json)
-        circuit_def = CircuitDefinition.model_validate(js_data)
+        circuit_def, migrated_legacy = parse_circuit_definition_source(
+            latest_record.definition_json,
+            allow_legacy_migration=True,
+        )
+        if migrated_legacy:
+            normalized = format_circuit_definition(circuit_def)
+            with get_unit_of_work() as uow:
+                db_record = uow.circuits.get(schema_id)
+                if db_record is not None:
+                    db_record.definition_json = normalized
+                    uow.commit()
     except Exception as exc:
         raise ValueError(
             "SimulationInputError: active schema is invalid. "
-            "Required fields: name, parameters, topology."
+            "Required fields: schema_version, name, parameters, ports, instances."
         ) from exc
 
     return latest_record, circuit_def
 
 
 def _extract_available_port_indices(circuit: CircuitDefinition) -> set[int]:
-    """Collect schema-declared port indices from topology entries."""
-    ports: set[int] = set()
-    for comp_name, _, _, value_ref in circuit.topology:
-        if not comp_name.lower().startswith("p"):
-            continue
-        try:
-            port_index = int(value_ref)
-        except (TypeError, ValueError):
-            digits = "".join(ch for ch in comp_name if ch.isdigit())
-            if not digits:
-                continue
-            port_index = int(digits)
-        if port_index >= 1:
-            ports.add(port_index)
-    return ports
+    """Collect schema-declared port indices from public port declarations."""
+    return set(circuit.available_port_indices)
 
 
 def _detect_harmonic_grid_coincidences(
@@ -1378,6 +1410,26 @@ def _render_simulation_environment():
                 sources_container = ui.column().classes("w-full gap-3 mt-2")
                 applying_saved_setup = False
 
+                def normalize_source_mode_inputs() -> None:
+                    source_count = len(source_forms)
+                    if source_count < 1:
+                        return
+
+                    for idx, source_form in enumerate(source_forms):
+                        mode_input = source_form["mode_input"]
+                        try:
+                            parsed_mode = _parse_source_mode_text(mode_input.value)
+                        except ValueError:
+                            continue
+                        normalized_mode = _normalize_source_mode_components(
+                            parsed_mode,
+                            source_index=idx,
+                            source_count=source_count,
+                        )
+                        normalized_text = _format_source_mode_text(normalized_mode)
+                        if mode_input.value != normalized_text:
+                            mode_input.value = normalized_text
+
                 def refresh_source_forms() -> None:
                     has_multiple_sources = len(source_forms) > 1
                     for idx, source_form in enumerate(source_forms, start=1):
@@ -1385,6 +1437,7 @@ def _render_simulation_environment():
                         remove_button = source_form["remove_button"]
                         title.text = f"Source {idx}"
                         remove_button.enabled = has_multiple_sources
+                    normalize_source_mode_inputs()
 
                 def remove_source_form(source_card: object) -> None:
                     if len(source_forms) <= 1:
@@ -1507,12 +1560,18 @@ def _render_simulation_environment():
                             )
                             return None
 
+                        normalized_mode = _normalize_source_mode_components(
+                            parsed_mode,
+                            source_index=idx - 1,
+                            source_count=len(source_forms),
+                        )
+
                         setup_sources.append(
                             _build_source_payload(
                                 pump_freq_ghz=float(source_pump_freq_input.value),
                                 port=int(port_input.value),
                                 current_amp=float(current_input.value),
-                                mode=parsed_mode or (1,),
+                                mode=normalized_mode,
                             )
                         )
 
@@ -1600,10 +1659,11 @@ def _render_simulation_environment():
                                 parsed_mode = _parse_source_mode_text(raw_mode)
                             except ValueError:
                                 parsed_mode = None
-                            if parsed_mode is None:
-                                fallback_mode = [0] * generated_mode_width
-                                fallback_mode[source_index - 1] = 1
-                                parsed_mode = tuple(fallback_mode)
+                            parsed_mode = _normalize_source_mode_components(
+                                parsed_mode,
+                                source_index=source_index - 1,
+                                source_count=generated_mode_width,
+                            )
                             add_source_form(
                                 DriveSourceConfig(
                                     pump_freq_ghz=float(source["pump_freq_ghz"]),
@@ -1820,12 +1880,18 @@ def _render_simulation_environment():
                                 )
                                 return
 
+                            normalized_mode = _normalize_source_mode_components(
+                                parsed_mode,
+                                source_index=idx - 1,
+                                source_count=len(source_forms),
+                            )
+
                             sources.append(
                                 DriveSourceConfig(
                                     pump_freq_ghz=float(source_pump_freq_input.value),
                                     port=int(port_input.value),
                                     current_amp=float(current_input.value),
-                                    mode_components=parsed_mode,
+                                    mode_components=normalized_mode,
                                 )
                             )
 

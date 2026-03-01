@@ -5,6 +5,7 @@ from pprint import pformat
 
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import CircuitRecord
+from core.simulation.domain.circuit import migrate_legacy_circuit_definition
 
 PHI0_REDUCED = 2.0678338484619295e-15 / (2 * math.pi)
 
@@ -18,11 +19,13 @@ def schema_name(title: str) -> str:
 
 
 def make_definition(name: str, parameters: dict[str, dict], topology: list[tuple]) -> str:
-    payload = {
-        "name": name,
-        "parameters": parameters,
-        "topology": topology,
-    }
+    payload = migrate_legacy_circuit_definition(
+        {
+            "name": name,
+            "parameters": parameters,
+            "topology": topology,
+        }
+    )
     return pformat(payload, width=100, sort_dicts=False)
 
 

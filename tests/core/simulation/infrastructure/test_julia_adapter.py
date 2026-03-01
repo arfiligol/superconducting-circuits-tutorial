@@ -6,9 +6,22 @@ from core.simulation.domain.circuit import (
     CircuitDefinition,
     DriveSourceConfig,
     FrequencyRange,
+    InstanceSpec,
+    LayoutHints,
+    ParameterSpec,
+    PortSpec,
     SimulationConfig,
+    migrate_legacy_circuit_definition,
 )
 from core.simulation.infrastructure.julia_adapter import JuliaSimulator
+
+
+def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]):
+    return CircuitDefinition.model_validate(
+        migrate_legacy_circuit_definition(
+            {"name": name, "parameters": parameters, "topology": topology}
+        )
+    )
 
 
 class _FakeJuliaMain:
@@ -31,14 +44,35 @@ def _default_config() -> SimulationConfig:
 
 
 def test_run_hbsolve_raises_input_error_for_missing_component_reference():
-    circuit = CircuitDefinition(
+    circuit = CircuitDefinition.model_construct(
+        schema_version="0.1",
         name="bad-ref",
-        parameters={"C1": {"default": 1.0, "unit": "pF"}},
-        topology=[("P1", "1", "0", 1), ("R1", "1", "0", "R1"), ("C1", "1", "0", "C1")],
+        parameters={"C1": ParameterSpec(default=1.0, unit="pF")},
+        ports=[PortSpec(id="P1", node="1", ground="gnd", index=1, role="signal", side="left")],
+        instances=[
+            InstanceSpec.model_construct(
+                id="R1",
+                kind="resistor",
+                pins=["1", "gnd"],
+                value_ref="R1",
+                role="termination",
+            ),
+            InstanceSpec(
+                id="C1",
+                kind="capacitor",
+                pins=["1", "gnd"],
+                value_ref="C1",
+                role="shunt",
+            ),
+        ],
+        layout=LayoutHints(direction="lr", profile="generic"),
     )
     simulator = _build_simulator(lambda *_: pytest.fail("Julia should not be called"))
 
-    with pytest.raises(ValueError, match="SimulationInputError: topology references undefined"):
+    with pytest.raises(
+        ValueError,
+        match="SimulationInputError: instance 'R1' references undefined parameter 'R1'",
+    ):
         simulator.run_hbsolve(
             circuit,
             FrequencyRange(start_ghz=1.0, stop_ghz=5.0, points=101),
@@ -47,7 +81,7 @@ def test_run_hbsolve_raises_input_error_for_missing_component_reference():
 
 
 def test_run_hbsolve_raises_input_error_when_port_has_no_shunt_resistor():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="no-port-r",
         parameters={
             "L1": {"default": 10.0, "unit": "nH"},
@@ -69,7 +103,7 @@ def test_run_hbsolve_raises_input_error_when_port_has_no_shunt_resistor():
 
 
 def test_run_hbsolve_maps_singular_exception_to_numerical_error():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="singular",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -103,7 +137,7 @@ def test_run_hbsolve_maps_singular_exception_to_numerical_error():
 
 
 def test_run_hbsolve_raises_input_error_for_unsupported_unit():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="bad-unit",
         parameters={"R1": {"default": 50.0, "unit": "ohms"}},
         topology=[("P1", "1", "0", 1), ("R1", "1", "0", "R1")],
@@ -119,7 +153,7 @@ def test_run_hbsolve_raises_input_error_for_unsupported_unit():
 
 
 def test_run_hbsolve_returns_result_when_julia_succeeds():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="ok",
         parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
         topology=[("P1", "1", "0", 1), ("R50", "1", "0", "R50")],
@@ -171,7 +205,7 @@ def test_run_hbsolve_returns_result_when_julia_succeeds():
 
 
 def test_run_hbsolve_rejects_source_port_not_declared_in_schema():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="port-mismatch",
         parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
         topology=[("P1", "1", "0", 1), ("R50", "1", "0", "R50")],
@@ -194,7 +228,7 @@ def test_run_hbsolve_rejects_source_port_not_declared_in_schema():
 
 
 def test_run_hbsolve_forwards_hbsolve_config_parameters():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="forward-config",
         parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
         topology=[("P1", "1", "0", 1), ("R50", "1", "0", "R50")],
@@ -253,7 +287,7 @@ def test_run_hbsolve_forwards_hbsolve_config_parameters():
 
 
 def test_run_hbsolve_supports_explicit_dc_and_pump_sources_on_same_port() -> None:
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="explicit-modes",
         parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
         topology=[
@@ -309,7 +343,7 @@ def test_run_hbsolve_supports_explicit_dc_and_pump_sources_on_same_port() -> Non
 
 
 def test_run_hbsolve_rejects_mixed_implicit_and_explicit_source_modes() -> None:
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="mixed-modes",
         parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
         topology=[("P1", "1", "0", 1), ("R50", "1", "0", "R50")],

@@ -18,6 +18,7 @@ from playwright.sync_api import Page, expect, sync_playwright
 
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import CircuitRecord
+from core.simulation.domain.circuit import migrate_legacy_circuit_definition
 
 _RUN_PLAYWRIGHT_E2E = os.getenv("RUN_PLAYWRIGHT_JOSEPHSON_E2E") == "1"
 
@@ -47,41 +48,45 @@ class ExampleCase:
 
 def _stable_series_lc_definition() -> str:
     return str(
-        {
-            "name": "E2E Stable Series LC",
-            "parameters": {
-                "R50": {"default": 50.0, "unit": "Ohm"},
-                "L1": {"default": 10.0, "unit": "nH"},
-                "C1": {"default": 1.0, "unit": "pF"},
-            },
-            "topology": [
-                ("P1", "1", "0", 1),
-                ("R50", "1", "0", "R50"),
-                ("L1", "1", "2", "L1"),
-                ("C1", "2", "0", "C1"),
-            ],
-        }
+        migrate_legacy_circuit_definition(
+            {
+                "name": "E2E Stable Series LC",
+                "parameters": {
+                    "R50": {"default": 50.0, "unit": "Ohm"},
+                    "L1": {"default": 10.0, "unit": "nH"},
+                    "C1": {"default": 1.0, "unit": "pF"},
+                },
+                "topology": [
+                    ("P1", "1", "0", 1),
+                    ("R50", "1", "0", "R50"),
+                    ("L1", "1", "2", "L1"),
+                    ("C1", "2", "0", "C1"),
+                ],
+            }
+        )
     )
 
 
 def _jpa_definition() -> str:
     return str(
-        {
-            "name": "E2E JPA Core",
-            "parameters": {
-                "R1": {"default": 50.0, "unit": "Ohm"},
-                "Lj": {"default": 1000.0, "unit": "pH"},
-                "Cc": {"default": 100.0, "unit": "fF"},
-                "Cj": {"default": 1000.0, "unit": "fF"},
-            },
-            "topology": [
-                ("P1", "1", "0", 1),
-                ("R1", "1", "0", "R1"),
-                ("C1", "1", "2", "Cc"),
-                ("Lj1", "2", "0", "Lj"),
-                ("C2", "2", "0", "Cj"),
-            ],
-        }
+        migrate_legacy_circuit_definition(
+            {
+                "name": "E2E JPA Core",
+                "parameters": {
+                    "R1": {"default": 50.0, "unit": "Ohm"},
+                    "Lj": {"default": 1000.0, "unit": "pH"},
+                    "Cc": {"default": 100.0, "unit": "fF"},
+                    "Cj": {"default": 1000.0, "unit": "fF"},
+                },
+                "topology": [
+                    ("P1", "1", "0", 1),
+                    ("R1", "1", "0", "R1"),
+                    ("C1", "1", "2", "Cc"),
+                    ("Lj1", "2", "0", "Lj"),
+                    ("C2", "2", "0", "Cj"),
+                ],
+            }
+        )
     )
 
 

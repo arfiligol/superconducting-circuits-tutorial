@@ -8,6 +8,7 @@ from app.pages.simulation import (
     _builtin_saved_setups_for_schema,
     _extract_available_port_indices,
     _merge_saved_setups_with_builtin,
+    _normalize_source_mode_components,
 )
 from core.simulation.domain.circuit import CircuitDefinition
 
@@ -102,3 +103,9 @@ def test_merge_saved_setups_with_builtin_keeps_user_setup() -> None:
 
     assert merged[0]["saved_at"] == "builtin"
     assert merged[1]["id"] == "user:custom"
+
+
+def test_normalize_source_mode_components_expands_single_source_one_hot() -> None:
+    assert _normalize_source_mode_components((1,), source_index=0, source_count=2) == (1, 0)
+    assert _normalize_source_mode_components((1,), source_index=1, source_count=2) == (0, 1)
+    assert _normalize_source_mode_components((0,), source_index=0, source_count=2) == (0, 0)

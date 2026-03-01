@@ -12,7 +12,7 @@ from itertools import pairwise
 import schemdraw
 import schemdraw.elements as elm
 
-from core.simulation.domain.circuit import CircuitDefinition
+from core.simulation.domain.circuit import CircuitDefinition, CircuitElement
 
 _SVG_VIEWBOX_PATTERN = re.compile(
     r'height="([0-9.eE+-]+)pt"\s+width="([0-9.eE+-]+)pt"\s+'
@@ -41,11 +41,23 @@ def _add_svg_padding(svg_text: str, pad_pt: float = 12.0) -> str:
     return _SVG_VIEWBOX_PATTERN.sub(replacement, svg_text, count=1)
 
 
+def _resolve_elements(
+    elements_or_circuit: list[CircuitElement] | CircuitDefinition,
+) -> list[CircuitElement]:
+    """Accept either a lowered element list or a CircuitDefinition."""
+    if isinstance(elements_or_circuit, CircuitDefinition):
+        return elements_or_circuit.lowered_elements()
+    return elements_or_circuit
+
+
 def _component_label_parts(
-    circuit: CircuitDefinition, component_name: str, value_ref: str | int
+    circuit: CircuitDefinition,
+    component_name: str,
+    component_kind: str,
+    value_ref: str | int,
 ) -> tuple[str, str | None]:
     """Build display-friendly label parts: component id + optional value/unit."""
-    if component_name.lower().startswith("p"):
+    if component_kind == "port":
         return component_name, None
     if not isinstance(value_ref, str):
         return component_name, None
@@ -60,48 +72,29 @@ def _component_label_parts(
 
 def _is_ground(node_str: str) -> bool:
     """Return True when a topology node represents the ground reference."""
-    return node_str.lower() in ["0", "gnd"]
+    return CircuitDefinition.is_ground_node(node_str)
 
 
 def _classify_layout_mode(circuit: CircuitDefinition) -> str:
     """Return a coarse layout profile for domain-specific spacing heuristics."""
-    series_inductive = 0
-    shunt_capacitive = 0
-    shunt_josephson = 0
-    port_count = 0
-
-    for comp_name, node1_raw, node2_raw, _ in circuit.topology:
-        name_lower = comp_name.lower()
-        node1_str = str(node1_raw)
-        node2_str = str(node2_raw)
-        is_shunt = _is_ground(node1_str) ^ _is_ground(node2_str)
-
-        if name_lower.startswith("p"):
-            port_count += 1
-        if not is_shunt:
-            if name_lower.startswith("l") or name_lower.startswith("lj"):
-                series_inductive += 1
-            continue
-
-        if name_lower.startswith("c"):
-            shunt_capacitive += 1
-        if name_lower.startswith("lj"):
-            shunt_josephson += 1
-
-    if series_inductive >= 3 and shunt_capacitive >= 2:
+    profile = circuit.effective_layout_profile
+    if profile == "jtwpa":
         return "jtwpa_like"
-    if port_count >= 1 and shunt_capacitive >= 1 and shunt_josephson >= 1:
+    if profile == "jpa":
         return "jpa_like"
     return "generic"
 
 
-def _build_shunt_cluster_metadata(circuit: CircuitDefinition) -> dict[int, tuple[str, int, int]]:
+def _build_shunt_cluster_metadata(
+    elements_or_circuit: list[CircuitElement] | CircuitDefinition,
+) -> dict[int, tuple[str, int, int]]:
     """Map topology index to (signal_node, cluster_index, cluster_total) for shunt branches."""
+    elements = _resolve_elements(elements_or_circuit)
     shunt_indices_by_node: dict[str, list[int]] = defaultdict(list)
 
-    for index, (_, node1_raw, node2_raw, _) in enumerate(circuit.topology):
-        node1_str = str(node1_raw)
-        node2_str = str(node2_raw)
+    for index, element in enumerate(elements):
+        node1_str = element.node1
+        node2_str = element.node2
         is_gnd1 = _is_ground(node1_str)
         is_gnd2 = _is_ground(node2_str)
         if is_gnd1 == is_gnd2:
@@ -119,26 +112,25 @@ def _build_shunt_cluster_metadata(circuit: CircuitDefinition) -> dict[int, tuple
 
 
 def _estimate_component_slot_width(
-    comp_name: str,
+    component_kind: str,
     name_label: str,
     value_label: str | None,
     layout_mode: str,
 ) -> float:
     """Estimate horizontal space a shunt branch should reserve around its anchor."""
-    name_lower = comp_name.lower()
     longest_label = max(len(name_label), len(value_label or ""))
     label_span = max(1.2, (0.16 * longest_label) + 0.9)
     symbol_span = 1.35
 
-    if name_lower.startswith("p"):
+    if component_kind == "port":
         symbol_span = 1.8
-    elif name_lower.startswith("r"):
+    elif component_kind == "resistor":
         symbol_span = 1.5
-    elif name_lower.startswith("lj"):
+    elif component_kind == "josephson_junction":
         symbol_span = 1.55
-    elif name_lower.startswith("c"):
+    elif component_kind == "capacitor":
         symbol_span = 1.35
-    elif name_lower.startswith("l"):
+    elif component_kind == "inductor":
         symbol_span = 1.45
 
     slot_width = max(symbol_span, label_span)
@@ -151,13 +143,22 @@ def _estimate_component_slot_width(
     return slot_width
 
 
-def _build_shunt_branch_offsets(circuit: CircuitDefinition, layout_mode: str) -> dict[int, float]:
+def _build_shunt_branch_offsets(
+    circuit: CircuitDefinition,
+    elements: list[CircuitElement] | str | None = None,
+    layout_mode: str = "generic",
+) -> dict[int, float]:
     """Reserve horizontal slots for each shunt branch to avoid label crowding."""
+    if isinstance(elements, str):
+        layout_mode = elements
+        resolved_elements = circuit.lowered_elements()
+    else:
+        resolved_elements = elements or circuit.lowered_elements()
     shunt_indices_by_node: dict[str, list[int]] = defaultdict(list)
 
-    for index, (_, node1_raw, node2_raw, _) in enumerate(circuit.topology):
-        node1_str = str(node1_raw)
-        node2_str = str(node2_raw)
+    for index, element in enumerate(resolved_elements):
+        node1_str = element.node1
+        node2_str = element.node2
         is_gnd1 = _is_ground(node1_str)
         is_gnd2 = _is_ground(node2_str)
         if is_gnd1 == is_gnd2:
@@ -180,11 +181,18 @@ def _build_shunt_branch_offsets(circuit: CircuitDefinition, layout_mode: str) ->
 
         slot_widths: list[float] = []
         for topo_index in indices:
-            comp_name, _, _, value_ref = circuit.topology[topo_index]
-            name_label, value_label = _component_label_parts(circuit, comp_name, value_ref)
+            lowered = resolved_elements[topo_index]
+            comp_name = lowered.name
+            value_ref = lowered.value_ref
+            name_label, value_label = _component_label_parts(
+                circuit,
+                comp_name,
+                lowered.kind,
+                value_ref,
+            )
             slot_widths.append(
                 _estimate_component_slot_width(
-                    comp_name=comp_name,
+                    component_kind=lowered.kind,
                     name_label=name_label,
                     value_label=value_label,
                     layout_mode=layout_mode,
@@ -227,23 +235,24 @@ def _build_signal_node_padding(
 
 
 def _build_backbone_positions(
-    circuit: CircuitDefinition,
+    elements_or_circuit: list[CircuitElement] | CircuitDefinition,
     dx: float,
     origin_x: float = 1.8,
     node_padding: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, float] | None:
     """Return fixed x positions for simple chain-like signal backbones."""
+    elements = _resolve_elements(elements_or_circuit)
     adjacency: dict[str, list[str]] = defaultdict(list)
     signal_nodes: set[str] = set()
     port_signal_nodes: list[str] = []
 
-    for comp_name, node1_raw, node2_raw, _ in circuit.topology:
-        node1_str = str(node1_raw)
-        node2_str = str(node2_raw)
+    for element in elements:
+        node1_str = element.node1
+        node2_str = element.node2
         is_gnd1 = _is_ground(node1_str)
         is_gnd2 = _is_ground(node2_str)
 
-        if is_gnd1 != is_gnd2 and comp_name.lower().startswith("p"):
+        if is_gnd1 != is_gnd2 and element.kind == "port":
             port_signal_nodes.append(node2_str if is_gnd1 else node1_str)
 
         if is_gnd1 or is_gnd2:
@@ -309,7 +318,7 @@ def _build_backbone_positions(
 
 
 def _shunt_branch_offset(
-    comp_name: str, cluster_index: int, cluster_total: int, layout_mode: str
+    component_kind: str, cluster_index: int, cluster_total: int, layout_mode: str
 ) -> float:
     """Return x offset from the signal-node anchor for a shunt branch."""
     if cluster_total <= 1:
@@ -319,17 +328,17 @@ def _shunt_branch_offset(
     step = 1.35 if layout_mode == "jtwpa_like" else 1.2
     offset = centered_index * step
 
-    if comp_name.lower().startswith("p") and offset >= -0.25:
+    if component_kind == "port" and offset >= -0.25:
         offset -= 0.55
     return offset
 
 
 def _shunt_label_plan(
-    comp_name: str, cluster_index: int, cluster_total: int, layout_mode: str
+    component_kind: str, cluster_index: int, cluster_total: int, layout_mode: str
 ) -> tuple[str, float, float, float]:
     """Return side, x offset, name y, value y for vertical-branch labels."""
     if cluster_total <= 1:
-        if comp_name.lower().startswith("c"):
+        if component_kind == "capacitor":
             return ("left", -0.78, 1.44, 1.14)
         return ("right", 0.82, 1.44, 1.14)
 
@@ -380,7 +389,7 @@ def _boxes_overlap(
 
 def _resolve_shunt_label_layout(
     x: float,
-    comp_name: str,
+    component_kind: str,
     name_label: str,
     value_label: str | None,
     cluster_index: int,
@@ -390,7 +399,7 @@ def _resolve_shunt_label_layout(
 ) -> tuple[str, float, float, float, tuple[float, float, float, float]]:
     """Choose the first non-overlapping candidate layout for a shunt label group."""
     base_side, base_offset, base_name_y, base_value_y = _shunt_label_plan(
-        comp_name=comp_name,
+        component_kind=component_kind,
         cluster_index=cluster_index,
         cluster_total=cluster_total,
         layout_mode=layout_mode,
@@ -462,7 +471,7 @@ def _ensure_node_label(
 def _add_shunt_labels(
     drawing: schemdraw.Drawing,
     x: float,
-    comp_name: str,
+    component_kind: str,
     name_label: str,
     value_label: str | None,
     cluster_index: int,
@@ -473,7 +482,7 @@ def _add_shunt_labels(
     """Place shunt labels with cluster-aware offsets to reduce overlap."""
     side, x_offset, name_y, value_y, candidate_box = _resolve_shunt_label_layout(
         x=x,
-        comp_name=comp_name,
+        component_kind=component_kind,
         name_label=name_label,
         value_label=value_label,
         cluster_index=cluster_index,
@@ -499,18 +508,17 @@ def _add_shunt_labels(
 
 def _label_element(
     element,
-    comp_name: str,
+    component_kind: str,
     name_label: str,
     value_label: str | None,
     is_shunt: bool,
 ):
     """Attach label with type-aware defaults to avoid overlaps."""
-    name_lower = comp_name.lower()
     if isinstance(element, elm.Dot):
         return element.label(name_label, loc="top", fontsize=11)
 
     # Port sources need extra room from nearby shunt elements.
-    if name_lower.startswith("p"):
+    if component_kind == "port":
         return element.label(name_label, loc="right", ofst=0.45, halign="left", fontsize=11)
 
     # Dense shunt branches are handled by cluster-aware absolute labels.
@@ -551,14 +559,16 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
         dx = 3.0
         gap = 2.0
 
-    shunt_cluster_metadata = _build_shunt_cluster_metadata(circuit)
-    shunt_branch_offsets = _build_shunt_branch_offsets(circuit, layout_mode)
+    elements = circuit.lowered_elements()
+
+    shunt_cluster_metadata = _build_shunt_cluster_metadata(elements)
+    shunt_branch_offsets = _build_shunt_branch_offsets(circuit, elements, layout_mode)
     signal_node_padding = _build_signal_node_padding(
         shunt_cluster_metadata,
         shunt_branch_offsets,
     )
     backbone_positions = _build_backbone_positions(
-        circuit,
+        elements,
         dx=dx,
         node_padding=signal_node_padding,
     )
@@ -607,23 +617,30 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
                 d.add(elm.Line().at((last_ground_x, 0.0)).to((target_x, 0.0)))
         last_ground_x = target_x
 
-    for topo_index, (comp_name, node1_raw, node2_raw, value_ref) in enumerate(circuit.topology):
-        name_lower = comp_name.lower()
-        node1_str = str(node1_raw)
-        node2_str = str(node2_raw)
-        name_label, value_label = _component_label_parts(circuit, comp_name, value_ref)
+    for topo_index, lowered in enumerate(elements):
+        comp_name = lowered.name
+        component_kind = lowered.kind
+        node1_str = lowered.node1
+        node2_str = lowered.node2
+        value_ref = lowered.value_ref
+        name_label, value_label = _component_label_parts(
+            circuit,
+            comp_name,
+            component_kind,
+            value_ref,
+        )
 
-        if name_lower.startswith("p"):
+        if component_kind == "port":
             element = elm.SourceSin()
-        elif name_lower.startswith("c"):
+        elif component_kind == "capacitor":
             element = elm.Capacitor()
-        elif name_lower.startswith("l") and not name_lower.startswith("lj"):
+        elif component_kind == "inductor":
             element = elm.Inductor()
-        elif name_lower.startswith("r"):
+        elif component_kind == "resistor":
             element = elm.Resistor()
-        elif name_lower.startswith("lj"):
+        elif component_kind == "josephson_junction":
             element = elm.Josephson()
-        elif name_lower.startswith("k"):
+        elif component_kind == "mutual_coupling":
             element = elm.Dot(open=True).label(f"K({comp_name})")
         else:
             element = elm.Dot(open=True).label(f"? {comp_name}")
@@ -645,7 +662,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
                 branch_x = node_anchor_x + shunt_branch_offsets.get(
                     topo_index,
                     _shunt_branch_offset(
-                        comp_name=comp_name,
+                        component_kind=component_kind,
                         cluster_index=cluster_index,
                         cluster_total=cluster_total,
                         layout_mode=layout_mode,
@@ -665,17 +682,17 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
                 d.add(
                     _label_element(
                         element.at((x, 0.0)).to((x, 3.0)),
-                        comp_name,
+                        component_kind,
                         name_label,
                         value_label,
                         True,
                     )
                 )
-                if not name_lower.startswith("p"):
+                if component_kind != "port":
                     _add_shunt_labels(
                         drawing=d,
                         x=x,
-                        comp_name=comp_name,
+                        component_kind=component_kind,
                         name_label=name_label,
                         value_label=value_label,
                         cluster_index=cluster_index,
@@ -689,7 +706,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
 
             wire_ground(x)
 
-            should_label_nodes = not name_lower.startswith("p")
+            should_label_nodes = component_kind != "port"
 
             if should_label_nodes:
                 loc1 = "top" if y1 > y2 else "bottom"
@@ -740,7 +757,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
             d.add(
                 _label_element(
                     element.at((x1, 3.0)).to((x2, 3.0)),
-                    comp_name,
+                    component_kind,
                     name_label,
                     value_label,
                     is_shunt=False,

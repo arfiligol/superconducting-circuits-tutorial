@@ -135,8 +135,8 @@ class JuliaSimulator:
         sources = self._build_effective_sources(config)
         self._validate_solver_config(config, sources, available_ports)
 
-        # Convert Python models to Julia-compatible format
-        topology = [(elem[0], elem[1], elem[2], elem[3]) for elem in circuit.topology]
+        # Convert public Schematic Netlist into Julia-compatible tuples.
+        topology = circuit.lowered_topology()
 
         component_values = {
             param_name: param_spec.default * self._get_unit_multiplier(param_spec.unit)
@@ -272,38 +272,34 @@ class JuliaSimulator:
     def _validate_circuit_inputs(circuit: CircuitDefinition) -> None:
         """Validate basic circuit integrity before invoking Julia."""
         parameter_names = set(circuit.parameters)
-        topology_value_refs: list[str] = []
-        port_nodes: list[str] = []
+        referenced_values: list[str] = []
+        elements = circuit.lowered_elements()
 
-        for comp_name, node1_raw, node2_raw, value_ref in circuit.topology:
-            node1 = str(node1_raw)
-            node2 = str(node2_raw)
-            name_lower = comp_name.lower()
-
-            if name_lower.startswith("p"):
-                port_nodes.append(node1 if node1.lower() not in {"0", "gnd"} else node2)
+        for element in elements:
+            if element.is_port:
                 continue
-
-            if not isinstance(value_ref, str):
+            if not isinstance(element.value_ref, str):
                 raise ValueError(
-                    "SimulationInputError: non-port topology entries must use string "
-                    f"value_ref. Got '{value_ref}' in element '{comp_name}'."
+                    "SimulationInputError: non-port instances must use string value_ref. "
+                    f"Got '{element.value_ref}' in instance '{element.name}'."
                 )
-            ref_name = value_ref
-            topology_value_refs.append(ref_name)
+            ref_name = element.value_ref
+            referenced_values.append(ref_name)
             if ref_name not in parameter_names:
                 raise ValueError(
-                    f"SimulationInputError: topology references undefined parameter '{ref_name}'."
+                    f"SimulationInputError: instance '{element.name}' references undefined "
+                    f"parameter '{ref_name}'."
                 )
 
-        for port_node in port_nodes:
+        for port in circuit.ports:
+            port_node = circuit.canonical_node_token(port.node)
             has_shunt_resistor = any(
-                comp_name.lower().startswith("r")
+                element.kind == "resistor"
                 and (
-                    (str(node1_raw) == port_node and str(node2_raw).lower() in {"0", "gnd"})
-                    or (str(node2_raw) == port_node and str(node1_raw).lower() in {"0", "gnd"})
+                    (element.node1 == port_node and circuit.is_ground_node(element.node2))
+                    or (element.node2 == port_node and circuit.is_ground_node(element.node1))
                 )
-                for comp_name, node1_raw, node2_raw, _ in circuit.topology
+                for element in elements
             )
             if not has_shunt_resistor:
                 raise ValueError(
@@ -311,30 +307,15 @@ class JuliaSimulator:
                     f"(missing at node '{port_node}')."
                 )
 
-        if not topology_value_refs and circuit.parameters:
+        if not referenced_values and circuit.parameters:
             raise ValueError(
-                "SimulationInputError: no parameter references were found in topology."
+                "SimulationInputError: no parameter references were found in instances."
             )
 
     @staticmethod
     def _extract_available_port_indices(circuit: CircuitDefinition) -> set[int]:
-        """Collect declared port indices from circuit topology."""
-        ports: set[int] = set()
-        for comp_name, _, _, value_ref in circuit.topology:
-            if not comp_name.lower().startswith("p"):
-                continue
-
-            port_index: int | None = None
-            try:
-                port_index = int(value_ref)
-            except (TypeError, ValueError):
-                digits = "".join(ch for ch in comp_name if ch.isdigit())
-                if digits:
-                    port_index = int(digits)
-
-            if port_index is not None and port_index >= 1:
-                ports.add(port_index)
-        return ports
+        """Collect declared port indices from public port declarations."""
+        return set(circuit.available_port_indices)
 
     @staticmethod
     def _build_effective_sources(config: SimulationConfig) -> list[DriveSourceConfig]:

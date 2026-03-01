@@ -1,8 +1,6 @@
-"""Schema Editor page - Live preview for Circuit definitions."""
+"""Schema Editor page for Schematic Netlist definitions."""
 
 from __future__ import annotations
-
-import ast
 
 from nicegui import app, ui
 
@@ -16,21 +14,56 @@ from app.services.browser_tooling import (
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import CircuitRecord
 from core.simulation.application.circuit_visualizer import generate_circuit_svg
-from core.simulation.domain.circuit import CircuitDefinition
+from core.simulation.domain.circuit import (
+    format_circuit_definition,
+    parse_circuit_definition_source,
+)
 
 _DEFAULT_CIRCUIT_STR = """{
+    "schema_version": "0.1",
     "name": "SmokeStableSeriesLC",
     "parameters": {
         "R_port": {"default": 50.0, "unit": "Ohm"},
         "L_main": {"default": 10.0, "unit": "nH"},
         "C_main": {"default": 1.0, "unit": "pF"}
     },
-    "topology": [
-        ("P1", "1", "0", 1),
-        ("R1", "1", "0", "R_port"),
-        ("L1", "1", "2", "L_main"),
-        ("C1", "2", "0", "C_main")
-    ]
+    "ports": [
+        {
+            "id": "P1",
+            "node": "n1",
+            "ground": "gnd",
+            "index": 1,
+            "role": "signal",
+            "side": "left"
+        }
+    ],
+    "instances": [
+        {
+            "id": "R1",
+            "kind": "resistor",
+            "pins": ["n1", "gnd"],
+            "value_ref": "R_port",
+            "role": "termination"
+        },
+        {
+            "id": "L1",
+            "kind": "inductor",
+            "pins": ["n1", "n2"],
+            "value_ref": "L_main",
+            "role": "signal"
+        },
+        {
+            "id": "C1",
+            "kind": "capacitor",
+            "pins": ["n2", "gnd"],
+            "value_ref": "C_main",
+            "role": "shunt"
+        }
+    ],
+    "layout": {
+        "direction": "lr",
+        "profile": "generic"
+    }
 }"""
 
 _COMPONENT_REF_COLUMNS = [
@@ -44,87 +77,40 @@ _COMPONENT_REF_COLUMNS = [
 _COMPONENT_REF_ROWS = [
     {
         "kind": "Port",
-        "prefix": "P*",
+        "prefix": "ports[*]",
         "units": "-",
-        "example": '("P1", "1", "0", 1)',
-        "notes": "Use integer port index in topology. No entry in parameters map.",
+        "example": '{"id": "P1", "node": "n1", "ground": "gnd", "index": 1, ...}',
+        "notes": "Declare ports in the top-level ports list; do not repeat them in instances.",
     },
     {
         "kind": "Resistor",
-        "prefix": "R*",
+        "prefix": "kind=resistor",
         "units": "Ohm, kOhm, MOhm",
-        "example": '("R1", "1", "0", "R_port") + parameters["R_port"]',
+        "example": '{"id": "R1", "kind": "resistor", "pins": ["n1", "gnd"], ...}',
         "notes": "For stability, each port should usually have a shunt resistor (e.g., 50 Ohm).",
     },
     {
         "kind": "Inductor",
-        "prefix": "L*",
+        "prefix": "kind=inductor",
         "units": "H, mH, uH, nH, pH",
-        "example": '("L1", "1", "2", "L_main") + parameters["L_main"]',
-        "notes": "Names starting with Lj are treated as Josephson Junction symbols.",
+        "example": '{"id": "L1", "kind": "inductor", "pins": ["n1", "n2"], ...}',
+        "notes": "Two-pin linear inductor for signal or shunt branches.",
     },
     {
         "kind": "Capacitor",
-        "prefix": "C*",
+        "prefix": "kind=capacitor",
         "units": "F, mF, uF, nF, pF, fF",
-        "example": '("C1", "2", "0", "C_main") + parameters["C_main"]',
+        "example": '{"id": "C1", "kind": "capacitor", "pins": ["n2", "gnd"], ...}',
         "notes": "Typical LC usage is pF for readability.",
     },
     {
         "kind": "Josephson Junction",
-        "prefix": "Lj*",
+        "prefix": "kind=josephson_junction",
         "units": "H, mH, uH, nH, pH",
-        "example": '("Lj1", "2", "0", "Lj") + parameters["Lj"]',
+        "example": '{"id": "Lj1", "kind": "josephson_junction", "pins": ["n2", "gnd"], ...}',
         "notes": "Rendered as junction symbol in preview.",
     },
 ]
-
-
-def _quote(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def _format_number(value: float | int) -> str:
-    if isinstance(value, bool):
-        return "True" if value else "False"
-    if isinstance(value, int):
-        return str(value)
-    return repr(float(value))
-
-
-def _format_circuit_definition(circuit: CircuitDefinition) -> str:
-    """Render CircuitDefinition into a stable, editor-friendly literal string."""
-    lines = ["{"]
-    lines.append(f'    "name": {_quote(circuit.name)},')
-    lines.append('    "parameters": {')
-
-    parameter_items = list(circuit.parameters.items())
-    for index, (param_name, spec) in enumerate(parameter_items):
-        parts = [
-            f'"default": {_format_number(spec.default)}',
-            f'"unit": {_quote(spec.unit)}',
-        ]
-        if not spec.sweepable:
-            parts.append('"sweepable": False')
-        suffix = "," if index < len(parameter_items) - 1 else ""
-        lines.append(f"        {_quote(param_name)}: {{{', '.join(parts)}}}{suffix}")
-
-    lines.append("    },")
-    lines.append('    "topology": [')
-
-    for index, (elem, node1, node2, value_ref) in enumerate(circuit.topology):
-        value_literal = (
-            _quote(value_ref) if isinstance(value_ref, str) else _format_number(value_ref)
-        )
-        suffix = "," if index < len(circuit.topology) - 1 else ""
-        lines.append(
-            f"        ({_quote(elem)}, {_quote(node1)}, {_quote(node2)}, {value_literal}){suffix}"
-        )
-
-    lines.append("    ]")
-    lines.append("}")
-    return "\n".join(lines)
 
 
 @ui.page("/schemas/{schema_id}")
@@ -194,13 +180,12 @@ def schema_editor_page(schema_id: str):
 
                     def save_schema():
                         try:
-                            js_data = ast.literal_eval(json_input.value)
-                            circuit_def = CircuitDefinition.model_validate(js_data)
+                            circuit_def, _ = parse_circuit_definition_source(json_input.value)
                             name = circuit_def.name
                         except Exception as e:
                             ui.notify(
                                 "Invalid Circuit Definition. Required fields: "
-                                "name, parameters, topology. "
+                                "schema_version, name, parameters, ports, instances. "
                                 f"Details: {e}",
                                 type="negative",
                             )
@@ -215,13 +200,13 @@ def schema_editor_page(schema_id: str):
                                 if circuit_record:
                                     db_circuit = uow.circuits.get(circuit_record.id)
                                     db_circuit.name = name
-                                    formatted_definition = _format_circuit_definition(circuit_def)
+                                    formatted_definition = format_circuit_definition(circuit_def)
                                     db_circuit.definition_json = formatted_definition
                                     uow.commit()
                                     json_input.value = formatted_definition
                                     ui.notify("Schema updated.", type="positive")
                                 else:
-                                    formatted_definition = _format_circuit_definition(circuit_def)
+                                    formatted_definition = format_circuit_definition(circuit_def)
                                     new_circuit = CircuitRecord(
                                         name=name, definition_json=formatted_definition
                                     )
@@ -249,9 +234,8 @@ def schema_editor_page(schema_id: str):
 
                         if formatted_text is None:
                             try:
-                                js_data = ast.literal_eval(json_input.value)
-                                circuit_def = CircuitDefinition.model_validate(js_data)
-                                formatted_text = _format_circuit_definition(circuit_def)
+                                circuit_def, _ = parse_circuit_definition_source(json_input.value)
+                                formatted_text = format_circuit_definition(circuit_def)
                             except Exception as exc:
                                 error_detail = (
                                     browser_result.get("error")
@@ -284,14 +268,22 @@ def schema_editor_page(schema_id: str):
 
                 if circuit_record:
                     try:
-                        parsed = ast.literal_eval(circuit_record.definition_json)
-                        normalized = CircuitDefinition.model_validate(parsed)
-                        def_val = _format_circuit_definition(normalized)
+                        normalized, migrated_legacy = parse_circuit_definition_source(
+                            circuit_record.definition_json,
+                            allow_legacy_migration=True,
+                        )
+                        def_val = format_circuit_definition(normalized)
+                        if migrated_legacy:
+                            with get_unit_of_work() as uow:
+                                db_circuit = uow.circuits.get(circuit_record.id)
+                                if db_circuit is not None:
+                                    db_circuit.definition_json = def_val
+                                    uow.commit()
                     except Exception:
                         def_val = circuit_record.definition_json
                 else:
                     def_val = _DEFAULT_CIRCUIT_STR
-                ui.label("Netlist Dictionary").classes("text-sm text-muted mb-2")
+                ui.label("Schematic Netlist").classes("text-sm text-muted mb-2")
                 editor_theme = (
                     "vscodeDark" if app.storage.user.get("dark_mode", True) else "vscodeLight"
                 )
@@ -361,16 +353,15 @@ def schema_editor_page(schema_id: str):
                 row_key="kind",
             ).props("dense wrap-cells").classes("w-full")
             ui.label(
-                "Define `parameters` and reference them from topology value_ref. "
-                "Ground node tokens: 0, gnd, GND. Component type is inferred from name prefix."
+                "Define `parameters`, declare `ports`, and reference parameter keys from "
+                "`instances[*].value_ref`. Preferred ground token: gnd."
             ).classes("text-xs text-muted mt-3")
 
         # Function to update schematic based on input
         def update_schematic(e=None):
             nonlocal latest_svg
             try:
-                js_data = ast.literal_eval(json_input.value)
-                circuit = CircuitDefinition.model_validate(js_data)
+                circuit, _ = parse_circuit_definition_source(json_input.value)
 
                 # Generate SVG
                 latest_svg = generate_circuit_svg(circuit)
@@ -389,7 +380,8 @@ def schema_editor_page(schema_id: str):
 
             except Exception as e:
                 error_label.text = (
-                    f"Error Parsing Definition (required: name + parameters + topology): {e!s}"
+                    "Error Parsing Definition (required: schema_version + name + parameters + "
+                    f"ports + instances): {e!s}"
                 )
                 error_label.classes(add="block", remove="hidden")
                 latest_svg = ""

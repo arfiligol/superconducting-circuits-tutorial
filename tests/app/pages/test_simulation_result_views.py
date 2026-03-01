@@ -178,10 +178,7 @@ def test_build_simulation_result_figure_builds_cm_view() -> None:
 def test_build_s_parameter_data_records_exports_all_cached_s_traces() -> None:
     records = _build_s_parameter_data_records(dataset_id=7, result=_sample_result())
 
-    summary = {
-        (record.parameter, record.representation): record.values
-        for record in records
-    }
+    summary = {(record.parameter, record.representation): record.values for record in records}
 
     assert len(records) == 6
     assert summary[("S11", "real")] == [0.2, 0.0, -0.2]
@@ -192,10 +189,7 @@ def test_build_s_parameter_data_records_exports_all_cached_s_traces() -> None:
 def test_build_result_bundle_data_records_exports_mode_bundles() -> None:
     records = _build_result_bundle_data_records(dataset_id=7, result=_sample_result())
 
-    summary = {
-        (record.data_type, record.parameter, record.representation)
-        for record in records
-    }
+    summary = {(record.data_type, record.parameter, record.representation) for record in records}
 
     assert ("s_params", "S21", "real") in summary
     assert ("s_params", "S21 [om=(1,), im=(0,)]", "imaginary") in summary

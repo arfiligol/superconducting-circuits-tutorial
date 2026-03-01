@@ -1,51 +1,468 @@
-"""
-Circuit Domain Models.
+"""Circuit domain models and Schematic Netlist parsing utilities."""
 
-These Pydantic models represent circuit definitions that can be passed
-to the Julia simulation engine via JuliaCall.
-"""
+from __future__ import annotations
 
+import ast
+import json
 import math
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pprint import pformat
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+SUPPORTED_SCHEMA_VERSION = "0.1"
+SUPPORTED_PORT_ROLES = {"signal", "readout", "pump", "flux", "bias"}
+SUPPORTED_PORT_SIDES = {"left", "right", "top", "bottom"}
+SUPPORTED_INSTANCE_KINDS = {
+    "resistor",
+    "inductor",
+    "capacitor",
+    "josephson_junction",
+    "mutual_coupling",
+}
+SUPPORTED_INSTANCE_ROLES = {
+    "signal",
+    "termination",
+    "shunt",
+    "qubit_branch",
+    "coupler",
+    "nonlinear_core",
+    "readout",
+    "pump",
+    "flux",
+    "bias",
+}
+SUPPORTED_LAYOUT_DIRECTIONS = {"lr", "tb"}
+SUPPORTED_LAYOUT_PROFILES = {"generic", "qubit_readout", "jpa", "jtwpa"}
+GROUND_TOKENS = {"0", "gnd"}
+
+
+@dataclass(frozen=True)
+class CircuitElement:
+    """Lowered internal element representation for preview and compilation."""
+
+    name: str
+    kind: str
+    node1: str
+    node2: str
+    value_ref: str | int
+    role: str | None = None
+
+    @property
+    def is_port(self) -> bool:
+        return self.kind == "port"
+
+    @property
+    def is_mutual_coupling(self) -> bool:
+        return self.kind == "mutual_coupling"
 
 
 class ParameterSpec(BaseModel):
-    """Parameter specification referenced by topology value_ref."""
+    """Parameter specification referenced by instance value_ref."""
 
     default: float = Field(description="Default numeric value")
     unit: str = Field(description="Unit string (e.g., 'nH', 'pF', 'Ohm')")
     sweepable: bool = Field(default=True, description="Whether this parameter is sweepable")
 
 
+class PortSpec(BaseModel):
+    """User-facing port declaration in Schematic Netlist."""
+
+    id: str = Field(description="Stable port identifier")
+    node: str = Field(description="Signal node")
+    ground: str = Field(description="Ground reference node")
+    index: int = Field(description="Simulation port index")
+    role: str = Field(description="Semantic port role")
+    side: str | None = Field(default=None, description="Preferred preview side")
+
+
+class InstanceSpec(BaseModel):
+    """User-facing component instance declaration in Schematic Netlist."""
+
+    id: str = Field(description="Stable instance identifier")
+    kind: str = Field(description="Component kind")
+    pins: list[str] = Field(description="Pin identifiers (v0.1 is 2-pin only)")
+    value_ref: str = Field(description="Reference into parameters")
+    role: str | None = Field(default=None, description="Semantic instance role")
+
+
+class LayoutHints(BaseModel):
+    """Optional stable preview layout hints."""
+
+    direction: str | None = Field(default=None, description="Primary layout direction")
+    profile: str | None = Field(default=None, description="Domain-specific preview profile")
+
+
 class CircuitDefinition(BaseModel):
-    """
-    Definition of a superconducting circuit for simulation.
+    """Definition of a superconducting circuit in Schematic Netlist v0.1."""
 
-    Example:
-        circuit = CircuitDefinition(
-            name="Simple LC",
-            parameters={
-                "R50": ParameterSpec(default=50.0, unit="Ohm"),
-                "L1": ParameterSpec(default=10.0, unit="nH"),
-                "C1": ParameterSpec(default=1.0, unit="pF"),
-            },
-            topology=[
-                ("P1", "1", "0", 1),
-                ("R1", "1", "0", "R50"),
-                ("L1", "1", "2", "L1"),
-                ("C1", "2", "0", "C1"),
-            ],
-        )
-    """
-
+    schema_version: str = Field(
+        default=SUPPORTED_SCHEMA_VERSION,
+        description="Schematic Netlist schema version",
+    )
     name: str = Field(description="Circuit name for identification")
     parameters: dict[str, ParameterSpec] = Field(
-        description="Parameter map for topology value references"
+        description="Parameter map for instance value references"
     )
-    topology: list[tuple[str, str, str, str | int]] = Field(
-        description="Circuit topology as (name, node1, node2, value_ref/port_index)"
+    ports: list[PortSpec] = Field(description="Declared simulation/preview ports")
+    instances: list[InstanceSpec] = Field(description="Declared component instances")
+    layout: LayoutHints = Field(default_factory=LayoutHints, description="Optional layout hints")
+
+    @model_validator(mode="after")
+    def validate_contract(self) -> CircuitDefinition:
+        """Enforce the public Schematic Netlist contract."""
+        if self.schema_version != SUPPORTED_SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported schema_version '{self.schema_version}'; expected "
+                f"'{SUPPORTED_SCHEMA_VERSION}'"
+            )
+
+        seen_port_ids: set[str] = set()
+        seen_port_indices: set[int] = set()
+        for port in self.ports:
+            if port.id in seen_port_ids:
+                raise ValueError(f"duplicate port id '{port.id}'")
+            if port.index in seen_port_indices:
+                raise ValueError(f"duplicate port index '{port.index}'")
+            if port.role not in SUPPORTED_PORT_ROLES:
+                raise ValueError(f"unsupported port role '{port.role}' for port '{port.id}'")
+            if port.side is not None and port.side not in SUPPORTED_PORT_SIDES:
+                raise ValueError(f"unsupported port side '{port.side}' for port '{port.id}'")
+            seen_port_ids.add(port.id)
+            seen_port_indices.add(port.index)
+
+        seen_instance_ids: set[str] = set()
+        for instance in self.instances:
+            if instance.id in seen_instance_ids:
+                raise ValueError(f"duplicate instance id '{instance.id}'")
+            if instance.kind not in SUPPORTED_INSTANCE_KINDS:
+                raise ValueError(f"unsupported kind '{instance.kind}' for instance '{instance.id}'")
+            if len(instance.pins) != 2:
+                raise ValueError(f"instance '{instance.id}' pins must contain exactly 2 nodes")
+            if instance.value_ref not in self.parameters:
+                raise ValueError(
+                    f"instance '{instance.id}' references undefined parameter "
+                    f"'{instance.value_ref}'"
+                )
+            if instance.role is not None and instance.role not in SUPPORTED_INSTANCE_ROLES:
+                raise ValueError(f"unsupported role '{instance.role}' for instance '{instance.id}'")
+            seen_instance_ids.add(instance.id)
+
+        if (
+            self.layout.direction is not None
+            and self.layout.direction not in SUPPORTED_LAYOUT_DIRECTIONS
+        ):
+            raise ValueError(f"unsupported layout direction '{self.layout.direction}'")
+        if self.layout.profile is not None and self.layout.profile not in SUPPORTED_LAYOUT_PROFILES:
+            raise ValueError(f"unsupported layout profile '{self.layout.profile}'")
+
+        return self
+
+    @staticmethod
+    def canonical_node_token(node: str | int) -> str:
+        """Normalize ground aliases into the canonical public token."""
+        node_str = str(node).strip()
+        if node_str.lower() in GROUND_TOKENS:
+            return "gnd"
+        return node_str
+
+    @classmethod
+    def is_ground_node(cls, node: str | int) -> bool:
+        """Return whether the token represents the ground reference."""
+        return cls.canonical_node_token(node) == "gnd"
+
+    @property
+    def available_port_indices(self) -> list[int]:
+        """Return declared port indices sorted ascending."""
+        return sorted(port.index for port in self.ports if port.index >= 1)
+
+    @property
+    def effective_layout_direction(self) -> str:
+        """Return the configured layout direction, with a stable fallback."""
+        return self.layout.direction or "lr"
+
+    @property
+    def effective_layout_profile(self) -> str:
+        """Return the configured preview profile, with heuristic fallback."""
+        if self.layout.profile is not None:
+            return self.layout.profile
+
+        series_inductive = 0
+        shunt_capacitive = 0
+        shunt_josephson = 0
+
+        for element in self.lowered_elements():
+            if element.is_port:
+                continue
+            is_shunt = self.is_ground_node(element.node1) ^ self.is_ground_node(element.node2)
+            if not is_shunt:
+                if element.kind in {"inductor", "josephson_junction"}:
+                    series_inductive += 1
+                continue
+            if element.kind == "capacitor":
+                shunt_capacitive += 1
+            if element.kind == "josephson_junction":
+                shunt_josephson += 1
+
+        if series_inductive >= 3 and shunt_capacitive >= 2:
+            return "jtwpa"
+        if self.ports and shunt_capacitive >= 1 and shunt_josephson >= 1:
+            return "jpa"
+        return "generic"
+
+    def lowered_elements(self) -> list[CircuitElement]:
+        """Lower public ports/instances into a single internal element stream."""
+        elements: list[CircuitElement] = []
+        for port in sorted(self.ports, key=lambda spec: spec.index):
+            elements.append(
+                CircuitElement(
+                    name=port.id,
+                    kind="port",
+                    node1=self.canonical_node_token(port.node),
+                    node2=self.canonical_node_token(port.ground),
+                    value_ref=int(port.index),
+                    role=port.role,
+                )
+            )
+        for instance in self.instances:
+            elements.append(
+                CircuitElement(
+                    name=instance.id,
+                    kind=instance.kind,
+                    node1=self.canonical_node_token(instance.pins[0]),
+                    node2=self.canonical_node_token(instance.pins[1]),
+                    value_ref=instance.value_ref,
+                    role=instance.role,
+                )
+            )
+        return elements
+
+    def lowered_topology(self) -> list[tuple[str, str, str, str | int]]:
+        """Lower the public model into the legacy tuple representation for simulation."""
+        numeric_nodes: dict[str, str] = {}
+
+        def to_sim_node(token: str) -> str:
+            canonical = self.canonical_node_token(token)
+            if self.is_ground_node(canonical):
+                return "0"
+            if canonical not in numeric_nodes:
+                numeric_nodes[canonical] = str(len(numeric_nodes) + 1)
+            return numeric_nodes[canonical]
+
+        lowered: list[tuple[str, str, str, str | int]] = []
+        for element in self.lowered_elements():
+            if element.kind == "mutual_coupling":
+                node1 = str(element.node1)
+                node2 = str(element.node2)
+            else:
+                node1 = to_sim_node(element.node1)
+                node2 = to_sim_node(element.node2)
+            lowered.append((element.name, node1, node2, element.value_ref))
+        return lowered
+
+
+def _coerce_mapping(payload: object) -> dict[str, Any]:
+    """Normalize any mapping-like payload into a Python dict."""
+    if isinstance(payload, dict):
+        return dict(payload)
+    if isinstance(payload, Mapping):
+        return dict(payload.items())
+    raise TypeError("Schematic Netlist must be a mapping object.")
+
+
+def _parse_text_payload(payload_text: str) -> dict[str, Any]:
+    """Parse editor text as Python-literal first, then JSON."""
+    stripped = payload_text.strip()
+    if not stripped:
+        raise ValueError("Schematic Netlist text is empty.")
+
+    try:
+        parsed = ast.literal_eval(stripped)
+    except Exception:
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Unable to parse Schematic Netlist text: {exc}") from exc
+
+    return _coerce_mapping(parsed)
+
+
+def _infer_legacy_port_role(
+    index: int,
+    signal_node: str,
+    topology: list[tuple[Any, Any, Any, Any]],
+) -> str:
+    """Infer a stable port role when migrating legacy tuple topologies."""
+    connected = [
+        (str(name).lower(), str(value_ref).lower())
+        for name, node1, node2, value_ref in topology
+        if CircuitDefinition.canonical_node_token(node1) == signal_node
+        or CircuitDefinition.canonical_node_token(node2) == signal_node
+    ]
+    if any("bias" in name or "bias" in value_ref for name, value_ref in connected):
+        return "bias"
+    if any("flux" in name or "pump" in name for name, _ in connected):
+        return "pump"
+    if index == 1:
+        return "signal"
+    return "readout"
+
+
+def _infer_legacy_instance_kind(instance_id: str) -> str:
+    """Infer the public kind from a legacy tuple element id."""
+    lowered = instance_id.lower()
+    if lowered.startswith("lj"):
+        return "josephson_junction"
+    if lowered.startswith("r"):
+        return "resistor"
+    if lowered.startswith("l"):
+        return "inductor"
+    if lowered.startswith("c"):
+        return "capacitor"
+    if lowered.startswith("k"):
+        return "mutual_coupling"
+    raise ValueError(
+        f"Legacy topology element '{instance_id}' cannot be mapped to a supported kind."
     )
+
+
+def _infer_legacy_instance_role(kind: str, node1: str, node2: str) -> str | None:
+    """Infer a coarse semantic role from a legacy tuple entry."""
+    is_shunt = CircuitDefinition.is_ground_node(node1) ^ CircuitDefinition.is_ground_node(node2)
+    if kind == "resistor" and is_shunt:
+        return "termination"
+    if kind in {"capacitor", "inductor"} and is_shunt:
+        return "shunt"
+    if kind == "josephson_junction":
+        return "nonlinear_core"
+    if kind == "mutual_coupling":
+        return "coupler"
+    return "signal"
+
+
+def migrate_legacy_circuit_definition(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert tuple-style legacy payloads into Schematic Netlist v0.1."""
+    raw = _coerce_mapping(payload)
+    topology = raw.get("topology")
+    if "schema_version" in raw or topology is None:
+        return raw
+
+    if not isinstance(topology, list):
+        raise ValueError("Legacy topology must be a list.")
+
+    topology_tuples: list[tuple[Any, Any, Any, Any]] = [tuple(item) for item in topology]
+    parameters = _coerce_mapping(raw.get("parameters", {}))
+    ports: list[dict[str, Any]] = []
+    instances: list[dict[str, Any]] = []
+
+    for item in topology_tuples:
+        if len(item) != 4:
+            raise ValueError("Legacy topology entries must have 4 items.")
+
+        elem_name, node1_raw, node2_raw, value_ref = item
+        elem_name_str = str(elem_name)
+        node1 = CircuitDefinition.canonical_node_token(node1_raw)
+        node2 = CircuitDefinition.canonical_node_token(node2_raw)
+
+        if elem_name_str.lower().startswith("p"):
+            try:
+                port_index = int(value_ref)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Legacy port '{elem_name_str}' must use an integer index."
+                ) from exc
+            signal_node = node2 if CircuitDefinition.is_ground_node(node1) else node1
+            ground_node = node1 if CircuitDefinition.is_ground_node(node1) else node2
+            ports.append(
+                {
+                    "id": elem_name_str,
+                    "node": signal_node,
+                    "ground": ground_node,
+                    "index": port_index,
+                    "role": _infer_legacy_port_role(port_index, signal_node, topology_tuples),
+                    "side": "left" if port_index == 1 else "right",
+                }
+            )
+            continue
+
+        kind = _infer_legacy_instance_kind(elem_name_str)
+        instances.append(
+            {
+                "id": elem_name_str,
+                "kind": kind,
+                "pins": [node1, node2],
+                "value_ref": str(value_ref),
+                "role": _infer_legacy_instance_role(kind, node1, node2),
+            }
+        )
+
+    layout_profile = "generic"
+    try:
+        preview_probe = CircuitDefinition.model_validate(
+            {
+                "schema_version": SUPPORTED_SCHEMA_VERSION,
+                "name": raw.get("name", "Legacy Schema"),
+                "parameters": parameters,
+                "ports": ports,
+                "instances": instances,
+            }
+        )
+        layout_profile = preview_probe.effective_layout_profile
+    except Exception:
+        layout_profile = "generic"
+    return {
+        "schema_version": SUPPORTED_SCHEMA_VERSION,
+        "name": raw.get("name", "Legacy Schema"),
+        "parameters": parameters,
+        "ports": ports,
+        "instances": instances,
+        "layout": {
+            "direction": "lr",
+            "profile": layout_profile,
+        },
+    }
+
+
+def parse_circuit_definition_source(
+    payload: str | Mapping[str, Any] | CircuitDefinition,
+    *,
+    allow_legacy_migration: bool = False,
+) -> tuple[CircuitDefinition, bool]:
+    """Parse text or mapping input into a CircuitDefinition."""
+    if isinstance(payload, CircuitDefinition):
+        return payload, False
+
+    raw = _parse_text_payload(payload) if isinstance(payload, str) else _coerce_mapping(payload)
+    migrated = False
+    if "topology" in raw and "schema_version" not in raw:
+        if not allow_legacy_migration:
+            raise ValueError(
+                "Legacy tuple-style topology syntax is no longer supported. "
+                "Convert this schema to Schematic Netlist v0.1."
+            )
+        raw = migrate_legacy_circuit_definition(raw)
+        migrated = True
+
+    return CircuitDefinition.model_validate(raw), migrated
+
+
+def format_circuit_definition(circuit: CircuitDefinition) -> str:
+    """Render a CircuitDefinition as the canonical editor string."""
+    payload = {
+        "schema_version": circuit.schema_version,
+        "name": circuit.name,
+        "parameters": {
+            key: spec.model_dump(exclude_defaults=True) for key, spec in circuit.parameters.items()
+        },
+        "ports": [port.model_dump(exclude_none=True) for port in circuit.ports],
+        "instances": [instance.model_dump(exclude_none=True) for instance in circuit.instances],
+    }
+    layout = circuit.layout.model_dump(exclude_none=True)
+    if layout:
+        payload["layout"] = layout
+    return pformat(payload, width=100, sort_dicts=False)
 
 
 class FrequencyRange(BaseModel):

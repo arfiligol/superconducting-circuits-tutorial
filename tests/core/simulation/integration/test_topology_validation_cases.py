@@ -11,8 +11,22 @@ from core.simulation.domain.circuit import (
     CircuitDefinition,
     DriveSourceConfig,
     FrequencyRange,
+    InstanceSpec,
+    LayoutHints,
+    ParameterSpec,
+    PortSpec,
     SimulationConfig,
+    migrate_legacy_circuit_definition,
 )
+
+
+def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]):
+    return CircuitDefinition.model_validate(
+        migrate_legacy_circuit_definition(
+            {"name": name, "parameters": parameters, "topology": topology}
+        )
+    )
+
 
 _RUN_JULIA_INTEGRATION = os.getenv("RUN_JULIA_SIM_TESTS") == "1"
 
@@ -24,7 +38,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def test_series_lc_with_port_shunt_resistor_runs_successfully():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Series LC with R50",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -45,7 +59,7 @@ def test_series_lc_with_port_shunt_resistor_runs_successfully():
 
 
 def test_two_stage_ladder_runs_successfully():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Two-stage ladder",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -69,18 +83,32 @@ def test_two_stage_ladder_runs_successfully():
 
 
 def test_missing_topology_reference_is_input_error_before_julia():
-    circuit = CircuitDefinition(
+    circuit = CircuitDefinition.model_construct(
+        schema_version="0.1",
         name="Bad topology ref",
-        parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
-        topology=[("P1", "1", "0", 1), ("R1", "1", "0", "R1")],
+        parameters={"R50": ParameterSpec(default=50.0, unit="Ohm")},
+        ports=[PortSpec(id="P1", node="1", ground="gnd", index=1, role="signal", side="left")],
+        instances=[
+            InstanceSpec.model_construct(
+                id="R1",
+                kind="resistor",
+                pins=["1", "gnd"],
+                value_ref="R1",
+                role="termination",
+            )
+        ],
+        layout=LayoutHints(direction="lr", profile="generic"),
     )
 
-    with pytest.raises(ValueError, match="SimulationInputError: topology references undefined"):
+    with pytest.raises(
+        ValueError,
+        match="SimulationInputError: instance 'R1' references undefined",
+    ):
         run_simulation(circuit, FrequencyRange(start_ghz=1.0, stop_ghz=10.0, points=301))
 
 
 def test_parallel_single_node_rlc_maps_to_numerical_error():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Parallel RLC at one node",
         parameters={
             "R1": {"default": 1.0, "unit": "Ohm"},
@@ -100,7 +128,7 @@ def test_parallel_single_node_rlc_maps_to_numerical_error():
 
 
 def test_multi_source_multi_pump_configuration_runs_successfully():
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Two-pump smoke case",
         parameters={
             "R1": {"default": 50.0, "unit": "Ohm"},

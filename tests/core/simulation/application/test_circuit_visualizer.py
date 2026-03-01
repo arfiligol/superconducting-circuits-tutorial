@@ -15,12 +15,20 @@ from core.simulation.application.circuit_visualizer import (
     _shunt_label_plan,
     generate_circuit_svg,
 )
-from core.simulation.domain.circuit import CircuitDefinition
+from core.simulation.domain.circuit import CircuitDefinition, migrate_legacy_circuit_definition
+
+
+def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]):
+    return CircuitDefinition.model_validate(
+        migrate_legacy_circuit_definition(
+            {"name": name, "parameters": parameters, "topology": topology}
+        )
+    )
 
 
 def test_generate_circuit_svg_basic():
     """Test that a basic circuit can be converted to an SVG string."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Test Circuit",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -55,12 +63,12 @@ def test_generate_circuit_svg_basic():
     assert "Lj1" in svg_str
 
 
-def test_generate_circuit_svg_unknown_component():
-    """Test graceful handling of unknown components like K (Mutual Inductance) or random strings."""
-    circuit = CircuitDefinition(
+def test_generate_circuit_svg_mutual_coupling_marker():
+    """Mutual-coupling placeholders should still render into the preview SVG."""
+    circuit = _legacy_circuit(
         name="Test Circuit 2",
-        parameters={},
-        topology=[("K1", "1", "2", "K1"), ("Unknown", "2", "3", "Unknown")],
+        parameters={"K1": {"default": 0.999, "unit": "H"}},
+        topology=[("K1", "L2", "L3", "K1")],
     )
 
     svg_str = generate_circuit_svg(circuit)
@@ -68,12 +76,11 @@ def test_generate_circuit_svg_unknown_component():
     assert isinstance(svg_str, str)
     assert "<svg" in svg_str
     assert "K1" in svg_str
-    assert "Unknown" in svg_str
 
 
 def test_generate_circuit_svg_includes_component_value_and_unit_labels():
     """Value and unit should be shown alongside component id in the SVG output."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Labeled Circuit",
         parameters={
             "R_port": {"default": 50.0, "unit": "Ohm"},
@@ -100,7 +107,7 @@ def test_generate_circuit_svg_includes_component_value_and_unit_labels():
 
 def test_generate_circuit_svg_scales_for_large_topology():
     """Longer topologies should produce wider SVG extents (avoid cramped rendering)."""
-    small = CircuitDefinition(
+    small = _legacy_circuit(
         name="Small",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -114,7 +121,7 @@ def test_generate_circuit_svg_scales_for_large_topology():
             ("C1", "2", "0", "C1"),
         ],
     )
-    large = CircuitDefinition(
+    large = _legacy_circuit(
         name="Large",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -160,7 +167,7 @@ def test_generate_circuit_svg_adds_padding_to_viewbox():
 
 def test_classify_layout_mode_detects_jtwpa_like_topology():
     """Repeated series inductors plus shunt capacitors should use the ladder profile."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="JTWPA-ish",
         parameters={
             "L1": {"default": 8.0, "unit": "pH"},
@@ -185,7 +192,7 @@ def test_classify_layout_mode_detects_jtwpa_like_topology():
 
 def test_build_backbone_positions_extracts_simple_chain_path():
     """Simple chain-like topologies should receive a stable left-to-right backbone."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Chain",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -208,7 +215,7 @@ def test_build_backbone_positions_extracts_simple_chain_path():
 
 def test_build_backbone_positions_expands_when_adjacent_nodes_have_shunt_padding():
     """Backbone spacing should grow when nearby shunt branches consume horizontal space."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Padded Chain",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -240,13 +247,13 @@ def test_build_backbone_positions_expands_when_adjacent_nodes_have_shunt_padding
 def test_estimate_component_slot_width_grows_for_long_value_labels():
     """Longer value labels should reserve more horizontal space."""
     short_slot = _estimate_component_slot_width(
-        comp_name="C2",
+        component_kind="capacitor",
         name_label="C2",
         value_label="1 pF",
         layout_mode="jpa_like",
     )
     long_slot = _estimate_component_slot_width(
-        comp_name="Lj1",
+        component_kind="josephson_junction",
         name_label="Lj1",
         value_label="2.1963e-10 H",
         layout_mode="jpa_like",
@@ -257,8 +264,12 @@ def test_estimate_component_slot_width_grows_for_long_value_labels():
 
 def test_shunt_label_plan_spreads_dense_cluster_labels_outward():
     """Dense shunt clusters should push labels to opposite sides."""
-    left_side = _shunt_label_plan("Lj1", cluster_index=0, cluster_total=2, layout_mode="jpa_like")
-    right_side = _shunt_label_plan("C2", cluster_index=1, cluster_total=2, layout_mode="jpa_like")
+    left_side = _shunt_label_plan(
+        "josephson_junction", cluster_index=0, cluster_total=2, layout_mode="jpa_like"
+    )
+    right_side = _shunt_label_plan(
+        "capacitor", cluster_index=1, cluster_total=2, layout_mode="jpa_like"
+    )
 
     assert left_side[0] == "left"
     assert left_side[1] < 0.0
@@ -268,7 +279,7 @@ def test_shunt_label_plan_spreads_dense_cluster_labels_outward():
 
 def test_build_shunt_branch_offsets_reserves_more_space_for_dense_jpa_cluster():
     """Dense JPA-like shunt clusters should get wider branch separation."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="JPA Branch Spacing",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -297,7 +308,7 @@ def test_resolve_shunt_label_layout_avoids_previously_occupied_label_box():
     occupied: list[tuple[float, float, float, float]] = []
     _, _, _, _, first_box = _resolve_shunt_label_layout(
         x=5.0,
-        comp_name="Lj1",
+        component_kind="josephson_junction",
         name_label="Lj1",
         value_label="2.1963e-10 H",
         cluster_index=0,
@@ -308,7 +319,7 @@ def test_resolve_shunt_label_layout_avoids_previously_occupied_label_box():
     occupied.append(first_box)
     _, _, _, _, second_box = _resolve_shunt_label_layout(
         x=5.5,
-        comp_name="C2",
+        component_kind="capacitor",
         name_label="C2",
         value_label="4e-13 F",
         cluster_index=1,
@@ -322,7 +333,7 @@ def test_resolve_shunt_label_layout_avoids_previously_occupied_label_box():
 
 def test_generate_circuit_svg_does_not_duplicate_port_label_in_shunt_clusters():
     """Port labels should appear once even when the port participates in a dense shunt node."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Port Labels",
         parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
         topology=[
@@ -338,7 +349,7 @@ def test_generate_circuit_svg_does_not_duplicate_port_label_in_shunt_clusters():
 
 def test_generate_circuit_svg_places_ground_node_label_below_ground_line():
     """Ground node labels should not sit on top of the ground conductor."""
-    circuit = CircuitDefinition(
+    circuit = _legacy_circuit(
         name="Ground Label",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -353,7 +364,7 @@ def test_generate_circuit_svg_places_ground_node_label_below_ground_line():
 
     svg_str = generate_circuit_svg(circuit)
     zero_label_match = re.search(
-        r'<text x="[^"]+" y="([0-9.eE+-]+)"[^>]*><tspan[^>]*>0</tspan>',
+        r'<text x="[^"]+" y="([0-9.eE+-]+)"[^>]*><tspan[^>]*>gnd</tspan>',
         svg_str,
     )
 
@@ -364,10 +375,10 @@ def test_generate_circuit_svg_places_ground_node_label_below_ground_line():
 def test_shunt_branch_offset_spreads_dense_clusters_around_anchor():
     """Multiple shunts on the same node should not stack on the same x anchor."""
     left_offset = _shunt_branch_offset(
-        "Lj1", cluster_index=0, cluster_total=2, layout_mode="jpa_like"
+        "josephson_junction", cluster_index=0, cluster_total=2, layout_mode="jpa_like"
     )
     right_offset = _shunt_branch_offset(
-        "C2", cluster_index=1, cluster_total=2, layout_mode="jpa_like"
+        "capacitor", cluster_index=1, cluster_total=2, layout_mode="jpa_like"
     )
 
     assert left_offset < 0.0
