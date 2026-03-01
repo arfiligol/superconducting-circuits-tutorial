@@ -113,6 +113,22 @@ _COMPONENT_REF_ROWS = [
 ]
 
 
+def _stored_schema_text_from_editor(editor_text: str) -> str:
+    """Persist the exact editor text for v0.1 schemas to preserve user formatting."""
+    return editor_text
+
+
+def _editor_text_from_record(definition_json: str) -> tuple[str, bool]:
+    """Return the text to display in the editor, migrating legacy payloads only when needed."""
+    normalized, migrated_legacy = parse_circuit_definition_source(
+        definition_json,
+        allow_legacy_migration=True,
+    )
+    if migrated_legacy:
+        return format_circuit_definition(normalized), True
+    return definition_json, False
+
+
 @ui.page("/schemas/{schema_id}")
 def schema_editor_page(schema_id: str):
     def content():
@@ -200,19 +216,24 @@ def schema_editor_page(schema_id: str):
                                 if circuit_record:
                                     db_circuit = uow.circuits.get(circuit_record.id)
                                     db_circuit.name = name
-                                    formatted_definition = format_circuit_definition(circuit_def)
-                                    db_circuit.definition_json = formatted_definition
+                                    stored_definition = _stored_schema_text_from_editor(
+                                        json_input.value
+                                    )
+                                    db_circuit.definition_json = stored_definition
                                     uow.commit()
-                                    json_input.value = formatted_definition
+                                    json_input.value = stored_definition
                                     ui.notify("Schema updated.", type="positive")
                                 else:
-                                    formatted_definition = format_circuit_definition(circuit_def)
+                                    stored_definition = _stored_schema_text_from_editor(
+                                        json_input.value
+                                    )
                                     new_circuit = CircuitRecord(
-                                        name=name, definition_json=formatted_definition
+                                        name=name,
+                                        definition_json=stored_definition,
                                     )
                                     uow.circuits.add(new_circuit)
                                     uow.commit()
-                                    json_input.value = formatted_definition
+                                    json_input.value = stored_definition
                                     ui.notify("New schema created.", type="positive")
                                     ui.navigate.to(f"/schemas/{new_circuit.id}")
                         except Exception as e:
@@ -268,11 +289,9 @@ def schema_editor_page(schema_id: str):
 
                 if circuit_record:
                     try:
-                        normalized, migrated_legacy = parse_circuit_definition_source(
-                            circuit_record.definition_json,
-                            allow_legacy_migration=True,
+                        def_val, migrated_legacy = _editor_text_from_record(
+                            circuit_record.definition_json
                         )
-                        def_val = format_circuit_definition(normalized)
                         if migrated_legacy:
                             with get_unit_of_work() as uow:
                                 db_circuit = uow.circuits.get(circuit_record.id)

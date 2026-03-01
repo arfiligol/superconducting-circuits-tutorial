@@ -5,6 +5,7 @@ import pytest
 from core.simulation.domain.circuit import (
     CircuitDefinition,
     SimulationResult,
+    format_circuit_definition,
     migrate_legacy_circuit_definition,
 )
 from core.simulation.domain.compiler import compile_simulation_topology
@@ -50,6 +51,26 @@ def test_circuit_definition_compiles_to_explicit_ir() -> None:
         ("L1", "1", "2", "L1"),
         ("C1", "2", "0", "C1"),
     ]
+
+
+def test_format_circuit_definition_uses_canonical_json_style() -> None:
+    circuit = _legacy_circuit(
+        name="Formatted",
+        parameters={
+            "R50": {"default": 50.0, "unit": "Ohm"},
+        },
+        topology=[
+            ("P1", "1", "0", 1),
+            ("R1", "1", "0", "R50"),
+        ],
+    )
+
+    formatted = format_circuit_definition(circuit)
+
+    assert formatted.startswith("{\n")
+    assert '"schema_version": "0.1"' in formatted
+    assert '"name": "Formatted"' in formatted
+    assert "'name': 'Formatted'" not in formatted
 
 
 def test_simulation_result_derives_s11_views() -> None:

@@ -6,7 +6,6 @@ import ast
 import json
 import math
 from collections.abc import Mapping
-from pprint import pformat
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
@@ -447,7 +446,7 @@ def format_circuit_definition(circuit: CircuitDefinition) -> str:
     layout = circuit.layout.model_dump(exclude_none=True)
     if layout:
         payload["layout"] = layout
-    return pformat(payload, width=100, sort_dicts=False)
+    return json.dumps(payload, indent=4, ensure_ascii=False)
 
 
 class FrequencyRange(BaseModel):
