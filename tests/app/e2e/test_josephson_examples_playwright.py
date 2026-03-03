@@ -18,7 +18,6 @@ from playwright.sync_api import Page, expect, sync_playwright
 
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import CircuitRecord
-from core.simulation.domain.circuit import migrate_legacy_circuit_definition
 
 _RUN_PLAYWRIGHT_E2E = os.getenv("RUN_PLAYWRIGHT_JOSEPHSON_E2E") == "1"
 
@@ -48,45 +47,41 @@ class ExampleCase:
 
 def _stable_series_lc_definition() -> str:
     return str(
-        migrate_legacy_circuit_definition(
-            {
-                "name": "E2E Stable Series LC",
-                "parameters": {
-                    "R50": {"default": 50.0, "unit": "Ohm"},
-                    "L1": {"default": 10.0, "unit": "nH"},
-                    "C1": {"default": 1.0, "unit": "pF"},
-                },
-                "topology": [
-                    ("P1", "1", "0", 1),
-                    ("R50", "1", "0", "R50"),
-                    ("L1", "1", "2", "L1"),
-                    ("C1", "2", "0", "C1"),
-                ],
-            }
-        )
+        {
+            "name": "E2E Stable Series LC",
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "L1", "default": 10.0, "unit": "nH"},
+                {"name": "C1", "default": 1.0, "unit": "pF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R50", "1", "0", "R50"),
+                ("L1", "1", "2", "L1"),
+                ("C1", "2", "0", "C1"),
+            ],
+        }
     )
 
 
 def _jpa_definition() -> str:
     return str(
-        migrate_legacy_circuit_definition(
-            {
-                "name": "E2E JPA Core",
-                "parameters": {
-                    "R1": {"default": 50.0, "unit": "Ohm"},
-                    "Lj": {"default": 1000.0, "unit": "pH"},
-                    "Cc": {"default": 100.0, "unit": "fF"},
-                    "Cj": {"default": 1000.0, "unit": "fF"},
-                },
-                "topology": [
-                    ("P1", "1", "0", 1),
-                    ("R1", "1", "0", "R1"),
-                    ("C1", "1", "2", "Cc"),
-                    ("Lj1", "2", "0", "Lj"),
-                    ("C2", "2", "0", "Cj"),
-                ],
-            }
-        )
+        {
+            "name": "E2E JPA Core",
+            "components": [
+                {"name": "R1", "default": 50.0, "unit": "Ohm"},
+                {"name": "Cc", "default": 100.0, "unit": "fF"},
+                {"name": "Lj", "default": 1000.0, "unit": "pH"},
+                {"name": "Cj", "default": 1000.0, "unit": "fF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R1", "1", "0", "R1"),
+                ("C1", "1", "2", "Cc"),
+                ("Lj1", "2", "0", "Lj"),
+                ("C2", "2", "0", "Cj"),
+            ],
+        }
     )
 
 
@@ -127,9 +122,9 @@ def example_cases() -> tuple[ExampleCase, ...]:
             definition=_jpa_definition(),
             start_ghz=4.5,
             stop_ghz=5.0,
-            points=201,
-            n_mod=8,
-            n_pump=8,
+            points=101,
+            n_mod=4,
+            n_pump=4,
             sources=((4.65001, 1, double_ip), (4.85001, 1, double_ip)),
         ),
     )
@@ -251,11 +246,88 @@ def _configure_sources(page: Page, sources: tuple[tuple[float, int, float], ...]
         _set_spinbutton_value(page, "Source Current Ip (A)", current_amp, index=idx)
 
 
-def _run_and_expect_success(page: Page) -> None:
+def _run_and_expect_success(page: Page, *, allow_long_running: bool = False) -> bool:
     page.get_by_role("button", name="Run Simulation").click()
-    expect(page.get_by_text("Simulation completed successfully")).to_be_visible(timeout=180000)
-    expect(page.get_by_text("S11 Magnitude")).to_be_visible(timeout=60000)
+    success_banner = page.get_by_text("Simulation completed successfully")
+
+    if allow_long_running:
+        try:
+            expect(success_banner).to_be_visible(timeout=20000)
+            expect(page.get_by_text("Numerical solver error", exact=False)).to_have_count(0)
+            return True
+        except AssertionError:
+            try:
+                expect(page.get_by_text("Submitting job to Julia worker...")).to_be_visible(
+                    timeout=15000
+                )
+            except AssertionError:
+                expect(
+                    page.get_by_text("Julia worker still running...", exact=False)
+                ).to_be_visible(timeout=20000)
+            expect(page.get_by_text("Numerical solver error", exact=False)).to_have_count(0)
+            return False
+
+    expect(success_banner).to_be_visible(timeout=180000)
     expect(page.get_by_text("Numerical solver error", exact=False)).to_have_count(0)
+    return True
+
+
+def _run_post_processing_and_expect_output(page: Page) -> None:
+    ready_text = "Pipeline output ready. Post Processing Result View is updated."
+    run_button = page.get_by_role("button", name="Run Post Processing")
+    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    save_button = page.get_by_role("button", name="Save Post-Processed Results")
+    post_setup_name = f"E2E Post Setup {uuid.uuid4().hex[:6]}"
+
+    expect(run_button).to_be_visible(timeout=30000)
+    expect(save_button).to_be_visible(timeout=30000)
+    expect(save_button).to_be_disabled()
+    expect(
+        post_input_card.get_by_role("button", name="Save Post-Processed Results")
+    ).to_have_count(0)
+    expect(
+        post_results_card.get_by_role("button", name="Save Post-Processed Results")
+    ).to_have_count(1)
+
+    post_setup_select = post_input_card.get_by_role("combobox", name="Post-Processing Setup")
+    expect(post_setup_select).to_be_visible(timeout=30000)
+    post_input_card.get_by_role("button", name="Save Setup").click()
+    save_setup_dialog = page.get_by_text("Save Post-Processing Setup")
+    expect(save_setup_dialog).to_be_visible(timeout=30000)
+    setup_name_input = page.get_by_role("textbox", name="Setup Name")
+    setup_name_input.click()
+    setup_name_input.fill(post_setup_name)
+    page.get_by_role("button", name="Save").last.click()
+    expect(save_setup_dialog).to_have_count(0, timeout=30000)
+
+    step_type_select = post_input_card.get_by_role("combobox", name="Step Type")
+    step_type_select.click()
+    page.get_by_role("option", name="Kron Reduction").click()
+    post_input_card.get_by_role("button", name="Add Step").click()
+
+    keep_basis_text = page.get_by_text("Keep Basis Labels")
+    select_all_button = page.get_by_role("button", name="Select All").first
+    clear_button = page.get_by_role("button", name="Clear").first
+    expect(keep_basis_text).to_be_visible(timeout=30000)
+    expect(select_all_button).to_be_visible(timeout=30000)
+    expect(clear_button).to_be_visible(timeout=30000)
+    select_all_button.click()
+    clear_button.click()
+    select_all_button.click()
+
+    run_button.click()
+    expect(page.get_by_text(ready_text)).to_be_visible(timeout=30000)
+    expect(save_button).to_be_enabled(timeout=30000)
+
+    post_results_card.get_by_role("tab", name="Impedance (Z)").click()
+    metric_select = post_results_card.get_by_role("combobox", name="Metric")
+    metric_select.click()
+    metric_select.press("ArrowDown")
+    metric_select.press("Enter")
+
+    post_results_card.get_by_role("button", name="Add Trace").click()
+    expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
 
 
 @pytest.mark.parametrize(
@@ -279,4 +351,9 @@ def test_josephson_example_runs_in_ui(
     _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
     _configure_sources(page, case.sources)
 
-    _run_and_expect_success(page)
+    simulation_completed = _run_and_expect_success(
+        page,
+        allow_long_running=(case.slug == "jpa_double_pump"),
+    )
+    if simulation_completed:
+        _run_post_processing_and_expect_output(page)

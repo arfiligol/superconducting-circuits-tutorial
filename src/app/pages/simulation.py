@@ -2,21 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, TypedDict
 
+import numpy as np
 import plotly.graph_objects as go
 from nicegui import app, run, ui
 
 from app.layout import app_shell
-from app.services.browser_tooling import (
-    build_schematic_preview_action_js,
-    build_schematic_preview_render_js,
+from core.shared.persistence import SqliteUnitOfWork, get_unit_of_work
+from core.shared.persistence.models import (
+    CircuitRecord,
+    DataRecord,
+    DatasetRecord,
+    ResultBundleRecord,
 )
-from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import CircuitRecord, DataRecord, DatasetRecord
 from core.shared.visualization import get_plotly_layout
-from core.simulation.application.circuit_visualizer import generate_circuit_svg
+from core.simulation.application.post_processing import (
+    PortMatrixSweep,
+    apply_coordinate_transform,
+    build_common_differential_transform,
+    build_port_y_sweep,
+    filtered_modes,
+    kron_reduce,
+)
 from core.simulation.application.run_simulation import run_simulation
 from core.simulation.domain.circuit import (
     CircuitDefinition,
@@ -24,13 +37,16 @@ from core.simulation.domain.circuit import (
     FrequencyRange,
     SimulationConfig,
     SimulationResult,
-    format_circuit_definition,
+    format_expanded_circuit_definition,
     parse_circuit_definition_source,
 )
 
 _SIM_SETUP_STORAGE_KEY = "simulation_saved_setups_by_schema"
 _SIM_SETUP_SELECTED_KEY = "simulation_selected_setup_id_by_schema"
+_POST_PROCESS_SETUP_STORAGE_KEY = "simulation_post_process_saved_setups_by_schema"
+_POST_PROCESS_SELECTED_KEY = "simulation_post_process_selected_setup_id_by_schema"
 _JOSEPHSON_EXAMPLE_PREFIX = "JosephsonCircuits Examples: "
+_SYSTEM_SIMULATION_CACHE_DATASET_NAME = "__system__:simulation_result_cache"
 _RESULT_FAMILY_OPTIONS = {
     "s": "S",
     "gain": "Gain",
@@ -38,6 +54,13 @@ _RESULT_FAMILY_OPTIONS = {
     "admittance": "Admittance (Y)",
     "qe": "Quantum Efficiency (QE)",
     "cm": "Commutation (CM)",
+    "complex": "Complex Plane",
+}
+_POST_PROCESSED_RESULT_FAMILY_OPTIONS = {
+    "s": "S",
+    "gain": "Gain",
+    "impedance": "Impedance (Z)",
+    "admittance": "Admittance (Y)",
     "complex": "Complex Plane",
 }
 _RESULT_METRIC_OPTIONS = {
@@ -73,10 +96,10 @@ _RESULT_METRIC_OPTIONS = {
     },
 }
 _RESULT_TRACE_OPTIONS = {
-    "s": {"s": "S-Parameter"},
-    "gain": {"s": "Power Gain from S"},
-    "impedance": {"z": "Impedance"},
-    "admittance": {"y": "Admittance"},
+    "s": {"s_param": "S-Parameter"},
+    "gain": {"gain_from_s": "Power Gain from S"},
+    "impedance": {"impedance": "Impedance"},
+    "admittance": {"admittance": "Admittance"},
     "qe": {
         "qe": "QE",
         "qe_ideal": "QE (Ideal)",
@@ -88,6 +111,228 @@ _RESULT_TRACE_OPTIONS = {
         "y": "Y",
     },
 }
+_RESULT_TRACE_COLORS = [
+    "rgb(99, 102, 241)",
+    "rgb(14, 165, 233)",
+    "rgb(16, 185, 129)",
+    "rgb(245, 158, 11)",
+    "rgb(239, 68, 68)",
+    "rgb(168, 85, 247)",
+]
+_POST_PROCESS_MODE_FILTER_OPTIONS = {
+    "base": "Base",
+    "sideband": "Sideband",
+    "all": "All Modes",
+}
+_Z0_CONTROL_PROPS = "dense outlined"
+_Z0_CONTROL_CLASSES = "w-32"
+
+
+class _ResultTraceSelection(TypedDict):
+    trace: str
+    output_mode: tuple[int, ...]
+    output_port: int
+    input_mode: tuple[int, ...]
+    input_port: int
+
+
+def _user_storage_get(key: str, default: Any = None) -> Any:
+    """Safely read one value from user storage with non-UI-context fallback."""
+    try:
+        return app.storage.user.get(key, default)
+    except RuntimeError:
+        return default
+
+
+def _user_storage_set(key: str, value: Any) -> None:
+    """Safely write one value into user storage when UI context is available."""
+    try:
+        app.storage.user[key] = value
+    except RuntimeError:
+        return
+
+
+def _hash_stable_json(payload: dict[str, Any]) -> str:
+    """Return a stable hash for one JSON-compatible payload."""
+    normalized = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+
+
+def _hash_schema_source(source_text: str) -> str:
+    """Return a stable hash for the stored source-form schema text."""
+    return f"sha256:{hashlib.sha256(source_text.encode('utf-8')).hexdigest()}"
+
+
+def _normalized_simulation_setup_snapshot(
+    freq_range: FrequencyRange,
+    config: SimulationConfig,
+) -> dict[str, Any]:
+    """Build the canonical setup snapshot used for cache identity."""
+    if config.sources:
+        resolved_sources = config.sources
+    else:
+        resolved_sources = [
+            DriveSourceConfig(
+                pump_freq_ghz=float(config.pump_freq_ghz),
+                port=int(config.pump_port),
+                current_amp=float(config.pump_current_amp),
+                mode_components=(int(config.pump_mode_index),),
+            )
+        ]
+
+    return {
+        "freq_range": {
+            "start_ghz": float(freq_range.start_ghz),
+            "stop_ghz": float(freq_range.stop_ghz),
+            "points": int(freq_range.points),
+        },
+        "sources": [
+            {
+                "pump_freq_ghz": float(source.pump_freq_ghz),
+                "port": int(source.port),
+                "current_amp": float(source.current_amp),
+                "mode": [
+                    int(value)
+                    for value in (
+                        source.mode_components
+                        if source.mode_components is not None
+                        else _normalize_source_mode_components(
+                            None,
+                            source_index=idx,
+                            source_count=len(resolved_sources),
+                        )
+                    )
+                ],
+            }
+            for idx, source in enumerate(resolved_sources)
+        ],
+        "harmonics": {
+            "n_modulation_harmonics": int(config.n_modulation_harmonics),
+            "n_pump_harmonics": int(config.n_pump_harmonics),
+        },
+        "advanced": {
+            "include_dc": bool(config.include_dc),
+            "enable_three_wave_mixing": bool(config.enable_three_wave_mixing),
+            "enable_four_wave_mixing": bool(config.enable_four_wave_mixing),
+            "max_intermod_order": (
+                -1 if config.max_intermod_order is None else int(config.max_intermod_order)
+            ),
+            "max_iterations": int(config.max_iterations),
+            "f_tol": float(config.f_tol),
+            "line_search_switch_tol": float(config.line_search_switch_tol),
+            "alpha_min": float(config.alpha_min),
+        },
+    }
+
+
+def _ensure_simulation_cache_dataset(uow: SqliteUnitOfWork) -> DatasetRecord:
+    """Return the hidden dataset used for automatic simulation-result caching."""
+    existing = uow.datasets.get_by_name(_SYSTEM_SIMULATION_CACHE_DATASET_NAME)
+    if existing is not None:
+        if not existing.source_meta.get("system_hidden"):
+            existing.source_meta = {
+                **existing.source_meta,
+                "system_hidden": True,
+                "collection_origin": "system_cache",
+                "cache_kind": "simulation_result",
+            }
+        return existing
+
+    dataset = DatasetRecord(
+        name=_SYSTEM_SIMULATION_CACHE_DATASET_NAME,
+        source_meta={
+            "collection_origin": "system_cache",
+            "cache_kind": "simulation_result",
+            "system_hidden": True,
+        },
+        parameters={},
+    )
+    uow.datasets.add(dataset)
+    uow.flush()
+    return dataset
+
+
+def _load_cached_simulation_result(
+    uow: SqliteUnitOfWork,
+    *,
+    schema_source_hash: str,
+    simulation_setup_hash: str,
+) -> tuple[int, SimulationResult] | None:
+    """Load one cached simulation result from the hidden system dataset."""
+    cache_dataset = _ensure_simulation_cache_dataset(uow)
+    if cache_dataset.id is None:
+        return None
+
+    bundle = uow.result_bundles.find_simulation_cache(
+        dataset_id=cache_dataset.id,
+        schema_source_hash=schema_source_hash,
+        simulation_setup_hash=simulation_setup_hash,
+    )
+    if bundle is None or not bundle.result_payload:
+        return None
+
+    try:
+        result = SimulationResult.model_validate(bundle.result_payload)
+    except Exception:
+        return None
+
+    if bundle.id is None:
+        return None
+
+    return (bundle.id, result)
+
+
+def _persist_simulation_result_bundle(
+    *,
+    uow: SqliteUnitOfWork,
+    dataset_id: int,
+    result: SimulationResult,
+    role: str,
+    source_meta: dict[str, Any],
+    config_snapshot: dict[str, Any],
+    schema_source_hash: str | None = None,
+    simulation_setup_hash: str | None = None,
+    include_data_records: bool = True,
+) -> int:
+    """Persist one simulation result bundle plus its trace-level DataRecord rows."""
+    bundle = ResultBundleRecord(
+        dataset_id=dataset_id,
+        bundle_type="circuit_simulation",
+        role=role,
+        status="completed",
+        schema_source_hash=schema_source_hash,
+        simulation_setup_hash=simulation_setup_hash,
+        source_meta=dict(source_meta),
+        config_snapshot=dict(config_snapshot),
+        result_payload=result.model_dump(mode="json"),
+        completed_at=datetime.utcnow(),
+    )
+    uow.result_bundles.add(bundle)
+    uow.flush()
+
+    if bundle.id is None:
+        raise ValueError("Failed to allocate a result bundle id.")
+    bundle_id = bundle.id
+
+    if not include_data_records:
+        return bundle_id
+
+    records = _build_result_bundle_data_records(dataset_id=dataset_id, result=result)
+    for record in records:
+        uow.data_records.add(record)
+    uow.flush()
+
+    record_ids = [record.id for record in records if record.id is not None]
+    if len(record_ids) != len(records):
+        raise ValueError("Failed to allocate one or more data record ids.")
+
+    uow.result_bundles.attach_data_records(bundle_id=bundle_id, data_record_ids=record_ids)
+    return bundle_id
 
 
 def _build_setup_payload(
@@ -148,6 +393,24 @@ def _build_source_payload(
     }
 
 
+def _compress_source_mode_components(
+    mode: tuple[int, ...] | list[int] | None,
+) -> tuple[int, ...]:
+    """Compress internal mode vectors into the shortest user-facing tuple."""
+    if mode is None:
+        return ()
+
+    values = tuple(int(value) for value in mode)
+    if not values:
+        return ()
+
+    if all(value == 0 for value in values):
+        return (0,)
+
+    highest_nonzero_index = max(idx for idx, value in enumerate(values) if value != 0)
+    return values[: highest_nonzero_index + 1]
+
+
 def _format_source_mode_text(mode: tuple[int, ...] | list[int] | None) -> str:
     """Format one source mode tuple for the UI text field."""
     if mode is None:
@@ -205,6 +468,15 @@ def _normalize_source_mode_components(
 
     if all(value == 0 for value in normalized):
         return tuple(0 for _ in range(width))
+
+    if len(normalized) == 1:
+        single_value = normalized[0]
+        if single_value <= 0:
+            return tuple(0 for _ in range(width))
+        fallback = [0] * width
+        slot_index = min(single_value, width) - 1
+        fallback[slot_index] = 1
+        return tuple(fallback)
 
     nonzero_indices = [idx for idx, value in enumerate(normalized) if value != 0]
     if len(nonzero_indices) == 1 and normalized[nonzero_indices[0]] > 0:
@@ -368,7 +640,7 @@ _JOSEPHSON_BUILTIN_SETUP_PAYLOADS: dict[str, dict[str, Any]] = {
         include_dc=True,
         enable_three_wave_mixing=True,
         max_iterations=200,
-        line_search_switch_tol=0.0,
+        line_search_switch_tol=1e-5,
         alpha_min=1e-7,
     ),
     "Impedance-engineered JPA": _build_setup_payload(
@@ -394,7 +666,7 @@ _JOSEPHSON_BUILTIN_SETUP_PAYLOADS: dict[str, dict[str, Any]] = {
         include_dc=True,
         enable_three_wave_mixing=True,
         max_iterations=200,
-        line_search_switch_tol=0.0,
+        line_search_switch_tol=1e-5,
         alpha_min=1e-7,
     ),
 }
@@ -431,8 +703,7 @@ def _merge_saved_setups_with_builtin(
     if not builtin_setups:
         return existing_setups
 
-    builtin_ids = {str(setup.get("id")) for setup in builtin_setups if setup.get("id")}
-    user_setups = [s for s in existing_setups if str(s.get("id")) not in builtin_ids]
+    user_setups = [s for s in existing_setups if str(s.get("saved_at")) != "builtin"]
     return [*builtin_setups, *user_setups]
 
 
@@ -448,7 +719,7 @@ def _ensure_builtin_saved_setups(schema_id: int, schema_name: str) -> list[dict[
 
 def _has_selected_setup_entry(schema_id: int) -> bool:
     """Return True when user storage already tracks a selected setup for this schema."""
-    raw_map = app.storage.user.get(_SIM_SETUP_SELECTED_KEY, {})
+    raw_map = _user_storage_get(_SIM_SETUP_SELECTED_KEY, {})
     return isinstance(raw_map, dict) and str(schema_id) in raw_map
 
 
@@ -488,6 +759,14 @@ def _first_option_key(options: dict[str, str]) -> str:
     return next(iter(options))
 
 
+def _coerce_int_value(value: object, default: int) -> int:
+    """Convert a dynamic UI value to int with a safe fallback."""
+    try:
+        return int(float(str(value)))
+    except Exception:
+        return default
+
+
 def _finite_float_or_none(value: float) -> float | None:
     """Return value only when finite, otherwise None for Plotly gaps."""
     import math
@@ -514,6 +793,1398 @@ def _complex_component_series(
             for value in values
         ]
     raise ValueError(f"Unsupported complex component: {component}")
+
+
+def _post_process_mode_options(
+    result: SimulationResult,
+    mode_filter: str,
+) -> dict[str, str]:
+    """Return mode options constrained by one post-processing mode filter."""
+    filter_key = str(mode_filter).strip().lower()
+    if filter_key == "sideband":
+        options = filtered_modes(result, "sideband")
+    elif filter_key == "all":
+        options = filtered_modes(result, "all")
+    else:
+        options = filtered_modes(result, "base")
+    return {SimulationResult.mode_token(mode): _format_mode_label(mode) for mode in options}
+
+
+def _format_complex_scalar(value: complex) -> str:
+    """Format one complex value into a compact string."""
+    return f"{value.real:.4e}{value.imag:+.4e}j"
+
+
+def _coordinate_weight_fields_editable(weight_mode: str) -> bool:
+    """Return whether coordinate-transform alpha/beta fields are editable."""
+    return str(weight_mode).strip().lower() == "manual"
+
+
+def _can_save_post_processed_results(
+    sweep: PortMatrixSweep | None,
+    flow_spec: dict[str, Any] | None,
+) -> bool:
+    """Return whether post-processed results are ready for dataset persistence."""
+    return isinstance(sweep, PortMatrixSweep) and isinstance(flow_spec, dict)
+
+
+def _build_post_processed_result_payload(
+    sweep: PortMatrixSweep,
+    *,
+    reference_impedance_ohm: float,
+) -> tuple[SimulationResult, dict[int, str]]:
+    """Convert one post-processed Y sweep into a SimulationResult-like payload."""
+    if reference_impedance_ohm <= 0:
+        raise ValueError("Reference impedance must be positive.")
+    if sweep.dimension < 1:
+        raise ValueError("Post-processed sweep has no basis labels.")
+
+    mode = SimulationResult.normalize_mode(sweep.mode)
+    frequencies = [float(value) for value in sweep.frequencies_ghz]
+    if not frequencies:
+        raise ValueError("Post-processed sweep has no frequency points.")
+
+    matrix_count = len(frequencies)
+    dim = sweep.dimension
+    identity = np.eye(dim, dtype=np.complex128)
+    y_matrices: list[np.ndarray] = []
+    z_matrices: list[np.ndarray] = []
+    s_matrices: list[np.ndarray] = []
+    for matrix in sweep.y_matrices:
+        y_matrix = np.asarray(matrix, dtype=np.complex128)
+        if y_matrix.shape != (dim, dim):
+            raise ValueError("Post-processed sweep matrix shape is inconsistent.")
+        y_matrices.append(y_matrix)
+        try:
+            z_matrix = np.linalg.solve(y_matrix, identity)
+        except np.linalg.LinAlgError as exc:
+            raise ValueError(f"Y->Z conversion failed: {exc}") from exc
+        z_matrices.append(z_matrix)
+        try:
+            s_matrix = np.linalg.solve(
+                (z_matrix + (reference_impedance_ohm * identity)).T,
+                (z_matrix - (reference_impedance_ohm * identity)).T,
+            ).T
+        except np.linalg.LinAlgError as exc:
+            raise ValueError(f"Z->S conversion failed: {exc}") from exc
+        s_matrices.append(s_matrix)
+
+    if len(y_matrices) != matrix_count:
+        raise ValueError("Post-processed sweep matrix count does not match frequency points.")
+
+    port_indices = list(range(1, dim + 1))
+    port_options = {port: str(sweep.labels[port - 1]) for port in port_indices}
+    s_mode_real: dict[str, list[float]] = {}
+    s_mode_imag: dict[str, list[float]] = {}
+    z_mode_real: dict[str, list[float]] = {}
+    z_mode_imag: dict[str, list[float]] = {}
+    y_mode_real: dict[str, list[float]] = {}
+    y_mode_imag: dict[str, list[float]] = {}
+    s_zero_mode_real: dict[str, list[float]] = {}
+    s_zero_mode_imag: dict[str, list[float]] = {}
+
+    for output_pos, output_port in enumerate(port_indices):
+        for input_pos, input_port in enumerate(port_indices):
+            mode_label = SimulationResult._mode_trace_label(mode, output_port, mode, input_port)
+            zero_label = f"S{output_port}{input_port}"
+            s_trace = [complex(matrix[output_pos, input_pos]) for matrix in s_matrices]
+            z_trace = [complex(matrix[output_pos, input_pos]) for matrix in z_matrices]
+            y_trace = [complex(matrix[output_pos, input_pos]) for matrix in y_matrices]
+            s_mode_real[mode_label] = [float(value.real) for value in s_trace]
+            s_mode_imag[mode_label] = [float(value.imag) for value in s_trace]
+            z_mode_real[mode_label] = [float(value.real) for value in z_trace]
+            z_mode_imag[mode_label] = [float(value.imag) for value in z_trace]
+            y_mode_real[mode_label] = [float(value.real) for value in y_trace]
+            y_mode_imag[mode_label] = [float(value.imag) for value in y_trace]
+            if all(value == 0 for value in mode):
+                s_zero_mode_real[zero_label] = list(s_mode_real[mode_label])
+                s_zero_mode_imag[zero_label] = list(s_mode_imag[mode_label])
+
+    s11_label = SimulationResult._mode_trace_label(mode, 1, mode, 1)
+    s11_real = list(s_mode_real.get(s11_label, [0.0] * matrix_count))
+    s11_imag = list(s_mode_imag.get(s11_label, [0.0] * matrix_count))
+    converted = SimulationResult(
+        frequencies_ghz=frequencies,
+        s11_real=s11_real,
+        s11_imag=s11_imag,
+        port_indices=port_indices,
+        mode_indices=[mode],
+        s_parameter_real=s_zero_mode_real,
+        s_parameter_imag=s_zero_mode_imag,
+        s_parameter_mode_real=s_mode_real,
+        s_parameter_mode_imag=s_mode_imag,
+        z_parameter_mode_real=z_mode_real,
+        z_parameter_mode_imag=z_mode_imag,
+        y_parameter_mode_real=y_mode_real,
+        y_parameter_mode_imag=y_mode_imag,
+    )
+    return (converted, port_options)
+
+
+def _default_result_trace_selection(
+    result: SimulationResult,
+    family: str,
+    *,
+    port_options: dict[int, str],
+) -> _ResultTraceSelection:
+    """Return the default trace-card payload for one result family."""
+    mode_options = _result_mode_options(result)
+    trace_options = _result_trace_options_for_family(family)
+    default_mode_token = _first_option_key(mode_options) if mode_options else "0"
+    default_port = next(iter(port_options)) if port_options else 1
+    return {
+        "trace": _first_option_key(trace_options),
+        "output_mode": SimulationResult.parse_mode_token(default_mode_token),
+        "output_port": default_port,
+        "input_mode": SimulationResult.parse_mode_token(default_mode_token),
+        "input_port": default_port,
+    }
+
+
+def _render_result_family_explorer(
+    *,
+    container: Any,
+    view_state: dict[str, Any],
+    family_options: dict[str, str],
+    result_provider: Callable[[float], tuple[SimulationResult, dict[int, str]] | None],
+    header_message: str,
+    empty_message: str,
+    save_button_label: str | None = None,
+    on_save_click: Callable[[], None] | None = None,
+    save_enabled: bool = True,
+    context_line: str | None = None,
+) -> None:
+    """Render one family/metric/trace-card result explorer into a container."""
+
+    def render() -> None:
+        container.clear()
+        with container:
+            with ui.row().classes("w-full items-center justify-between gap-3 mb-3 flex-wrap"):
+                ui.label(header_message).classes("text-xs text-muted")
+                if save_button_label is not None and on_save_click is not None:
+                    save_button = ui.button(
+                        save_button_label,
+                        icon="save",
+                        on_click=on_save_click,
+                    ).props("outline color=primary size=sm")
+                    if not save_enabled:
+                        save_button.disable()
+
+            if context_line:
+                ui.label(context_line).classes("text-xs text-muted mb-2")
+
+            z0_value = float(view_state.get("z0", 50.0) or 50.0)
+            try:
+                resolved_payload = result_provider(z0_value)
+            except Exception as exc:
+                with ui.column().classes("w-full items-center justify-center py-10"):
+                    ui.icon("error", size="lg").classes("text-danger mb-3")
+                    ui.label(f"Result View rendering failed: {exc}").classes("text-sm text-danger")
+                return
+            if resolved_payload is None:
+                with ui.column().classes("w-full items-center justify-center py-10"):
+                    ui.icon("show_chart", size="xl").classes("text-muted mb-3 opacity-50")
+                    ui.label(empty_message).classes("text-sm text-muted")
+                return
+
+            result_to_render, port_options = resolved_payload
+            mode_options = _result_mode_options(result_to_render)
+            if not port_options:
+                port_options = _result_port_options(result_to_render)
+            if not mode_options or not port_options:
+                ui.label(
+                    "Result bundle does not contain selectable mode/port entries."
+                ).classes("text-sm text-warning")
+                return
+
+            family_tabs = list(family_options.items())
+            family_keys = {family for family, _ in family_tabs}
+            family_label_to_key = {label.casefold(): family for family, label in family_tabs}
+            fallback_family = family_tabs[0][0] if family_tabs else "s"
+            view_family = str(view_state.get("family", fallback_family))
+            if view_family not in family_keys:
+                view_family = fallback_family
+                view_state["family"] = view_family
+
+            metric_options = _result_metric_options_for_family(view_family)
+            metric_key = str(view_state.get("metric", ""))
+            if metric_key not in metric_options:
+                metric_key = _first_option_key(metric_options)
+                view_state["metric"] = metric_key
+
+            trace_options = _result_trace_options_for_family(view_family)
+            normalized_traces: list[_ResultTraceSelection] = []
+            for trace in list(view_state.get("traces") or []):
+                trace_key = str(trace.get("trace", _first_option_key(trace_options)))
+                if trace_key not in trace_options:
+                    trace_key = _first_option_key(trace_options)
+                output_mode = trace.get("output_mode", (0,))
+                input_mode = trace.get("input_mode", (0,))
+                output_port = _coerce_int_value(trace.get("output_port"), next(iter(port_options)))
+                input_port = _coerce_int_value(trace.get("input_port"), next(iter(port_options)))
+                output_mode_token = SimulationResult.mode_token(tuple(output_mode))
+                input_mode_token = SimulationResult.mode_token(tuple(input_mode))
+                if output_mode_token not in mode_options:
+                    output_mode = SimulationResult.parse_mode_token(_first_option_key(mode_options))
+                if input_mode_token not in mode_options:
+                    input_mode = SimulationResult.parse_mode_token(_first_option_key(mode_options))
+                if output_port not in port_options:
+                    output_port = next(iter(port_options))
+                if input_port not in port_options:
+                    input_port = next(iter(port_options))
+                normalized_traces.append(
+                    {
+                        "trace": trace_key,
+                        "output_mode": tuple(output_mode),
+                        "output_port": output_port,
+                        "input_mode": tuple(input_mode),
+                        "input_port": input_port,
+                    }
+                )
+            if not normalized_traces:
+                normalized_traces = [
+                    _default_result_trace_selection(
+                        result_to_render,
+                        view_family,
+                        port_options=port_options,
+                    )
+                ]
+            view_state["traces"] = normalized_traces
+
+            with ui.row().classes("w-full items-end justify-between gap-3 flex-wrap"):
+                with ui.tabs(value=view_family).classes("mb-1") as family_switch:
+                    for family_key, family_label in family_tabs:
+                        ui.tab(family_key, label=family_label)
+                metric_select = (
+                    ui.select(label="Metric", options=metric_options, value=metric_key)
+                    .props("dense outlined options-dense")
+                    .classes("w-64")
+                )
+                z0_input = (
+                    ui.number(
+                        "Z0 (Ohm)",
+                        value=float(view_state.get("z0", 50.0) or 50.0),
+                        format="%.6g",
+                    )
+                    .props(_Z0_CONTROL_PROPS)
+                    .classes(_Z0_CONTROL_CLASSES)
+                )
+
+            def _on_family_change(e: Any) -> None:
+                selected_family = str(e.value or fallback_family).strip()
+                if selected_family not in family_keys:
+                    selected_family = family_label_to_key.get(
+                        selected_family.casefold(),
+                        fallback_family,
+                    )
+                view_state["family"] = selected_family
+                view_state["metric"] = _first_option_key(
+                    _result_metric_options_for_family(selected_family)
+                )
+                view_state["traces"] = [
+                    _default_result_trace_selection(
+                        result_to_render,
+                        selected_family,
+                        port_options=port_options,
+                    )
+                ]
+                render()
+
+            def _on_metric_change(e: Any) -> None:
+                view_state["metric"] = str(e.value or _first_option_key(metric_options))
+                render()
+
+            def _on_z0_change(e: Any) -> None:
+                view_state["z0"] = float(e.value or 50.0)
+                render()
+
+            family_switch.on_value_change(_on_family_change)
+            metric_select.on_value_change(_on_metric_change)
+            z0_input.on_value_change(_on_z0_change)
+
+            with ui.row().classes("w-full items-center gap-3 mt-1"):
+                ui.button(
+                    "Add Trace",
+                    icon="add",
+                    on_click=lambda: (
+                        view_state["traces"].append(
+                            _default_result_trace_selection(
+                                result_to_render,
+                                view_family,
+                                port_options=port_options,
+                            )
+                        ),
+                        render(),
+                    ),
+                ).props("outline color=primary")
+
+            trace_cards = list(view_state["traces"])
+            for idx, selection in enumerate(trace_cards, start=1):
+                with ui.card().classes(
+                    "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                ):
+                    with ui.row().classes("w-full items-center gap-3 mb-2"):
+                        ui.label(f"Trace {idx}").classes("text-sm font-bold text-fg")
+                        if len(trace_cards) > 1:
+                            ui.button(
+                                "",
+                                icon="delete",
+                                on_click=lambda _e, target=idx - 1: (
+                                    view_state["traces"].pop(target),
+                                    render(),
+                                ),
+                            ).props("flat color=negative round").classes("ml-auto")
+                    with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                        trace_select = (
+                            ui.select(
+                                label="Trace",
+                                options=trace_options,
+                                value=selection["trace"],
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-56")
+                        )
+                        output_mode_select = (
+                            ui.select(
+                                label="Output Mode",
+                                options=mode_options,
+                                value=SimulationResult.mode_token(selection["output_mode"]),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-52")
+                        )
+                        input_mode_select = (
+                            ui.select(
+                                label="Input Mode",
+                                options=mode_options,
+                                value=SimulationResult.mode_token(selection["input_mode"]),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-52")
+                        )
+                        output_port_select = (
+                            ui.select(
+                                label="Output Port",
+                                options=port_options,
+                                value=selection["output_port"],
+                            )
+                            .props("dense outlined")
+                            .classes("w-40")
+                        )
+                        input_port_select = (
+                            ui.select(
+                                label="Input Port",
+                                options=port_options,
+                                value=selection["input_port"],
+                            )
+                            .props("dense outlined")
+                            .classes("w-40")
+                        )
+
+                    def _update_trace_config(
+                        *,
+                        trace_index: int,
+                        field: str,
+                        value: Any,
+                    ) -> None:
+                        target = view_state["traces"][trace_index]
+                        target[field] = value
+                        render()
+
+                    trace_select.on_value_change(
+                        lambda e, trace_index=idx - 1: _update_trace_config(
+                            trace_index=trace_index,
+                            field="trace",
+                            value=str(e.value or _first_option_key(trace_options)),
+                        )
+                    )
+                    output_mode_select.on_value_change(
+                        lambda e, trace_index=idx - 1: _update_trace_config(
+                            trace_index=trace_index,
+                            field="output_mode",
+                            value=SimulationResult.parse_mode_token(str(e.value or "0")),
+                        )
+                    )
+                    input_mode_select.on_value_change(
+                        lambda e, trace_index=idx - 1: _update_trace_config(
+                            trace_index=trace_index,
+                            field="input_mode",
+                            value=SimulationResult.parse_mode_token(str(e.value or "0")),
+                        )
+                    )
+                    output_port_select.on_value_change(
+                        lambda e, trace_index=idx - 1: _update_trace_config(
+                            trace_index=trace_index,
+                            field="output_port",
+                            value=_coerce_int_value(e.value, next(iter(port_options))),
+                        )
+                    )
+                    input_port_select.on_value_change(
+                        lambda e, trace_index=idx - 1: _update_trace_config(
+                            trace_index=trace_index,
+                            field="input_port",
+                            value=_coerce_int_value(e.value, next(iter(port_options))),
+                        )
+                    )
+
+            selections = list(view_state["traces"])
+            lead = selections[0]
+            figure = _build_simulation_result_figure(
+                result=result_to_render,
+                view_family=view_family,
+                metric=str(view_state.get("metric", metric_key)),
+                trace=str(lead["trace"]),
+                output_mode=tuple(lead["output_mode"]),
+                output_port=int(lead["output_port"]),
+                input_mode=tuple(lead["input_mode"]),
+                input_port=int(lead["input_port"]),
+                reference_impedance_ohm=float(view_state.get("z0", 50.0)),
+                dark_mode=bool(_user_storage_get("dark_mode", True)),
+                trace_selections=selections,
+            )
+            ui.plotly(figure).classes("w-full min-h-[420px] mt-3")
+
+    render()
+
+
+def _port_signal_node_map(circuit_definition: CircuitDefinition) -> dict[int, str]:
+    """Map each declared port index to its non-ground signal node."""
+    mapping: dict[int, str] = {}
+    for row in circuit_definition.expanded_definition.topology:
+        if not row.is_port:
+            continue
+        try:
+            port_index = int(row.value_ref)
+        except Exception:
+            continue
+        if circuit_definition.is_ground_node(row.node1) and not circuit_definition.is_ground_node(
+            row.node2
+        ):
+            mapping[port_index] = str(row.node2)
+            continue
+        if circuit_definition.is_ground_node(row.node2) and not circuit_definition.is_ground_node(
+            row.node1
+        ):
+            mapping[port_index] = str(row.node1)
+    return mapping
+
+
+def _estimate_port_ground_cap_weights(
+    circuit_definition: CircuitDefinition,
+    *,
+    port_a: int,
+    port_b: int,
+) -> tuple[float, float] | None:
+    """Estimate electrical-centroid weights from capacitor-to-ground totals."""
+    port_nodes = _port_signal_node_map(circuit_definition)
+    node_a = port_nodes.get(port_a)
+    node_b = port_nodes.get(port_b)
+    if node_a is None or node_b is None:
+        return None
+
+    cap_to_ground: dict[str, float] = {node_a: 0.0, node_b: 0.0}
+    for element in circuit_definition.to_ir().elements:
+        if element.kind != "capacitor" or element.is_port or element.is_mutual_coupling:
+            continue
+        if not isinstance(element.value_ref, str):
+            continue
+        if circuit_definition.is_ground_node(element.node1) and str(element.node2) in cap_to_ground:
+            cap_to_ground[str(element.node2)] += circuit_definition.resolve_component_value(
+                element.value_ref
+            )
+        elif (
+            circuit_definition.is_ground_node(element.node2) and str(element.node1) in cap_to_ground
+        ):
+            cap_to_ground[str(element.node1)] += circuit_definition.resolve_component_value(
+                element.value_ref
+            )
+
+    weight_a = cap_to_ground[node_a]
+    weight_b = cap_to_ground[node_b]
+    total = weight_a + weight_b
+    if total <= 0:
+        return None
+    return (weight_a / total, weight_b / total)
+
+
+def _render_post_processing_panel(
+    *,
+    result: SimulationResult,
+    circuit_definition: CircuitDefinition | None = None,
+    schema_id: int | None = None,
+    schema_name: str | None = None,
+    append_status: Callable[[str, str], None] | None = None,
+    on_result: Callable[[PortMatrixSweep | None, dict[str, Any] | None], None] | None = None,
+) -> None:
+    """Render one dynamic card-list style Port-Level post-processing pipeline."""
+
+    def log_info(message: str) -> None:
+        if append_status is not None:
+            append_status("info", message)
+
+    def emit_result(
+        sweep: PortMatrixSweep | None,
+        flow_spec: dict[str, Any] | None,
+    ) -> None:
+        if on_result is not None:
+            on_result(sweep, flow_spec)
+
+    port_options = _result_port_options(result)
+    default_ports = list(port_options)
+    default_port_a = default_ports[0] if default_ports else None
+    default_port_b = default_ports[1] if len(default_ports) > 1 else default_port_a
+    saved_post_setups = (
+        _load_saved_post_process_setups_for_schema(schema_id)
+        if isinstance(schema_id, int) and schema_id > 0
+        else []
+    )
+    saved_post_setup_by_id: dict[str, dict[str, Any]] = {
+        str(setup.get("id")): setup
+        for setup in saved_post_setups
+        if setup.get("id") and setup.get("name")
+    }
+    selected_post_setup_id = (
+        _load_selected_post_process_setup_id(schema_id)
+        if isinstance(schema_id, int) and schema_id > 0
+        else ""
+    )
+    if selected_post_setup_id not in saved_post_setup_by_id:
+        selected_post_setup_id = ""
+
+    ui.label(
+        "Port-Level only: Post Processing consumes simulated port-space Y(ω). "
+        "Nodal/internal-node elimination is intentionally out of scope in M1. "
+        "Auto alpha/beta currently uses schema capacitor-to-ground weights."
+    ).classes("text-xs text-muted mb-3")
+
+    with ui.column().classes("w-full gap-3"):
+        with ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"):
+            ui.label("Input Node").classes("text-sm font-bold text-fg mb-2")
+            with ui.row().classes("w-full items-end gap-3 mb-3 flex-wrap"):
+                post_setup_options = {"": "Current (Unsaved)"}
+                post_setup_options.update(
+                    {
+                        setup_id: str(setup.get("name"))
+                        for setup_id, setup in saved_post_setup_by_id.items()
+                    }
+                )
+                post_setup_select = (
+                    ui.select(
+                        label="Post-Processing Setup",
+                        options=post_setup_options,
+                        value=selected_post_setup_id,
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-80")
+                )
+                save_post_setup_button = (
+                    ui.button("Save Setup", icon="bookmark_add")
+                    .props("outline color=primary")
+                    .classes("shrink-0")
+                )
+                delete_post_setup_button = (
+                    ui.button("", icon="delete")
+                    .props("outline color=negative round")
+                    .classes("shrink-0")
+                )
+                if not selected_post_setup_id:
+                    delete_post_setup_button.disable()
+            with ui.row().classes("w-full items-end gap-3 flex-wrap"):
+                mode_filter_select = (
+                    ui.select(
+                        label="Mode Filter",
+                        options=_POST_PROCESS_MODE_FILTER_OPTIONS,
+                        value="base",
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-40")
+                )
+                mode_select = (
+                    ui.select(
+                        label="Mode",
+                        options=_post_process_mode_options(result, "base"),
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-52")
+                )
+                z0_input = (
+                    ui.number("Z0 (Ohm)", value=50.0, format="%.6g")
+                    .props(_Z0_CONTROL_PROPS)
+                    .classes(_Z0_CONTROL_CLASSES)
+                )
+                step_type_select = (
+                    ui.select(
+                        label="Step Type",
+                        options={
+                            "coordinate_transform": "Coordinate Transformation",
+                            "kron_reduction": "Kron Reduction",
+                        },
+                        value="coordinate_transform",
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-64")
+                )
+                add_step_button = (
+                    ui.button("Add Step", icon="add").props("outline color=primary")
+                ).classes("shrink-0")
+                run_button = (
+                    ui.button("Run Post Processing", icon="tune").props("color=primary")
+                ).classes("ml-auto")
+            mode_hint = ui.label("").classes("text-xs text-muted mt-2")
+
+        steps_container = ui.column().classes("w-full gap-3")
+
+        with ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"):
+            ui.label("Output Node").classes("text-sm font-bold text-fg mb-2")
+            output_container = ui.column().classes("w-full gap-2")
+
+    step_sequence: list[dict[str, Any]] = []
+    step_id_seed: dict[str, int] = {"value": 1}
+    applying_saved_post_setup = False
+
+    def _make_step_config(step_type: str) -> dict[str, Any]:
+        normalized = str(step_type).strip().lower()
+        if normalized == "kron_reduction":
+            return {
+                "type": "kron_reduction",
+                "enabled": True,
+                "keep_labels": [],
+            }
+        return {
+            "type": "coordinate_transform",
+            "enabled": True,
+            "template": "cm_dm",
+            "weight_mode": "auto",
+            "alpha": 0.5,
+            "beta": 0.5,
+            "port_a": default_port_a,
+            "port_b": default_port_b,
+        }
+
+    def invalidate_processed_state() -> None:
+        emit_result(None, None)
+
+    def _serialized_post_step(step: dict[str, Any]) -> dict[str, Any]:
+        step_type = str(step.get("type", "coordinate_transform"))
+        if step_type == "kron_reduction":
+            return {
+                "type": "kron_reduction",
+                "enabled": bool(step.get("enabled", True)),
+                "keep_labels": [str(label) for label in (step.get("keep_labels") or [])],
+            }
+        return {
+            "type": "coordinate_transform",
+            "enabled": bool(step.get("enabled", True)),
+            "template": str(step.get("template", "cm_dm")),
+            "weight_mode": str(step.get("weight_mode", "auto")),
+            "alpha": float(step.get("alpha", 0.5)),
+            "beta": float(step.get("beta", 0.5)),
+            "port_a": step.get("port_a"),
+            "port_b": step.get("port_b"),
+        }
+
+    def collect_current_post_setup_payload() -> dict[str, Any]:
+        return {
+            "mode_filter": str(mode_filter_select.value or "base"),
+            "mode_token": str(mode_select.value or ""),
+            "reference_impedance_ohm": float(z0_input.value or 50.0),
+            "steps": [_serialized_post_step(step) for step in step_sequence],
+        }
+
+    def apply_saved_post_setup(setup_record: dict[str, Any]) -> None:
+        nonlocal applying_saved_post_setup
+        payload = setup_record.get("payload")
+        if not isinstance(payload, dict):
+            ui.notify("Selected post-processing setup payload is invalid.", type="warning")
+            return
+
+        applying_saved_post_setup = True
+        try:
+            mode_filter_select.value = str(payload.get("mode_filter", "base"))
+            refresh_mode_selector()
+            desired_mode_token = str(payload.get("mode_token", mode_select.value or ""))
+            if (
+                desired_mode_token
+                and isinstance(mode_select.options, dict)
+                and desired_mode_token in mode_select.options
+            ):
+                mode_select.value = desired_mode_token
+            z0_input.value = float(payload.get("reference_impedance_ohm", 50.0))
+
+            step_sequence.clear()
+            step_id_seed["value"] = 1
+            for raw_step in payload.get("steps", []):
+                if not isinstance(raw_step, dict):
+                    continue
+                normalized = _make_step_config(str(raw_step.get("type", "coordinate_transform")))
+                normalized["id"] = step_id_seed["value"]
+                step_id_seed["value"] += 1
+                normalized["enabled"] = bool(raw_step.get("enabled", normalized["enabled"]))
+                if normalized["type"] == "coordinate_transform":
+                    normalized["template"] = str(raw_step.get("template", normalized["template"]))
+                    normalized["weight_mode"] = str(
+                        raw_step.get("weight_mode", normalized["weight_mode"])
+                    )
+                    normalized["alpha"] = float(raw_step.get("alpha", normalized["alpha"]))
+                    normalized["beta"] = float(raw_step.get("beta", normalized["beta"]))
+                    normalized["port_a"] = raw_step.get("port_a", normalized["port_a"])
+                    normalized["port_b"] = raw_step.get("port_b", normalized["port_b"])
+                else:
+                    keep_labels = [str(label) for label in (raw_step.get("keep_labels") or [])]
+                    normalized["keep_labels"] = keep_labels
+                step_sequence.append(normalized)
+
+            invalidate_processed_state()
+            render_step_cards.refresh()
+        finally:
+            applying_saved_post_setup = False
+
+    def refresh_saved_post_setup_select(preferred_id: str | None = None) -> None:
+        nonlocal saved_post_setups, saved_post_setup_by_id, selected_post_setup_id
+        if not isinstance(schema_id, int) or schema_id <= 0:
+            return
+
+        saved_post_setups = _load_saved_post_process_setups_for_schema(schema_id)
+        saved_post_setup_by_id = {
+            str(setup.get("id")): setup
+            for setup in saved_post_setups
+            if setup.get("id") and setup.get("name")
+        }
+        options = {"": "Current (Unsaved)"}
+        options.update(
+            {
+                setup_id: str(setup.get("name"))
+                for setup_id, setup in saved_post_setup_by_id.items()
+            }
+        )
+        post_setup_select.options = options
+        selected_value = (
+            preferred_id
+            if preferred_id in options
+            else str(post_setup_select.value or "")
+        )
+        if selected_value not in options:
+            selected_value = ""
+        selected_post_setup_id = selected_value
+        post_setup_select.value = selected_value
+        _save_selected_post_process_setup_id(schema_id, selected_value)
+        if selected_value:
+            delete_post_setup_button.enable()
+        else:
+            delete_post_setup_button.disable()
+
+    def on_post_setup_change(e: Any) -> None:
+        nonlocal selected_post_setup_id
+        if applying_saved_post_setup:
+            return
+        selected_value = str(e.value or "")
+        selected_post_setup_id = selected_value
+        if isinstance(schema_id, int) and schema_id > 0:
+            _save_selected_post_process_setup_id(schema_id, selected_value)
+        if selected_value:
+            delete_post_setup_button.enable()
+        else:
+            delete_post_setup_button.disable()
+
+        setup_record = saved_post_setup_by_id.get(selected_value)
+        if setup_record is None:
+            return
+        apply_saved_post_setup(setup_record)
+        ui.notify(f"Loaded post-processing setup: {setup_record.get('name')}", type="positive")
+
+    def on_save_post_setup_click() -> None:
+        if not isinstance(schema_id, int) or schema_id <= 0:
+            ui.notify("Save setup requires a selected schema.", type="warning")
+            return
+
+        with ui.dialog() as dialog, ui.card().classes("w-full max-w-md bg-surface p-4"):
+            ui.label("Save Post-Processing Setup").classes("text-lg font-bold text-fg mb-3")
+            default_name = (
+                f"{schema_name or 'Schema'} "
+                f"Post-Processing Setup {len(saved_post_setups) + 1}"
+            )
+            name_input = ui.input("Setup Name", value=default_name).classes("w-full")
+
+            def do_save() -> None:
+                setup_name = str(name_input.value or "").strip()
+                if not setup_name:
+                    ui.notify("Setup name is required.", type="warning")
+                    return
+
+                payload = collect_current_post_setup_payload()
+                existing = next(
+                    (s for s in saved_post_setups if str(s.get("name")) == setup_name),
+                    None,
+                )
+                setup_id = (
+                    str(existing.get("id"))
+                    if existing is not None and existing.get("id")
+                    else datetime.now().strftime("%Y%m%d%H%M%S%f")
+                )
+                record = {
+                    "id": setup_id,
+                    "name": setup_name,
+                    "saved_at": datetime.now().isoformat(),
+                    "payload": payload,
+                }
+                updated = [s for s in saved_post_setups if str(s.get("id")) != setup_id]
+                updated.append(record)
+                _save_saved_post_process_setups_for_schema(schema_id, updated)
+                refresh_saved_post_setup_select(preferred_id=setup_id)
+                ui.notify(f"Saved post-processing setup: {setup_name}", type="positive")
+                dialog.close()
+
+            with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+                ui.button("Save", on_click=do_save).props("color=primary")
+
+        dialog.open()
+
+    def on_delete_post_setup_click() -> None:
+        if not isinstance(schema_id, int) or schema_id <= 0:
+            return
+        setup_id = str(post_setup_select.value or "")
+        if not setup_id:
+            return
+        updated = [s for s in saved_post_setups if str(s.get("id")) != setup_id]
+        _save_saved_post_process_setups_for_schema(schema_id, updated)
+        refresh_saved_post_setup_select(preferred_id="")
+        ui.notify("Deleted post-processing setup.", type="positive")
+
+    def _pipeline_labels_before_step(step_id: int | None = None) -> tuple[str, ...]:
+        labels = tuple(str(port) for port in sorted(result.available_port_indices))
+        if not labels:
+            return labels
+
+        for step in step_sequence:
+            if step_id is not None and int(step.get("id", -1)) == step_id:
+                break
+            if not bool(step.get("enabled", True)):
+                continue
+
+            step_type = str(step.get("type", ""))
+            if step_type == "coordinate_transform":
+                if str(step.get("template", "identity")) != "cm_dm":
+                    continue
+                if not labels:
+                    break
+                port_a = _coerce_int_value(step.get("port_a"), int(labels[0]))
+                port_b = _coerce_int_value(step.get("port_b"), int(labels[-1]))
+                label_to_index = {
+                    int(label): idx for idx, label in enumerate(labels) if str(label).isdigit()
+                }
+                if port_a == port_b or port_a not in label_to_index or port_b not in label_to_index:
+                    continue
+                updated = list(labels)
+                idx_a = label_to_index[port_a]
+                idx_b = label_to_index[port_b]
+                updated[idx_a] = f"cm({port_a},{port_b})"
+                updated[idx_b] = f"dm({port_a},{port_b})"
+                labels = tuple(updated)
+                continue
+
+            if step_type == "kron_reduction":
+                keep_labels = [str(label) for label in (step.get("keep_labels") or [])]
+                filtered_keep = [label for label in labels if label in set(keep_labels)]
+                if filtered_keep:
+                    labels = tuple(filtered_keep)
+
+        return labels
+
+    @ui.refreshable
+    def render_step_cards() -> None:
+        if not step_sequence:
+            with ui.card().classes(
+                "w-full bg-elevated border border-dashed border-border rounded-lg p-4"
+            ):
+                ui.label("No steps yet. Use Add Step to build a post-processing pipeline.").classes(
+                    "text-sm text-muted"
+                )
+            return
+
+        for index, step in enumerate(list(step_sequence), start=1):
+            step_id = int(step.get("id", -1))
+            step_type = str(step.get("type", "coordinate_transform"))
+            step_label = (
+                "Coordinate Transformation"
+                if step_type == "coordinate_transform"
+                else "Kron Reduction"
+            )
+            with ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"):
+                with ui.row().classes("w-full items-center gap-3 mb-2"):
+                    ui.label(f"Step {index} · {step_label}").classes("text-sm font-bold text-fg")
+                    step_type_select_local = (
+                        ui.select(
+                            label="Type",
+                            options={
+                                "coordinate_transform": "Coordinate Transformation",
+                                "kron_reduction": "Kron Reduction",
+                            },
+                            value=step_type,
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-64")
+                    )
+                    enabled_switch_local = ui.switch(
+                        "Enable", value=bool(step.get("enabled", True))
+                    )
+                    delete_button = (
+                        ui.button("", icon="delete")
+                        .props("flat color=negative round")
+                        .classes("ml-auto")
+                    )
+
+                def _on_step_type_change(
+                    e: Any, target_step: dict[str, Any], target_step_id: int
+                ) -> None:
+                    replacement = _make_step_config(str(e.value or "coordinate_transform"))
+                    replacement["id"] = target_step_id
+                    target_step.clear()
+                    target_step.update(replacement)
+                    invalidate_processed_state()
+                    render_step_cards.refresh()
+
+                def _on_step_enable_change(e: Any, target_step: dict[str, Any]) -> None:
+                    target_step["enabled"] = bool(e.value)
+                    invalidate_processed_state()
+                    render_step_cards.refresh()
+
+                def _on_delete_step(target_step_id: int) -> None:
+                    step_sequence[:] = [
+                        existing
+                        for existing in step_sequence
+                        if int(existing.get("id", -1)) != target_step_id
+                    ]
+                    invalidate_processed_state()
+                    render_step_cards.refresh()
+
+                step_type_select_local.on_value_change(
+                    lambda e, target_step=step, target_step_id=step_id: _on_step_type_change(
+                        e,
+                        target_step,
+                        target_step_id,
+                    )
+                )
+                enabled_switch_local.on_value_change(
+                    lambda e, target_step=step: _on_step_enable_change(e, target_step)
+                )
+                delete_button.on_click(
+                    lambda _e, target_step_id=step_id: _on_delete_step(target_step_id)
+                )
+
+                if step_type == "coordinate_transform":
+                    is_weight_editable = _coordinate_weight_fields_editable(
+                        str(step.get("weight_mode", "auto"))
+                    )
+                    with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                        template_select_local = (
+                            ui.select(
+                                label="Template",
+                                options={
+                                    "identity": "Identity",
+                                    "cm_dm": "Common/Differential (2 ports)",
+                                },
+                                value=str(step.get("template", "cm_dm")),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-56")
+                        )
+                        weight_mode_local = (
+                            ui.select(
+                                label="Weight Mode",
+                                options={
+                                    "auto": "Auto (from schema C-to-ground)",
+                                    "manual": "Manual",
+                                },
+                                value=str(step.get("weight_mode", "auto")),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-64")
+                        )
+                        alpha_local = ui.number(
+                            "alpha",
+                            value=float(step.get("alpha", 0.5)),
+                            format="%.6g",
+                        ).classes("w-24")
+                        beta_local = ui.number(
+                            "beta",
+                            value=float(step.get("beta", 0.5)),
+                            format="%.6g",
+                        ).classes("w-24")
+                        if not is_weight_editable:
+                            alpha_local.disable()
+                            beta_local.disable()
+                    with ui.row().classes("w-full gap-3 items-end flex-wrap mt-2"):
+                        port_a_local = (
+                            ui.select(
+                                label="Port A",
+                                options=port_options,
+                                value=step.get("port_a"),
+                            )
+                            .props("dense outlined")
+                            .classes("w-28")
+                        )
+                        port_b_local = (
+                            ui.select(
+                                label="Port B",
+                                options=port_options,
+                                value=step.get("port_b"),
+                            )
+                            .props("dense outlined")
+                            .classes("w-28")
+                        )
+
+                    def _on_coord_change(
+                        *,
+                        target_step: dict[str, Any],
+                        field: str,
+                        value: Any,
+                        refresh: bool,
+                    ) -> None:
+                        target_step[field] = value
+                        invalidate_processed_state()
+                        if refresh:
+                            render_step_cards.refresh()
+
+                    template_select_local.on_value_change(
+                        lambda e, target_step=step: _on_coord_change(
+                            target_step=target_step,
+                            field="template",
+                            value=str(e.value or "identity"),
+                            refresh=True,
+                        )
+                    )
+                    weight_mode_local.on_value_change(
+                        lambda e, target_step=step: _on_coord_change(
+                            target_step=target_step,
+                            field="weight_mode",
+                            value=str(e.value or "auto"),
+                            refresh=True,
+                        )
+                    )
+                    alpha_local.on_value_change(
+                        lambda e, target_step=step: _on_coord_change(
+                            target_step=target_step,
+                            field="alpha",
+                            value=float(e.value or 0.0),
+                            refresh=False,
+                        )
+                    )
+                    beta_local.on_value_change(
+                        lambda e, target_step=step: _on_coord_change(
+                            target_step=target_step,
+                            field="beta",
+                            value=float(e.value or 0.0),
+                            refresh=False,
+                        )
+                    )
+                    port_a_local.on_value_change(
+                        lambda e, target_step=step: _on_coord_change(
+                            target_step=target_step,
+                            field="port_a",
+                            value=e.value,
+                            refresh=True,
+                        )
+                    )
+                    port_b_local.on_value_change(
+                        lambda e, target_step=step: _on_coord_change(
+                            target_step=target_step,
+                            field="port_b",
+                            value=e.value,
+                            refresh=True,
+                        )
+                    )
+                else:
+                    current_labels = _pipeline_labels_before_step(step_id)
+                    selected_keep = {str(label) for label in (step.get("keep_labels") or [])}
+                    normalized_keep = [label for label in current_labels if label in selected_keep]
+                    if not normalized_keep and current_labels:
+                        normalized_keep = list(current_labels)
+                    step["keep_labels"] = normalized_keep
+
+                    def _toggle_kron_keep(
+                        target_step: dict[str, Any],
+                        keep_label: str,
+                        available_labels: tuple[str, ...],
+                    ) -> None:
+                        selected = {str(value) for value in (target_step.get("keep_labels") or [])}
+                        if keep_label in selected:
+                            selected.remove(keep_label)
+                        else:
+                            selected.add(keep_label)
+                        target_step["keep_labels"] = [
+                            label for label in available_labels if label in selected
+                        ]
+                        invalidate_processed_state()
+                        render_step_cards.refresh()
+
+                    def _select_all_kron_keep(
+                        target_step: dict[str, Any],
+                        available_labels: tuple[str, ...],
+                    ) -> None:
+                        target_step["keep_labels"] = list(available_labels)
+                        invalidate_processed_state()
+                        render_step_cards.refresh()
+
+                    def _clear_kron_keep(target_step: dict[str, Any]) -> None:
+                        target_step["keep_labels"] = []
+                        invalidate_processed_state()
+                        render_step_cards.refresh()
+
+                    with ui.column().classes("w-full gap-2"):
+                        ui.label("Keep Basis Labels").classes("text-xs text-muted")
+                        available_labels_snapshot = current_labels
+
+                        def _on_select_all(
+                            _e: Any,
+                            target_step: dict[str, Any] = step,
+                            labels: tuple[str, ...] = available_labels_snapshot,
+                        ) -> None:
+                            _select_all_kron_keep(target_step, labels)
+
+                        with ui.row().classes("w-full gap-2 flex-wrap"):
+                            for label in available_labels_snapshot:
+                                selected = label in set(normalized_keep)
+                                button_classes = (
+                                    "px-3 py-1 rounded-md text-xs border "
+                                    "border-primary bg-primary/10 text-primary"
+                                    if selected
+                                    else "px-3 py-1 rounded-md text-xs border "
+                                    "border-border text-fg"
+                                )
+                                ui.button(
+                                    label,
+                                    on_click=(
+                                        lambda _e,
+                                        keep_label=label,
+                                        target_step=step,
+                                        labels=available_labels_snapshot: _toggle_kron_keep(
+                                            target_step,
+                                            keep_label,
+                                            labels,
+                                        )
+                                    ),
+                                ).props("no-caps dense flat").classes(button_classes)
+                        with ui.row().classes("w-full gap-2 items-center flex-wrap"):
+                            ui.button(
+                                "Select All",
+                                on_click=_on_select_all,
+                            ).props("dense flat no-caps")
+                            ui.button(
+                                "Clear",
+                                on_click=lambda _e, target_step=step: _clear_kron_keep(target_step),
+                            ).props("dense flat no-caps")
+                            ui.label(
+                                "Current basis: "
+                                + (", ".join(current_labels) if current_labels else "(empty)")
+                            ).classes("text-xs text-muted")
+
+    def refresh_mode_selector() -> None:
+        options = _post_process_mode_options(result, str(mode_filter_select.value or "base"))
+        mode_select.options = options
+        if not options:
+            mode_select.value = None
+            mode_select.disable()
+            run_button.disable()
+            mode_hint.text = "No compatible modes for this filter."
+            invalidate_processed_state()
+            return
+        if mode_select.value not in options:
+            mode_select.value = next(iter(options))
+        mode_select.enable()
+        run_button.enable()
+        mode_hint.text = f"{len(options)} mode(s) available."
+
+    def add_step() -> None:
+        step_type = str(step_type_select.value or "coordinate_transform")
+        step_config = _make_step_config(step_type)
+        step_config["id"] = step_id_seed["value"]
+        step_id_seed["value"] += 1
+        if step_type == "kron_reduction":
+            step_config["keep_labels"] = list(_pipeline_labels_before_step())
+        step_sequence.append(step_config)
+        invalidate_processed_state()
+        render_step_cards.refresh()
+
+    def run_post_processing() -> None:
+        output_container.clear()
+        try:
+            mode_token = str(mode_select.value or "").strip()
+            if not mode_token:
+                raise ValueError("Please select one mode before running post-processing.")
+            mode = SimulationResult.parse_mode_token(mode_token)
+            z0 = float(z0_input.value or 50.0)
+            if z0 <= 0:
+                raise ValueError("Z0 must be positive.")
+
+            sweep = build_port_y_sweep(
+                result=result,
+                mode=mode,
+                reference_impedance_ohm=z0,
+            )
+            flow_steps: list[dict[str, Any]] = []
+
+            for step in step_sequence:
+                if not bool(step.get("enabled", True)):
+                    continue
+
+                step_type = str(step.get("type", "coordinate_transform"))
+                if step_type == "coordinate_transform":
+                    template = str(step.get("template", "identity"))
+                    if template == "cm_dm":
+                        if sweep.dimension < 2:
+                            raise ValueError(
+                                "Common/Differential transform requires "
+                                "at least two available ports."
+                            )
+                        default_label = sweep.labels[0] if sweep.labels else "1"
+                        fallback_port = int(default_label) if default_label.isdigit() else 1
+                        selected_port_a = _coerce_int_value(step.get("port_a"), fallback_port)
+                        selected_port_b = _coerce_int_value(step.get("port_b"), fallback_port)
+                        if selected_port_a == selected_port_b:
+                            raise ValueError("Port A and Port B must be different.")
+
+                        label_to_index = {
+                            int(label): idx
+                            for idx, label in enumerate(sweep.labels)
+                            if label.isdigit()
+                        }
+                        if (
+                            selected_port_a not in label_to_index
+                            or selected_port_b not in label_to_index
+                        ):
+                            raise ValueError(
+                                "Selected ports are not available in current sweep basis."
+                            )
+
+                        if str(step.get("weight_mode", "auto")) == "auto":
+                            if circuit_definition is None:
+                                raise ValueError(
+                                    "Auto weight mode requires a loaded circuit definition."
+                                )
+                            estimated = _estimate_port_ground_cap_weights(
+                                circuit_definition,
+                                port_a=selected_port_a,
+                                port_b=selected_port_b,
+                            )
+                            if estimated is None:
+                                raise ValueError(
+                                    "Unable to estimate auto weights from "
+                                    "capacitor-to-ground topology. "
+                                    "Switch to manual mode."
+                                )
+                            alpha, beta = estimated
+                            step["alpha"] = alpha
+                            step["beta"] = beta
+                        else:
+                            alpha = float(step.get("alpha", 0.0))
+                            beta = float(step.get("beta", 0.0))
+
+                        transform = build_common_differential_transform(
+                            dimension=sweep.dimension,
+                            first_index=label_to_index[selected_port_a],
+                            second_index=label_to_index[selected_port_b],
+                            alpha=alpha,
+                            beta=beta,
+                        )
+                        labels = list(sweep.labels)
+                        idx_a = label_to_index[selected_port_a]
+                        idx_b = label_to_index[selected_port_b]
+                        labels[idx_a] = f"cm({selected_port_a},{selected_port_b})"
+                        labels[idx_b] = f"dm({selected_port_a},{selected_port_b})"
+                        sweep = apply_coordinate_transform(
+                            sweep,
+                            transform_matrix=transform,
+                            labels=tuple(labels),
+                        )
+                        flow_steps.append(
+                            {
+                                "step_id": int(step.get("id", -1)),
+                                "type": "coordinate_transform",
+                                "template": "cm_dm",
+                                "weight_mode": str(step.get("weight_mode", "auto")),
+                                "port_a": selected_port_a,
+                                "port_b": selected_port_b,
+                                "alpha": alpha,
+                                "beta": beta,
+                            }
+                        )
+                    else:
+                        flow_steps.append(
+                            {
+                                "step_id": int(step.get("id", -1)),
+                                "type": "coordinate_transform",
+                                "template": "identity",
+                            }
+                        )
+                    continue
+
+                keep_tokens = {str(label) for label in (step.get("keep_labels") or [])}
+                selected_keep_labels = [label for label in sweep.labels if label in keep_tokens]
+                keep_indices = [
+                    index for index, label in enumerate(sweep.labels) if label in keep_tokens
+                ]
+                if not keep_indices:
+                    raise ValueError("Kron reduction requires at least one kept basis label.")
+                sweep = kron_reduce(sweep, keep_indices=keep_indices)
+                flow_steps.append(
+                    {
+                        "step_id": int(step.get("id", -1)),
+                        "type": "kron_reduction",
+                        "keep_indices": list(keep_indices),
+                        "keep_labels": selected_keep_labels,
+                    }
+                )
+
+            flow_spec: dict[str, Any] = {
+                "mode_filter": str(mode_filter_select.value or "base"),
+                "mode_token": SimulationResult.mode_token(mode),
+                "reference_impedance_ohm": z0,
+                "steps": flow_steps,
+            }
+            emit_result(sweep, flow_spec)
+            render_step_cards.refresh()
+
+            log_info(
+                "Post Processing completed: "
+                f"mode={sweep.mode}, dim={sweep.dimension}, source={sweep.source_kind}."
+            )
+
+            with output_container:
+                ui.label("Pipeline output ready. Post Processing Result View is updated.").classes(
+                    "text-sm text-positive"
+                )
+                ui.label(
+                    f"Basis labels: {', '.join(sweep.labels)} | "
+                    f"dim={sweep.dimension} | "
+                    f"mode={SimulationResult.mode_token(sweep.mode)}"
+                ).classes("text-xs text-muted")
+        except Exception as exc:
+            invalidate_processed_state()
+            log_info(f"Post Processing failed: {exc}")
+            with output_container:
+                ui.label(f"Post Processing failed: {exc}").classes("text-sm text-danger")
+
+    post_setup_select.on_value_change(on_post_setup_change)
+    save_post_setup_button.on_click(lambda _e: on_save_post_setup_click())
+    delete_post_setup_button.on_click(lambda _e: on_delete_post_setup_click())
+    if isinstance(schema_id, int) and schema_id > 0:
+        refresh_saved_post_setup_select(preferred_id=selected_post_setup_id)
+        selected_setup_record = saved_post_setup_by_id.get(str(post_setup_select.value or ""))
+        if isinstance(selected_setup_record, dict):
+            apply_saved_post_setup(selected_setup_record)
+
+    mode_filter_select.on_value_change(
+        lambda _e: (invalidate_processed_state(), refresh_mode_selector())
+    )
+    mode_select.on_value_change(lambda _e: invalidate_processed_state())
+    z0_input.on_value_change(lambda _e: invalidate_processed_state())
+    add_step_button.on_click(lambda _e: add_step())
+    run_button.on("click", lambda _e: run_post_processing())
+
+    refresh_mode_selector()
+    with steps_container:
+        render_step_cards()
 
 
 def _format_export_suffix(
@@ -625,6 +2296,80 @@ def _build_mode_scalar_data_records(
     return records
 
 
+def _sanitize_postprocess_label_token(label: str) -> str:
+    """Sanitize one transformed basis label for parameter naming."""
+    sanitized = (
+        str(label)
+        .replace(" ", "")
+        .replace("(", "_")
+        .replace(")", "")
+        .replace(",", "_")
+        .replace("[", "_")
+        .replace("]", "")
+        .replace("/", "_")
+        .replace("-", "_")
+    )
+    while "__" in sanitized:
+        sanitized = sanitized.replace("__", "_")
+    return sanitized.strip("_") or "x"
+
+
+def _format_post_processed_y_parameter_name(
+    *,
+    row_label: str,
+    col_label: str,
+    mode: tuple[int, ...],
+) -> str:
+    """Build one output parameter name for a post-processed Y-matrix entry."""
+    if row_label.isdigit() and col_label.isdigit():
+        base = f"Y{row_label}{col_label}"
+    else:
+        sanitized_row = _sanitize_postprocess_label_token(row_label)
+        sanitized_col = _sanitize_postprocess_label_token(col_label)
+        base = f"Y_{sanitized_row}_{sanitized_col}"
+    return f"{base}{_format_export_suffix(mode, mode)}"
+
+
+def _build_post_processed_y_data_records(
+    *,
+    dataset_id: int,
+    sweep: PortMatrixSweep,
+) -> list[DataRecord]:
+    """Convert one post-processed Y sweep into real/imaginary DataRecord rows."""
+    frequency_axis = [{"name": "frequency", "unit": "GHz", "values": list(sweep.frequencies_ghz)}]
+    records: list[DataRecord] = []
+
+    for row_index, row_label in enumerate(sweep.labels):
+        for col_index, col_label in enumerate(sweep.labels):
+            parameter_name = _format_post_processed_y_parameter_name(
+                row_label=row_label,
+                col_label=col_label,
+                mode=sweep.mode,
+            )
+            trace_values = sweep.trace(row_index, col_index)
+            records.append(
+                DataRecord(
+                    dataset_id=dataset_id,
+                    data_type="y_params",
+                    parameter=parameter_name,
+                    representation="real",
+                    axes=frequency_axis,
+                    values=[_finite_float_or_none(value.real) for value in trace_values],
+                )
+            )
+            records.append(
+                DataRecord(
+                    dataset_id=dataset_id,
+                    data_type="y_params",
+                    parameter=parameter_name,
+                    representation="imaginary",
+                    axes=frequency_axis,
+                    values=[_finite_float_or_none(value.imag) for value in trace_values],
+                )
+            )
+    return records
+
+
 def _build_simulation_result_figure(
     result: SimulationResult,
     view_family: str,
@@ -636,249 +2381,343 @@ def _build_simulation_result_figure(
     input_port: int,
     reference_impedance_ohm: float,
     dark_mode: bool,
+    trace_selections: list[_ResultTraceSelection] | None = None,
 ) -> go.Figure:
     """Build the selected simulation result figure from the cached result bundle."""
     freq_values = result.frequencies_ghz
-    mode_suffix = _format_export_suffix(output_mode, input_mode)
-    s_label = f"S{output_port}{input_port}{mode_suffix}"
-    z_label = f"Z{output_port}{input_port}{mode_suffix}"
-    y_label = f"Y{output_port}{input_port}{mode_suffix}"
-
     fig = go.Figure()
-    line_style = dict(color="rgb(99, 102, 241)", width=2)
     x_axis_title = "Frequency (GHz)"
     y_axis_title = "Value"
     title = "Simulation Result"
+    single_selection: _ResultTraceSelection = {
+        "trace": trace,
+        "output_mode": output_mode,
+        "output_port": output_port,
+        "input_mode": input_mode,
+        "input_port": input_port,
+    }
+    resolved_selections = trace_selections or [single_selection]
+    trace_titles: list[str] = []
 
-    if view_family == "s":
-        if metric == "magnitude_db":
-            y_values = result.get_mode_s_parameter_db(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
+    def add_trace_for_selection(
+        *,
+        trace_index: int,
+        selected_trace: str,
+        selected_output_mode: tuple[int, ...],
+        selected_output_port: int,
+        selected_input_mode: tuple[int, ...],
+        selected_input_port: int,
+    ) -> str:
+        nonlocal x_axis_title, y_axis_title
+
+        mode_suffix = _format_export_suffix(selected_output_mode, selected_input_mode)
+        s_label = f"S{selected_output_port}{selected_input_port}{mode_suffix}"
+        z_label = f"Z{selected_output_port}{selected_input_port}{mode_suffix}"
+        y_label = f"Y{selected_output_port}{selected_input_port}{mode_suffix}"
+        line_style = dict(
+            color=_RESULT_TRACE_COLORS[trace_index % len(_RESULT_TRACE_COLORS)],
+            width=2,
+        )
+
+        if view_family == "s":
+            if metric == "magnitude_db":
+                y_values = result.get_mode_s_parameter_db(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Magnitude (dB)"
+                trace_title = f"{s_label} Magnitude (dB)"
+            elif metric == "phase_deg":
+                y_values = result.get_mode_s_parameter_phase_deg(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Phase (deg)"
+                trace_title = f"{s_label} Phase"
+            elif metric == "real":
+                y_values = result.get_mode_s_parameter_real(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Real"
+                trace_title = f"{s_label} Real Part"
+            elif metric == "imag":
+                y_values = result.get_mode_s_parameter_imag(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Imaginary"
+                trace_title = f"{s_label} Imaginary Part"
+            else:
+                y_values = result.get_mode_s_parameter_magnitude(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Magnitude (linear)"
+                trace_title = f"{s_label} Magnitude"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_values,
+                    y=y_values,
+                    mode="lines",
+                    name=s_label,
+                    line=line_style,
+                )
             )
-            y_axis_title = "Magnitude (dB)"
-            title = f"{s_label} Magnitude (dB)"
-        elif metric == "phase_deg":
-            y_values = result.get_mode_s_parameter_phase_deg(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
+            return trace_title
+
+        if view_family == "gain":
+            if metric == "gain_linear":
+                y_values = result.get_mode_gain_linear(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Gain (linear)"
+                trace_title = f"Gain from {s_label}"
+            else:
+                y_values = result.get_mode_gain_db(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                y_axis_title = "Gain (dB)"
+                trace_title = f"Gain (dB) from {s_label}"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_values,
+                    y=y_values,
+                    mode="lines",
+                    name=s_label,
+                    line=line_style,
+                )
             )
-            y_axis_title = "Phase (deg)"
-            title = f"{s_label} Phase"
-        elif metric == "real":
-            y_values = result.get_mode_s_parameter_real(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
+            return trace_title
+
+        if view_family == "impedance":
+            try:
+                z_values = result.get_mode_z_parameter_complex(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+            except KeyError:
+                z_values = result.calculate_input_impedance_ohm(
+                    reference_impedance_ohm,
+                    port=selected_output_port,
+                )
+            y_values = _complex_component_series(z_values, metric)
+            if metric == "real":
+                trace_title = f"{z_label} Real Part"
+                y_axis_title = "Real (Ohm)"
+            elif metric == "imag":
+                trace_title = f"{z_label} Imaginary Part"
+                y_axis_title = "Imaginary (Ohm)"
+            else:
+                trace_title = f"{z_label} Magnitude"
+                y_axis_title = "Magnitude (Ohm)"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_values,
+                    y=y_values,
+                    mode="lines",
+                    name=z_label,
+                    line=line_style,
+                )
             )
-            y_axis_title = "Real"
-            title = f"{s_label} Real Part"
-        elif metric == "imag":
-            y_values = result.get_mode_s_parameter_imag(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
+            return trace_title
+
+        if view_family == "admittance":
+            try:
+                y_values_complex = result.get_mode_y_parameter_complex(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+            except KeyError:
+                y_values_complex = result.calculate_input_admittance_s(
+                    reference_impedance_ohm,
+                    port=selected_output_port,
+                )
+            y_values = _complex_component_series(y_values_complex, metric)
+            if metric == "real":
+                trace_title = f"{y_label} Real Part"
+                y_axis_title = "Real (S)"
+            elif metric == "imag":
+                trace_title = f"{y_label} Imaginary Part"
+                y_axis_title = "Imaginary (S)"
+            else:
+                trace_title = f"{y_label} Magnitude"
+                y_axis_title = "Magnitude (S)"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_values,
+                    y=y_values,
+                    mode="lines",
+                    name=y_label,
+                    line=line_style,
+                )
             )
+            return trace_title
+
+        if view_family == "qe":
+            if selected_trace == "qe_ideal":
+                y_values = result.get_mode_qe_ideal(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                trace_title = f"QE Ideal {selected_output_port}{selected_input_port}{mode_suffix}"
+            else:
+                y_values = result.get_mode_qe(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                trace_title = f"QE {selected_output_port}{selected_input_port}{mode_suffix}"
+            y_axis_title = "Quantum Efficiency"
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_values,
+                    y=y_values,
+                    mode="lines",
+                    name=trace_title,
+                    line=line_style,
+                )
+            )
+            return trace_title
+
+        if view_family == "cm":
+            y_values = result.get_mode_cm(selected_output_mode, selected_output_port)
+            trace_title = f"CM{selected_output_port}{_format_export_suffix(selected_output_mode)}"
+            y_axis_title = "Commutation"
+            fig.add_trace(
+                go.Scatter(
+                    x=freq_values,
+                    y=y_values,
+                    mode="lines",
+                    name=trace_title,
+                    line=line_style,
+                )
+            )
+            return trace_title
+
+        if view_family == "complex":
+            if selected_trace == "z":
+                try:
+                    complex_values = result.get_mode_z_parameter_complex(
+                        selected_output_mode,
+                        selected_output_port,
+                        selected_input_mode,
+                        selected_input_port,
+                    )
+                except KeyError:
+                    complex_values = result.calculate_input_impedance_ohm(
+                        reference_impedance_ohm,
+                        port=selected_output_port,
+                    )
+                trace_name = z_label
+                trace_title = f"{z_label} Complex Plane"
+            elif selected_trace == "y":
+                try:
+                    complex_values = result.get_mode_y_parameter_complex(
+                        selected_output_mode,
+                        selected_output_port,
+                        selected_input_mode,
+                        selected_input_port,
+                    )
+                except KeyError:
+                    complex_values = result.calculate_input_admittance_s(
+                        reference_impedance_ohm,
+                        port=selected_output_port,
+                    )
+                trace_name = y_label
+                trace_title = f"{y_label} Complex Plane"
+            else:
+                complex_values = result.get_mode_s_parameter_complex(
+                    selected_output_mode,
+                    selected_output_port,
+                    selected_input_mode,
+                    selected_input_port,
+                )
+                trace_name = s_label
+                trace_title = f"{s_label} Complex Plane"
+
+            fig.add_trace(
+                go.Scatter(
+                    x=[_finite_float_or_none(value.real) for value in complex_values],
+                    y=[_finite_float_or_none(value.imag) for value in complex_values],
+                    mode="lines+markers",
+                    name=trace_name,
+                    line=line_style,
+                    marker=dict(size=5, color=line_style["color"]),
+                    customdata=freq_values,
+                    hovertemplate=("Re=%{x}<br>Im=%{y}<br>f=%{customdata:.6f} GHz<extra></extra>"),
+                )
+            )
+            x_axis_title = "Real"
             y_axis_title = "Imaginary"
-            title = f"{s_label} Imaginary Part"
-        else:
-            y_values = result.get_mode_s_parameter_magnitude(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
-            )
-            y_axis_title = "Magnitude (linear)"
-            title = f"{s_label} Magnitude"
+            return trace_title
 
-        fig.add_trace(
-            go.Scatter(
-                x=freq_values,
-                y=y_values,
-                mode="lines",
-                name=s_label,
-                line=line_style,
-            )
-        )
-    elif view_family == "gain":
-        if metric == "gain_linear":
-            y_values = result.get_mode_gain_linear(output_mode, output_port, input_mode, input_port)
-            y_axis_title = "Gain (linear)"
-            title = f"Gain from {s_label}"
-        else:
-            y_values = result.get_mode_gain_db(output_mode, output_port, input_mode, input_port)
-            y_axis_title = "Gain (dB)"
-            title = f"Gain (dB) from {s_label}"
+        raise ValueError(f"Unsupported result view family: {view_family}")
 
-        fig.add_trace(
-            go.Scatter(
-                x=freq_values,
-                y=y_values,
-                mode="lines",
-                name=s_label,
-                line=line_style,
+    for idx, selection in enumerate(resolved_selections):
+        trace_titles.append(
+            add_trace_for_selection(
+                trace_index=idx,
+                selected_trace=selection["trace"],
+                selected_output_mode=selection["output_mode"],
+                selected_output_port=selection["output_port"],
+                selected_input_mode=selection["input_mode"],
+                selected_input_port=selection["input_port"],
             )
         )
-    elif view_family == "impedance":
-        try:
-            z_values = result.get_mode_z_parameter_complex(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
-            )
-        except KeyError:
-            z_values = result.calculate_input_impedance_ohm(
-                reference_impedance_ohm,
-                port=output_port,
-            )
-        y_values = _complex_component_series(z_values, metric)
-        unit_label = "Ohm"
-        if metric == "real":
-            title = f"{z_label} Real Part"
-            y_axis_title = f"Real ({unit_label})"
-        elif metric == "imag":
-            title = f"{z_label} Imaginary Part"
-            y_axis_title = f"Imaginary ({unit_label})"
-        else:
-            title = f"{z_label} Magnitude"
-            y_axis_title = f"Magnitude ({unit_label})"
 
-        fig.add_trace(
-            go.Scatter(
-                x=freq_values,
-                y=y_values,
-                mode="lines",
-                name=z_label,
-                line=line_style,
-            )
-        )
-    elif view_family == "admittance":
-        try:
-            y_values_complex = result.get_mode_y_parameter_complex(
-                output_mode,
-                output_port,
-                input_mode,
-                input_port,
-            )
-        except KeyError:
-            y_values_complex = result.calculate_input_admittance_s(
-                reference_impedance_ohm,
-                port=output_port,
-            )
-        y_values = _complex_component_series(y_values_complex, metric)
-        unit_label = "S"
-        if metric == "real":
-            title = f"{y_label} Real Part"
-            y_axis_title = f"Real ({unit_label})"
-        elif metric == "imag":
-            title = f"{y_label} Imaginary Part"
-            y_axis_title = f"Imaginary ({unit_label})"
-        else:
-            title = f"{y_label} Magnitude"
-            y_axis_title = f"Magnitude ({unit_label})"
-
-        fig.add_trace(
-            go.Scatter(
-                x=freq_values,
-                y=y_values,
-                mode="lines",
-                name=y_label,
-                line=line_style,
-            )
-        )
-    elif view_family == "qe":
-        if trace == "qe_ideal":
-            y_values = result.get_mode_qe_ideal(output_mode, output_port, input_mode, input_port)
-            title = f"QE Ideal {output_port}{input_port}{mode_suffix}"
-        else:
-            y_values = result.get_mode_qe(output_mode, output_port, input_mode, input_port)
-            title = f"QE {output_port}{input_port}{mode_suffix}"
-        y_axis_title = "Quantum Efficiency"
-        fig.add_trace(
-            go.Scatter(
-                x=freq_values,
-                y=y_values,
-                mode="lines",
-                name=title,
-                line=line_style,
-            )
-        )
-    elif view_family == "cm":
-        y_values = result.get_mode_cm(output_mode, output_port)
-        title = f"CM{output_port}{_format_export_suffix(output_mode)}"
-        y_axis_title = "Commutation"
-        fig.add_trace(
-            go.Scatter(
-                x=freq_values,
-                y=y_values,
-                mode="lines",
-                name=title,
-                line=line_style,
-            )
-        )
+    if len(trace_titles) == 1:
+        title = trace_titles[0]
     elif view_family == "complex":
-        s_values = result.get_mode_s_parameter_complex(
-            output_mode,
-            output_port,
-            input_mode,
-            input_port,
-        )
-        if trace == "z":
-            try:
-                complex_values = result.get_mode_z_parameter_complex(
-                    output_mode,
-                    output_port,
-                    input_mode,
-                    input_port,
-                )
-            except KeyError:
-                complex_values = result.calculate_input_impedance_ohm(
-                    reference_impedance_ohm,
-                    port=output_port,
-                )
-            trace_name = z_label
-            title = f"{z_label} Complex Plane"
-        elif trace == "y":
-            try:
-                complex_values = result.get_mode_y_parameter_complex(
-                    output_mode,
-                    output_port,
-                    input_mode,
-                    input_port,
-                )
-            except KeyError:
-                complex_values = result.calculate_input_admittance_s(
-                    reference_impedance_ohm,
-                    port=output_port,
-                )
-            trace_name = y_label
-            title = f"{y_label} Complex Plane"
+        title = "Complex Plane Comparison"
+    elif view_family == "gain":
+        title = "Gain Comparison" if metric == "gain_linear" else "Gain (dB) Comparison"
+    elif view_family == "impedance":
+        title = "Impedance Comparison"
+    elif view_family == "admittance":
+        title = "Admittance Comparison"
+    elif view_family == "qe":
+        title = "Quantum Efficiency Comparison"
+    elif view_family == "cm":
+        title = "Commutation Comparison"
+    elif view_family == "s":
+        if metric == "magnitude_db":
+            title = "S-Parameter Magnitude (dB)"
+        elif metric == "phase_deg":
+            title = "S-Parameter Phase"
+        elif metric == "real":
+            title = "S-Parameter Real Part"
+        elif metric == "imag":
+            title = "S-Parameter Imaginary Part"
         else:
-            complex_values = s_values
-            trace_name = s_label
-            title = f"{s_label} Complex Plane"
-
-        fig.add_trace(
-            go.Scatter(
-                x=[_finite_float_or_none(value.real) for value in complex_values],
-                y=[_finite_float_or_none(value.imag) for value in complex_values],
-                mode="lines+markers",
-                name=trace_name,
-                line=line_style,
-                marker=dict(size=5),
-                customdata=freq_values,
-                hovertemplate=("Re=%{x}<br>Im=%{y}<br>f=%{customdata:.6f} GHz<extra></extra>"),
-            )
-        )
-        x_axis_title = "Real"
-        y_axis_title = "Imaginary"
+            title = "S-Parameter Magnitude"
     else:
         raise ValueError(f"Unsupported result view family: {view_family}")
 
@@ -1040,21 +2879,11 @@ def _load_latest_circuit_definition(schema_id: int) -> tuple[CircuitRecord, Circ
         raise ValueError(f"SimulationInputError: schema id={schema_id} was not found.")
 
     try:
-        circuit_def, migrated_legacy = parse_circuit_definition_source(
-            latest_record.definition_json,
-            allow_legacy_migration=True,
-        )
-        if migrated_legacy:
-            normalized = format_circuit_definition(circuit_def)
-            with get_unit_of_work() as uow:
-                db_record = uow.circuits.get(schema_id)
-                if db_record is not None:
-                    db_record.definition_json = normalized
-                    uow.commit()
+        circuit_def = parse_circuit_definition_source(latest_record.definition_json)
     except Exception as exc:
         raise ValueError(
             "SimulationInputError: active schema is invalid. "
-            "Required fields: schema_version, name, parameters, ports, instances."
+            "Required fields: name, components, topology."
         ) from exc
 
     return latest_record, circuit_def
@@ -1126,9 +2955,60 @@ def _format_harmonic_grid_hint(hits: list[tuple[int, int, float, int]], limit: i
     )
 
 
+def _estimate_mode_lattice_size(
+    sources: list[DriveSourceConfig],
+    n_modulation_harmonics: int,
+) -> int:
+    """Estimate the size of the mode lattice implied by the current source configuration."""
+    if n_modulation_harmonics < 0:
+        return 1
+
+    tone_count = (
+        max(
+            1,
+            max(
+                len(source.mode_components) if source.mode_components is not None else 1
+                for source in sources
+            ),
+        )
+        if sources
+        else 1
+    )
+    span_per_tone = max(1, 2 * n_modulation_harmonics + 1)
+    lattice_size = 1
+    for _ in range(tone_count):
+        lattice_size *= span_per_tone
+    return lattice_size
+
+
+def _format_mode_lattice_hint(
+    sources: list[DriveSourceConfig],
+    n_modulation_harmonics: int,
+) -> str:
+    """Build a concise warning for potentially slow multi-tone hbsolve runs."""
+    tone_count = (
+        max(
+            1,
+            max(
+                len(source.mode_components) if source.mode_components is not None else 1
+                for source in sources
+            ),
+        )
+        if sources
+        else 1
+    )
+    lattice_size = _estimate_mode_lattice_size(sources, n_modulation_harmonics)
+    return (
+        "Estimated mode lattice: "
+        f"{lattice_size} sideband states "
+        f"({tone_count} tone(s), Nmod={n_modulation_harmonics}). "
+        "Multi-pump runs can take significantly longer."
+    )
+
+
 def _load_saved_setups_for_schema(schema_id: int) -> list[dict[str, Any]]:
     """Load saved simulation setups for one schema from user storage."""
-    raw_store = app.storage.user.get(_SIM_SETUP_STORAGE_KEY, {})
+    raw_store = _user_storage_get(_SIM_SETUP_STORAGE_KEY, {})
     if not isinstance(raw_store, dict):
         return []
 
@@ -1140,15 +3020,15 @@ def _load_saved_setups_for_schema(schema_id: int) -> list[dict[str, Any]]:
 
 def _save_saved_setups_for_schema(schema_id: int, setups: list[dict[str, Any]]) -> None:
     """Persist saved simulation setups for one schema into user storage."""
-    raw_store = app.storage.user.get(_SIM_SETUP_STORAGE_KEY, {})
+    raw_store = _user_storage_get(_SIM_SETUP_STORAGE_KEY, {})
     store_dict = dict(raw_store) if isinstance(raw_store, dict) else {}
     store_dict[str(schema_id)] = setups
-    app.storage.user[_SIM_SETUP_STORAGE_KEY] = store_dict
+    _user_storage_set(_SIM_SETUP_STORAGE_KEY, store_dict)
 
 
 def _load_selected_setup_id(schema_id: int) -> str:
     """Load currently selected setup id for one schema from user storage."""
-    raw_map = app.storage.user.get(_SIM_SETUP_SELECTED_KEY, {})
+    raw_map = _user_storage_get(_SIM_SETUP_SELECTED_KEY, {})
     if not isinstance(raw_map, dict):
         return ""
 
@@ -1158,10 +3038,51 @@ def _load_selected_setup_id(schema_id: int) -> str:
 
 def _save_selected_setup_id(schema_id: int, setup_id: str) -> None:
     """Persist selected setup id for one schema into user storage."""
-    raw_map = app.storage.user.get(_SIM_SETUP_SELECTED_KEY, {})
+    raw_map = _user_storage_get(_SIM_SETUP_SELECTED_KEY, {})
     selected_map = dict(raw_map) if isinstance(raw_map, dict) else {}
     selected_map[str(schema_id)] = setup_id
-    app.storage.user[_SIM_SETUP_SELECTED_KEY] = selected_map
+    _user_storage_set(_SIM_SETUP_SELECTED_KEY, selected_map)
+
+
+def _load_saved_post_process_setups_for_schema(schema_id: int) -> list[dict[str, Any]]:
+    """Load saved post-processing setups for one schema from user storage."""
+    raw_store = _user_storage_get(_POST_PROCESS_SETUP_STORAGE_KEY, {})
+    if not isinstance(raw_store, dict):
+        return []
+
+    setups = raw_store.get(str(schema_id), [])
+    if not isinstance(setups, list):
+        return []
+    return [s for s in setups if isinstance(s, dict)]
+
+
+def _save_saved_post_process_setups_for_schema(
+    schema_id: int,
+    setups: list[dict[str, Any]],
+) -> None:
+    """Persist saved post-processing setups for one schema into user storage."""
+    raw_store = _user_storage_get(_POST_PROCESS_SETUP_STORAGE_KEY, {})
+    store_dict = dict(raw_store) if isinstance(raw_store, dict) else {}
+    store_dict[str(schema_id)] = setups
+    _user_storage_set(_POST_PROCESS_SETUP_STORAGE_KEY, store_dict)
+
+
+def _load_selected_post_process_setup_id(schema_id: int) -> str:
+    """Load currently selected post-processing setup id for one schema."""
+    raw_map = _user_storage_get(_POST_PROCESS_SELECTED_KEY, {})
+    if not isinstance(raw_map, dict):
+        return ""
+
+    selected = raw_map.get(str(schema_id), "")
+    return selected if isinstance(selected, str) else ""
+
+
+def _save_selected_post_process_setup_id(schema_id: int, setup_id: str) -> None:
+    """Persist selected post-processing setup id for one schema into user storage."""
+    raw_map = _user_storage_get(_POST_PROCESS_SELECTED_KEY, {})
+    selected_map = dict(raw_map) if isinstance(raw_map, dict) else {}
+    selected_map[str(schema_id)] = setup_id
+    _user_storage_set(_POST_PROCESS_SELECTED_KEY, selected_map)
 
 
 @ui.page("/simulation")
@@ -1202,17 +3123,17 @@ def _render_simulation_environment():
         circuit_options = {c.id: c.name for c in circuits}
 
         # Load from storage or default to first
-        active_circuit_id = app.storage.user.get("simulation_active_circuit")
+        active_circuit_id = _user_storage_get("simulation_active_circuit")
         if active_circuit_id not in circuit_options:
             active_circuit_id = circuits[0].id
-            app.storage.user["simulation_active_circuit"] = active_circuit_id
+            _user_storage_set("simulation_active_circuit", active_circuit_id)
 
         # --- Top Selector ---
         with ui.row().classes("w-full items-center gap-4 mb-4 bg-surface p-4 rounded-xl"):
             ui.label("Active Schema:").classes("text-sm font-bold text-fg")
 
-            def on_circuit_change(e):
-                app.storage.user["simulation_active_circuit"] = e.value
+            def on_circuit_change(e: Any) -> None:
+                _user_storage_set("simulation_active_circuit", e.value)
                 sim_env.refresh()
 
             ui.select(
@@ -1221,29 +3142,51 @@ def _render_simulation_environment():
 
         # Get active record
         active_record = next((c for c in circuits if c.id == active_circuit_id), circuits[0])
+        active_record_id = active_record.id
+        if active_record_id is None:
+            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                ui.label("Selected schema is missing a persistent id.").classes("text-danger")
+            return
         try:
-            active_record, circuit_def = _load_latest_circuit_definition(active_record.id)
-            svg_content = generate_circuit_svg(circuit_def)
+            active_record, active_circuit_def = _load_latest_circuit_definition(active_record_id)
         except Exception as e:
-            svg_content = f"<div class='text-danger p-4'>Error parsing selected schema: {e}</div>"
-
-        latest_preview_svg = svg_content
-        zoom_label = None
-
-        def render_preview() -> None:
-            if zoom_label is None:
-                return
-            ui.run_javascript(
-                build_schematic_preview_render_js(
-                    root_id=schematic_container.html_id,
-                    label_id=zoom_label.html_id,
-                    svg_content=latest_preview_svg,
-                    schema_key=f"simulation:{active_record.id}",
-                )
-            )
+            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                ui.label(f"Error parsing selected schema: {e}").classes("text-danger")
+            return
+        active_record_id = active_record.id
+        if active_record_id is None:
+            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                ui.label("Selected schema is missing a persistent id.").classes("text-danger")
+            return
+        displayed_netlist = format_expanded_circuit_definition(active_circuit_def)
 
         status_history: list[dict[str, str]] = []
-        status_container = None
+        status_container: Any | None = None
+        simulation_results_container: Any | None = None
+        post_processing_container: Any | None = None
+        post_processing_results_container: Any | None = None
+        latest_pipeline_result: dict[str, Any] = {
+            "sweep": None,
+            "flow_spec": None,
+            "circuit_record": None,
+            "source_simulation_bundle_id": None,
+            "schema_source_hash": None,
+            "simulation_setup_hash": None,
+        }
+        latest_simulation_result: dict[str, SimulationResult | None] = {"result": None}
+        latest_raw_save_action: dict[str, Callable[[], None] | None] = {"callback": None}
+        raw_view_state: dict[str, Any] = {
+            "family": "s",
+            "metric": "magnitude_linear",
+            "z0": 50.0,
+            "traces": [],
+        }
+        post_view_state: dict[str, Any] = {
+            "family": "s",
+            "metric": "magnitude_linear",
+            "z0": 50.0,
+            "traces": [],
+        }
 
         def append_status(level: str, message: str) -> None:
             status_history.append(
@@ -1298,49 +3241,139 @@ def _render_simulation_environment():
                             "text-sm text-fg whitespace-pre-wrap break-all"
                         )
 
+        def _reset_result_view_state(
+            view_state: dict[str, Any],
+            family_options: dict[str, str],
+        ) -> None:
+            fallback_family = next(iter(family_options), "s")
+            selected_family = str(view_state.get("family", fallback_family))
+            if selected_family not in family_options:
+                selected_family = fallback_family
+            metric_options = _result_metric_options_for_family(selected_family)
+            view_state["family"] = selected_family
+            view_state["metric"] = (
+                _first_option_key(metric_options) if metric_options else "magnitude_linear"
+            )
+            view_state["traces"] = []
+
+        def _raw_result_provider(_reference_impedance: float) -> tuple[
+            SimulationResult, dict[int, str]
+        ] | None:
+            result = latest_simulation_result.get("result")
+            if not isinstance(result, SimulationResult):
+                return None
+            return (result, _result_port_options(result))
+
+        def _post_processed_result_provider(
+            reference_impedance: float,
+        ) -> tuple[SimulationResult, dict[int, str]] | None:
+            sweep = latest_pipeline_result.get("sweep")
+            if not isinstance(sweep, PortMatrixSweep):
+                return None
+            return _build_post_processed_result_payload(
+                sweep,
+                reference_impedance_ohm=reference_impedance,
+            )
+
+        def render_simulation_result_view() -> None:
+            if simulation_results_container is None:
+                return
+
+            raw_save_callback = latest_raw_save_action["callback"]
+            _render_result_family_explorer(
+                container=simulation_results_container,
+                view_state=raw_view_state,
+                family_options=_RESULT_FAMILY_OPTIONS,
+                result_provider=_raw_result_provider,
+                header_message="Raw quick-inspect view from latest simulation run.",
+                empty_message="Run simulation to inspect raw result traces.",
+                save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
+                on_save_click=raw_save_callback,
+                save_enabled=raw_save_callback is not None,
+            )
+
+        def _save_post_processed_results_from_view() -> None:
+            sweep = latest_pipeline_result.get("sweep")
+            flow_spec = latest_pipeline_result.get("flow_spec")
+            if not _can_save_post_processed_results(sweep, flow_spec):
+                ui.notify("Run Post Processing first.", type="warning")
+                return
+            _save_post_processed_results_dialog(
+                sweep=sweep,
+                flow_spec=dict(flow_spec),
+                circuit_record=latest_pipeline_result.get("circuit_record"),
+                source_simulation_bundle_id=latest_pipeline_result.get(
+                    "source_simulation_bundle_id"
+                ),
+                schema_source_hash=latest_pipeline_result.get("schema_source_hash"),
+                simulation_setup_hash=latest_pipeline_result.get("simulation_setup_hash"),
+            )
+
+        def render_post_processed_result_view() -> None:
+            if post_processing_results_container is None:
+                return
+
+            sweep = latest_pipeline_result.get("sweep")
+            flow_spec = latest_pipeline_result.get("flow_spec")
+            save_enabled = _can_save_post_processed_results(sweep, flow_spec)
+            context_line = None
+            if save_enabled:
+                typed_sweep = sweep
+                typed_flow_spec = flow_spec
+                if not isinstance(typed_sweep, PortMatrixSweep) or not isinstance(
+                    typed_flow_spec, dict
+                ):
+                    typed_sweep = None
+                    typed_flow_spec = None
+                if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
+                    step_count = len(typed_flow_spec.get("steps", []))
+                    context_line = (
+                        f"Pipeline steps applied: {step_count} | "
+                        f"mode={SimulationResult.mode_token(typed_sweep.mode)} | "
+                        f"basis={', '.join(typed_sweep.labels)}"
+                    )
+            _render_result_family_explorer(
+                container=post_processing_results_container,
+                view_state=post_view_state,
+                family_options=_POST_PROCESSED_RESULT_FAMILY_OPTIONS,
+                result_provider=_post_processed_result_provider,
+                header_message=(
+                    "Result View consumes the latest Post Processing pipeline output node."
+                ),
+                empty_message="Run Post Processing to generate the pipeline output node.",
+                save_button_label="Save Post-Processed Results",
+                on_save_click=_save_post_processed_results_from_view,
+                save_enabled=save_enabled,
+                context_line=context_line,
+            )
+
+        def handle_post_processing_result(
+            sweep: PortMatrixSweep | None,
+            flow_spec: dict[str, Any] | None,
+        ) -> None:
+            latest_pipeline_result["sweep"] = sweep
+            latest_pipeline_result["flow_spec"] = flow_spec
+            _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
+            render_post_processed_result_view()
+
         # --- Single-column full-width flow ---
         with ui.column().classes("w-full gap-6"):
             with ui.card().classes("w-full bg-surface rounded-xl p-6"):
-                with ui.row().classes("w-full items-center justify-between mb-4"):
-                    with ui.row().classes("items-center gap-2"):
-                        ui.icon("visibility", size="sm").classes("text-primary")
-                        ui.label("Live Preview").classes("text-lg font-bold text-fg")
-                    with ui.row().classes("items-center gap-2"):
-                        ui.button(
-                            icon="remove",
-                            on_click=lambda: ui.run_javascript(
-                                build_schematic_preview_action_js(
-                                    action="zoomOut", root_id=schematic_container.html_id
-                                )
-                            ),
-                        ).props("flat dense round").classes("text-muted")
-                        zoom_label = ui.label("100%").classes(
-                            "text-xs text-muted min-w-[48px] text-center"
-                        )
-                        ui.button(
-                            icon="add",
-                            on_click=lambda: ui.run_javascript(
-                                build_schematic_preview_action_js(
-                                    action="zoomIn", root_id=schematic_container.html_id
-                                )
-                            ),
-                        ).props("flat dense round").classes("text-muted")
-                        ui.button(
-                            "Reset",
-                            on_click=lambda: ui.run_javascript(
-                                build_schematic_preview_action_js(
-                                    action="reset", root_id=schematic_container.html_id
-                                )
-                            ),
-                        ).props("outline dense no-caps size=sm")
-                schematic_container = ui.html().classes(
-                    "w-full min-h-[320px] bg-white rounded-lg p-4 app-schematic-preview"
-                )
-                render_preview()
+                with ui.row().classes("items-center gap-2 mb-4"):
+                    ui.icon("description", size="sm").classes("text-primary")
+                    ui.label("Netlist Configuration").classes("text-lg font-bold text-fg")
+                ui.label(
+                    "This is the expanded netlist that will actually be sent to the simulator. "
+                    "It uses the same repeat-expansion pipeline as the Schema Editor preview."
+                ).classes("text-sm text-muted mb-3")
+                with ui.element("div").classes(
+                    "w-full max-h-[480px] overflow-auto rounded-lg border border-border bg-bg p-3"
+                ):
+                    ui.markdown(f"```python\n{displayed_netlist}\n```").classes("w-full")
 
             with ui.card().classes("w-full bg-surface rounded-xl p-6"):
-                had_selected_setup_entry = _has_selected_setup_entry(active_record.id)
-                saved_setups = _ensure_builtin_saved_setups(active_record.id, active_record.name)
+                had_selected_setup_entry = _has_selected_setup_entry(active_record_id)
+                saved_setups = _ensure_builtin_saved_setups(active_record_id, active_record.name)
                 saved_setup_by_id = {
                     str(setup.get("id")): setup
                     for setup in saved_setups
@@ -1353,7 +3386,7 @@ def _render_simulation_environment():
                         for setup_id, setup in saved_setup_by_id.items()
                     }
                 )
-                selected_setup_id = _load_selected_setup_id(active_record.id)
+                selected_setup_id = _load_selected_setup_id(active_record_id)
                 builtin_setup_ids = [
                     str(setup.get("id"))
                     for setup in saved_setups
@@ -1364,14 +3397,14 @@ def _render_simulation_environment():
                     selected_setup_id = default_builtin_setup_id or ""
                 elif not had_selected_setup_entry and default_builtin_setup_id:
                     selected_setup_id = default_builtin_setup_id
-                _save_selected_setup_id(active_record.id, selected_setup_id)
+                _save_selected_setup_id(active_record_id, selected_setup_id)
 
                 with ui.row().classes("w-full items-center justify-between mb-4"):
                     with ui.row().classes("items-center gap-2"):
                         ui.icon("settings", size="sm").classes("text-primary")
                         ui.label("Simulation Setup").classes("text-lg font-bold text-fg")
                     with ui.row().classes("items-center gap-2"):
-                        saved_setup_select = (
+                        saved_setup_select: Any = (
                             ui.select(
                                 label="Saved Setup",
                                 options=saved_setup_options,
@@ -1406,27 +3439,18 @@ def _render_simulation_environment():
                         format="%.0f",
                     ).classes("flex-grow")
 
-                source_forms: list[dict[str, object]] = []
+                source_forms: list[dict[str, Any]] = []
                 sources_container = ui.column().classes("w-full gap-3 mt-2")
                 applying_saved_setup = False
 
                 def normalize_source_mode_inputs() -> None:
-                    source_count = len(source_forms)
-                    if source_count < 1:
-                        return
-
-                    for idx, source_form in enumerate(source_forms):
+                    for source_form in source_forms:
                         mode_input = source_form["mode_input"]
                         try:
                             parsed_mode = _parse_source_mode_text(mode_input.value)
                         except ValueError:
                             continue
-                        normalized_mode = _normalize_source_mode_components(
-                            parsed_mode,
-                            source_index=idx,
-                            source_count=source_count,
-                        )
-                        normalized_text = _format_source_mode_text(normalized_mode)
+                        normalized_text = _format_source_mode_text(parsed_mode)
                         if mode_input.value != normalized_text:
                             mode_input.value = normalized_text
 
@@ -1439,7 +3463,7 @@ def _render_simulation_environment():
                         remove_button.enabled = has_multiple_sources
                     normalize_source_mode_inputs()
 
-                def remove_source_form(source_card: object) -> None:
+                def remove_source_form(source_card: Any) -> None:
                     if len(source_forms) <= 1:
                         ui.notify("At least one source is required.", type="warning")
                         return
@@ -1565,13 +3589,18 @@ def _render_simulation_environment():
                             source_index=idx - 1,
                             source_count=len(source_forms),
                         )
+                        persisted_mode = (
+                            _compress_source_mode_components(parsed_mode)
+                            if parsed_mode is not None
+                            else _compress_source_mode_components(normalized_mode)
+                        )
 
                         setup_sources.append(
                             _build_source_payload(
                                 pump_freq_ghz=float(source_pump_freq_input.value),
                                 port=int(port_input.value),
                                 current_amp=float(current_input.value),
-                                mode=normalized_mode,
+                                mode=persisted_mode,
                             )
                         )
 
@@ -1659,17 +3688,21 @@ def _render_simulation_environment():
                                 parsed_mode = _parse_source_mode_text(raw_mode)
                             except ValueError:
                                 parsed_mode = None
-                            parsed_mode = _normalize_source_mode_components(
-                                parsed_mode,
-                                source_index=source_index - 1,
-                                source_count=generated_mode_width,
+                            display_mode = (
+                                parsed_mode
+                                if parsed_mode is not None
+                                else _normalize_source_mode_components(
+                                    None,
+                                    source_index=source_index - 1,
+                                    source_count=generated_mode_width,
+                                )
                             )
                             add_source_form(
                                 DriveSourceConfig(
                                     pump_freq_ghz=float(source["pump_freq_ghz"]),
                                     port=int(source["port"]),
                                     current_amp=float(source["current_amp"]),
-                                    mode_components=parsed_mode,
+                                    mode_components=display_mode,
                                 )
                             )
                     finally:
@@ -1678,7 +3711,7 @@ def _render_simulation_environment():
                 def refresh_saved_setup_select(preferred_id: str | None = None) -> None:
                     nonlocal saved_setups, saved_setup_by_id
                     saved_setups = _ensure_builtin_saved_setups(
-                        active_record.id,
+                        active_record_id,
                         active_record.name,
                     )
                     saved_setup_by_id = {
@@ -1699,14 +3732,16 @@ def _render_simulation_environment():
                     if current not in options:
                         current = ""
                     saved_setup_select.value = current
-                    _save_selected_setup_id(active_record.id, str(current))
+                    _save_selected_setup_id(active_record_id, str(current))
+                    if current and current in saved_setup_by_id:
+                        apply_saved_setup(saved_setup_by_id[current])
 
-                def on_saved_setup_change(e) -> None:
+                def on_saved_setup_change(e: Any) -> None:
                     if applying_saved_setup:
                         return
 
                     setup_id = str(e.value or "")
-                    _save_selected_setup_id(active_record.id, setup_id)
+                    _save_selected_setup_id(active_record_id, setup_id)
                     if not setup_id:
                         return
 
@@ -1755,7 +3790,7 @@ def _render_simulation_environment():
                                 s for s in saved_setups if str(s.get("id")) != setup_id
                             ]
                             updated_setups.append(setup_record)
-                            _save_saved_setups_for_schema(active_record.id, updated_setups)
+                            _save_saved_setups_for_schema(active_record_id, updated_setups)
                             refresh_saved_setup_select(preferred_id=setup_id)
                             ui.notify(f"Saved setup: {setup_name}", type="positive")
                             dialog.close()
@@ -1796,16 +3831,12 @@ def _render_simulation_environment():
                     apply_saved_setup(saved_setup_by_id[selected_setup_id])
 
                 async def run_sim():
-                    nonlocal latest_preview_svg
                     harmonic_grid_hits: list[tuple[int, int, float, int]] = []
                     try:
                         # Always fetch latest schema from DB at run-time.
                         latest_record, latest_circuit_def = _load_latest_circuit_definition(
-                            active_record.id
+                            active_record_id
                         )
-                        # Keep preview synced with the exact schema being simulated.
-                        latest_preview_svg = generate_circuit_svg(latest_circuit_def)
-                        render_preview()
 
                         # Basic validation
                         required_values = [
@@ -1943,10 +3974,33 @@ def _render_simulation_environment():
                             sources=sources,
                             max_pump_harmonic=config.n_pump_harmonics,
                         )
+                        estimated_mode_lattice = _estimate_mode_lattice_size(
+                            sources,
+                            config.n_modulation_harmonics,
+                        )
 
                         # Show loading state
                         sim_button.props("loading")
-                        results_container.clear()
+                        latest_simulation_result["result"] = None
+                        latest_pipeline_result["circuit_record"] = None
+                        latest_pipeline_result["source_simulation_bundle_id"] = None
+                        latest_pipeline_result["schema_source_hash"] = None
+                        latest_pipeline_result["simulation_setup_hash"] = None
+                        handle_post_processing_result(None, None)
+                        simulation_results_container.clear()
+                        post_processing_container.clear()
+                        post_processing_results_container.clear()
+                        with simulation_results_container:
+                            ui.spinner(size="3em").classes("text-primary")
+                            ui.label("Checking cached results...").classes("text-muted mt-2")
+                        with post_processing_container:
+                            ui.label(
+                                "Post Processing will be available after simulation completes."
+                            ).classes("text-sm text-muted")
+                        with post_processing_results_container:
+                            ui.label(
+                                "Run Post Processing to populate post-processed output traces."
+                            ).classes("text-sm text-muted")
                         reset_status("Simulation started.")
                         append_status(
                             "info",
@@ -2002,36 +4056,146 @@ def _render_simulation_environment():
                                 "warning",
                                 _format_harmonic_grid_hint(harmonic_grid_hits),
                             )
-                        append_status("info", "Submitting job to Julia worker...")
-                        with results_container:
-                            ui.spinner(size="3em").classes("text-primary")
-                            ui.label("Running Simulation...").classes("text-muted mt-2")
-
-                        try:
-                            # Run Julia simulation in a process to prevent GIL blocking
-                            result = await run.cpu_bound(
-                                run_simulation,
-                                latest_circuit_def,
-                                freq_range,
-                                config,
+                        if estimated_mode_lattice >= 128:
+                            append_status(
+                                "warning",
+                                _format_mode_lattice_hint(
+                                    sources,
+                                    config.n_modulation_harmonics,
+                                ),
                             )
-                        except ImportError as e:
-                            summary, detail = _summarize_simulation_error(e)
-                            append_status("negative", summary)
-                            results_container.clear()
-                            with results_container:
-                                ui.icon("error", size="lg").classes("text-danger mb-2")
-                                ui.label(summary).classes("text-danger text-sm")
-                                with ui.expansion("Technical Details").classes("w-full mt-3"):
-                                    ui.label(detail).classes(
-                                        "text-xs text-muted whitespace-pre-wrap break-all"
+                        setup_snapshot = _normalized_simulation_setup_snapshot(freq_range, config)
+                        schema_source_hash = _hash_schema_source(latest_record.definition_json)
+                        simulation_setup_hash = _hash_stable_json(setup_snapshot)
+                        append_status("info", "Normalized simulation setup snapshot prepared.")
+                        append_status("info", "Checking result cache...")
+
+                        cache_bundle_id: int | None = None
+                        cache_result = None
+                        with get_unit_of_work() as uow:
+                            cache_result = _load_cached_simulation_result(
+                                uow,
+                                schema_source_hash=schema_source_hash,
+                                simulation_setup_hash=simulation_setup_hash,
+                            )
+
+                        if cache_result is not None:
+                            cache_bundle_id, result = cache_result
+                            append_status(
+                                "positive",
+                                (
+                                    "Cache hit. "
+                                    "Loaded result bundle "
+                                    f"#{cache_bundle_id} without rerunning Julia."
+                                ),
+                            )
+                        else:
+                            append_status("info", "Cache miss.")
+                            append_status("info", "Submitting job to Julia worker...")
+                            simulation_results_container.clear()
+                            post_processing_container.clear()
+                            with simulation_results_container:
+                                ui.spinner(size="3em").classes("text-primary")
+                                ui.label("Running Simulation...").classes("text-muted mt-2")
+                            with post_processing_container:
+                                ui.label("Waiting for simulation output...").classes(
+                                    "text-sm text-muted"
+                                )
+
+                            try:
+                                # Run Julia simulation in a process to prevent GIL blocking
+                                job_started_at = datetime.now()
+                                result_task = asyncio.create_task(
+                                    run.cpu_bound(
+                                        run_simulation,
+                                        latest_circuit_def,
+                                        freq_range,
+                                        config,
                                     )
-                            sim_button.props(remove="loading")
-                            return
+                                )
+                                result = None
+                                while result is None:
+                                    try:
+                                        result = await asyncio.wait_for(
+                                            asyncio.shield(result_task),
+                                            timeout=5.0,
+                                        )
+                                    except TimeoutError:
+                                        elapsed_seconds = max(
+                                            1,
+                                            int((datetime.now() - job_started_at).total_seconds()),
+                                        )
+                                        append_status(
+                                            "info",
+                                            (
+                                                "Julia worker still running... "
+                                                f"{elapsed_seconds}s elapsed."
+                                            ),
+                                        )
+                            except ImportError as e:
+                                summary, detail = _summarize_simulation_error(e)
+                                append_status("negative", summary)
+                                latest_simulation_result["result"] = None
+                                simulation_results_container.clear()
+                                with simulation_results_container:
+                                    ui.icon("error", size="lg").classes("text-danger mb-2")
+                                    ui.label(summary).classes("text-danger text-sm")
+                                    with ui.expansion("Technical Details").classes("w-full mt-3"):
+                                        ui.label(detail).classes(
+                                            "text-xs text-muted whitespace-pre-wrap break-all"
+                                        )
+                                post_processing_container.clear()
+                                with post_processing_container:
+                                    ui.label(
+                                        "Post Processing is unavailable because simulation failed."
+                                    ).classes("text-sm text-muted")
+                                post_processing_results_container.clear()
+                                with post_processing_results_container:
+                                    ui.label(
+                                        "Post Processing Result View is unavailable "
+                                        "because simulation failed."
+                                    ).classes("text-sm text-muted")
+                                sim_button.props(remove="loading")
+                                return
+
+                            try:
+                                with get_unit_of_work() as uow:
+                                    cache_dataset = _ensure_simulation_cache_dataset(uow)
+                                    if cache_dataset.id is None:
+                                        raise ValueError("Failed to allocate cache dataset id.")
+                                    cache_bundle_id = _persist_simulation_result_bundle(
+                                        uow=uow,
+                                        dataset_id=cache_dataset.id,
+                                        result=result,
+                                        role="cache",
+                                        source_meta={
+                                            "origin": "circuit_simulation",
+                                            "storage": "system_cache",
+                                            "circuit_id": latest_record.id,
+                                            "circuit_name": latest_record.name,
+                                        },
+                                        config_snapshot=setup_snapshot,
+                                        schema_source_hash=schema_source_hash,
+                                        simulation_setup_hash=simulation_setup_hash,
+                                        include_data_records=False,
+                                    )
+                                    uow.commit()
+                                append_status(
+                                    "info",
+                                    f"Cached result bundle #{cache_bundle_id} stored for reuse.",
+                                )
+                            except Exception as cache_exc:
+                                append_status(
+                                    "warning",
+                                    f"Result cache write skipped: {cache_exc}",
+                                )
 
                         # Save state for persistence
                         last_sim_result = result
                         last_freq_range = freq_range
+                        last_setup_snapshot = setup_snapshot
+                        last_schema_source_hash = schema_source_hash
+                        last_simulation_setup_hash = simulation_setup_hash
                         append_status(
                             "positive",
                             (
@@ -2045,237 +4209,33 @@ def _render_simulation_environment():
                                 latest_record,
                                 last_freq_range,
                                 last_sim_result,
+                                setup_snapshot=last_setup_snapshot,
+                                schema_source_hash=last_schema_source_hash,
+                                simulation_setup_hash=last_simulation_setup_hash,
                             )
 
-                        results_container.clear()
-                        with results_container:
-                            view_family_to_label = {
-                                family: label for family, label in _RESULT_FAMILY_OPTIONS.items()
-                            }
-                            view_label_to_family = {
-                                label: family for family, label in _RESULT_FAMILY_OPTIONS.items()
-                            }
-
-                            with ui.row().classes(
-                                "w-full items-center justify-between gap-3 mb-3 flex-wrap"
-                            ):
-                                ui.label(
-                                    "All cached mode families come from one hbsolve run. "
-                                    "Changing view, ports, or modes does not rerun the simulation."
-                                ).classes("text-xs text-muted")
-                                ui.button(
-                                    "Save Results to Dataset",
-                                    icon="save",
-                                    on_click=on_save_click,
-                                ).props("outline color=primary size=sm")
-                            with ui.row().classes("w-full gap-3 items-end mb-3 flex-wrap"):
-                                view_toggle = ui.toggle(
-                                    list(view_label_to_family),
-                                    value=view_family_to_label["s"],
-                                ).props("unelevated no-caps")
-                                metric_select = (
-                                    ui.select(
-                                        label="Metric",
-                                        options=_result_metric_options_for_family("s"),
-                                        value="magnitude_linear",
-                                    )
-                                    .props("dense outlined options-dense")
-                                    .classes("w-52")
-                                )
-                                trace_select = (
-                                    ui.select(
-                                        label="Trace",
-                                        options=_result_trace_options_for_family("s"),
-                                        value="s",
-                                    )
-                                    .props("dense outlined options-dense")
-                                    .classes("w-60")
-                                )
-                                mode_options = _result_mode_options(last_sim_result)
-                                default_mode = next(iter(mode_options))
-                                output_mode_select = (
-                                    ui.select(
-                                        label="Output Mode",
-                                        options=mode_options,
-                                        value=default_mode,
-                                    )
-                                    .props("dense outlined options-dense")
-                                    .classes("w-48")
-                                )
-                                input_mode_select = (
-                                    ui.select(
-                                        label="Input Mode",
-                                        options=mode_options,
-                                        value=default_mode,
-                                    )
-                                    .props("dense outlined options-dense")
-                                    .classes("w-48")
-                                )
-                                port_options = _result_port_options(last_sim_result)
-                                default_port = next(iter(port_options))
-                                output_port_select = (
-                                    ui.select(
-                                        label="Output Port",
-                                        options=port_options,
-                                        value=default_port,
-                                    )
-                                    .props("dense outlined")
-                                    .classes("w-32")
-                                )
-                                input_port_select = (
-                                    ui.select(
-                                        label="Input Port",
-                                        options=port_options,
-                                        value=default_port,
-                                    )
-                                    .props("dense outlined")
-                                    .classes("w-32")
-                                )
-                                reference_impedance_input = ui.number(
-                                    "Z0 (Ohm)",
-                                    value=50.0,
-                                    format="%.6g",
-                                ).classes("w-36")
-
-                            helper_label = ui.label("").classes("w-full text-xs text-muted mb-2")
-                            plot_host = ui.column().classes("w-full min-h-[400px]")
-
-                            def render_result_view() -> None:
-                                current_family = view_label_to_family.get(
-                                    str(view_toggle.value or ""),
-                                    "s",
-                                )
-                                metric_options = _result_metric_options_for_family(current_family)
-                                trace_options = _result_trace_options_for_family(current_family)
-
-                                metric_select.options = metric_options
-                                if metric_select.value not in metric_options:
-                                    metric_select.value = _first_option_key(metric_options)
-
-                                trace_select.options = trace_options
-                                if trace_select.value not in trace_options:
-                                    trace_select.value = _first_option_key(trace_options)
-
-                                selected_output_mode_token = str(
-                                    output_mode_select.value or default_mode
-                                )
-                                selected_input_mode_token = str(
-                                    input_mode_select.value or default_mode
-                                )
-                                selected_output_mode = SimulationResult.parse_mode_token(
-                                    selected_output_mode_token
-                                )
-                                selected_input_mode = SimulationResult.parse_mode_token(
-                                    selected_input_mode_token
-                                )
-                                selected_output_port = int(output_port_select.value or default_port)
-                                selected_input_port = int(input_port_select.value or default_port)
-                                selected_trace = str(trace_select.value)
-
-                                output_mode_select.options = mode_options
-                                input_mode_select.options = mode_options
-                                input_port_select.options = port_options
-                                output_port_select.options = port_options
-
-                                lock_input_selectors = current_family == "cm"
-                                if current_family == "cm":
-                                    if selected_input_mode != selected_output_mode:
-                                        selected_input_mode = selected_output_mode
-                                        input_mode_select.value = SimulationResult.mode_token(
-                                            selected_output_mode
-                                        )
-                                    if selected_input_port != selected_output_port:
-                                        selected_input_port = selected_output_port
-                                        input_port_select.value = selected_output_port
-
-                                if current_family in {"impedance", "admittance"} or (
-                                    current_family == "complex" and selected_trace in {"z", "y"}
-                                ):
-                                    lock_input_selectors = True
-                                    if selected_input_port != selected_output_port:
-                                        selected_input_port = selected_output_port
-                                        input_port_select.value = selected_input_port
-                                    if selected_input_mode != selected_output_mode:
-                                        selected_input_mode = selected_output_mode
-                                        input_mode_select.value = SimulationResult.mode_token(
-                                            selected_output_mode
-                                        )
-                                if lock_input_selectors:
-                                    input_port_select.disable()
-                                    input_mode_select.disable()
-                                else:
-                                    input_port_select.enable()
-                                    input_mode_select.enable()
-
-                                z0_value = float(reference_impedance_input.value or 50.0)
-                                if z0_value <= 0:
-                                    z0_value = 50.0
-                                    reference_impedance_input.value = z0_value
-
-                                figure = _build_simulation_result_figure(
-                                    result=last_sim_result,
-                                    view_family=current_family,
-                                    metric=str(metric_select.value),
-                                    trace=selected_trace,
-                                    output_mode=selected_output_mode,
-                                    output_port=selected_output_port,
-                                    input_mode=selected_input_mode,
-                                    input_port=selected_input_port,
-                                    reference_impedance_ohm=z0_value,
-                                    dark_mode=app.storage.user.get("dark_mode", True),
-                                )
-
-                                if current_family in {"impedance", "admittance"}:
-                                    family_prefix = "Z" if current_family == "impedance" else "Y"
-                                    helper_label.text = (
-                                        f"{current_family.title()} is using the native "
-                                        f"{family_prefix}{selected_output_port}"
-                                        f"{selected_input_port} "
-                                        f"trace for mode {selected_output_mode}."
-                                    )
-                                elif current_family == "qe":
-                                    helper_label.text = (
-                                        "QE uses the cached linearized hbsolve bundle. "
-                                        "Select non-zero modes to inspect idler/sideband QE."
-                                    )
-                                elif current_family == "cm":
-                                    helper_label.text = (
-                                        "CM is indexed by output mode and output port only. "
-                                        "Input selectors are fixed to match."
-                                    )
-                                elif current_family == "complex":
-                                    if selected_trace == "s":
-                                        helper_label.text = (
-                                            "Complex plane is showing the selected cached "
-                                            f"S{selected_output_port}{selected_input_port} trace."
-                                        )
-                                    else:
-                                        helper_label.text = (
-                                            "Complex plane is showing the selected cached "
-                                            f"{selected_trace.upper()}{selected_output_port}"
-                                            f"{selected_input_port} trace."
-                                        )
-                                else:
-                                    helper_label.text = (
-                                        "Select non-zero modes to inspect idler/sideband "
-                                        "traces without rerunning the solver."
-                                    )
-
-                                plot_host.clear()
-                                with plot_host:
-                                    ui.plotly(figure).classes("w-full h-full min-h-[400px]")
-
-                            view_toggle.on_value_change(lambda _e: render_result_view())
-                            metric_select.on_value_change(lambda _e: render_result_view())
-                            trace_select.on_value_change(lambda _e: render_result_view())
-                            output_mode_select.on_value_change(lambda _e: render_result_view())
-                            input_mode_select.on_value_change(lambda _e: render_result_view())
-                            output_port_select.on_value_change(lambda _e: render_result_view())
-                            input_port_select.on_value_change(lambda _e: render_result_view())
-                            reference_impedance_input.on_value_change(
-                                lambda _e: render_result_view()
+                        latest_raw_save_action["callback"] = on_save_click
+                        latest_simulation_result["result"] = last_sim_result
+                        _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
+                        latest_pipeline_result["circuit_record"] = latest_record
+                        latest_pipeline_result["source_simulation_bundle_id"] = cache_bundle_id
+                        latest_pipeline_result["schema_source_hash"] = last_schema_source_hash
+                        latest_pipeline_result["simulation_setup_hash"] = (
+                            last_simulation_setup_hash
+                        )
+                        render_simulation_result_view()
+                        handle_post_processing_result(None, None)
+                        post_processing_container.clear()
+                        with post_processing_container:
+                            _render_post_processing_panel(
+                                result=last_sim_result,
+                                circuit_definition=latest_circuit_def,
+                                schema_id=active_record_id,
+                                schema_name=latest_record.name,
+                                append_status=append_status,
+                                on_result=handle_post_processing_result,
                             )
-                            render_result_view()
+                        render_post_processed_result_view()
 
                     except Exception as e:
                         summary, detail = _summarize_simulation_error(e)
@@ -2288,8 +4248,26 @@ def _render_simulation_environment():
                             append_status("warning", hint)
                             detail = f"{detail}\n\nLikely cause from current configuration:\n{hint}"
                         append_status("negative", summary)
-                        results_container.clear()
-                        with results_container:
+                        latest_raw_save_action["callback"] = None
+                        latest_simulation_result["result"] = None
+                        latest_pipeline_result["circuit_record"] = None
+                        latest_pipeline_result["source_simulation_bundle_id"] = None
+                        latest_pipeline_result["schema_source_hash"] = None
+                        latest_pipeline_result["simulation_setup_hash"] = None
+                        handle_post_processing_result(None, None)
+                        simulation_results_container.clear()
+                        post_processing_container.clear()
+                        post_processing_results_container.clear()
+                        with post_processing_container:
+                            ui.label(
+                                "Post Processing is unavailable because simulation failed."
+                            ).classes("text-sm text-muted")
+                        with post_processing_results_container:
+                            ui.label(
+                                "Post Processing Result View is unavailable "
+                                "because simulation failed."
+                            ).classes("text-sm text-muted")
+                        with simulation_results_container:
                             ui.icon("error", size="lg").classes("text-danger mb-2")
                             ui.label(summary).classes("text-danger text-sm")
                             with ui.expansion("Technical Details").classes("w-full mt-3"):
@@ -2317,12 +4295,36 @@ def _render_simulation_environment():
                     ui.icon("bar_chart", size="sm").classes("text-primary")
                     ui.label("Simulation Results").classes("text-lg font-bold text-fg")
 
-                results_container = ui.column().classes(
+                simulation_results_container = ui.column().classes(
                     "w-full h-full flex items-center justify-center p-4"
                 )
-                with results_container:
+                with simulation_results_container:
                     ui.icon("show_chart", size="xl").classes("text-muted mb-4 opacity-50")
-                    ui.label("Run a simulation to view S-parameters here.").classes(
+                    ui.label("Run simulation to inspect raw result families.").classes(
+                        "text-sm text-muted mt-2"
+                    )
+
+            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                with ui.row().classes("items-center gap-2 mb-3"):
+                    ui.icon("tune", size="sm").classes("text-primary")
+                    ui.label("Post Processing").classes("text-lg font-bold text-fg")
+                post_processing_container = ui.column().classes("w-full gap-3")
+                with post_processing_container:
+                    ui.label(
+                        "Run a simulation first, then apply port-level coordinate transforms "
+                        "and Kron reduction here."
+                    ).classes("text-sm text-muted")
+
+            with ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[320px]"):
+                with ui.row().classes("items-center gap-2 mb-4"):
+                    ui.icon("tune", size="sm").classes("text-primary")
+                    ui.label("Post Processing Results").classes("text-lg font-bold text-fg")
+                post_processing_results_container = ui.column().classes(
+                    "w-full h-full flex items-center justify-center p-4"
+                )
+                with post_processing_results_container:
+                    ui.icon("data_object", size="xl").classes("text-muted mb-4 opacity-50")
+                    ui.label("Run Post Processing to view pipeline output traces.").classes(
                         "text-sm text-muted mt-2"
                     )
 
@@ -2330,7 +4332,13 @@ def _render_simulation_environment():
 
 
 def _save_simulation_results_dialog(
-    circuit_record: CircuitRecord, freq_range: FrequencyRange, result: SimulationResult
+    circuit_record: CircuitRecord,
+    freq_range: FrequencyRange,
+    result: SimulationResult,
+    *,
+    setup_snapshot: dict[str, Any] | None = None,
+    schema_source_hash: str | None = None,
+    simulation_setup_hash: str | None = None,
 ):
     """Dialog for saving SimulationResult into DataRecords."""
     bundle_records = _build_result_bundle_data_records(dataset_id=0, result=result)
@@ -2372,54 +4380,100 @@ def _save_simulation_results_dialog(
 
         dataset_options = {d.id: d.name for d in datasets}
 
-        dataset_select = (
+        dataset_select: Any = (
             ui.select(options=dataset_options, label="Select Existing Dataset")
             .classes("w-full mb-4")
             .props("outlined options-dense")
             .bind_visibility_from(mode_toggle, "value", value="Append to Existing")
         )
 
-        def save():
-            mode = mode_toggle.value
+        def _save_to_dataset(
+            mode: str,
+            *,
+            new_dataset_name: str,
+            selected_dataset_id: int | None,
+        ) -> str:
+            """Persist the manual-export result bundle and return target dataset name."""
+            with get_unit_of_work() as uow:
+                if mode == "Create New":
+                    ds = DatasetRecord(
+                        name=new_dataset_name,
+                        source_meta={
+                            "origin": "circuit_simulation",
+                            "circuit_id": circuit_record.id,
+                            "circuit_name": circuit_record.name,
+                        },
+                        parameters={
+                            "start_ghz": freq_range.start_ghz,
+                            "stop_ghz": freq_range.stop_ghz,
+                            "points": freq_range.points,
+                        },
+                    )
+                    uow.datasets.add(ds)
+                    uow.flush()
+                    ds_id = ds.id
+                    if ds_id is None:
+                        raise ValueError("Failed to allocate a dataset id.")
+                    ds_name = new_dataset_name
+                else:
+                    if selected_dataset_id is None:
+                        raise ValueError("Please select an existing dataset.")
+                    ds_id = selected_dataset_id
+                    ds_name = dataset_options[ds_id]
+
+                export_setup_snapshot = setup_snapshot or {
+                    "freq_range": {
+                        "start_ghz": float(freq_range.start_ghz),
+                        "stop_ghz": float(freq_range.stop_ghz),
+                        "points": int(freq_range.points),
+                    }
+                }
+                _persist_simulation_result_bundle(
+                    uow=uow,
+                    dataset_id=ds_id,
+                    result=result,
+                    role="manual_export",
+                    source_meta={
+                        "origin": "circuit_simulation",
+                        "export_kind": "manual",
+                        "circuit_id": circuit_record.id,
+                        "circuit_name": circuit_record.name,
+                    },
+                    config_snapshot=export_setup_snapshot,
+                    schema_source_hash=schema_source_hash,
+                    simulation_setup_hash=simulation_setup_hash,
+                )
+                uow.commit()
+                return ds_name
+
+        async def save() -> None:
+            mode = str(mode_toggle.value)
+            name = name_input.value.strip()
+            selected_dataset_id = (
+                int(dataset_select.value) if isinstance(dataset_select.value, int) else None
+            )
+
+            if mode == "Create New" and not name:
+                ui.notify("Dataset Name is required.", type="warning")
+                return
+            if mode != "Create New" and selected_dataset_id is None:
+                ui.notify("Please select an existing dataset.", type="warning")
+                return
+
+            save_button.disable()
+            cancel_button.disable()
+            save_button.props(add="loading")
+            await asyncio.sleep(0)
+
             try:
-                with get_unit_of_work() as uow:
-                    if mode == "Create New":
-                        name = name_input.value.strip()
-                        if not name:
-                            ui.notify("Dataset Name is required.", type="warning")
-                            return
-                        # Create DatasetRecord
-                        ds = DatasetRecord(
-                            name=name,
-                            source_meta={
-                                "origin": "circuit_simulation",
-                                "circuit_id": circuit_record.id,
-                                "circuit_name": circuit_record.name,
-                            },
-                            parameters={
-                                "start_ghz": freq_range.start_ghz,
-                                "stop_ghz": freq_range.stop_ghz,
-                                "points": freq_range.points,
-                            },
-                        )
-                        uow.datasets.add(ds)
-                        uow.commit()  # Commit to get Dataset ID
-                        ds_id = ds.id
-                        ds_name = name
-                    else:
-                        if not dataset_select.value:
-                            ui.notify("Please select an existing dataset.", type="warning")
-                            return
-                        ds_id = dataset_select.value
-                        ds_name = dataset_options[ds_id]
-
-                    data_records = _build_result_bundle_data_records(ds_id, result)
-                    for data_record in data_records:
-                        uow.data_records.add(data_record)
-                    uow.commit()  # Commit all data records
-
+                ds_name = await run.io_bound(
+                    _save_to_dataset,
+                    mode,
+                    new_dataset_name=name,
+                    selected_dataset_id=selected_dataset_id,
+                )
                 ui.notify(
-                    (f"Saved {bundle_trace_count} trace(s) to: {ds_name}"),
+                    f"Saved {bundle_trace_count} trace(s) to: {ds_name}",
                     type="positive",
                 )
                 dialog.close()
@@ -2428,9 +4482,207 @@ def _save_simulation_results_dialog(
                     ui.notify("A dataset with this name already exists.", type="negative")
                 else:
                     ui.notify(f"Failed to save: {e}", type="negative")
+            finally:
+                save_button.props(remove="loading")
+                save_button.enable()
+                cancel_button.enable()
 
         with ui.row().classes("w-full justify-end mt-4 gap-2"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button("Save", on_click=save).props("color=primary")
+            cancel_button = ui.button("Cancel", on_click=dialog.close).props("flat")
+            save_button = ui.button("Save", on_click=save).props("color=primary")
+
+    dialog.open()
+
+
+def _save_post_processed_results_dialog(
+    *,
+    sweep: PortMatrixSweep,
+    flow_spec: dict[str, Any],
+    circuit_record: CircuitRecord | None,
+    source_simulation_bundle_id: int | None,
+    schema_source_hash: str | None,
+    simulation_setup_hash: str | None,
+) -> None:
+    """Dialog for saving one post-processed Y sweep into a result bundle."""
+    bundle_records = _build_post_processed_y_data_records(dataset_id=0, sweep=sweep)
+    bundle_trace_count = len(
+        {
+            (
+                record.data_type,
+                record.parameter,
+            )
+            for record in bundle_records
+        }
+    )
+
+    with ui.dialog() as dialog, ui.card().classes("w-full max-w-lg bg-surface"):
+        ui.label("Save Post-Processed Results").classes("text-xl font-bold mb-4")
+        ui.label(
+            "This saves the processed port-level Y bundle "
+            f"({bundle_trace_count} trace(s), mode={SimulationResult.mode_token(sweep.mode)})."
+        ).classes("text-sm text-muted mb-3")
+
+        try:
+            with get_unit_of_work() as uow:
+                datasets = uow.datasets.list_all()
+        except Exception:
+            datasets = []
+
+        mode_options = ["Create New"]
+        if datasets:
+            mode_options.append("Append to Existing")
+
+        mode_toggle = ui.toggle(mode_options, value="Create New").classes("mb-4")
+
+        circuit_name = str(circuit_record.name) if circuit_record is not None else "Simulation"
+        default_name = f"{circuit_name} Post {datetime.now().strftime('%m%d_%H%M')}"
+        name_input = (
+            ui.input("New Dataset Name", value=default_name)
+            .classes("w-full mb-4 text-lg")
+            .props("outlined")
+        ).bind_visibility_from(mode_toggle, "value", value="Create New")
+
+        dataset_options = {d.id: d.name for d in datasets}
+
+        dataset_select: Any = (
+            ui.select(options=dataset_options, label="Select Existing Dataset")
+            .classes("w-full mb-4")
+            .props("outlined options-dense")
+            .bind_visibility_from(mode_toggle, "value", value="Append to Existing")
+        )
+
+        def _save_to_dataset(
+            mode: str,
+            *,
+            new_dataset_name: str,
+            selected_dataset_id: int | None,
+        ) -> str:
+            with get_unit_of_work() as uow:
+                if mode == "Create New":
+                    dataset = DatasetRecord(
+                        name=new_dataset_name,
+                        source_meta={
+                            "origin": "simulation_postprocess",
+                            "source_simulation_bundle_id": source_simulation_bundle_id,
+                            "circuit_id": (
+                                int(circuit_record.id)
+                                if circuit_record is not None and circuit_record.id is not None
+                                else None
+                            ),
+                            "circuit_name": circuit_name,
+                        },
+                        parameters={
+                            "start_ghz": float(sweep.frequencies_ghz[0]),
+                            "stop_ghz": float(sweep.frequencies_ghz[-1]),
+                            "points": len(sweep.frequencies_ghz),
+                        },
+                    )
+                    uow.datasets.add(dataset)
+                    uow.flush()
+                    ds_id = dataset.id
+                    if ds_id is None:
+                        raise ValueError("Failed to allocate a dataset id.")
+                    ds_name = str(dataset.name)
+                else:
+                    if selected_dataset_id is None:
+                        raise ValueError("Please select an existing dataset.")
+                    ds_id = int(selected_dataset_id)
+                    ds_name = str(dataset_options[ds_id])
+
+                persisted_records = _build_post_processed_y_data_records(
+                    dataset_id=ds_id,
+                    sweep=sweep,
+                )
+                for record in persisted_records:
+                    uow.data_records.add(record)
+                uow.flush()
+
+                record_ids = [record.id for record in persisted_records if record.id is not None]
+                if len(record_ids) != len(persisted_records):
+                    raise ValueError("Failed to allocate one or more data record ids.")
+
+                bundle = ResultBundleRecord(
+                    dataset_id=ds_id,
+                    bundle_type="simulation_postprocess",
+                    role="derived_from_simulation",
+                    status="completed",
+                    schema_source_hash=schema_source_hash,
+                    simulation_setup_hash=simulation_setup_hash,
+                    source_meta={
+                        "origin": "simulation_postprocess",
+                        "source_simulation_bundle_id": source_simulation_bundle_id,
+                        "source_kind": sweep.source_kind,
+                        "mode_token": SimulationResult.mode_token(sweep.mode),
+                        "circuit_id": (
+                            int(circuit_record.id)
+                            if circuit_record is not None and circuit_record.id is not None
+                            else None
+                        ),
+                        "circuit_name": circuit_name,
+                    },
+                    config_snapshot=dict(flow_spec),
+                    result_payload={
+                        "kind": "port_level_postprocess",
+                        "dimension": int(sweep.dimension),
+                        "labels": list(sweep.labels),
+                        "mode": [int(value) for value in sweep.mode],
+                        "frequency_points": len(sweep.frequencies_ghz),
+                    },
+                    completed_at=datetime.utcnow(),
+                )
+                uow.result_bundles.add(bundle)
+                uow.flush()
+                if bundle.id is None:
+                    raise ValueError("Failed to allocate a post-process bundle id.")
+                uow.result_bundles.attach_data_records(
+                    bundle_id=bundle.id,
+                    data_record_ids=record_ids,
+                )
+                uow.commit()
+                return ds_name
+
+        async def save() -> None:
+            mode = str(mode_toggle.value)
+            name = str(name_input.value or "").strip()
+            selected_dataset_id = (
+                int(dataset_select.value) if isinstance(dataset_select.value, int) else None
+            )
+            if mode == "Create New" and not name:
+                ui.notify("Dataset Name is required.", type="warning")
+                return
+            if mode != "Create New" and selected_dataset_id is None:
+                ui.notify("Please select an existing dataset.", type="warning")
+                return
+
+            save_button.disable()
+            cancel_button.disable()
+            save_button.props(add="loading")
+            await asyncio.sleep(0)
+
+            try:
+                ds_name = await run.io_bound(
+                    _save_to_dataset,
+                    mode,
+                    new_dataset_name=name,
+                    selected_dataset_id=selected_dataset_id,
+                )
+                ui.notify(
+                    f"Saved {bundle_trace_count} post-processed trace(s) to: {ds_name}",
+                    type="positive",
+                )
+                dialog.close()
+            except Exception as exc:
+                if "UNIQUE constraint failed" in str(exc):
+                    ui.notify("A dataset with this name already exists.", type="negative")
+                else:
+                    ui.notify(f"Failed to save post-processed results: {exc}", type="negative")
+            finally:
+                save_button.props(remove="loading")
+                save_button.enable()
+                cancel_button.enable()
+
+        with ui.row().classes("w-full justify-end mt-4 gap-2"):
+            cancel_button = ui.button("Cancel", on_click=dialog.close).props("flat")
+            save_button = ui.button("Save", on_click=save).props("color=primary")
 
     dialog.open()
