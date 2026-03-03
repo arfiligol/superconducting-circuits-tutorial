@@ -222,6 +222,7 @@ def _resolve_shunt_label_layout(
     cluster_total: int,
     layout_mode: str,
     occupied_boxes: list[tuple[float, float, float, float]],
+    preferred_side: str | None = None,
 ) -> tuple[str, float, float, float, tuple[float, float, float, float]]:
     """Choose the first non-overlapping candidate layout for a shunt label group."""
     base_side, base_offset, base_name_y, base_value_y = _shunt_label_plan(
@@ -233,8 +234,13 @@ def _resolve_shunt_label_layout(
     alternate_side = "right" if base_side == "left" else "left"
     base_magnitude = abs(base_offset)
 
+    if preferred_side in {"left", "right"}:
+        side_order = (preferred_side, "right" if preferred_side == "left" else "left")
+    else:
+        side_order = (base_side, alternate_side)
+
     candidates: list[tuple[str, float, float, float]] = []
-    for side in (base_side, alternate_side):
+    for side in side_order:
         sign = -1.0 if side == "left" else 1.0
         for outward in (0.0, 0.35, 0.7):
             candidate_offset = sign * (base_magnitude + outward)
@@ -304,6 +310,7 @@ def _add_shunt_labels(
     cluster_total: int,
     layout_mode: str,
     occupied_boxes: list[tuple[float, float, float, float]],
+    preferred_side: str | None = None,
 ) -> None:
     """Place shunt labels with cluster-aware offsets to reduce overlap."""
     side, x_offset, name_y, value_y, candidate_box = _resolve_shunt_label_layout(
@@ -315,6 +322,7 @@ def _add_shunt_labels(
         cluster_total=cluster_total,
         layout_mode=layout_mode,
         occupied_boxes=occupied_boxes,
+        preferred_side=preferred_side,
     )
     halign = "right" if side == "left" else "left"
 
@@ -358,6 +366,89 @@ def _label_element(
     return element
 
 
+def _parallel_branch_y(cluster_index: int, cluster_total: int, base_y: float = 3.0) -> float:
+    """Return a stable y lane for a parallel branch group."""
+    if cluster_total <= 1:
+        return base_y
+    centered_index = cluster_index - ((cluster_total - 1) / 2.0)
+    return base_y + (centered_index * 1.6)
+
+
+def _add_parallel_branch_labels(
+    drawing: schemdraw.Drawing,
+    x1: float,
+    x2: float,
+    branch_y: float,
+    name_label: str,
+    value_label: str | None,
+) -> None:
+    """Place labels for non-overlapping parallel branches away from the center lane."""
+    label_x = (x1 + x2) / 2.0
+    if branch_y >= 3.0:
+        name_y = branch_y + 0.66
+        value_y = branch_y + 0.32
+    else:
+        name_y = branch_y - 0.68
+        value_y = branch_y - 1.04
+
+    drawing.add(elm.Label().at((label_x, name_y)).label(name_label, loc="center", fontsize=11))
+    if value_label:
+        drawing.add(
+            elm.Label().at((label_x, value_y)).label(value_label, loc="center", fontsize=10)
+        )
+
+
+def _build_parallel_node_side_preferences(
+    parallel_cluster_metadata: dict[int, tuple[tuple[str, str], int, int]],
+    backbone_positions: dict[str, float] | None,
+) -> dict[str, str]:
+    """Prefer outer-side labels for nodes that belong to a parallel branch group."""
+    if not backbone_positions:
+        return {}
+
+    preferences: dict[str, str] = {}
+    seen_pairs: set[frozenset[str]] = set()
+    for pair_key, _, _ in parallel_cluster_metadata.values():
+        frozen_pair = frozenset(pair_key)
+        if frozen_pair in seen_pairs:
+            continue
+        seen_pairs.add(frozen_pair)
+        node_a, node_b = pair_key
+        if backbone_positions.get(node_a, 0.0) <= backbone_positions.get(node_b, 0.0):
+            left_node, right_node = node_a, node_b
+        else:
+            left_node, right_node = node_b, node_a
+        preferences[left_node] = "left"
+        preferences[right_node] = "right"
+    return preferences
+
+
+def _label_parallel_node_anchor(
+    drawing: schemdraw.Drawing,
+    labeled_nodes: set[str],
+    node_str: str,
+    x: float,
+    preferred_side: str,
+) -> None:
+    """Place node labels above the backbone but outside the parallel-branch bundle."""
+    if node_str in labeled_nodes:
+        return
+
+    if preferred_side == "left":
+        label_x = x - 0.18
+        halign = "right"
+    else:
+        label_x = x + 0.18
+        halign = "left"
+
+    drawing.add(
+        elm.Label()
+        .at((label_x, 3.38))
+        .label(node_str, loc="center", color="gray", fontsize=8, halign=halign)
+    )
+    labeled_nodes.add(node_str)
+
+
 def generate_circuit_svg(circuit: CircuitDefinition) -> str:
     """
     Generate an SVG string representation of a CircuitDefinition.
@@ -380,9 +471,14 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
     gap = plan.gap
     elements = list(plan.elements)
     shunt_cluster_metadata = plan.shunt_cluster_metadata
+    parallel_cluster_metadata = plan.parallel_cluster_metadata
     shunt_branch_offsets = plan.shunt_branch_offsets
     backbone_positions = plan.backbone_positions
     use_backbone_layout = plan.use_backbone_layout
+    parallel_node_side_preferences = _build_parallel_node_side_preferences(
+        parallel_cluster_metadata,
+        backbone_positions,
+    )
 
     node_latest_x: dict[str, float] = {}
     node_bridge_y: dict[str, float] = {}
@@ -509,6 +605,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
                         cluster_total=cluster_total,
                         layout_mode=layout_mode,
                         occupied_boxes=occupied_shunt_label_boxes,
+                        preferred_side=parallel_node_side_preferences.get(signal_node),
                     )
 
             if use_backbone_layout and abs(branch_x - node_anchor_x) > 0.1:
@@ -521,10 +618,17 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
             if should_label_nodes:
                 loc1 = "top" if y1 > y2 else "bottom"
                 loc2 = "bottom" if y1 > y2 else "top"
-                label_x1 = node_anchor_x if not is_gnd1 else x
-                label_x2 = node_anchor_x if not is_gnd2 else x
-                _ensure_node_label(d, labeled_nodes, node1_str, label_x1, y1, loc1)
-                _ensure_node_label(d, labeled_nodes, node2_str, label_x2, y2, loc2)
+                if not is_gnd1 and node1_str in parallel_node_side_preferences:
+                    pass
+                else:
+                    label_x1 = node_anchor_x if not is_gnd1 else x
+                    _ensure_node_label(d, labeled_nodes, node1_str, label_x1, y1, loc1)
+
+                if not is_gnd2 and node2_str in parallel_node_side_preferences:
+                    pass
+                else:
+                    label_x2 = node_anchor_x if not is_gnd2 else x
+                    _ensure_node_label(d, labeled_nodes, node2_str, label_x2, y2, loc2)
 
             if use_backbone_layout:
                 node_latest_x[signal_node] = node_anchor_x
@@ -561,12 +665,27 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
             x1 = x_pos
             x2 = x_pos + dx
 
+        parallel_group = parallel_cluster_metadata.get(
+            topo_index, ((tuple(sorted((node1_str, node2_str)))), 0, 1)
+        )
+        _, parallel_index, parallel_total = parallel_group
+        branch_y = 3.0
+        if use_backbone_layout and parallel_total > 1:
+            branch_y = _parallel_branch_y(parallel_index, parallel_total)
+
+        if abs(branch_y - 3.0) > 0.05:
+            d.add(elm.Line().at((x1, 3.0)).to((x1, branch_y)))
+            d.add(elm.Line().at((x2, 3.0)).to((x2, branch_y)))
+
         if isinstance(element, elm.Dot):
-            d.add(element.at(((x1 + x2) / 2, 3.0)))
+            d.add(element.at(((x1 + x2) / 2, branch_y)))
+        elif use_backbone_layout and parallel_total > 1:
+            d.add(element.at((x1, branch_y)).to((x2, branch_y)))
+            _add_parallel_branch_labels(d, x1, x2, branch_y, name_label, value_label)
         else:
             d.add(
                 _label_element(
-                    element.at((x1, 3.0)).to((x2, 3.0)),
+                    element.at((x1, branch_y)).to((x2, branch_y)),
                     component_kind,
                     name_label,
                     value_label,
@@ -574,10 +693,19 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
                 )
             )
 
-        loc1 = "left" if x1 < x2 else "right"
-        loc2 = "right" if x1 < x2 else "left"
-        _ensure_node_label(d, labeled_nodes, node1_str, x1, 3.0, loc1)
-        _ensure_node_label(d, labeled_nodes, node2_str, x2, 3.0, loc2)
+        node1_parallel_side = parallel_node_side_preferences.get(node1_str)
+        node2_parallel_side = parallel_node_side_preferences.get(node2_str)
+        if node1_parallel_side:
+            _label_parallel_node_anchor(d, labeled_nodes, node1_str, x1, node1_parallel_side)
+        else:
+            loc1 = "left" if x1 < x2 else "right"
+            _ensure_node_label(d, labeled_nodes, node1_str, x1, 3.0, loc1)
+
+        if node2_parallel_side:
+            _label_parallel_node_anchor(d, labeled_nodes, node2_str, x2, node2_parallel_side)
+        else:
+            loc2 = "right" if x1 < x2 else "left"
+            _ensure_node_label(d, labeled_nodes, node2_str, x2, 3.0, loc2)
 
         if use_backbone_layout:
             node_latest_x[node1_str] = x1

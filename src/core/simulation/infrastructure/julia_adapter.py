@@ -5,6 +5,7 @@ This module provides the Python-Julia interoperability layer.
 """
 
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 from core.simulation.domain.circuit import (
@@ -143,8 +144,11 @@ class JuliaSimulator:
         )
 
         component_values = {
-            param_name: param_spec.default * self._get_unit_multiplier(param_spec.unit)
-            for param_name, param_spec in circuit.parameters.items()
+            component_name: (
+                circuit.resolve_component_value(component_name)
+                * self._get_unit_multiplier(component_spec.unit)
+            )
+            for component_name, component_spec in circuit.component_specs.items()
         }
 
         max_intermod_order = (
@@ -207,6 +211,33 @@ class JuliaSimulator:
             return {}
 
     @staticmethod
+    def _as_python_list(value: object) -> list[object]:
+        """Convert Julia/Python iterable-like values into a plain Python list."""
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str | bytes | bytearray):
+            return []
+        if isinstance(value, Iterable):
+            return list(value)
+        return []
+
+    @staticmethod
+    def _to_float(value: object, default: float = 0.0) -> float:
+        """Best-effort numeric coercion for Julia bridge payloads."""
+        try:
+            return float(str(value))
+        except Exception:
+            return default
+
+    @staticmethod
+    def _to_int(value: object, default: int = 0) -> int:
+        """Best-effort integer coercion for Julia bridge payloads."""
+        try:
+            return int(float(str(value)))
+        except Exception:
+            return default
+
+    @staticmethod
     def _normalize_mapping_key(key: object) -> str:
         """Normalize Python and Julia Symbol-like keys into plain strings."""
         text = str(key)
@@ -233,7 +264,9 @@ class JuliaSimulator:
         normalized: dict[str, list[float]] = {}
 
         for trace_label, values in trace_map.items():
-            normalized[str(trace_label)] = list(values)
+            normalized[str(trace_label)] = [
+                cls._to_float(value) for value in cls._as_python_list(values)
+            ]
         return normalized
 
     @classmethod
@@ -245,15 +278,29 @@ class JuliaSimulator:
     def _build_simulation_result(cls, result: object) -> SimulationResult:
         """Convert a Julia bridge payload into SimulationResult."""
         result_mapping = cls._as_python_mapping(result)
-        raw_ports = list(cls._mapping_get(result_mapping, "port_indices", [1]))
-        port_indices = [int(port) for port in raw_ports]
+        raw_ports = cls._as_python_list(cls._mapping_get(result_mapping, "port_indices", [1]))
+        port_indices = [cls._to_int(port, default=1) for port in raw_ports]
         raw_modes = cls._mapping_get(result_mapping, "mode_indices", [[0]])
-        mode_indices = [tuple(int(value) for value in mode) for mode in list(raw_modes)] or [(0,)]
+        mode_indices = [
+            tuple(cls._to_int(value) for value in cls._as_python_list(mode))
+            for mode in cls._as_python_list(raw_modes)
+        ] or [(0,)]
 
         return SimulationResult(
-            frequencies_ghz=list(cls._mapping_get(result_mapping, "frequencies_ghz", [])),
-            s11_real=list(cls._mapping_get(result_mapping, "s11_real", [])),
-            s11_imag=list(cls._mapping_get(result_mapping, "s11_imag", [])),
+            frequencies_ghz=[
+                cls._to_float(value)
+                for value in cls._as_python_list(
+                    cls._mapping_get(result_mapping, "frequencies_ghz", [])
+                )
+            ],
+            s11_real=[
+                cls._to_float(value)
+                for value in cls._as_python_list(cls._mapping_get(result_mapping, "s11_real", []))
+            ],
+            s11_imag=[
+                cls._to_float(value)
+                for value in cls._as_python_list(cls._mapping_get(result_mapping, "s11_imag", []))
+            ],
             port_indices=port_indices or [1],
             s_parameter_real=cls._extract_trace_map(result, key="s_parameter_real"),
             s_parameter_imag=cls._extract_trace_map(result, key="s_parameter_imag"),
@@ -275,8 +322,7 @@ class JuliaSimulator:
     @staticmethod
     def _validate_circuit_inputs(circuit: CircuitDefinition) -> None:
         """Validate basic circuit integrity before invoking Julia."""
-        parameter_names = set(circuit.parameters)
-        referenced_values: list[str] = []
+        component_names = set(circuit.component_specs)
         elements = circuit.lowered_elements()
 
         for element in elements:
@@ -284,37 +330,32 @@ class JuliaSimulator:
                 continue
             if not isinstance(element.value_ref, str):
                 raise ValueError(
-                    "SimulationInputError: non-port instances must use string value_ref. "
+                    "SimulationInputError: non-port elements must use string component references. "
                     f"Got '{element.value_ref}' in instance '{element.name}'."
                 )
-            ref_name = element.value_ref
-            referenced_values.append(ref_name)
-            if ref_name not in parameter_names:
+            if element.value_ref not in component_names:
                 raise ValueError(
-                    f"SimulationInputError: instance '{element.name}' references undefined "
-                    f"parameter '{ref_name}'."
+                    f"SimulationInputError: element '{element.name}' references undefined "
+                    f"component '{element.value_ref}'."
                 )
 
-        for port in circuit.ports:
-            port_node = circuit.canonical_node_token(port.node)
+        for element in elements:
+            if not element.is_port:
+                continue
+            port_node = element.node2 if circuit.is_ground_node(element.node1) else element.node1
             has_shunt_resistor = any(
-                element.kind == "resistor"
+                candidate.kind == "resistor"
                 and (
-                    (element.node1 == port_node and circuit.is_ground_node(element.node2))
-                    or (element.node2 == port_node and circuit.is_ground_node(element.node1))
+                    (candidate.node1 == port_node and circuit.is_ground_node(candidate.node2))
+                    or (candidate.node2 == port_node and circuit.is_ground_node(candidate.node1))
                 )
-                for element in elements
+                for candidate in elements
             )
             if not has_shunt_resistor:
                 raise ValueError(
                     "SimulationInputError: each port node needs a shunt resistor to ground "
                     f"(missing at node '{port_node}')."
                 )
-
-        if not referenced_values and circuit.parameters:
-            raise ValueError(
-                "SimulationInputError: no parameter references were found in instances."
-            )
 
     @staticmethod
     def _extract_available_port_indices(circuit: CircuitDefinition) -> set[int]:
@@ -374,13 +415,27 @@ class JuliaSimulator:
                 "SimulationInputError: all source mode tuples must have the same non-zero length."
             )
 
-        tone_count = mode_lengths.pop()
-        pump_freqs_ghz: list[float | None] = [None] * tone_count
+        _ = mode_lengths.pop()
+        active_tone_indices = sorted(
+            {idx for mode in normalized_modes for idx, value in enumerate(mode) if value != 0}
+        )
+        compressed_tone_count = len(active_tone_indices)
+        active_index_map = {
+            source_index: compressed_index
+            for compressed_index, source_index in enumerate(active_tone_indices)
+        }
+
+        if compressed_tone_count == 0:
+            return ([float(sources[0].pump_freq_ghz)], [[0] for _ in sources])
+
+        pump_freqs_ghz: list[float | None] = [None] * compressed_tone_count
+        compressed_modes: list[list[int]] = []
 
         for index, source in enumerate(sources, start=1):
             mode = normalized_modes[index - 1]
             nonzero_indices = [idx for idx, value in enumerate(mode) if value != 0]
             if not nonzero_indices:
+                compressed_modes.append([0] * compressed_tone_count)
                 continue
 
             if len(nonzero_indices) != 1 or mode[nonzero_indices[0]] < 0:
@@ -389,9 +444,12 @@ class JuliaSimulator:
                     "source mode tuples are currently supported."
                 )
 
-            tone_index = nonzero_indices[0]
+            tone_index = active_index_map[nonzero_indices[0]]
             pump_freq = float(source.pump_freq_ghz)
             assigned = pump_freqs_ghz[tone_index]
+            compressed_mode = [0] * compressed_tone_count
+            compressed_mode[tone_index] = int(mode[nonzero_indices[0]])
+            compressed_modes.append(compressed_mode)
             if assigned is None:
                 pump_freqs_ghz[tone_index] = pump_freq
                 continue
@@ -410,7 +468,7 @@ class JuliaSimulator:
 
         return (
             [float(freq) for freq in pump_freqs_ghz if freq is not None],
-            [list(mode) for mode in normalized_modes],
+            compressed_modes,
         )
 
     @staticmethod

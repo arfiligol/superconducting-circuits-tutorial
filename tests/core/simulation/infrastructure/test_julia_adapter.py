@@ -3,24 +3,44 @@
 import pytest
 
 from core.simulation.domain.circuit import (
-    CircuitDefinition,
     DriveSourceConfig,
     FrequencyRange,
-    InstanceSpec,
-    LayoutHints,
-    ParameterSpec,
-    PortSpec,
     SimulationConfig,
-    migrate_legacy_circuit_definition,
+    parse_circuit_definition_source,
 )
 from core.simulation.infrastructure.julia_adapter import JuliaSimulator
 
 
 def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]):
-    return CircuitDefinition.model_validate(
-        migrate_legacy_circuit_definition(
-            {"name": name, "parameters": parameters, "topology": topology}
-        )
+    components: list[dict[str, object]] = []
+    seen_component_refs: set[str] = set()
+    normalized_topology: list[tuple[str, str, str, str | int]] = []
+
+    for element_name, node1, node2, value_ref in topology:
+        element_name_text = str(element_name)
+        if element_name_text.lower().startswith("p"):
+            normalized_topology.append((element_name_text, str(node1), str(node2), int(value_ref)))
+            continue
+
+        component_ref = str(value_ref)
+        if component_ref not in seen_component_refs:
+            parameter = parameters[component_ref]
+            components.append(
+                {
+                    "name": component_ref,
+                    "default": float(parameter["default"]),
+                    "unit": str(parameter["unit"]),
+                }
+            )
+            seen_component_refs.add(component_ref)
+        normalized_topology.append((element_name_text, str(node1), str(node2), component_ref))
+
+    return parse_circuit_definition_source(
+        {
+            "name": name,
+            "components": components,
+            "topology": normalized_topology,
+        }
     )
 
 
@@ -41,43 +61,6 @@ def _build_simulator(fake_behavior) -> JuliaSimulator:
 
 def _default_config() -> SimulationConfig:
     return SimulationConfig(pump_freq_ghz=5.0, n_modulation_harmonics=10, n_pump_harmonics=20)
-
-
-def test_run_hbsolve_raises_input_error_for_missing_component_reference():
-    circuit = CircuitDefinition.model_construct(
-        schema_version="0.1",
-        name="bad-ref",
-        parameters={"C1": ParameterSpec(default=1.0, unit="pF")},
-        ports=[PortSpec(id="P1", node="1", ground="gnd", index=1, role="signal", side="left")],
-        instances=[
-            InstanceSpec.model_construct(
-                id="R1",
-                kind="resistor",
-                pins=["1", "gnd"],
-                value_ref="R1",
-                role="termination",
-            ),
-            InstanceSpec(
-                id="C1",
-                kind="capacitor",
-                pins=["1", "gnd"],
-                value_ref="C1",
-                role="shunt",
-            ),
-        ],
-        layout=LayoutHints(direction="lr", profile="generic"),
-    )
-    simulator = _build_simulator(lambda *_: pytest.fail("Julia should not be called"))
-
-    with pytest.raises(
-        ValueError,
-        match="SimulationInputError: instance 'R1' references undefined parameter 'R1'",
-    ):
-        simulator.run_hbsolve(
-            circuit,
-            FrequencyRange(start_ghz=1.0, stop_ghz=5.0, points=101),
-            _default_config(),
-        )
 
 
 def test_run_hbsolve_raises_input_error_when_port_has_no_shunt_resistor():
@@ -340,6 +323,95 @@ def test_run_hbsolve_supports_explicit_dc_and_pump_sources_on_same_port() -> Non
     assert args[6] == pytest.approx([1.59e-4, 4.4e-6])
     assert args[7] == [2, 2]
     assert args[8] == [[0], [1]]
+
+
+def test_run_hbsolve_compresses_unused_explicit_mode_slots() -> None:
+    circuit = _legacy_circuit(
+        name="compressed-modes",
+        parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
+        topology=[
+            ("P1", "1", "0", 1),
+            ("P2", "2", "0", 2),
+            ("R50_1", "1", "0", "R50"),
+            ("R50_2", "2", "0", "R50"),
+        ],
+    )
+    captured = {}
+
+    def _capture(*args):
+        captured["args"] = args
+        return {
+            "frequencies_ghz": [1.0],
+            "s11_real": [0.0],
+            "s11_imag": [0.0],
+        }
+
+    simulator = _build_simulator(_capture)
+    config = SimulationConfig(
+        sources=[
+            DriveSourceConfig(
+                pump_freq_ghz=16.0,
+                port=2,
+                current_amp=1.59e-4,
+                mode_components=(0, 0),
+            ),
+            DriveSourceConfig(
+                pump_freq_ghz=16.0,
+                port=2,
+                current_amp=4.4e-6,
+                mode_components=(1, 0),
+            ),
+        ]
+    )
+
+    simulator.run_hbsolve(
+        circuit,
+        FrequencyRange(start_ghz=7.8, stop_ghz=8.2, points=401),
+        config,
+    )
+
+    args = captured["args"]
+    assert args[5] == pytest.approx([16.0])
+    assert args[8] == [[0], [1]]
+
+
+def test_run_hbsolve_compresses_second_slot_single_pump_to_one_active_tone() -> None:
+    circuit = _legacy_circuit(
+        name="compressed-second-slot",
+        parameters={"R50": {"default": 50.0, "unit": "Ohm"}},
+        topology=[("P1", "1", "0", 1), ("R50", "1", "0", "R50")],
+    )
+    captured = {}
+
+    def _capture(*args):
+        captured["args"] = args
+        return {
+            "frequencies_ghz": [1.0],
+            "s11_real": [0.0],
+            "s11_imag": [0.0],
+        }
+
+    simulator = _build_simulator(_capture)
+    config = SimulationConfig(
+        sources=[
+            DriveSourceConfig(
+                pump_freq_ghz=4.2,
+                port=1,
+                current_amp=1.0e-6,
+                mode_components=(0, 1),
+            )
+        ]
+    )
+
+    simulator.run_hbsolve(
+        circuit,
+        FrequencyRange(start_ghz=1.0, stop_ghz=2.0, points=11),
+        config,
+    )
+
+    args = captured["args"]
+    assert args[5] == pytest.approx([4.2])
+    assert args[8] == [[1]]
 
 
 def test_run_hbsolve_rejects_mixed_implicit_and_explicit_source_modes() -> None:

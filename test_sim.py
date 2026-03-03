@@ -3,14 +3,14 @@ import asyncio
 from nicegui import run
 
 from core.simulation.application.run_simulation import run_simulation
-from core.simulation.domain.circuit import CircuitDefinition, ComponentValue, FrequencyRange
+from core.simulation.domain.circuit import CircuitDefinition, FrequencyRange
 
 circuit = CircuitDefinition(
     name="Test",
     components=[
-        ComponentValue(name="L", value=10.0, unit="nH"),
-        ComponentValue(name="C", value=1.0, unit="pF"),
-        ComponentValue(name="R50", value=50.0, unit="Ohm"),
+        {"name": "L", "default": 10.0, "unit": "nH"},
+        {"name": "C", "default": 1.0, "unit": "pF"},
+        {"name": "R50", "default": 50.0, "unit": "Ohm"},
     ],
     topology=[
         ("P1", "1", "0", 1),

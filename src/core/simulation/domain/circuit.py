@@ -5,208 +5,322 @@ from __future__ import annotations
 import ast
 import json
 import math
-from collections.abc import Mapping
+import pprint
+import re
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from core.simulation.domain.compiler import compile_simulation_topology
 from core.simulation.domain.ir import CircuitElement, CircuitIR
 
-SUPPORTED_SCHEMA_VERSION = "0.1"
-SUPPORTED_PORT_ROLES = {"signal", "readout", "pump", "flux", "bias"}
-SUPPORTED_PORT_SIDES = {"left", "right", "top", "bottom"}
-SUPPORTED_INSTANCE_KINDS = {
-    "resistor",
-    "inductor",
-    "capacitor",
-    "josephson_junction",
-    "mutual_coupling",
-}
-SUPPORTED_INSTANCE_ROLES = {
-    "signal",
-    "termination",
-    "shunt",
-    "qubit_branch",
-    "coupler",
-    "nonlinear_core",
-    "readout",
-    "pump",
-    "flux",
-    "bias",
-}
-SUPPORTED_LAYOUT_DIRECTIONS = {"lr", "tb"}
-SUPPORTED_LAYOUT_PROFILES = {"generic", "qubit_readout", "jpa", "jtwpa"}
-GROUND_TOKENS = {"0", "gnd"}
+DEFAULT_LAYOUT_DIRECTION = "lr"
+GROUND_TOKEN = "0"
+GROUND_TOKENS = {GROUND_TOKEN}
+SUPPORTED_LAYOUT_PROFILES = {"generic", "jpa", "jtwpa"}
+_TEMPLATE_PATTERN = re.compile(r"\$\{([^{}]+)\}")
+_TEMPLATE_EXPRESSION_PATTERN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:([+-])(\d+))?$")
+
+type TopologyTuple = tuple[str, str, str, str | int]
 
 
-class ParameterSpec(BaseModel):
-    """Parameter specification referenced by instance value_ref."""
+@dataclass(frozen=True)
+class ParameterSpec:
+    """Expanded parameter row."""
 
-    default: float = Field(description="Default numeric value")
-    unit: str = Field(description="Unit string (e.g., 'nH', 'pF', 'Ohm')")
-    sweepable: bool = Field(default=True, description="Whether this parameter is sweepable")
+    name: str
+    default: float
+    unit: str
 
-
-class PortSpec(BaseModel):
-    """User-facing port declaration in Schematic Netlist."""
-
-    id: str = Field(description="Stable port identifier")
-    node: str = Field(description="Signal node")
-    ground: str = Field(description="Ground reference node")
-    index: int = Field(description="Simulation port index")
-    role: str = Field(description="Semantic port role")
-    side: str | None = Field(default=None, description="Preferred preview side")
+    def as_dict(self) -> dict[str, object]:
+        """Serialize the expanded parameter row for previews."""
+        return {"name": self.name, "default": self.default, "unit": self.unit}
 
 
-class InstanceSpec(BaseModel):
-    """User-facing component instance declaration in Schematic Netlist."""
+@dataclass(frozen=True)
+class ComponentSpec:
+    """Expanded component row."""
 
-    id: str = Field(description="Stable instance identifier")
-    kind: str = Field(description="Component kind")
-    pins: list[str] = Field(description="Pin identifiers (v0.1 is 2-pin only)")
-    value_ref: str = Field(description="Reference into parameters")
-    role: str | None = Field(default=None, description="Semantic instance role")
+    name: str
+    unit: str
+    default: float | None = None
+    value_ref: str | None = None
+
+    def resolved_value(self, parameters: Mapping[str, ParameterSpec]) -> float:
+        """Resolve the effective numeric value for simulation and previews."""
+        if self.default is not None:
+            return self.default
+        assert self.value_ref is not None
+        return parameters[self.value_ref].default
+
+    def as_dict(self) -> dict[str, object]:
+        """Serialize the expanded component row for previews."""
+        payload: dict[str, object] = {"name": self.name}
+        if self.default is not None:
+            payload["default"] = self.default
+        if self.value_ref is not None:
+            payload["value_ref"] = self.value_ref
+        payload["unit"] = self.unit
+        return payload
 
 
-class LayoutHints(BaseModel):
-    """Optional stable preview layout hints."""
+@dataclass(frozen=True)
+class TopologyEntry:
+    """Expanded topology tuple."""
 
-    direction: str | None = Field(default=None, description="Primary layout direction")
-    profile: str | None = Field(default=None, description="Domain-specific preview profile")
+    name: str
+    node1: str
+    node2: str
+    value_ref: str | int
+
+    @property
+    def is_port(self) -> bool:
+        """Return whether this row declares a port."""
+        return _infer_element_kind(self.name) == "port"
+
+    @property
+    def is_mutual_coupling(self) -> bool:
+        """Return whether this row declares a coupling element."""
+        return _infer_element_kind(self.name) == "mutual_coupling"
+
+    def as_tuple(self) -> TopologyTuple:
+        """Serialize the expanded topology row for previews and Julia."""
+        return (self.name, self.node1, self.node2, self.value_ref)
 
 
-class CircuitDefinition(BaseModel):
-    """Definition of a superconducting circuit in Schematic Netlist v0.1."""
+@dataclass(frozen=True)
+class RepeatContext:
+    """Resolved bindings for one repeat iteration."""
 
-    schema_version: str = Field(
-        default=SUPPORTED_SCHEMA_VERSION,
-        description="Schematic Netlist schema version",
-    )
-    name: str = Field(description="Circuit name for identification")
-    parameters: dict[str, ParameterSpec] = Field(
-        description="Parameter map for instance value references"
-    )
-    ports: list[PortSpec] = Field(description="Declared simulation/preview ports")
-    instances: list[InstanceSpec] = Field(description="Declared component instances")
-    layout: LayoutHints = Field(default_factory=LayoutHints, description="Optional layout hints")
+    index_name: str
+    index_value: int
+    symbols: dict[str, int]
+    series: dict[str, float]
 
-    @model_validator(mode="after")
-    def validate_contract(self) -> CircuitDefinition:
-        """Enforce the public Schematic Netlist contract."""
-        if self.schema_version != SUPPORTED_SCHEMA_VERSION:
-            raise ValueError(
-                f"unsupported schema_version '{self.schema_version}'; expected "
-                f"'{SUPPORTED_SCHEMA_VERSION}'"
-            )
+    def render_text(self, value: str) -> str:
+        """Render all supported template interpolations inside one string."""
+        if "${" in value and _TEMPLATE_PATTERN.search(value) is None:
+            raise ValueError(f"Invalid template syntax '{value}'.")
 
-        seen_port_ids: set[str] = set()
-        seen_port_indices: set[int] = set()
-        for port in self.ports:
-            if port.id in seen_port_ids:
-                raise ValueError(f"duplicate port id '{port.id}'")
-            if port.index in seen_port_indices:
-                raise ValueError(f"duplicate port index '{port.index}'")
-            if port.role not in SUPPORTED_PORT_ROLES:
-                raise ValueError(f"unsupported port role '{port.role}' for port '{port.id}'")
-            if port.side is not None and port.side not in SUPPORTED_PORT_SIDES:
-                raise ValueError(f"unsupported port side '{port.side}' for port '{port.id}'")
-            seen_port_ids.add(port.id)
-            seen_port_indices.add(port.index)
+        def _replace(match: re.Match[str]) -> str:
+            expression = match.group(1).strip()
+            return self._render_expression(expression)
 
-        seen_instance_ids: set[str] = set()
-        for instance in self.instances:
-            if instance.id in seen_instance_ids:
-                raise ValueError(f"duplicate instance id '{instance.id}'")
-            if instance.kind not in SUPPORTED_INSTANCE_KINDS:
-                raise ValueError(f"unsupported kind '{instance.kind}' for instance '{instance.id}'")
-            if len(instance.pins) != 2:
-                raise ValueError(f"instance '{instance.id}' pins must contain exactly 2 nodes")
-            if instance.value_ref not in self.parameters:
-                raise ValueError(
-                    f"instance '{instance.id}' references undefined parameter "
-                    f"'{instance.value_ref}'"
-                )
-            if instance.role is not None and instance.role not in SUPPORTED_INSTANCE_ROLES:
-                raise ValueError(f"unsupported role '{instance.role}' for instance '{instance.id}'")
-            seen_instance_ids.add(instance.id)
+        rendered = _TEMPLATE_PATTERN.sub(_replace, value)
+        if "${" in rendered:
+            raise ValueError(f"Unsupported template syntax '{value}'.")
+        return rendered
 
-        if (
-            self.layout.direction is not None
-            and self.layout.direction not in SUPPORTED_LAYOUT_DIRECTIONS
-        ):
-            raise ValueError(f"unsupported layout direction '{self.layout.direction}'")
-        if self.layout.profile is not None and self.layout.profile not in SUPPORTED_LAYOUT_PROFILES:
-            raise ValueError(f"unsupported layout profile '{self.layout.profile}'")
+    def _render_expression(self, expression: str) -> str:
+        """Render one supported template expression."""
+        match = _TEMPLATE_EXPRESSION_PATTERN.fullmatch(expression)
+        if match is None:
+            raise ValueError(f"Unsupported template expression '{expression}'.")
 
-        return self
+        name = match.group(1)
+        sign = match.group(2)
+        magnitude = match.group(3)
+        offset = 0 if magnitude is None else int(magnitude)
+        if sign == "-":
+            offset *= -1
+
+        if name in {self.index_name, "index"}:
+            return str(self.index_value + offset)
+        if name in self.symbols:
+            return str(self.symbols[name] + offset)
+        if name in self.series:
+            if sign is not None:
+                raise ValueError(f"Series variable '{name}' does not support +/- offsets.")
+            return str(self.series[name])
+        raise ValueError(f"Unknown repeat variable '{name}'.")
+
+
+@dataclass
+class ExpandedCircuitDefinition:
+    """Fully expanded and validated netlist used for preview and simulation."""
+
+    name: str
+    components: list[ComponentSpec]
+    topology: list[TopologyEntry]
+    parameters: list[ParameterSpec] = field(default_factory=list)
+    _component_specs: dict[str, ComponentSpec] = field(init=False, repr=False)
+    _parameter_specs: dict[str, ParameterSpec] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._component_specs = {component.name: component for component in self.components}
+        self._parameter_specs = {parameter.name: parameter for parameter in self.parameters}
+
+    @property
+    def component_specs(self) -> dict[str, ComponentSpec]:
+        """Return a copy of the expanded component registry."""
+        return dict(self._component_specs)
+
+    @property
+    def parameter_specs(self) -> dict[str, ParameterSpec]:
+        """Return a copy of the expanded parameter registry."""
+        return dict(self._parameter_specs)
+
+    @property
+    def available_port_indices(self) -> list[int]:
+        """Return all declared port indices in ascending order."""
+        return sorted(
+            int(row.value_ref) for row in self.topology if row.is_port and int(row.value_ref) >= 1
+        )
+
+    def component_spec(self, component_ref: str) -> ComponentSpec | None:
+        """Look up one component specification by topology value reference."""
+        return self._component_specs.get(component_ref)
+
+    def parameter_spec(self, parameter_name: str) -> ParameterSpec | None:
+        """Look up one parameter specification by name."""
+        return self._parameter_specs.get(parameter_name)
+
+    def resolve_component_value(self, component_ref: str) -> float:
+        """Resolve one component value into a concrete number."""
+        component = self._component_specs.get(component_ref)
+        if component is None:
+            raise KeyError(component_ref)
+        return component.resolved_value(self._parameter_specs)
+
+    def to_payload(self) -> dict[str, object]:
+        """Serialize the expanded netlist in public preview format."""
+        payload: dict[str, object] = {
+            "name": self.name,
+            "components": [component.as_dict() for component in self.components],
+            "topology": [row.as_tuple() for row in self.topology],
+        }
+        if self.parameters:
+            payload["parameters"] = [parameter.as_dict() for parameter in self.parameters]
+        return payload
+
+
+@dataclass
+class CircuitDefinition:
+    """Source-form circuit netlist with cached expanded form."""
+
+    name: str
+    components: list[object]
+    topology: list[object]
+    parameters: list[object] = field(default_factory=list)
+    _expanded: ExpandedCircuitDefinition = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.name = _normalize_non_empty_name(self.name, field_name="name")
+        self.components = _ensure_block_list(self.components, block_name="components")
+        self.topology = _ensure_block_list(self.topology, block_name="topology")
+        self.parameters = _ensure_block_list(self.parameters, block_name="parameters")
+        self._expanded = _expand_circuit_definition(
+            name=self.name,
+            component_items=self.components,
+            topology_items=self.topology,
+            parameter_items=self.parameters,
+        )
+
+    @classmethod
+    def model_validate(cls, payload: Mapping[str, Any]) -> CircuitDefinition:
+        """Provide a Pydantic-like validation entry point used by existing callers."""
+        raw = _coerce_mapping(payload)
+        if "name" not in raw:
+            raise ValueError("Circuit Definition must define 'name'.")
+        if "components" not in raw:
+            raise ValueError("Circuit Definition must define 'components'.")
+        if "topology" not in raw:
+            raise ValueError("Circuit Definition must define 'topology'.")
+        return cls(
+            name=raw["name"],
+            components=raw["components"],
+            topology=raw["topology"],
+            parameters=raw.get("parameters", []),
+        )
 
     @staticmethod
     def canonical_node_token(node: str | int) -> str:
-        """Normalize ground aliases into the canonical public token."""
+        """Normalize valid ground tokens into the canonical public value."""
         node_str = str(node).strip()
         if node_str.lower() in GROUND_TOKENS:
-            return "gnd"
+            return GROUND_TOKEN
         return node_str
 
     @classmethod
     def is_ground_node(cls, node: str | int) -> bool:
-        """Return whether the token represents the ground reference."""
-        return cls.canonical_node_token(node) == "gnd"
+        """Return whether the token represents the only supported ground node."""
+        return cls.canonical_node_token(node) == GROUND_TOKEN
+
+    @property
+    def expanded_definition(self) -> ExpandedCircuitDefinition:
+        """Return the shared expanded form used by preview and simulation."""
+        return self._expanded
 
     @property
     def available_port_indices(self) -> list[int]:
         """Return declared port indices sorted ascending."""
-        return sorted(port.index for port in self.ports if port.index >= 1)
+        return self._expanded.available_port_indices
 
     @property
     def effective_layout_direction(self) -> str:
-        """Return the configured layout direction, with a stable fallback."""
-        return self.to_ir().layout_direction
+        """Return the stable default layout direction."""
+        return DEFAULT_LAYOUT_DIRECTION
 
     @property
     def effective_layout_profile(self) -> str:
-        """Return the configured preview profile, with heuristic fallback."""
+        """Return the inferred preview profile for the expanded netlist."""
         return self.to_ir().layout_profile
 
+    def component_spec(self, component_ref: str) -> ComponentSpec | None:
+        """Look up a component specification by topology value reference."""
+        return self._expanded.component_spec(component_ref)
+
+    @property
+    def component_specs(self) -> dict[str, ComponentSpec]:
+        """Return a copy of the expanded component registry."""
+        return self._expanded.component_specs
+
+    @property
+    def parameter_specs(self) -> dict[str, ParameterSpec]:
+        """Return a copy of the expanded parameter registry."""
+        return self._expanded.parameter_specs
+
+    def resolve_component_value(self, component_ref: str) -> float:
+        """Resolve one component value to a concrete numeric value."""
+        return self._expanded.resolve_component_value(component_ref)
+
+    def to_source_payload(self) -> dict[str, object]:
+        """Serialize the original source form without expanding repeat blocks."""
+        payload: dict[str, object] = {
+            "name": self.name,
+            "components": [_clone_source_value(item) for item in self.components],
+            "topology": [_clone_source_value(item) for item in self.topology],
+        }
+        if self.parameters:
+            payload["parameters"] = [_clone_source_value(item) for item in self.parameters]
+        return payload
+
     def _build_lowered_elements(self) -> tuple[CircuitElement, ...]:
-        """Lower public ports/instances into a single internal element stream."""
+        """Lower the expanded netlist into the internal compiler element stream."""
         elements: list[CircuitElement] = []
-        for port in sorted(self.ports, key=lambda spec: spec.index):
+        for row in self._expanded.topology:
+            kind = _infer_element_kind(row.name)
             elements.append(
                 CircuitElement(
-                    name=port.id,
-                    kind="port",
-                    node1=self.canonical_node_token(port.node),
-                    node2=self.canonical_node_token(port.ground),
-                    value_ref=int(port.index),
-                    role=port.role,
-                )
-            )
-        for instance in self.instances:
-            elements.append(
-                CircuitElement(
-                    name=instance.id,
-                    kind=instance.kind,
-                    node1=self.canonical_node_token(instance.pins[0]),
-                    node2=self.canonical_node_token(instance.pins[1]),
-                    value_ref=instance.value_ref,
-                    role=instance.role,
+                    name=row.name,
+                    kind=kind,
+                    node1=row.node1,
+                    node2=row.node2,
+                    value_ref=row.value_ref,
                 )
             )
         return tuple(elements)
 
     def _infer_layout_profile(self, elements: tuple[CircuitElement, ...]) -> str:
-        """Infer a stable preview profile when the schema does not declare one."""
-        if self.layout.profile is not None:
-            return self.layout.profile
-
+        """Infer a stable layout profile from the expanded element mix."""
         series_inductive = 0
         shunt_capacitive = 0
         shunt_josephson = 0
 
         for element in elements:
-            if element.is_port:
+            if element.is_port or element.is_mutual_coupling:
                 continue
             is_shunt = self.is_ground_node(element.node1) ^ self.is_ground_node(element.node2)
             if not is_shunt:
@@ -220,17 +334,20 @@ class CircuitDefinition(BaseModel):
 
         if series_inductive >= 3 and shunt_capacitive >= 2:
             return "jtwpa"
-        if self.ports and shunt_capacitive >= 1 and shunt_josephson >= 1:
+        if self.available_port_indices and shunt_capacitive >= 1 and shunt_josephson >= 1:
             return "jpa"
         return "generic"
 
     def to_ir(self) -> CircuitIR:
-        """Compile the public schema into a stable internal representation."""
+        """Compile the expanded netlist into the stable internal representation."""
         elements = self._build_lowered_elements()
+        layout_profile = self._infer_layout_profile(elements)
+        if layout_profile not in SUPPORTED_LAYOUT_PROFILES:
+            layout_profile = "generic"
         return CircuitIR(
             circuit_name=self.name,
-            layout_direction=self.layout.direction or "lr",
-            layout_profile=self._infer_layout_profile(elements),
+            layout_direction=DEFAULT_LAYOUT_DIRECTION,
+            layout_profile=layout_profile,
             available_port_indices=tuple(self.available_port_indices),
             elements=elements,
         )
@@ -240,7 +357,7 @@ class CircuitDefinition(BaseModel):
         return self.to_ir().lowered_elements()
 
     def lowered_topology(self) -> list[tuple[str, str, str, str | int]]:
-        """Compatibility facade returning lowered simulation tuples."""
+        """Compatibility facade returning simulation tuples."""
         return compile_simulation_topology(
             self.to_ir(),
             is_ground_node=lambda node: self.is_ground_node(node),
@@ -253,14 +370,14 @@ def _coerce_mapping(payload: object) -> dict[str, Any]:
         return dict(payload)
     if isinstance(payload, Mapping):
         return dict(payload.items())
-    raise TypeError("Schematic Netlist must be a mapping object.")
+    raise TypeError("Circuit Definition must be a mapping object.")
 
 
 def _parse_text_payload(payload_text: str) -> dict[str, Any]:
     """Parse editor text as Python-literal first, then JSON."""
     stripped = payload_text.strip()
     if not stripped:
-        raise ValueError("Schematic Netlist text is empty.")
+        raise ValueError("Circuit Definition text is empty.")
 
     try:
         parsed = ast.literal_eval(stripped)
@@ -268,37 +385,48 @@ def _parse_text_payload(payload_text: str) -> dict[str, Any]:
         try:
             parsed = json.loads(stripped)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"Unable to parse Schematic Netlist text: {exc}") from exc
+            raise ValueError(f"Unable to parse Circuit Definition text: {exc}") from exc
 
     return _coerce_mapping(parsed)
 
 
-def _infer_legacy_port_role(
-    index: int,
-    signal_node: str,
-    topology: list[tuple[Any, Any, Any, Any]],
-) -> str:
-    """Infer a stable port role when migrating legacy tuple topologies."""
-    connected = [
-        (str(name).lower(), str(value_ref).lower())
-        for name, node1, node2, value_ref in topology
-        if CircuitDefinition.canonical_node_token(node1) == signal_node
-        or CircuitDefinition.canonical_node_token(node2) == signal_node
-    ]
-    if any("bias" in name or "bias" in value_ref for name, value_ref in connected):
-        return "bias"
-    if any("flux" in name or "pump" in name for name, _ in connected):
-        return "pump"
-    if index == 1:
-        return "signal"
-    return "readout"
+def _clone_source_value(value: object) -> object:
+    """Copy nested source values so formatting helpers do not share mutable state."""
+    if isinstance(value, dict):
+        return {str(key): _clone_source_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_clone_source_value(item) for item in value)
+    if isinstance(value, list):
+        return [_clone_source_value(item) for item in value]
+    return value
 
 
-def _infer_legacy_instance_kind(instance_id: str) -> str:
-    """Infer the public kind from a legacy tuple element id."""
-    lowered = instance_id.lower()
+def _normalize_non_empty_name(raw_value: object, *, field_name: str) -> str:
+    """Normalize and validate a required non-empty string field."""
+    if not isinstance(raw_value, str):
+        raise ValueError(f"{field_name} must be a string.")
+    value = raw_value.strip()
+    if not value:
+        raise ValueError(f"{field_name} must not be empty.")
+    return value
+
+
+def _ensure_block_list(raw_value: object, *, block_name: str) -> list[object]:
+    """Validate one top-level block list."""
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list):
+        raise ValueError(f"'{block_name}' must be a list.")
+    return list(raw_value)
+
+
+def _infer_element_kind(element_name: str) -> str:
+    """Infer element kind from the public topology element prefix."""
+    lowered = element_name.lower()
     if lowered.startswith("lj"):
         return "josephson_junction"
+    if lowered.startswith("p"):
+        return "port"
     if lowered.startswith("r"):
         return "resistor"
     if lowered.startswith("l"):
@@ -307,146 +435,444 @@ def _infer_legacy_instance_kind(instance_id: str) -> str:
         return "capacitor"
     if lowered.startswith("k"):
         return "mutual_coupling"
-    raise ValueError(
-        f"Legacy topology element '{instance_id}' cannot be mapped to a supported kind."
+    raise ValueError(f"Unsupported topology element prefix for '{element_name}'.")
+
+
+def _normalize_node_token(raw_value: object) -> str:
+    """Validate public node tokens: decimal strings only, with '0' as the only ground."""
+    if not isinstance(raw_value, str):
+        raise ValueError(
+            "Topology nodes must be numeric strings. Use '0' as the only ground token."
+        )
+
+    node_text = raw_value.strip()
+    if node_text.lower() == "gnd":
+        raise ValueError("Ground must be the string '0'. The 'gnd' alias is not supported.")
+    if not node_text.isdigit():
+        raise ValueError(
+            "Topology nodes must be numeric strings. Use '0' as the only ground token."
+        )
+    return str(int(node_text))
+
+
+def _resolve_template_value(raw_value: object, context: RepeatContext | None) -> object:
+    """Render template strings only when inside a repeat emit block."""
+    if not isinstance(raw_value, str):
+        return raw_value
+    if "${" not in raw_value:
+        return raw_value
+    if context is None:
+        raise ValueError("Template interpolation is only supported inside repeat emit rows.")
+    return context.render_text(raw_value)
+
+
+def _resolve_float(raw_value: object, context: RepeatContext | None, *, field_name: str) -> float:
+    """Resolve a numeric literal or templated numeric string to float."""
+    value = _resolve_template_value(raw_value, context)
+    if isinstance(value, bool):
+        raise ValueError(f"{field_name} must be numeric.")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must be numeric.") from exc
+    raise ValueError(f"{field_name} must be numeric.")
+
+
+def _parse_repeat_context(
+    repeat_raw: Mapping[str, Any],
+) -> tuple[int, str, int, dict[str, Any], dict[str, Any], list[object]]:
+    """Validate the shape of one repeat block and return normalized fields."""
+    allowed_keys = {"count", "index", "start", "symbols", "series", "emit"}
+    unknown_keys = set(repeat_raw) - allowed_keys
+    if unknown_keys:
+        unknown_list = ", ".join(sorted(unknown_keys))
+        raise ValueError(f"Unsupported repeat keys: {unknown_list}.")
+
+    count_raw = repeat_raw.get("count")
+    if not isinstance(count_raw, int) or isinstance(count_raw, bool) or count_raw <= 0:
+        raise ValueError("repeat.count must be a positive integer.")
+    count = count_raw
+
+    index_name = _normalize_non_empty_name(repeat_raw.get("index"), field_name="repeat.index")
+
+    start_raw = repeat_raw.get("start", 0)
+    if not isinstance(start_raw, int) or isinstance(start_raw, bool):
+        raise ValueError("repeat.start must be an integer.")
+    start = start_raw
+
+    symbols_raw = repeat_raw.get("symbols", {})
+    if not isinstance(symbols_raw, Mapping):
+        raise ValueError("repeat.symbols must be a mapping when provided.")
+    series_raw = repeat_raw.get("series", {})
+    if not isinstance(series_raw, Mapping):
+        raise ValueError("repeat.series must be a mapping when provided.")
+
+    emit_raw = repeat_raw.get("emit")
+    if not isinstance(emit_raw, list) or not emit_raw:
+        raise ValueError("repeat.emit must be a non-empty list.")
+
+    return (count, index_name, start, dict(symbols_raw), dict(series_raw), list(emit_raw))
+
+
+def _build_repeat_iteration_context(
+    *,
+    index_name: str,
+    index_value: int,
+    offset: int,
+    symbols_raw: Mapping[str, Any],
+    series_raw: Mapping[str, Any],
+) -> RepeatContext:
+    """Resolve all symbol/series bindings for one repeat iteration."""
+    symbol_values: dict[str, int] = {}
+    for symbol_name, symbol_spec_raw in symbols_raw.items():
+        normalized_symbol_name = _normalize_non_empty_name(
+            symbol_name,
+            field_name="repeat.symbols key",
+        )
+        symbol_spec = _coerce_mapping(symbol_spec_raw)
+        base_raw = symbol_spec.get("base")
+        step_raw = symbol_spec.get("step")
+        if not isinstance(base_raw, int) or isinstance(base_raw, bool):
+            raise ValueError(f"repeat.symbols.{normalized_symbol_name}.base must be an integer.")
+        if not isinstance(step_raw, int) or isinstance(step_raw, bool):
+            raise ValueError(f"repeat.symbols.{normalized_symbol_name}.step must be an integer.")
+        symbol_values[normalized_symbol_name] = base_raw + (step_raw * offset)
+
+    series_values: dict[str, float] = {}
+    for series_name, series_spec_raw in series_raw.items():
+        normalized_series_name = _normalize_non_empty_name(
+            series_name,
+            field_name="repeat.series key",
+        )
+        series_spec = _coerce_mapping(series_spec_raw)
+        base_raw = series_spec.get("base")
+        step_raw = series_spec.get("step")
+        if isinstance(base_raw, bool) or not isinstance(base_raw, (int, float)):
+            raise ValueError(f"repeat.series.{normalized_series_name}.base must be numeric.")
+        if isinstance(step_raw, bool) or not isinstance(step_raw, (int, float)):
+            raise ValueError(f"repeat.series.{normalized_series_name}.step must be numeric.")
+        series_values[normalized_series_name] = float(base_raw) + (float(step_raw) * offset)
+
+    return RepeatContext(
+        index_name=index_name,
+        index_value=index_value,
+        symbols=symbol_values,
+        series=series_values,
     )
 
 
-def _infer_legacy_instance_role(kind: str, node1: str, node2: str) -> str | None:
-    """Infer a coarse semantic role from a legacy tuple entry."""
-    is_shunt = CircuitDefinition.is_ground_node(node1) ^ CircuitDefinition.is_ground_node(node2)
-    if kind == "resistor" and is_shunt:
-        return "termination"
-    if kind in {"capacitor", "inductor"} and is_shunt:
-        return "shunt"
-    if kind == "josephson_junction":
-        return "nonlinear_core"
+def _is_repeat_row(raw_item: object) -> bool:
+    """Return whether a block item is a repeat wrapper row."""
+    return isinstance(raw_item, Mapping) and "repeat" in raw_item
+
+
+def _expand_parameter_row(raw_item: object, context: RepeatContext | None) -> ParameterSpec:
+    """Expand one explicit parameter row."""
+    if not isinstance(raw_item, Mapping):
+        raise ValueError("parameters rows must be mappings or repeat blocks.")
+    row = _coerce_mapping(raw_item)
+    if "repeat" in row:
+        raise ValueError("Nested repeat blocks are not supported.")
+
+    name = _normalize_non_empty_name(
+        _resolve_template_value(row.get("name"), context),
+        field_name="parameters[*].name",
+    )
+    unit = _normalize_non_empty_name(
+        _resolve_template_value(row.get("unit"), context),
+        field_name=f"Parameter '{name}' unit",
+    )
+    default = _resolve_float(
+        row.get("default"),
+        context,
+        field_name=f"Parameter '{name}' default",
+    )
+    return ParameterSpec(name=name, default=default, unit=unit)
+
+
+def _expand_component_row(raw_item: object, context: RepeatContext | None) -> ComponentSpec:
+    """Expand one explicit component row."""
+    if not isinstance(raw_item, Mapping):
+        raise ValueError("components rows must be mappings or repeat blocks.")
+    row = _coerce_mapping(raw_item)
+    if "repeat" in row:
+        raise ValueError("Nested repeat blocks are not supported.")
+
+    name = _normalize_non_empty_name(
+        _resolve_template_value(row.get("name"), context),
+        field_name="components[*].name",
+    )
+    unit = _normalize_non_empty_name(
+        _resolve_template_value(row.get("unit"), context),
+        field_name=f"Component '{name}' unit",
+    )
+
+    has_default = "default" in row
+    has_value_ref = "value_ref" in row
+    if has_default == has_value_ref:
+        raise ValueError(f"Component '{name}' must define exactly one of 'default' or 'value_ref'.")
+
+    if has_default:
+        default = _resolve_float(
+            row["default"],
+            context,
+            field_name=f"Component '{name}' default",
+        )
+        return ComponentSpec(name=name, unit=unit, default=default)
+
+    value_ref = _normalize_non_empty_name(
+        _resolve_template_value(row["value_ref"], context),
+        field_name=f"Component '{name}' value_ref",
+    )
+    return ComponentSpec(name=name, unit=unit, value_ref=value_ref)
+
+
+def _expand_topology_row(raw_item: object, context: RepeatContext | None) -> TopologyEntry:
+    """Expand one explicit topology row."""
+    if isinstance(raw_item, Mapping):
+        if "repeat" in raw_item:
+            raise ValueError("Nested repeat blocks are not supported.")
+        raise ValueError("topology rows must be 4-item tuples/lists or repeat blocks.")
+    if not isinstance(raw_item, Sequence) or isinstance(raw_item, (str, bytes)):
+        raise ValueError("topology rows must be 4-item tuples/lists or repeat blocks.")
+
+    values = list(raw_item)
+    if len(values) != 4:
+        raise ValueError("topology rows must contain exactly 4 items.")
+
+    name = _normalize_non_empty_name(
+        _resolve_template_value(values[0], context),
+        field_name="topology[*][0]",
+    )
+    kind = _infer_element_kind(name)
+
     if kind == "mutual_coupling":
-        return "coupler"
-    return "signal"
+        node1 = _normalize_non_empty_name(
+            _resolve_template_value(values[1], context),
+            field_name=f"Mutual coupling '{name}' first inductor reference",
+        )
+        node2 = _normalize_non_empty_name(
+            _resolve_template_value(values[2], context),
+            field_name=f"Mutual coupling '{name}' second inductor reference",
+        )
+        value_ref = _normalize_non_empty_name(
+            _resolve_template_value(values[3], context),
+            field_name=f"Mutual coupling '{name}' value_ref",
+        )
+        return TopologyEntry(name=name, node1=node1, node2=node2, value_ref=value_ref)
+
+    node1 = _normalize_node_token(_resolve_template_value(values[1], context))
+    node2 = _normalize_node_token(_resolve_template_value(values[2], context))
+
+    if kind == "port":
+        port_index = values[3]
+        if not isinstance(port_index, int) or isinstance(port_index, bool):
+            raise ValueError(f"Port '{name}' must use an integer port index.")
+        return TopologyEntry(name=name, node1=node1, node2=node2, value_ref=int(port_index))
+
+    value_ref = _normalize_non_empty_name(
+        _resolve_template_value(values[3], context),
+        field_name=f"Topology row '{name}' value_ref",
+    )
+    return TopologyEntry(name=name, node1=node1, node2=node2, value_ref=value_ref)
 
 
-def migrate_legacy_circuit_definition(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Convert tuple-style legacy payloads into Schematic Netlist v0.1."""
-    raw = _coerce_mapping(payload)
-    topology = raw.get("topology")
-    if "schema_version" in raw or topology is None:
-        return raw
-
-    if not isinstance(topology, list):
-        raise ValueError("Legacy topology must be a list.")
-
-    topology_tuples: list[tuple[Any, Any, Any, Any]] = [tuple(item) for item in topology]
-    parameters = _coerce_mapping(raw.get("parameters", {}))
-    ports: list[dict[str, Any]] = []
-    instances: list[dict[str, Any]] = []
-
-    for item in topology_tuples:
-        if len(item) != 4:
-            raise ValueError("Legacy topology entries must have 4 items.")
-
-        elem_name, node1_raw, node2_raw, value_ref = item
-        elem_name_str = str(elem_name)
-        node1 = CircuitDefinition.canonical_node_token(node1_raw)
-        node2 = CircuitDefinition.canonical_node_token(node2_raw)
-
-        if elem_name_str.lower().startswith("p"):
-            try:
-                port_index = int(value_ref)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    f"Legacy port '{elem_name_str}' must use an integer index."
-                ) from exc
-            signal_node = node2 if CircuitDefinition.is_ground_node(node1) else node1
-            ground_node = node1 if CircuitDefinition.is_ground_node(node1) else node2
-            ports.append(
-                {
-                    "id": elem_name_str,
-                    "node": signal_node,
-                    "ground": ground_node,
-                    "index": port_index,
-                    "role": _infer_legacy_port_role(port_index, signal_node, topology_tuples),
-                    "side": "left" if port_index == 1 else "right",
-                }
-            )
+def _expand_block_items[T](
+    raw_items: list[object],
+    *,
+    block_name: str,
+    expand_row: Callable[[object, RepeatContext | None], T],
+) -> list[T]:
+    """Expand one top-level block containing explicit rows and repeat blocks."""
+    expanded: list[T] = []
+    for raw_item in raw_items:
+        if not _is_repeat_row(raw_item):
+            expanded.append(expand_row(raw_item, None))
             continue
 
-        kind = _infer_legacy_instance_kind(elem_name_str)
-        instances.append(
-            {
-                "id": elem_name_str,
-                "kind": kind,
-                "pins": [node1, node2],
-                "value_ref": str(value_ref),
-                "role": _infer_legacy_instance_role(kind, node1, node2),
-            }
+        repeat_wrapper = _coerce_mapping(raw_item)
+        repeat_raw = _coerce_mapping(repeat_wrapper["repeat"])
+        count, index_name, start, symbols_raw, series_raw, emit_rows = _parse_repeat_context(
+            repeat_raw
         )
 
-    layout_profile = "generic"
-    try:
-        preview_probe = CircuitDefinition.model_validate(
-            {
-                "schema_version": SUPPORTED_SCHEMA_VERSION,
-                "name": raw.get("name", "Legacy Schema"),
-                "parameters": parameters,
-                "ports": ports,
-                "instances": instances,
-            }
-        )
-        layout_profile = preview_probe.effective_layout_profile
-    except Exception:
-        layout_profile = "generic"
-    return {
-        "schema_version": SUPPORTED_SCHEMA_VERSION,
-        "name": raw.get("name", "Legacy Schema"),
-        "parameters": parameters,
-        "ports": ports,
-        "instances": instances,
-        "layout": {
-            "direction": "lr",
-            "profile": layout_profile,
-        },
-    }
+        for offset in range(count):
+            index_value = start + offset
+            context = _build_repeat_iteration_context(
+                index_name=index_name,
+                index_value=index_value,
+                offset=offset,
+                symbols_raw=symbols_raw,
+                series_raw=series_raw,
+            )
+            for emit_row in emit_rows:
+                if _is_repeat_row(emit_row):
+                    raise ValueError("Nested repeat blocks are not supported.")
+                expanded.append(expand_row(emit_row, context))
+    return expanded
+
+
+def _validate_expanded_circuit(expanded: ExpandedCircuitDefinition) -> None:
+    """Validate expanded cross-references after repeat expansion."""
+    parameter_specs = expanded.parameter_specs
+    component_specs = expanded.component_specs
+
+    seen_parameter_names: set[str] = set()
+    for parameter in expanded.parameters:
+        if parameter.name in seen_parameter_names:
+            raise ValueError(f"Duplicate parameter name '{parameter.name}'.")
+        seen_parameter_names.add(parameter.name)
+
+    seen_component_names: set[str] = set()
+    for component in expanded.components:
+        if component.name in seen_component_names:
+            raise ValueError(f"Duplicate component name '{component.name}'.")
+        if component.value_ref is not None:
+            parameter = parameter_specs.get(component.value_ref)
+            if parameter is None:
+                raise ValueError(
+                    f"Component '{component.name}' references undefined parameter "
+                    f"'{component.value_ref}'."
+                )
+            if parameter.unit != component.unit:
+                raise ValueError(
+                    f"Component '{component.name}' unit '{component.unit}' does not match "
+                    f"parameter '{parameter.name}' unit '{parameter.unit}'."
+                )
+        seen_component_names.add(component.name)
+
+    seen_topology_names: set[str] = set()
+    seen_port_indices: set[int] = set()
+    element_kind_by_name: dict[str, str] = {}
+
+    for row in expanded.topology:
+        if row.name in seen_topology_names:
+            raise ValueError(f"Duplicate topology element name '{row.name}'.")
+        seen_topology_names.add(row.name)
+        row_kind = _infer_element_kind(row.name)
+        element_kind_by_name[row.name] = row_kind
+
+        if row_kind == "port":
+            if not isinstance(row.value_ref, int):
+                raise ValueError(f"Port '{row.name}' must use an integer port index.")
+            if int(row.value_ref) in seen_port_indices:
+                raise ValueError(f"Duplicate port index '{row.value_ref}'.")
+            if CircuitDefinition.is_ground_node(row.node1) == CircuitDefinition.is_ground_node(
+                row.node2
+            ):
+                raise ValueError(
+                    f"Port '{row.name}' must connect exactly one side to ground ('0')."
+                )
+            seen_port_indices.add(int(row.value_ref))
+            continue
+
+        if row_kind == "mutual_coupling":
+            if not isinstance(row.value_ref, str):
+                raise ValueError(f"Mutual coupling '{row.name}' must reference a component name.")
+            if row.value_ref not in component_specs:
+                raise ValueError(
+                    "Mutual coupling "
+                    f"'{row.name}' references undefined component '{row.value_ref}'."
+                )
+            continue
+
+        if not isinstance(row.value_ref, str):
+            raise ValueError(f"Topology row '{row.name}' must reference a component name.")
+        if row.value_ref not in component_specs:
+            raise ValueError(
+                f"Topology row '{row.name}' references undefined component '{row.value_ref}'."
+            )
+
+    for row in expanded.topology:
+        if not row.is_mutual_coupling:
+            continue
+        first_kind = element_kind_by_name.get(row.node1)
+        second_kind = element_kind_by_name.get(row.node2)
+        if first_kind not in {"inductor", "josephson_junction"}:
+            raise ValueError(
+                "Mutual coupling "
+                f"'{row.name}' references unknown or non-inductive element '{row.node1}'."
+            )
+        if second_kind not in {"inductor", "josephson_junction"}:
+            raise ValueError(
+                "Mutual coupling "
+                f"'{row.name}' references unknown or non-inductive element '{row.node2}'."
+            )
+
+
+def _expand_circuit_definition(
+    *,
+    name: str,
+    component_items: list[object],
+    topology_items: list[object],
+    parameter_items: list[object],
+) -> ExpandedCircuitDefinition:
+    """Expand all repeat blocks, then validate the resulting netlist."""
+    expanded_parameters = _expand_block_items(
+        parameter_items,
+        block_name="parameters",
+        expand_row=_expand_parameter_row,
+    )
+    expanded_components = _expand_block_items(
+        component_items,
+        block_name="components",
+        expand_row=_expand_component_row,
+    )
+    expanded_topology = _expand_block_items(
+        topology_items,
+        block_name="topology",
+        expand_row=_expand_topology_row,
+    )
+
+    expanded = ExpandedCircuitDefinition(
+        name=name,
+        components=expanded_components,
+        topology=expanded_topology,
+        parameters=expanded_parameters,
+    )
+    _validate_expanded_circuit(expanded)
+    return expanded
 
 
 def parse_circuit_definition_source(
     payload: str | Mapping[str, Any] | CircuitDefinition,
-    *,
-    allow_legacy_migration: bool = False,
-) -> tuple[CircuitDefinition, bool]:
-    """Parse text or mapping input into a CircuitDefinition."""
+) -> CircuitDefinition:
+    """Parse source text or a mapping into a validated source-form circuit definition."""
     if isinstance(payload, CircuitDefinition):
-        return payload, False
+        return payload
 
     raw = _parse_text_payload(payload) if isinstance(payload, str) else _coerce_mapping(payload)
-    migrated = False
-    if "topology" in raw and "schema_version" not in raw:
-        if not allow_legacy_migration:
-            raise ValueError(
-                "Legacy tuple-style topology syntax is no longer supported. "
-                "Convert this schema to Schematic Netlist v0.1."
-            )
-        raw = migrate_legacy_circuit_definition(raw)
-        migrated = True
-
-    return CircuitDefinition.model_validate(raw), migrated
+    return CircuitDefinition.model_validate(raw)
 
 
-def format_circuit_definition(circuit: CircuitDefinition) -> str:
-    """Render a CircuitDefinition as the canonical editor string."""
-    payload = {
-        "schema_version": circuit.schema_version,
-        "name": circuit.name,
-        "parameters": {
-            key: spec.model_dump(exclude_defaults=True) for key, spec in circuit.parameters.items()
-        },
-        "ports": [port.model_dump(exclude_none=True) for port in circuit.ports],
-        "instances": [instance.model_dump(exclude_none=True) for instance in circuit.instances],
-    }
-    layout = circuit.layout.model_dump(exclude_none=True)
-    if layout:
-        payload["layout"] = layout
-    return json.dumps(payload, indent=4, ensure_ascii=False)
+def expand_circuit_definition(
+    payload: str | Mapping[str, Any] | CircuitDefinition,
+) -> ExpandedCircuitDefinition:
+    """Return the expanded form for any supported circuit-definition input."""
+    return parse_circuit_definition_source(payload).expanded_definition
+
+
+def format_circuit_definition(circuit: CircuitDefinition | ExpandedCircuitDefinition) -> str:
+    """Render either source form or expanded form using stable Python-literal formatting."""
+    payload = (
+        circuit.to_source_payload()
+        if isinstance(circuit, CircuitDefinition)
+        else circuit.to_payload()
+    )
+    return pprint.pformat(payload, sort_dicts=False, width=100)
+
+
+def format_expanded_circuit_definition(
+    payload: CircuitDefinition | ExpandedCircuitDefinition,
+) -> str:
+    """Render the expanded netlist preview used by Schema Editor and Simulation."""
+    expanded = (
+        payload if isinstance(payload, ExpandedCircuitDefinition) else payload.expanded_definition
+    )
+    return pprint.pformat(expanded.to_payload(), sort_dicts=False, width=100)
 
 
 class FrequencyRange(BaseModel):
@@ -598,7 +1024,7 @@ class SimulationResult(BaseModel):
         cleaned = str(token).strip()
         if not cleaned:
             return (0,)
-        return cls.normalize_mode(int(part.strip()) for part in cleaned.split(","))
+        return cls.normalize_mode(tuple(int(part.strip()) for part in cleaned.split(",")))
 
     @property
     def available_port_indices(self) -> list[int]:

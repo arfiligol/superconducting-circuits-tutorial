@@ -3,37 +3,75 @@
 import pytest
 
 from core.simulation.domain.circuit import (
-    CircuitDefinition,
     SimulationResult,
+    expand_circuit_definition,
     format_circuit_definition,
-    migrate_legacy_circuit_definition,
+    format_expanded_circuit_definition,
+    parse_circuit_definition_source,
 )
 from core.simulation.domain.compiler import compile_simulation_topology
 
 
-def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]) -> CircuitDefinition:
-    return CircuitDefinition.model_validate(
-        migrate_legacy_circuit_definition(
-            {"name": name, "parameters": parameters, "topology": topology}
-        )
+def _repeat_enabled_circuit():
+    return parse_circuit_definition_source(
+        {
+            "name": "IR Compile",
+            "parameters": [
+                {
+                    "repeat": {
+                        "count": 2,
+                        "index": "cell",
+                        "start": 1,
+                        "series": {
+                            "cg": {"base": 1.0, "step": 0.5},
+                        },
+                        "emit": [
+                            {"name": "Cg${index}", "default": "${cg}", "unit": "fF"},
+                        ],
+                    }
+                }
+            ],
+            "components": [
+                {"name": "R1", "default": 50.0, "unit": "Ohm"},
+                {
+                    "repeat": {
+                        "count": 2,
+                        "index": "cell",
+                        "symbols": {
+                            "n": {"base": 1, "step": 1},
+                            "n2": {"base": 2, "step": 1},
+                        },
+                        "emit": [
+                            {"name": "L${n}_${n2}", "default": 10.0, "unit": "nH"},
+                            {"name": "C${n2}_0", "value_ref": "Cg${n}", "unit": "fF"},
+                        ],
+                    }
+                },
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R1", "1", "0", "R1"),
+                {
+                    "repeat": {
+                        "count": 2,
+                        "index": "cell",
+                        "symbols": {
+                            "n": {"base": 1, "step": 1},
+                            "n2": {"base": 2, "step": 1},
+                        },
+                        "emit": [
+                            ("L${n}_${n2}", "${n}", "${n2}", "L${n}_${n2}"),
+                            ("C${n2}_0", "${n2}", "0", "C${n2}_0"),
+                        ],
+                    }
+                },
+            ],
+        }
     )
 
 
 def test_circuit_definition_compiles_to_explicit_ir() -> None:
-    circuit = _legacy_circuit(
-        name="IR Compile",
-        parameters={
-            "R50": {"default": 50.0, "unit": "Ohm"},
-            "L1": {"default": 10.0, "unit": "nH"},
-            "C1": {"default": 1.0, "unit": "pF"},
-        },
-        topology=[
-            ("P1", "1", "0", 1),
-            ("R1", "1", "0", "R50"),
-            ("L1", "1", "2", "L1"),
-            ("C1", "2", "0", "C1"),
-        ],
-    )
+    circuit = _repeat_enabled_circuit()
 
     compiled_ir = circuit.to_ir()
 
@@ -41,36 +79,40 @@ def test_circuit_definition_compiles_to_explicit_ir() -> None:
     assert compiled_ir.layout_direction == "lr"
     assert compiled_ir.layout_profile == "generic"
     assert compiled_ir.available_port_indices == (1,)
-    assert [element.name for element in compiled_ir.elements] == ["P1", "R1", "L1", "C1"]
+    assert [element.name for element in compiled_ir.elements] == [
+        "P1",
+        "R1",
+        "L1_2",
+        "C2_0",
+        "L2_3",
+        "C3_0",
+    ]
     assert compile_simulation_topology(
         compiled_ir,
         is_ground_node=lambda node: circuit.is_ground_node(node),
     ) == [
         ("P1", "1", "0", 1),
-        ("R1", "1", "0", "R50"),
-        ("L1", "1", "2", "L1"),
-        ("C1", "2", "0", "C1"),
+        ("R1", "1", "0", "R1"),
+        ("L1_2", "1", "2", "L1_2"),
+        ("C2_0", "2", "0", "C2_0"),
+        ("L2_3", "2", "3", "L2_3"),
+        ("C3_0", "3", "0", "C3_0"),
     ]
 
 
-def test_format_circuit_definition_uses_canonical_json_style() -> None:
-    circuit = _legacy_circuit(
-        name="Formatted",
-        parameters={
-            "R50": {"default": 50.0, "unit": "Ohm"},
-        },
-        topology=[
-            ("P1", "1", "0", 1),
-            ("R1", "1", "0", "R50"),
-        ],
-    )
+def test_format_helpers_preserve_source_and_show_expanded_result() -> None:
+    circuit = _repeat_enabled_circuit()
 
-    formatted = format_circuit_definition(circuit)
+    source_text = format_circuit_definition(circuit)
+    expanded_text = format_expanded_circuit_definition(circuit)
+    expanded = expand_circuit_definition(circuit)
 
-    assert formatted.startswith("{\n")
-    assert '"schema_version": "0.1"' in formatted
-    assert '"name": "Formatted"' in formatted
-    assert "'name': 'Formatted'" not in formatted
+    assert "'repeat':" in source_text
+    assert "L1_2" not in source_text
+    assert "L1_2" in expanded_text
+    assert [parameter.name for parameter in expanded.parameters] == ["Cg1", "Cg2"]
+    assert expanded.resolve_component_value("C2_0") == pytest.approx(1.0)
+    assert expanded.resolve_component_value("C3_0") == pytest.approx(1.5)
 
 
 def test_simulation_result_derives_s11_views() -> None:

@@ -8,23 +8,43 @@ import pytest
 
 from core.simulation.application.run_simulation import run_simulation
 from core.simulation.domain.circuit import (
-    CircuitDefinition,
     DriveSourceConfig,
     FrequencyRange,
-    InstanceSpec,
-    LayoutHints,
-    ParameterSpec,
-    PortSpec,
     SimulationConfig,
-    migrate_legacy_circuit_definition,
+    parse_circuit_definition_source,
 )
 
 
 def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]):
-    return CircuitDefinition.model_validate(
-        migrate_legacy_circuit_definition(
-            {"name": name, "parameters": parameters, "topology": topology}
-        )
+    components: list[dict[str, object]] = []
+    seen_component_refs: set[str] = set()
+    normalized_topology: list[tuple[str, str, str, str | int]] = []
+
+    for element_name, node1, node2, value_ref in topology:
+        element_name_text = str(element_name)
+        if element_name_text.lower().startswith("p"):
+            normalized_topology.append((element_name_text, str(node1), str(node2), int(value_ref)))
+            continue
+
+        component_ref = str(value_ref)
+        if component_ref not in seen_component_refs:
+            parameter = parameters[component_ref]
+            components.append(
+                {
+                    "name": component_ref,
+                    "default": float(parameter["default"]),
+                    "unit": str(parameter["unit"]),
+                }
+            )
+            seen_component_refs.add(component_ref)
+        normalized_topology.append((element_name_text, str(node1), str(node2), component_ref))
+
+    return parse_circuit_definition_source(
+        {
+            "name": name,
+            "components": components,
+            "topology": normalized_topology,
+        }
     )
 
 
@@ -80,31 +100,6 @@ def test_two_stage_ladder_runs_successfully():
 
     result = run_simulation(circuit, FrequencyRange(start_ghz=1.0, stop_ghz=5.0, points=301))
     assert len(result.s11_real) == 301
-
-
-def test_missing_topology_reference_is_input_error_before_julia():
-    circuit = CircuitDefinition.model_construct(
-        schema_version="0.1",
-        name="Bad topology ref",
-        parameters={"R50": ParameterSpec(default=50.0, unit="Ohm")},
-        ports=[PortSpec(id="P1", node="1", ground="gnd", index=1, role="signal", side="left")],
-        instances=[
-            InstanceSpec.model_construct(
-                id="R1",
-                kind="resistor",
-                pins=["1", "gnd"],
-                value_ref="R1",
-                role="termination",
-            )
-        ],
-        layout=LayoutHints(direction="lr", profile="generic"),
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="SimulationInputError: instance 'R1' references undefined",
-    ):
-        run_simulation(circuit, FrequencyRange(start_ghz=1.0, stop_ghz=10.0, points=301))
 
 
 def test_parallel_single_node_rlc_maps_to_numerical_error():

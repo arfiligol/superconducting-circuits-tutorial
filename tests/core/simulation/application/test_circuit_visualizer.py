@@ -10,26 +10,55 @@ from core.simulation.application.circuit_visualizer import (
     _build_signal_node_padding,
     _classify_layout_mode,
     _estimate_component_slot_width,
+    _parallel_branch_y,
     _resolve_shunt_label_layout,
     _shunt_branch_offset,
     _shunt_label_plan,
     generate_circuit_svg,
 )
 from core.simulation.application.layout_plan import build_layout_plan
-from core.simulation.domain.circuit import CircuitDefinition, migrate_legacy_circuit_definition
+from core.simulation.domain.circuit import CircuitDefinition, parse_circuit_definition_source
 
 
-def _legacy_circuit(*, name: str, parameters: dict, topology: list[tuple]):
-    return CircuitDefinition.model_validate(
-        migrate_legacy_circuit_definition(
-            {"name": name, "parameters": parameters, "topology": topology}
-        )
+def _circuit(*, name: str, parameters: dict, topology: list[tuple]):
+    components: list[dict[str, object]] = []
+    seen_component_refs: set[str] = set()
+    normalized_topology: list[tuple[str, str, str, str | int]] = []
+
+    for element_name, node1, node2, value_ref in topology:
+        element_name_text = str(element_name)
+        if element_name_text.lower().startswith("p"):
+            normalized_topology.append((element_name_text, str(node1), str(node2), int(value_ref)))
+            continue
+
+        component_ref = str(value_ref)
+        if component_ref not in seen_component_refs:
+            parameter = parameters[component_ref]
+            components.append(
+                {
+                    "name": component_ref,
+                    "default": float(parameter["default"]),
+                    "unit": str(parameter["unit"]),
+                }
+            )
+            seen_component_refs.add(component_ref)
+        normalized_topology.append((element_name_text, str(node1), str(node2), component_ref))
+
+    return parse_circuit_definition_source(
+        {
+            "name": name,
+            "components": components,
+            "topology": normalized_topology,
+        }
     )
+
+
+_legacy_circuit = _circuit
 
 
 def test_generate_circuit_svg_basic():
     """Test that a basic circuit can be converted to an SVG string."""
-    circuit = _legacy_circuit(
+    circuit = _circuit(
         name="Test Circuit",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -66,7 +95,7 @@ def test_generate_circuit_svg_basic():
 
 def test_build_layout_plan_exposes_explicit_backbone_contract():
     """Layout planning should materialize an explicit contract before rendering."""
-    circuit = _legacy_circuit(
+    circuit = _circuit(
         name="Planned Circuit",
         parameters={
             "R50": {"default": 50.0, "unit": "Ohm"},
@@ -90,12 +119,76 @@ def test_build_layout_plan_exposes_explicit_backbone_contract():
     assert plan.backbone_positions["1"] < plan.backbone_positions["2"]
 
 
+def test_build_layout_plan_tracks_parallel_branch_groups():
+    """Repeated non-ground node pairs should be recognized as one parallel branch group."""
+    circuit = CircuitDefinition.model_validate(
+        {
+            "name": "Parallel Branch",
+            "components": [
+                {"name": "R_port", "default": 50.0, "unit": "Ohm"},
+                {"name": "L_q", "default": 10.0, "unit": "nH"},
+                {"name": "C_q", "default": 1.0, "unit": "pF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R1", "1", "0", "R_port"),
+                ("Lq", "1", "2", "L_q"),
+                ("Cq", "1", "2", "C_q"),
+            ],
+        }
+    )
+
+    plan = build_layout_plan(circuit)
+
+    assert plan.parallel_cluster_metadata[2][1:] == (0, 2)
+    assert plan.parallel_cluster_metadata[3][1:] == (1, 2)
+    assert plan.parallel_edge_padding[frozenset(("1", "2"))] > 0.0
+    assert plan.backbone_positions is not None
+    assert (plan.backbone_positions["2"] - plan.backbone_positions["1"]) > plan.dx
+
+
+def test_parallel_branch_y_assigns_distinct_lanes():
+    """Parallel branch group members should be assigned separate y lanes."""
+    upper = _parallel_branch_y(cluster_index=0, cluster_total=2)
+    lower = _parallel_branch_y(cluster_index=1, cluster_total=2)
+
+    assert upper != lower
+    assert upper < 3.0
+    assert lower > 3.0
+
+
+def test_resolve_shunt_label_layout_can_prefer_outer_side():
+    """Shunt labels near parallel groups should be steered to the requested outer side."""
+    side, x_offset, *_ = _resolve_shunt_label_layout(
+        x=4.0,
+        component_kind="resistor",
+        name_label="R1",
+        value_label="50 Ohm",
+        cluster_index=0,
+        cluster_total=1,
+        layout_mode="generic",
+        occupied_boxes=[],
+        preferred_side="left",
+    )
+
+    assert side == "left"
+    assert x_offset < 0.0
+
+
 def test_generate_circuit_svg_mutual_coupling_marker():
     """Mutual-coupling placeholders should still render into the preview SVG."""
-    circuit = _legacy_circuit(
+    circuit = _circuit(
         name="Test Circuit 2",
-        parameters={"K1": {"default": 0.999, "unit": "H"}},
-        topology=[("K1", "L2", "L3", "K1")],
+        parameters={
+            "L2": {"default": 1.0, "unit": "nH"},
+            "L3": {"default": 1.0, "unit": "nH"},
+            "K1": {"default": 0.999, "unit": "H"},
+        },
+        topology=[
+            ("L2", "1", "2", "L2"),
+            ("L3", "2", "3", "L3"),
+            ("K1", "L2", "L3", "K1"),
+        ],
     )
 
     svg_str = generate_circuit_svg(circuit)
@@ -107,7 +200,7 @@ def test_generate_circuit_svg_mutual_coupling_marker():
 
 def test_generate_circuit_svg_includes_component_value_and_unit_labels():
     """Value and unit should be shown alongside component id in the SVG output."""
-    circuit = _legacy_circuit(
+    circuit = _circuit(
         name="Labeled Circuit",
         parameters={
             "R_port": {"default": 50.0, "unit": "Ohm"},
@@ -391,7 +484,7 @@ def test_generate_circuit_svg_places_ground_node_label_below_ground_line():
 
     svg_str = generate_circuit_svg(circuit)
     zero_label_match = re.search(
-        r'<text x="[^"]+" y="([0-9.eE+-]+)"[^>]*><tspan[^>]*>gnd</tspan>',
+        r'<text x="[^"]+" y="([0-9.eE+-]+)"[^>]*><tspan[^>]*>0</tspan>',
         svg_str,
     )
 
