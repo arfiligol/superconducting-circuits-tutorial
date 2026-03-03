@@ -30,50 +30,61 @@ def app_shell(content_builder):
         def content_area():
             content_builder(*args, **kwargs)
 
+        # Dataset Context Selector
+        from core.shared.persistence import get_unit_of_work
+
+        def fetch_dataset_options():
+            try:
+                with get_unit_of_work() as uow:
+                    datasets = uow.datasets.list_all()
+                    return {ds.id: ds.name for ds in datasets}
+            except Exception:
+                return {}
+
+        def on_dataset_change(_):
+            content_area.refresh()
+
+        def build_dataset_selector(extra_classes: str = ""):
+            selector = ui.select(
+                options=fetch_dataset_options(),
+                multiple=True,
+                with_input=True,
+                clearable=True,
+                label="Active Datasets",
+                on_change=on_dataset_change,
+            )
+            selector.classes(
+                f"app-header-dataset-select w-full min-w-0 {extra_classes}".strip()
+            ).bind_value(app.storage.user, "selected_datasets").props(
+                "use-chips dense outlined options-dense"
+            )
+            return selector
+
         # App Header
+        # Dark mode state management — syncs with global app storage & client-side Plotly
+        if "dark_mode" not in app.storage.user or app.storage.user["dark_mode"] is None:
+            app.storage.user["dark_mode"] = True
+
+        dark = ui.dark_mode().bind_value(app.storage.user, "dark_mode")
+        if "nav_left_drawer_open" not in app.storage.user:
+            app.storage.user["nav_left_drawer_open"] = False
+
         with ui.header(elevated=False).classes(
-            "bg-surface text-fg border-b border-border h-16 flex items-center px-4"
+            "bg-surface text-fg border-b border-border h-16 flex items-center "
+            "no-wrap gap-3 px-4 overflow-hidden"
         ):
             ui.button(on_click=lambda: left_drawer.toggle(), icon="menu").props("flat").classes(
-                "text-fg"
+                "text-fg shrink-0"
             )
-            ui.label("🔬 SC Tutorial App").classes("text-xl font-semibold ml-2 text-fg truncate")
-
-            # Dataset Context Selector
-            from core.shared.persistence import get_unit_of_work
-
-            def fetch_dataset_options():
-                try:
-                    with get_unit_of_work() as uow:
-                        datasets = uow.datasets.list_all()
-                        return {ds.id: ds.name for ds in datasets}
-                except Exception:
-                    return {}
-
-            def on_dataset_change(_):
-                content_area.refresh()
-
-            with ui.row().classes("flex-grow mx-4 items-center justify-center max-w-2xl"):
-                ui.select(
-                    options=fetch_dataset_options(),
-                    multiple=True,
-                    with_input=True,
-                    clearable=True,
-                    label="Active Datasets",
-                    on_change=on_dataset_change,
-                ).classes("w-full").bind_value(app.storage.user, "selected_datasets").props(
-                    "use-chips dense outlined options-dense"
+            with ui.row().classes("flex-1 min-w-0 items-center no-wrap gap-3"):
+                ui.label("🔬 SC Tutorial App").classes(
+                    "text-xl font-semibold text-fg truncate shrink min-w-0"
                 )
+                with ui.row().classes("flex-1 min-w-0 items-center no-wrap"):
+                    build_dataset_selector()
 
-            ui.space()
-
-            # Dark mode state management — syncs with global app storage & client-side Plotly
-            if "dark_mode" not in app.storage.user or app.storage.user["dark_mode"] is None:
-                app.storage.user["dark_mode"] = True
-
-            dark = ui.dark_mode().bind_value(app.storage.user, "dark_mode")
             ui.button(on_click=dark.toggle).props("flat round tooltip='Toggle Dark Mode'").classes(
-                "text-fg"
+                "text-fg shrink-0"
             ).bind_icon_from(dark, "value", lambda v: "light_mode" if v else "dark_mode")
 
         # --- Client-side Plotly theme sync via MutationObserver ---
@@ -84,7 +95,8 @@ def app_shell(content_builder):
         <script>
         document.addEventListener('DOMContentLoaded', function() {
           // Use flattened keys for Plotly.relayout to gracefully merge properties
-          // rather than completely overwriting the server-generated layout (which wipes titles/legends).
+          // rather than completely overwriting the server-generated layout
+          // (which wipes titles/legends).
           const DARK_LAYOUT = {
             'paper_bgcolor': 'rgb(30, 41, 59)',
             'plot_bgcolor': 'rgb(15, 23, 42)',
@@ -132,23 +144,28 @@ def app_shell(content_builder):
         )
 
         # Navigation Drawer
+        left_drawer_state = bool(app.storage.user.get("nav_left_drawer_open", False))
         with (
-            ui.left_drawer(elevated=False)
+            ui.left_drawer(value=left_drawer_state, elevated=False)
+            .bind_value(app.storage.user, "nav_left_drawer_open")
             .classes("bg-surface text-fg flex flex-col pt-4 gap-2")
             .props("width=220") as left_drawer,
             ui.column().classes("w-full px-1"),
         ):
-
             def nav_btn(label: str, icon_name: str, route: str, disabled: bool = False):
                 with (
-                    ui.button(on_click=lambda r=route: ui.navigate.to(r) if not disabled else None)
+                    ui.button(
+                        on_click=lambda _e=None, r=route: (
+                            ui.navigate.to(r) if not disabled else None
+                        )
+                    )
                     .classes("w-full px-4")
-                    .props(f"flat no-caps dense {'disable' if disabled else ''}")
+                    .props(f"flat no-caps dense {'disable' if disabled else ''}"),
+                    ui.row().classes("items-center no-wrap w-full"),
                 ):
-                    with ui.row().classes("items-center no-wrap w-full"):
-                        with ui.row().classes("w-8 justify-start"):
-                            ui.icon(icon_name, size="sm")
-                        ui.label(label).classes("text-sm")
+                    with ui.row().classes("w-8 justify-start"):
+                        ui.icon(icon_name, size="sm")
+                    ui.label(label).classes("text-sm")
 
             ui.label("DASHBOARD").classes("text-xs text-muted font-bold tracking-wider mb-1 px-4")
             nav_btn("Home", "home", "/")
@@ -167,9 +184,10 @@ def app_shell(content_builder):
             )
             nav_btn("Schemas", "account_tree", "/schemas")
             nav_btn("Simulation", "science", "/simulation")
+            nav_btn("Schemdraw", "draw", "/schemdraw-live-preview")
 
         # Main Content Area
-        with ui.column().classes("w-full p-4 md:p-8 gap-6"):
+        with ui.column().classes("w-full px-4 py-3 gap-6"):
             content_area()
 
     return wrapper

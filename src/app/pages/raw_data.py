@@ -1,5 +1,8 @@
-"""Data Browser MVP page for SC Data Browser."""
+"""Raw Data Browser with paged, filterable dataset and record tables."""
 
+from __future__ import annotations
+
+import math
 from typing import Any
 
 from nicegui import app, ui
@@ -11,77 +14,146 @@ from core.shared.visualization.figure_builders import (
     build_line_chart,
 )
 
+_DATA_TYPE_FILTER_OPTIONS = {
+    "": "All Types",
+    "s_params": "s_params",
+    "y_params": "y_params",
+    "z_params": "z_params",
+}
+_REPRESENTATION_FILTER_OPTIONS = {
+    "": "All Reprs",
+    "real": "real",
+    "imaginary": "imaginary",
+    "magnitude": "magnitude",
+    "phase": "phase",
+    "amplitude": "amplitude",
+}
+_DATASET_SORT_FIELDS = {"id", "name", "created_at"}
+_RECORD_SORT_FIELDS = {"id", "data_type", "parameter", "representation"}
+_HEADER_CLASSES = "text-primary text-weight-bold text-uppercase tracking-wide"
 
-def _get_badge_class(data_type: str) -> str:
-    """Return styling class based on data type."""
-    data_type = data_type.lower()
-    if data_type.startswith("y_"):
-        return "app-badge app-badge-y"
-    if data_type.startswith("s_"):
-        return "app-badge app-badge-s"
-    if data_type.startswith("z_"):
-        return "app-badge app-badge-z"
-    return "app-badge app-badge-other"
+
+def _total_pages(total_rows: int, page_size: int) -> int:
+    return max(1, math.ceil(total_rows / max(1, page_size)))
 
 
-def fetch_datasets() -> list[dict[str, Any]]:
+def _safe_dark_mode() -> bool:
     try:
-        with get_unit_of_work() as uow:
-            datasets = uow.datasets.list_all()
-            return [{"id": ds.id, "name": ds.name} for ds in datasets]
-    except Exception as e:
-        print(f"Error fetching datasets: {e}")
-        return []
+        return bool(ui.dark_mode().value)
+    except RuntimeError:
+        return bool(app.storage.user.get("dark_mode", True))
 
 
-def fetch_records_for_dataset(dataset_id: int) -> list[dict[str, Any]]:
-    try:
-        with get_unit_of_work() as uow:
-            records = uow.data_records.list_all()
-            return [
-                {
-                    "id": r.id,
-                    "dataset_id": r.dataset_id,
-                    "data_type": r.data_type,
-                    "parameter": r.parameter,
-                    "representation": r.representation,
-                }
-                for r in records
-                if r.dataset_id == dataset_id
-            ]
-    except Exception as e:
-        print(f"Error fetching records: {e}")
-        return []
+def _safe_sort_field(value: object, *, allowed: set[str], default: str) -> str:
+    text = str(value or "")
+    return text if text in allowed else default
 
 
 @ui.page("/raw-data")
-def raw_data_page():
-    # State
-    all_datasets = fetch_datasets()
+def raw_data_page() -> None:
     selected_dataset_id: int | None = None
     selected_record_id: int | None = None
-
-    # Containers
     detail_container: ui.column | None = None
     plot_container: ui.column | None = None
-    records_grid = None
 
-    def handle_analyze_click():
-        if selected_dataset_id:
-            # Add to global context if not already there
-            current_selection = app.storage.user.get("selected_datasets", [])
-            if selected_dataset_id not in current_selection:
-                current_selection.append(selected_dataset_id)
-                app.storage.user["selected_datasets"] = current_selection
+    dataset_state: dict[str, Any] = {
+        "search": "",
+        "sort_by": "name",
+        "descending": False,
+        "page": 1,
+        "page_size": 20,
+        "total": 0,
+    }
+    record_state: dict[str, Any] = {
+        "search": "",
+        "sort_by": "id",
+        "descending": False,
+        "data_type": "",
+        "representation": "",
+        "page": 1,
+        "page_size": 20,
+        "total": 0,
+    }
+    record_search_input: ui.input | None = None
+    record_type_select: ui.select | None = None
+    record_repr_select: ui.select | None = None
 
-            ui.navigate.to("/characterization")
+    def _load_dataset_page() -> list[dict[str, Any]]:
+        with get_unit_of_work() as uow:
+            rows, total = uow.datasets.list_summary_page(
+                search=str(dataset_state["search"]),
+                sort_by=str(dataset_state["sort_by"]),
+                descending=bool(dataset_state["descending"]),
+                limit=int(dataset_state["page_size"]),
+                offset=(int(dataset_state["page"]) - 1) * int(dataset_state["page_size"]),
+            )
 
-    def render_plot():
+        dataset_state["total"] = total
+        total_pages = _total_pages(total, int(dataset_state["page_size"]))
+        if int(dataset_state["page"]) > total_pages:
+            dataset_state["page"] = total_pages
+            with get_unit_of_work() as uow:
+                rows, total = uow.datasets.list_summary_page(
+                    search=str(dataset_state["search"]),
+                    sort_by=str(dataset_state["sort_by"]),
+                    descending=bool(dataset_state["descending"]),
+                    limit=int(dataset_state["page_size"]),
+                    offset=(int(dataset_state["page"]) - 1) * int(dataset_state["page_size"]),
+                )
+            dataset_state["total"] = total
+        return rows
+
+    def _load_record_page(dataset_id: int) -> list[dict[str, Any]]:
+        with get_unit_of_work() as uow:
+            rows, total = uow.data_records.list_index_page_by_dataset(
+                dataset_id,
+                search=str(record_state["search"]),
+                sort_by=str(record_state["sort_by"]),
+                descending=bool(record_state["descending"]),
+                data_type=str(record_state["data_type"]),
+                representation=str(record_state["representation"]),
+                limit=int(record_state["page_size"]),
+                offset=(int(record_state["page"]) - 1) * int(record_state["page_size"]),
+            )
+
+        record_state["total"] = total
+        total_pages = _total_pages(total, int(record_state["page_size"]))
+        if int(record_state["page"]) > total_pages:
+            record_state["page"] = total_pages
+            with get_unit_of_work() as uow:
+                rows, total = uow.data_records.list_index_page_by_dataset(
+                    dataset_id,
+                    search=str(record_state["search"]),
+                    sort_by=str(record_state["sort_by"]),
+                    descending=bool(record_state["descending"]),
+                    data_type=str(record_state["data_type"]),
+                    representation=str(record_state["representation"]),
+                    limit=int(record_state["page_size"]),
+                    offset=(int(record_state["page"]) - 1) * int(record_state["page_size"]),
+                )
+            record_state["total"] = total
+        return rows
+
+    def _selected_record_visible(rows: list[dict[str, Any]]) -> bool:
+        if selected_record_id is None:
+            return False
+        return any(int(row["id"]) == selected_record_id for row in rows)
+
+    def _toggle_record_controls(enabled: bool) -> None:
+        for control in (record_search_input, record_type_select, record_repr_select):
+            if control is None:
+                continue
+            if enabled:
+                control.enable()
+            else:
+                control.disable()
+
+    def render_plot() -> None:
         if plot_container is None:
             return
         plot_container.clear()
 
-        if not selected_record_id:
+        if selected_record_id is None:
             with plot_container:
                 ui.label("Select a record from the table to view visualization.").classes(
                     "text-muted p-4"
@@ -96,144 +168,390 @@ def raw_data_page():
                         ui.label("Record not found.").classes("text-danger")
                     return
 
-                # Render Chart
                 if len(record.axes) == 2 and record.data_type == "s_params":
-                    fig = build_heatmap(record, dark=ui.dark_mode().value)
+                    fig = build_heatmap(record, dark=_safe_dark_mode())
                 else:
-                    fig = build_line_chart(record, dark=ui.dark_mode().value)
+                    fig = build_line_chart(record, dark=_safe_dark_mode())
 
-                with plot_container:
-                    ui.plotly(fig).classes("w-full h-full").style("min-height: 400px;")
-
-        except Exception as e:
             with plot_container:
-                ui.label(f"Error rendering plot: {e}").classes("text-danger p-4")
+                ui.plotly(fig).classes("w-full h-full").style("min-height: 400px;")
+        except Exception as exc:
+            with plot_container:
+                ui.label(f"Error rendering plot: {exc}").classes("text-danger p-4")
 
-    def render_dataset_detail():
+    @ui.refreshable
+    def render_dataset_list() -> None:
+        nonlocal selected_dataset_id, selected_record_id
+        dataset_rows = _load_dataset_page()
+
+        dataset_columns = [
+            {"name": "id", "label": "ID", "field": "id", "sortable": True, "align": "left"},
+            {"name": "name", "label": "Name", "field": "name", "sortable": True, "align": "left"},
+            {
+                "name": "created_at",
+                "label": "Created At",
+                "field": "created_at",
+                "sortable": True,
+                "align": "left",
+                "headerClasses": _HEADER_CLASSES,
+            },
+        ]
+        dataset_columns[0]["headerClasses"] = _HEADER_CLASSES
+        dataset_columns[1]["headerClasses"] = _HEADER_CLASSES
+
+        with ui.column().classes("w-full gap-3"):
+            dataset_table = (
+                ui.table(
+                    columns=dataset_columns,
+                    rows=[
+                        {
+                            **row,
+                            "created_at": row["created_at"].strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                        for row in dataset_rows
+                    ],
+                    row_key="id",
+                    pagination={
+                        "sortBy": str(dataset_state["sort_by"]),
+                        "descending": bool(dataset_state["descending"]),
+                        "rowsPerPage": 0,
+                    },
+                    on_pagination_change=lambda e: _on_dataset_table_pagination(e.value),
+                )
+                .classes("w-full cursor-pointer")
+                .props("dense flat bordered separator=horizontal hide-bottom")
+            )
+
+            def on_dataset_click(event: Any) -> None:
+                nonlocal selected_dataset_id, selected_record_id
+                row_data = event.args[1] if len(event.args) > 1 else {}
+                if not isinstance(row_data, dict):
+                    return
+                row_id = row_data.get("id")
+                if not isinstance(row_id, int):
+                    return
+                selected_dataset_id = row_id
+                selected_record_id = None
+                record_state["page"] = 1
+                _toggle_record_controls(True)
+                render_dataset_detail.refresh()
+
+            dataset_table.on("rowClick", on_dataset_click)
+
+            total_pages = _total_pages(int(dataset_state["total"]), int(dataset_state["page_size"]))
+            with ui.row().classes("w-full justify-between items-center flex-wrap gap-2"):
+                ui.label(
+                    f"{dataset_state['total']} datasets · "
+                    f"Page {dataset_state['page']} / {total_pages}"
+                ).classes("text-xs text-muted")
+                with ui.row().classes("items-center gap-2"):
+                    ui.select(
+                        {20: "20 / page", 50: "50 / page", 100: "100 / page"},
+                        value=int(dataset_state["page_size"]),
+                        on_change=lambda e: (
+                            dataset_state.__setitem__("page_size", int(e.value)),
+                            dataset_state.__setitem__("page", 1),
+                            render_dataset_list.refresh(),
+                        ),
+                    ).props("dense outlined options-dense").classes("w-28")
+                    dataset_prev_button = ui.button(
+                        "Prev",
+                        on_click=lambda: (
+                            dataset_state.__setitem__(
+                                "page",
+                                max(1, int(dataset_state["page"]) - 1),
+                            ),
+                            render_dataset_list.refresh(),
+                        ),
+                    ).props("dense flat no-caps")
+                    if int(dataset_state["page"]) <= 1:
+                        dataset_prev_button.disable()
+                    dataset_next_button = ui.button(
+                        "Next",
+                        on_click=lambda: (
+                            dataset_state.__setitem__(
+                                "page",
+                                min(total_pages, int(dataset_state["page"]) + 1),
+                            ),
+                            render_dataset_list.refresh(),
+                        ),
+                    ).props("dense flat no-caps")
+                    if int(dataset_state["page"]) >= total_pages:
+                        dataset_next_button.disable()
+
+            if selected_dataset_id is not None and not any(
+                int(row["id"]) == selected_dataset_id for row in dataset_rows
+            ):
+                selected_record_id = None
+
+    def _on_dataset_table_pagination(pagination: Any) -> None:
+        if not isinstance(pagination, dict):
+            return
+        new_sort = _safe_sort_field(
+            pagination.get("sortBy"),
+            allowed=_DATASET_SORT_FIELDS,
+            default=str(dataset_state["sort_by"]),
+        )
+        new_desc = bool(pagination.get("descending", False))
+        if new_sort == str(dataset_state["sort_by"]) and new_desc == bool(
+            dataset_state["descending"]
+        ):
+            return
+        dataset_state["sort_by"] = new_sort
+        dataset_state["descending"] = new_desc
+        dataset_state["page"] = 1
+        render_dataset_list.refresh()
+
+    @ui.refreshable
+    def render_dataset_detail() -> None:
+        nonlocal selected_record_id
         if detail_container is None:
             return
         detail_container.clear()
 
-        if not selected_dataset_id:
+        if selected_dataset_id is None:
             with detail_container:
                 ui.label("Select a dataset from the list to preview.").classes(
                     "text-muted italic text-center w-full mt-10"
                 )
             return
 
-        ds = next((d for d in all_datasets if d["id"] == selected_dataset_id), None)
-        if not ds:
+        with get_unit_of_work() as uow:
+            dataset = uow.datasets.get(selected_dataset_id)
+        if dataset is None:
+            with detail_container:
+                ui.label("Dataset not found.").classes("text-danger")
             return
 
-        records = fetch_records_for_dataset(selected_dataset_id)
+        record_rows = _load_record_page(selected_dataset_id)
+        if not _selected_record_visible(record_rows):
+            selected_record_id = None
 
         with detail_container:
-            with ui.row().classes("w-full justify-between items-center mb-4"):
+            with ui.row().classes("w-full justify-between items-center mb-3 flex-wrap gap-3"):
                 with ui.column().classes("gap-1"):
-                    ui.label(ds["name"]).classes("text-xl font-bold text-fg")
-                    ui.label(
-                        f"{len(records)} records available." if records else "No records available."
-                    ).classes("text-sm text-muted")
-
+                    ui.label(dataset.name).classes("text-xl font-bold text-fg")
+                    ui.label(f"{record_state['total']} records available.").classes(
+                        "text-sm text-muted"
+                    )
                 ui.button(
-                    "Analyze This Dataset", on_click=handle_analyze_click, icon="science"
-                ).props("unelevated color=primary")
-
-            # Records Table
+                    "Analyze This Dataset",
+                    on_click=lambda: _navigate_to_characterization(selected_dataset_id),
+                    icon="science",
+                ).props("unelevated color=primary no-caps")
             record_columns = [
                 {
                     "name": "id",
                     "label": "ID",
                     "field": "id",
                     "sortable": True,
-                    "align": "center",
-                    "style": "width: 60px",
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
                 },
                 {
-                    "name": "type",
+                    "name": "data_type",
                     "label": "Type",
                     "field": "data_type",
                     "sortable": True,
-                    "align": "center",
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
                 },
                 {
-                    "name": "param",
+                    "name": "parameter",
                     "label": "Param",
                     "field": "parameter",
                     "sortable": True,
-                    "align": "center",
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
                 },
                 {
-                    "name": "repr",
+                    "name": "representation",
                     "label": "Repr",
                     "field": "representation",
                     "sortable": True,
-                    "align": "center",
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
                 },
             ]
-
-            nonlocal records_grid
-            records_grid = (
-                ui.table(columns=record_columns, rows=records, row_key="id")
-                .classes("w-full cursor-pointer mb-6")
-                .props("dense")
+            record_table = (
+                ui.table(
+                    columns=record_columns,
+                    rows=record_rows,
+                    row_key="id",
+                    pagination={
+                        "sortBy": str(record_state["sort_by"]),
+                        "descending": bool(record_state["descending"]),
+                        "rowsPerPage": 0,
+                    },
+                    on_pagination_change=lambda e: _on_record_table_pagination(e.value),
+                )
+                .classes("w-full cursor-pointer mb-2")
+                .props("dense flat bordered separator=horizontal hide-bottom")
             )
 
-            def handle_record_click(e):
+            def on_record_click(event: Any) -> None:
                 nonlocal selected_record_id
-                selected_record_id = int(e.args[1]["id"])
+                row_data = event.args[1] if len(event.args) > 1 else {}
+                if not isinstance(row_data, dict):
+                    return
+                row_id = row_data.get("id")
+                if not isinstance(row_id, int):
+                    return
+                selected_record_id = row_id
                 render_plot()
 
-            records_grid.on("rowClick", handle_record_click)
+            record_table.on("rowClick", on_record_click)
 
-            # Plot Container
+            total_pages = _total_pages(int(record_state["total"]), int(record_state["page_size"]))
+            with ui.row().classes("w-full justify-between items-center flex-wrap gap-2"):
+                ui.label(
+                    f"{record_state['total']} records · Page {record_state['page']} / {total_pages}"
+                ).classes("text-xs text-muted")
+                with ui.row().classes("items-center gap-2"):
+                    ui.select(
+                        {20: "20 / page", 50: "50 / page", 100: "100 / page"},
+                        value=int(record_state["page_size"]),
+                        on_change=lambda e: (
+                            record_state.__setitem__("page_size", int(e.value)),
+                            record_state.__setitem__("page", 1),
+                            render_dataset_detail.refresh(),
+                        ),
+                    ).props("dense outlined options-dense").classes("w-28")
+                    record_prev_button = ui.button(
+                        "Prev",
+                        on_click=lambda: (
+                            record_state.__setitem__(
+                                "page",
+                                max(1, int(record_state["page"]) - 1),
+                            ),
+                            render_dataset_detail.refresh(),
+                        ),
+                    ).props("dense flat no-caps")
+                    if int(record_state["page"]) <= 1:
+                        record_prev_button.disable()
+                    record_next_button = ui.button(
+                        "Next",
+                        on_click=lambda: (
+                            record_state.__setitem__(
+                                "page",
+                                min(total_pages, int(record_state["page"]) + 1),
+                            ),
+                            render_dataset_detail.refresh(),
+                        ),
+                    ).props("dense flat no-caps")
+                    if int(record_state["page"]) >= total_pages:
+                        record_next_button.disable()
+
             ui.label("Visualization Preview").classes(
-                "text-sm font-semibold text-muted tracking-wider mb-2 uppercase"
+                "text-sm font-semibold text-muted tracking-wider mt-3 mb-2 uppercase"
             )
             nonlocal plot_container
             plot_container = ui.column().classes(
-                "w-full flex-grow app-plotly-container min-h-[400px] "
-                "flex items-center justify-center"
+                "w-full app-plotly-container min-h-[400px] flex items-center justify-center"
             )
             render_plot()
 
-    def content():
-        nonlocal detail_container
+    def _on_record_table_pagination(pagination: Any) -> None:
+        if not isinstance(pagination, dict):
+            return
+        new_sort = _safe_sort_field(
+            pagination.get("sortBy"),
+            allowed=_RECORD_SORT_FIELDS,
+            default=str(record_state["sort_by"]),
+        )
+        new_desc = bool(pagination.get("descending", False))
+        if new_sort == str(record_state["sort_by"]) and new_desc == bool(
+            record_state["descending"]
+        ):
+            return
+        record_state["sort_by"] = new_sort
+        record_state["descending"] = new_desc
+        record_state["page"] = 1
+        render_dataset_detail.refresh()
 
+    def content() -> None:
+        nonlocal detail_container, record_search_input, record_type_select, record_repr_select
         ui.label("Raw Data Browser").classes("text-2xl font-bold text-fg mb-4")
 
-        with ui.row().classes("w-full h-full gap-6 flex-wrap lg:flex-nowrap items-stretch"):
-            # Master: Dataset List
-            with ui.column().classes("app-card w-full lg:w-[35%] p-4 flex flex-col"):
-                ui.label("Datasets").classes("app-section-title mb-4")
-
-                dataset_columns = [
-                    {
-                        "name": "name",
-                        "label": "Name",
-                        "field": "name",
-                        "sortable": True,
-                        "align": "left",
-                    }
-                ]
-
-                ds_grid = (
-                    ui.table(columns=dataset_columns, rows=all_datasets, row_key="id")
-                    .classes("w-full flex-grow cursor-pointer")
-                    .props("dense hide-header")
+        with ui.column().classes("w-full gap-6"):
+            with ui.column().classes("app-card w-full p-4 flex flex-col gap-3"):
+                ui.label("Datasets").classes("app-section-title")
+                dataset_search = (
+                    ui.input(
+                        label="Search Dataset",
+                        value=str(dataset_state["search"]),
+                    )
+                    .props("dense outlined clearable")
+                    .classes("min-w-[240px] w-full")
                 )
 
-                def handle_ds_click(e):
-                    nonlocal selected_dataset_id, selected_record_id
-                    selected_dataset_id = int(e.args[1]["id"])
-                    selected_record_id = None  # Reset selected record on ds change
-                    render_dataset_detail()
+                dataset_search.on_value_change(
+                    lambda e: (
+                        dataset_state.__setitem__("search", str(e.value or "")),
+                        dataset_state.__setitem__("page", 1),
+                        render_dataset_list.refresh(),
+                    )
+                )
+                render_dataset_list()
 
-                ds_grid.on("rowClick", handle_ds_click)
-
-            # Detail: Dataset Content (Records + Preview)
-            with ui.column().classes("app-card w-full lg:w-[65%] p-6 flex flex-col"):
-                detail_container = ui.column().classes("w-full flex-grow")
+            with ui.column().classes("app-card w-full p-4 flex flex-col gap-3"):
+                ui.label("Dataset Preview").classes("app-section-title")
+                with ui.row().classes("w-full gap-3 flex-wrap"):
+                    record_search_input = (
+                        ui.input(
+                            label="Filter Records",
+                            value=str(record_state["search"]),
+                        )
+                        .props("dense outlined clearable")
+                        .classes("min-w-[240px] flex-1")
+                    )
+                    record_search_input.on_value_change(
+                        lambda e: (
+                            record_state.__setitem__("search", str(e.value or "")),
+                            record_state.__setitem__("page", 1),
+                            render_dataset_detail.refresh(),
+                        )
+                    )
+                    record_type_select = (
+                        ui.select(
+                            _DATA_TYPE_FILTER_OPTIONS,
+                            value=str(record_state["data_type"]),
+                            label="Type",
+                            on_change=lambda e: (
+                                record_state.__setitem__("data_type", str(e.value)),
+                                record_state.__setitem__("page", 1),
+                                render_dataset_detail.refresh(),
+                            ),
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-44")
+                    )
+                    record_repr_select = (
+                        ui.select(
+                            _REPRESENTATION_FILTER_OPTIONS,
+                            value=str(record_state["representation"]),
+                            label="Repr",
+                            on_change=lambda e: (
+                                record_state.__setitem__("representation", str(e.value)),
+                                record_state.__setitem__("page", 1),
+                                render_dataset_detail.refresh(),
+                            ),
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-44")
+                    )
+                    _toggle_record_controls(False)
+                detail_container = ui.column().classes("w-full")
                 render_dataset_detail()
 
     app_shell(content)()
+
+
+def _navigate_to_characterization(dataset_id: int | None) -> None:
+    if dataset_id is None:
+        return
+    current_selection = app.storage.user.get("selected_datasets", [])
+    if dataset_id not in current_selection:
+        current_selection.append(dataset_id)
+        app.storage.user["selected_datasets"] = current_selection
+    ui.navigate.to("/characterization")

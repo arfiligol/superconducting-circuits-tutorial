@@ -1,16 +1,21 @@
 """Tests for built-in simulation setup seeds on the simulation page."""
 
-import ast
 import importlib.util
 from pathlib import Path
 
 from app.pages.simulation import (
+    _JOSEPHSON_BUILTIN_SETUP_PAYLOADS,
     _builtin_saved_setups_for_schema,
+    _compress_source_mode_components,
     _extract_available_port_indices,
     _merge_saved_setups_with_builtin,
     _normalize_source_mode_components,
 )
-from core.simulation.domain.circuit import CircuitDefinition
+from core.simulation.domain.circuit import (
+    DriveSourceConfig,
+    SimulationConfig,
+    parse_circuit_definition_source,
+)
 
 
 def _load_seed_module():
@@ -74,7 +79,7 @@ def test_builtin_saved_setups_for_snail_matches_official_dual_source_bias_exampl
 def test_all_builtin_saved_setups_target_ports_declared_by_seeded_examples() -> None:
     seed_module = _load_seed_module()
     definitions = {
-        name: CircuitDefinition.model_validate(ast.literal_eval(definition))
+        name: parse_circuit_definition_source(definition)
         for name, definition in seed_module.build_all()
     }
 
@@ -86,6 +91,38 @@ def test_all_builtin_saved_setups_target_ports_declared_by_seeded_examples() -> 
         ports = _extract_available_port_indices(definitions[schema_name])
         for source in payload["sources"]:
             assert source["port"] in ports
+
+
+def test_loop_generated_seeded_examples_use_repeat_source_form() -> None:
+    seed_module = _load_seed_module()
+    definitions = dict(seed_module.build_all())
+
+    jtwpa_definition = definitions[
+        "JosephsonCircuits Examples: Josephson Traveling Wave Parametric Amplifier (JTWPA)"
+    ]
+    floquet_definition = definitions["JosephsonCircuits Examples: Floquet JTWPA"]
+    floquet_loss_definition = definitions[
+        "JosephsonCircuits Examples: Floquet JTWPA with Dissipation"
+    ]
+    flux_definition = definitions[
+        "JosephsonCircuits Examples: Flux-Driven Josephson Traveling-Wave Parametric Amplifier"
+        " (JTWPA)"
+    ]
+
+    assert "repeat" in jtwpa_definition
+    assert "repeat" in floquet_definition
+    assert "repeat" in floquet_loss_definition
+    assert "repeat" in flux_definition
+
+    floquet_circuit = parse_circuit_definition_source(floquet_definition)
+    jtwpa_circuit = parse_circuit_definition_source(jtwpa_definition)
+
+    assert floquet_circuit.resolve_component_value(
+        "Lj1_2"
+    ) != floquet_circuit.resolve_component_value("Lj2_3")
+    assert jtwpa_circuit.resolve_component_value(
+        "Lj1_2"
+    ) == jtwpa_circuit.resolve_component_value("Lj4_5")
 
 
 def test_merge_saved_setups_with_builtin_keeps_user_setup() -> None:
@@ -107,5 +144,48 @@ def test_merge_saved_setups_with_builtin_keeps_user_setup() -> None:
 
 def test_normalize_source_mode_components_expands_single_source_one_hot() -> None:
     assert _normalize_source_mode_components((1,), source_index=0, source_count=2) == (1, 0)
-    assert _normalize_source_mode_components((1,), source_index=1, source_count=2) == (0, 1)
+    assert _normalize_source_mode_components((1,), source_index=1, source_count=2) == (1, 0)
+    assert _normalize_source_mode_components((2,), source_index=0, source_count=2) == (0, 1)
     assert _normalize_source_mode_components((0,), source_index=0, source_count=2) == (0, 0)
+
+
+def test_compress_source_mode_components_hides_internal_padding() -> None:
+    assert _compress_source_mode_components((0, 0)) == (0,)
+    assert _compress_source_mode_components((1, 0)) == (1,)
+    assert _compress_source_mode_components((0, 1)) == (0, 1)
+
+
+def test_all_builtin_saved_setups_translate_to_valid_simulation_config() -> None:
+    for payload in _JOSEPHSON_BUILTIN_SETUP_PAYLOADS.values():
+        advanced = payload["advanced"]
+        sources = [
+            DriveSourceConfig(
+                pump_freq_ghz=source["pump_freq_ghz"],
+                port=source["port"],
+                current_amp=source["current_amp"],
+                mode_components=tuple(source.get("mode", [])) or None,
+            )
+            for source in payload["sources"]
+        ]
+
+        config = SimulationConfig(
+            pump_freq_ghz=sources[0].pump_freq_ghz,
+            sources=sources,
+            pump_current_amp=sources[0].current_amp,
+            pump_port=sources[0].port,
+            pump_mode_index=1,
+            n_modulation_harmonics=payload["harmonics"]["n_modulation_harmonics"],
+            n_pump_harmonics=payload["harmonics"]["n_pump_harmonics"],
+            include_dc=advanced["include_dc"],
+            enable_three_wave_mixing=advanced["enable_three_wave_mixing"],
+            enable_four_wave_mixing=advanced["enable_four_wave_mixing"],
+            max_intermod_order=(
+                None if int(advanced["max_intermod_order"]) < 0 else advanced["max_intermod_order"]
+            ),
+            max_iterations=advanced["max_iterations"],
+            f_tol=advanced["f_tol"],
+            line_search_switch_tol=advanced["line_search_switch_tol"],
+            alpha_min=advanced["alpha_min"],
+        )
+
+        assert config.line_search_switch_tol > 0

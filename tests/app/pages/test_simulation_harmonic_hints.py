@@ -2,7 +2,9 @@
 
 from app.pages.simulation import (
     _detect_harmonic_grid_coincidences,
+    _estimate_mode_lattice_size,
     _format_harmonic_grid_hint,
+    _format_mode_lattice_hint,
 )
 from core.simulation.domain.circuit import DriveSourceConfig, FrequencyRange
 
@@ -39,3 +41,22 @@ def test_format_harmonic_grid_hint_includes_source_and_harmonic():
     assert "S1" in hint
     assert "2*fp=10.000000 GHz" in hint
     assert "sweep index=1000" in hint
+
+
+def test_estimate_mode_lattice_size_grows_with_two_tones() -> None:
+    single_tone_sources = [DriveSourceConfig(mode_components=(1,), pump_freq_ghz=5.0)]
+    two_tone_sources = [DriveSourceConfig(mode_components=(1, 0), pump_freq_ghz=5.0)]
+
+    assert _estimate_mode_lattice_size(single_tone_sources, 8) == 17
+    assert _estimate_mode_lattice_size(two_tone_sources, 8) == 289
+
+
+def test_format_mode_lattice_hint_mentions_multi_pump_cost() -> None:
+    hint = _format_mode_lattice_hint(
+        [DriveSourceConfig(mode_components=(1, 0), pump_freq_ghz=5.0)],
+        8,
+    )
+
+    assert "289 sideband states" in hint
+    assert "2 tone(s)" in hint
+    assert "take significantly longer" in hint

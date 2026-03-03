@@ -12,6 +12,7 @@ from app.pages import (  # noqa: F401
     dashboard,
     home,
     raw_data,
+    schemdraw_live_preview,
     schema_editor,
     schemas,
     simulation,
