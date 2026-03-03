@@ -1,0 +1,14 @@
+## Run / Build Commands
+- **Python Install**: `uv sync` (Creates .venv + dependencies).
+- **Julia Install**:
+    - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
+    - `julia --project=. -e 'using Pkg; Pkg.update()'`
+- **Docs**:
+    - Prepare: `./scripts/prepare_docs_locales.sh`
+    - Build (zh-TW): `uv run --group dev zensical build`
+    - Build (en): `uv run --group dev zensical build -f zensical.en.toml`
+    - Build (static artifact, outputs to `docs/site/`): `./scripts/build_docs_sites.sh`
+    - Serve (zh-TW): `uv run --group dev zensical serve`
+    - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
+- **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
+- **Clean**: `uv cache clean`

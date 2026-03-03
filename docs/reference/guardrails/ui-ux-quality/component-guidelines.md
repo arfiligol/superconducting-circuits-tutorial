@@ -122,6 +122,29 @@ ui.button("Action", icon="add") \
     .props("flat no-caps")
 ```
 
+## 大資料表格契約 (Data-Dense Tables)
+
+以下規則適用於 `Raw Data Browser`、`Schemas`、`Characterization Trace Selection` 等資料量大的頁面。
+
+### 必要能力
+
+- 必須提供分頁（pagination）
+- 必須提供排序（sorting）
+- 必須提供過濾（filtering）
+- 需要列選取時，優先使用 `rowClick` 事件
+
+!!! important "查詢邊界"
+    表格查詢應先載入 metadata/summaries，不可一次載入完整 payload 欄位（例如 `values`, `axes`, `definition_json`）。
+
+### 延遲載入策略
+
+- 列表路徑：summary-only query
+- 詳細路徑：使用 row id 單筆查詢
+- 不可因為切換分頁而同步重抓整批詳細 payload
+
+!!! warning "穩定性要求"
+    避免一次傳送過大 websocket 訊息，降低 NiceGUI lost-connection 風險。
+
 ---
 
 ## Agent Rule { #agent-rule }
@@ -134,4 +157,7 @@ ui.button("Action", icon="add") \
 - Forbidden: `alert()`, `confirm()`, `prompt()` — use `ui.notify()` or `ui.dialog()`.
 - Plotly: always render via `ui.plotly(fig)`, never via iframe or raw HTML.
 - Style with `.classes()` and `.props()` — never `.style()` with literal colors.
+- Data-dense tables must support pagination + sorting + filtering.
+- Use summary-only queries for table rows; fetch full payload only on explicit row selection/detail view.
+- For selectable tables, prefer `ui.table` + `rowClick` and keep selection state deterministic across page/filter changes.
 ```

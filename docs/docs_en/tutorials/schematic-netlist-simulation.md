@@ -1,102 +1,93 @@
 ---
 aliases:
-  - Schematic Netlist Simulation Tutorial
-tags:
-  - diataxis/tutorial
-  - audience/user
-  - topic/simulation
+- From Netlist to Simulation
+- Netlist to Simulation
 status: draft
 owner: docs-team
-audience: user
-scope: Learn the Simulation page model, including Port vs Source vs Mode, and how to read result views
-version: v1.0.0
 last_updated: 2026-03-02
 updated_by: docs-team
 ---
 
-# From Preview to Simulation: configure ports, sources, modes, and result views
+# From Netlist to Simulation
 
-This tutorial resolves the most common confusion in the Simulation page:
+This tutorial focuses on the `/simulation` page: understanding `Port`, `Applied Sources`, and `HB Mode`, then reading the result views.
 
-> A circuit port is not the same thing as an applied source.
+!!! note "Keep two views separate"
+    Before entering Simulation, keep this model clear:
 
-## What You Will Learn
+    - Schema Editor `Circuit Definition`: the source form (may contain `repeat`)
+    - Schema Editor `Expanded Netlist Preview`: the expanded result
+    - Simulation `Netlist Configuration`: the expanded result from the same expansion pipeline
 
-- the difference between `Port` and `Source`
-- the difference between `Source Port` and `Source Mode`
-- how to reason about single-pump, `DC + pump`, and double-pump setups
-- how to read the main result view families
+## Core mental model
 
-## Prerequisites
+!!! important "Port is not Source"
+    - `P1`, `P2`, and so on are the circuit's network ports
+    - `Applied Sources` are the actual hbsolve drives applied in this run
 
-- Finish the first two tutorials
+That means:
 
-Useful references:
+- a circuit can have two ports and still use only one source
+- the same port can host multiple sources
 
-- [Circuit Simulation](../reference/ui/circuit-simulation.md)
-- [Schema Editor](../reference/ui/schema-editor.md)
-- [Simulation Result Views](../explanation/architecture/circuit-simulation/simulation-result-views.md)
+## `Source Port` vs `Source Mode`
 
-## Step 1. Understand the boundary
+!!! note "These are different dimensions"
+    - `Source Port`: which physical port receives the drive
+    - `Source Mode`: which HB mode slot the source belongs to (for example `0` = DC, `1` = first pump)
 
-- `Port`: defined in `ports`; a network boundary for the circuit
-- `Source`: configured in `Applied Sources`; an actual drive used by `hbsolve`
+### Common mappings
 
-A port can exist without any active source. That is normal.
+- `0` -> `mode=(0,)`
+- `1` -> `mode=(1,)`
+- `1, 0` -> `mode=(1, 0)`
+- `0, 1` -> `mode=(0, 1)`
 
-## Step 2. Understand `Source Port` vs `Source Mode`
+## What `Netlist Configuration` shows
 
-- `Source Port`: which physical port receives the source
-- `Source Mode`: which harmonic-balance drive channel the source belongs to
+!!! info "Important"
+    `Netlist Configuration` in `/simulation` is not just a copy of the editor text.
 
-Examples:
+Its target behavior is:
 
-- `0` = DC
-- `1` = first pump
-- `1,0` = first pump in a double-pump configuration
-- `0,1` = second pump in a double-pump configuration
+- always show expanded `components`
+- always show expanded `topology`
+- if the schema uses `parameters`, also show expanded `parameters`
 
-## Step 3. Run a simple linear case
+In other words, you inspect the normalized netlist that is actually sent to the backend.
 
-Use `SmokeStableSeriesLC` with:
+!!! important "It is not the stored format"
+    `Netlist Configuration` is a read-only compiled view.  
+    The database still stores the source `Circuit Definition`.
 
-- `Source Port = 1`
-- `Source Current Ip = 0`
-- `Source Mode = 1`
+This is especially useful for debugging:
 
-Run the simulation and confirm the result plot renders.
+- generated component names
+- node numbering after `repeat`
+- which values are fixed and which are sweepable parameters
 
-## Step 4. Understand `DC + pump` on the same port
+## Basic workflow
 
-In SNAIL-like or flux-driven examples, two sources may both target the same physical port:
+1. Select the active schema at the top
+2. Inspect `Netlist Configuration`
+3. Configure the sweep range
+4. Configure `Applied Sources`
+5. Click `Run Simulation`
+6. Switch views in `Simulation Results`: `S / Gain / Z / Y / QE / CM`
 
-- one DC source
-- one pump source
+## Common mistakes
 
-This is valid because they are different drive channels.
+!!! warning "`Source Mode` is not part of the netlist"
+    `Source Mode` does not belong in the Code Editor.
+    It belongs to Simulation Setup, not to the Circuit Netlist syntax.
 
-## Step 5. Learn result views
-
-Start with:
-
-- `S`
-- `Gain`
-- `Impedance (Z)`
-
-Then move to:
-
-- `Admittance (Y)`
-- `Quantum Efficiency (QE)`
-- `Commutation (CM)`
+!!! warning "A `repeat` mistake is not a Simulation Setup problem"
+    If `repeat` expands incorrectly, fix the netlist in the Schema Editor first instead of adjusting source settings.
 
 ## Self-check
 
-You pass this page only if you can explain:
+After this page, you should be able to explain:
 
-1. why a port can exist without a source
-2. why two sources can share the same `Source Port`
-3. why `Source Port` and `Source Mode` are different dimensions
-
-## Next
-
-- [Design your own circuit: from requirements to a working Schematic Netlist](designing-custom-circuits.md)
+- why `P1` can exist without any Applied Source
+- why the same port can carry both `0` (DC) and `1` (pump)
+- why `Netlist Configuration` is especially useful for debugging `repeat`

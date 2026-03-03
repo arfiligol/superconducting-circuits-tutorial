@@ -118,3 +118,6 @@ data/raw/
 *.db
 *.sqlite
 *.sqlite3
+
+# NiceGUI local user storage generated during local UI/E2E sessions
+.nicegui/storage-user-*.json

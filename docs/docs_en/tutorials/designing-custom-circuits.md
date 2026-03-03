@@ -1,109 +1,179 @@
 ---
 aliases:
-  - Designing Custom Circuits
-tags:
-  - diataxis/tutorial
-  - audience/user
-  - topic/simulation
-  - topic/visualization
+- Designing Custom Circuits
+- Custom Circuit Design Tutorial
 status: draft
 owner: docs-team
-audience: user
-scope: Build a custom Schematic Netlist from requirements and iterate it through preview and simulation
-version: v1.0.0
 last_updated: 2026-03-02
 updated_by: docs-team
 ---
 
-# Design your own circuit: from requirements to a working Schematic Netlist
+# Designing Custom Circuits
 
-This is the final tutorial in the series.
+The current product focus is stable translation from requirements into a simulatable **Circuit Netlist**.
 
-The goal is simple:
+## Design order
 
-> Turn a circuit idea into a working `Schematic Netlist` that you can preview, simulate, and refine in the WebUI.
+1. write the requirement in plain language
+2. define the component instances first (`components`)
+3. decide which components should use fixed `default` values
+4. add `parameters` only when a value should become sweepable or shared
+5. list the node numbers (numeric strings only; ground is always `0`)
+6. decide which rows stay explicit and which should use `repeat`
+7. move to `/simulation` and configure sources plus sweep settings
 
-## What You Will Learn
+## Example A: explicit form (short circuit)
 
-- how to translate plain-language requirements into `ports`, `nodes`, `instances`, and `roles`
-- how to choose `layout.profile`
-- how to debug a wrong preview by fixing structure first
+```python
+{
+    "name": "FloatingBranch",
+    "components": [
+        {"name": "R1", "default": 50.0, "unit": "Ohm"},
+        {"name": "Lq", "default": 10.0, "unit": "nH"},
+        {"name": "Cq", "default": 1.0, "unit": "pF"},
+        {"name": "Cg", "default": 0.1, "unit": "pF"},
+    ],
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R1"),
+        ("Lq", "1", "2", "Lq"),
+        ("Cq", "1", "2", "Cq"),
+        ("Cg", "2", "0", "Cg"),
+    ],
+}
+```
 
-## Prerequisites
+## Example B: generated form (long chain, fixed values)
 
-- Finish the first three tutorials
+```python
+{
+    "name": "RepeatedLadder",
+    "components": [
+        {"name": "Rleft", "default": 50.0, "unit": "Ohm"},
+        {"name": "Rright", "default": 50.0, "unit": "Ohm"},
+        {
+            "repeat": {
+                "count": 4,
+                "index": "cell",
+                "symbols": {
+                    "n": {"base": 1, "step": 1},
+                    "n2": {"base": 2, "step": 1}
+                },
+                "emit": [
+                    {"name": "L${n}_${n2}", "default": 80e-12, "unit": "H"},
+                    {"name": "C${n2}_0", "default": 40e-15, "unit": "F"}
+                ]
+            }
+        }
+    ],
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "Rleft"),
+        {
+            "repeat": {
+                "count": 4,
+                "index": "cell",
+                "symbols": {
+                    "n": {"base": 1, "step": 1},
+                    "n2": {"base": 2, "step": 1}
+                },
+                "emit": [
+                    ("L${n}_${n2}", "${n}", "${n2}", "L${n}_${n2}"),
+                    ("C${n2}_0", "${n2}", "0", "C${n2}_0")
+                ]
+            }
+        },
+        ("R5", "5", "0", "Rright"),
+        ("P2", "5", "0", 2),
+    ],
+}
+```
 
-Keep these reference pages open:
+## Example C: generated form (sweepable values)
 
-- [Schematic Netlist Core](../reference/architecture/schematic-netlist-core.md)
-- [Schema Editor](../reference/ui/schema-editor.md)
-- [LayoutPlan and Renderer Boundaries](../explanation/architecture/circuit-simulation/layout-plan-and-renderer-boundaries.md)
+```python
+{
+    "name": "TunableLadder",
+    "parameters": [
+        {
+            "repeat": {
+                "count": 4,
+                "index": "cell",
+                "series": {
+                    "csh": {"base": 40e-15, "step": 5e-15}
+                },
+                "emit": [
+                    {"name": "Csh${index}", "default": "${csh}", "unit": "F"}
+                ]
+            }
+        }
+    ],
+    "components": [
+        {
+            "repeat": {
+                "count": 4,
+                "index": "cell",
+                "symbols": {
+                    "n": {"base": 2, "step": 1}
+                },
+                "emit": [
+                    {"name": "C${n}_0", "value_ref": "Csh${index}", "unit": "F"}
+                ]
+            }
+        }
+    ],
+    "topology": [
+        {
+            "repeat": {
+                "count": 4,
+                "index": "cell",
+                "symbols": {
+                    "n": {"base": 2, "step": 1}
+                },
+                "emit": [
+                    ("C${n}_0", "${n}", "0", "C${n}_0")
+                ]
+            }
+        }
+    ],
+}
+```
 
-## Step 1. Start from a requirement sentence
+## When to switch to `repeat`
 
-Write the intended circuit in plain language first.
+!!! tip "Rule of thumb"
+    If you are repeatedly copying the same component or topology rows, and only changing suffixes, node numbers, or linear numeric values, switch to `repeat`.
 
-Example:
+If every section is actually different, keep the netlist explicit.
 
-> A one-port readout line with a 50 Ohm termination, a qubit-like parallel branch between two nodes, and a small shunt capacitor to ground.
+## When to add `parameters`
 
-## Step 2. Extract nodes
+!!! note "Only in these cases"
+    - a value should be swept in the Simulation UI
+    - multiple components should share one tunable value
+    - repeated cells need independently tunable values
 
-Start with nodes, not components.
+If none of these apply, `components.default` is the simplest option.
 
-For example:
+## What not to do
 
-- `1`: drive / readout node
-- `2`: floating island
-- `gnd`: ground reference
+!!! danger "Do not treat the editor as a script environment"
+    - do not expect arbitrary `for`
+    - do not expect `if`
+    - do not place source / pump / hbsolve settings inside the netlist
 
-## Step 3. Define ports
+Those are outside the scope of the current Code Editor syntax.
 
-Ports define external boundaries first. They are not components.
+## Self-check
 
-## Step 4. Define instances
+After this page, you should be able to explain:
 
-Only now list components.
-
-Use:
-
-- `kind`
-- `pins`
-- `value_ref`
-- `role`
-
-If two components belong to the same branch, make sure they truly share the same pin pair.
-
-## Step 5. Choose `layout.profile`
-
-Use the smallest profile that matches the circuit semantics:
-
-- `generic`
-- `qubit_readout`
-- `jpa`
-- `jtwpa`
-
-## Step 6. Iterate in the right order
-
-The correct loop is:
-
-1. `Format`
-2. inspect `Live Preview`
-3. fix structure first
-4. run `Simulation`
-5. refine values only after the structure is correct
-
-## Final check
-
-You should be able to do all of the following without copying a template:
-
-1. build a one-port readout resonator
-2. build a qubit-like parallel branch structure
-3. configure a valid `DC + pump` simulation setup
-4. decide whether a bad preview is a schema problem or a current renderer limitation
+- which circuits should stay explicit
+- which circuits should be split into prelude / repeated body / epilogue
+- which values should stay in `components.default`
+- which values should be promoted to `parameters + value_ref`
 
 ## Related
 
-- [Schematic Netlist Getting Started](schematic-netlist-getting-started.md)
-- [Understand Live Preview](schematic-netlist-live-preview.md)
-- [From Preview to Simulation](schematic-netlist-simulation.md)
+- [Repeating Circuit Sections](../repeating-circuit-sections.md)
+- [Circuit Netlist Format](../reference/data-formats/circuit-netlist.md)

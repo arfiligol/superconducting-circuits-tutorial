@@ -1,0 +1,14 @@
+## Tech Stack
+- **Python** (Managed by `uv`):
+    - **Data**: `pandas`, `numpy` (Core).
+    - **Vis**: `plotly` (Interactive), `matplotlib` (Static).
+    - **WebUI**: `nicegui` (UI framework), `ui.codemirror` / CodeMirror (Code Editor), `Ruff WebAssembly` (browser formatter), `Panzoom` (SVG zoom/pan interaction).
+    - **CLI**: `typer` (Framework).
+    - **Logging**: `rich` (Colored output).
+    - **GUI**: `nicegui` (Native App).
+- **Julia** (Managed by `juliaup`):
+    - **Sim**: `JosephsonCircuits.jl` (Core Engine).
+- **Docs**: `zensical` (Static Site).
+- **Config Files**:
+    - Python: `pyproject.toml`
+    - Julia: `Project.toml`

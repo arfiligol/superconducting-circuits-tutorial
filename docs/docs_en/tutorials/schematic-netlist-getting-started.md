@@ -1,138 +1,106 @@
 ---
 aliases:
-  - Schematic Netlist Getting Started
-tags:
-  - diataxis/tutorial
-  - audience/user
-  - topic/simulation
-  - topic/visualization
+- Circuit Netlist Getting Started
+- Circuit Netlist Intro
 status: draft
 owner: docs-team
-audience: user
-scope: Build the first valid Schematic Netlist in the WebUI Code Editor and run the first simulation
-version: v1.0.0
 last_updated: 2026-03-02
 updated_by: docs-team
 ---
 
-# Schematic Netlist Getting Started
+# Circuit Netlist Getting Started
 
-This tutorial has one goal:
+The goal of this tutorial is simple: write your first minimal **Circuit Netlist** in the WebUI and complete a successful simulation.
 
-> Write your first valid `Schematic Netlist` in the WebUI Code Editor, see a working `Live Preview`, and run a simulation successfully.
+!!! tip "Success criteria"
+    After this page, you should be able to retype a single-port LC circuit on your own instead of only copying it.
 
-After finishing this page, you should be able to retype a one-port LC circuit without copying and pasting.
-
-## What You Will Learn
-
-- How to use the WebUI Code Editor in `/schemas/new`
-- How to write a minimal `Schematic Netlist v0.1`
-- How to use `Format` and `Save Schema`
-- How to run the first simulation in `/simulation`
-
-## Prerequisites
-
-- The app is running
-- You can open the `Schemas` and `Simulation` pages
-- You do not need JPA or JTWPA knowledge yet
-
-Reference pages:
-
-- [Schematic Netlist Core](../reference/architecture/schematic-netlist-core.md)
-- [Schematic Netlist Format](../reference/data-formats/circuit-netlist.md)
-- [Schema Editor](../reference/ui/schema-editor.md)
-
-## Step 1. Enter the first netlist
-
-Use the same minimal `SmokeStableSeriesLC` schema from the zh-TW tutorial.
+## Minimal working example (explicit form)
 
 ```python
 {
-    "schema_version": "0.1",
     "name": "SmokeStableSeriesLC",
-    "parameters": {
-        "R_port": {"default": 50.0, "unit": "Ohm"},
-        "L_main": {"default": 10.0, "unit": "nH"},
-        "C_main": {"default": 1.0, "unit": "pF"},
-    },
-    "ports": [
-        {
-            "id": "P1",
-            "node": "1",
-            "ground": "gnd",
-            "index": 1,
-            "role": "signal",
-            "side": "left",
-        }
+    "components": [
+        {"name": "R1", "default": 50.0, "unit": "Ohm"},
+        {"name": "L1", "default": 10.0, "unit": "nH"},
+        {"name": "C1", "default": 1.0, "unit": "pF"},
     ],
-    "instances": [
-        {
-            "id": "R1",
-            "kind": "resistor",
-            "pins": ["1", "gnd"],
-            "value_ref": "R_port",
-            "role": "termination",
-        },
-        {
-            "id": "L1",
-            "kind": "inductor",
-            "pins": ["1", "2"],
-            "value_ref": "L_main",
-            "role": "signal",
-        },
-        {
-            "id": "C1",
-            "kind": "capacitor",
-            "pins": ["2", "gnd"],
-            "value_ref": "C_main",
-            "role": "shunt",
-        },
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R1"),
+        ("L1", "1", "2", "L1"),
+        ("C1", "2", "0", "C1"),
     ],
-    "layout": {"direction": "lr", "profile": "generic"},
 }
 ```
 
-## Step 2. Understand the minimum model
+## Understanding each field
 
-- `schema_version`: must be `"0.1"`
-- `parameters`: all values referenced by `value_ref`
-- `ports`: external network ports
-- `instances`: actual components
-- `layout`: high-level preview hints
+### `components`
 
-## Step 3. Format and preview
+- the component instance list, and the main authoring layer
+- each row requires: `name`, `unit`
+- value source must be exactly one of:
+  - `default`: fixed value
+  - `value_ref`: a reference to a sweepable parameter
 
-Press `Format`.
+### `topology`
 
-You should see:
+- the actual connection structure
+- in the simplest case, each row is a four-tuple: `(element, node1, node2, value_ref)`
+- standard elements use a component name in the last field
+- `P*` entries represent ports and use an integer port index in the last field
 
-- stable indentation
-- a valid `Live Preview`
-- no loss of the preview state
+### `parameters` (not needed yet)
 
-## Step 4. Save and re-open
+- you do not need `parameters` for this first example
+- add them later only when a value should become sweepable or shared
 
-Press `Save Schema`.
+!!! note "Node rules"
+    - nodes must be numeric strings
+    - `0` is the only legal ground token
+    - `gnd` is not accepted
 
-For `v0.1` schemas, the app stores the exact editor text. If you formatted it first, the saved schema keeps that same style.
+## Workflow
 
-## Step 5. Run the first simulation
+1. Open `/schemas/new`
+2. Paste the netlist above
+3. Click `Format`
+4. Click `Save Schema`
+5. Go to `/simulation` and select this schema
+6. Run a simulation with the default sweep
 
-Open `/simulation`, select the saved schema, keep the default linear settings, and press `Run Simulation`.
+## What you do not need yet
 
-You should see:
+!!! info "Next page"
+    This tutorial only teaches the explicit form.
 
-- success logs
-- at least one `S11` result plot
+    If you hit long chains, repeated cells, or JTWPA-like structures, do not copy rows 100 times. Learn `repeat` on the next page.
+
+## Common mistakes
+
+!!! warning "Most common"
+    Every `components[*]` row must have a resolvable value.
+
+- missing both `default` and `value_ref`: wrong
+- including both `default` and `value_ref`: also wrong
+
+!!! warning "Another common mistake"
+    In `topology`, standard elements point to component names, not raw numbers or parameter names.
+
+- `("L1", "1", "2", "L1")`: correct, because `components` contains `L1`
+- `("L1", "1", "2", 10.0)`: wrong, because `topology` does not carry raw values
 
 ## Self-check
 
-You pass this tutorial only if you can explain:
+After this page, you should be able to explain:
 
-1. what `ports` means
-2. what `instances` means
-3. why `value_ref` must match an existing parameter key
+- why `components` are the main authoring layer
+- why `P1` ends with the integer `1`
+- why standard topology rows end with a component name
 
-## Next
+## Related
 
-- [Understand Live Preview: make Schemdraw produce the structure you expect](schematic-netlist-live-preview.md)
+- [Circuit Netlist Format](../reference/data-formats/circuit-netlist.md)
+- [Schema Editor](../reference/ui/schema-editor.md)
+- [Repeating Circuit Sections](../repeating-circuit-sections.md)

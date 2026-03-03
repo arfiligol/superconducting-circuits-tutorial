@@ -1,41 +1,23 @@
 ---
 aliases:
 - Circuit Simulation Architecture
-- 電路模擬架構
-tags:
-- diataxis/explanation
-- audience/team
-- topic/architecture
-- topic/simulation
 status: draft
 owner: docs-team
-audience: team
-scope: Why Circuit Simulation now centers on Schematic Netlist, shared SoT, and staged preview/simulation compilation
-version: v0.3.0
-last_updated: 2026-03-01
+last_updated: 2026-03-02
 updated_by: docs-team
 ---
 
 # Circuit Simulation
 
-Circuit Simulation now centers on `Schematic Netlist`, not the old tuple-style topology format.
+This section explains the stable circuit simulation architecture and the next planned editor syntax expansion.
 
-This section explains:
+!!! info "Current focus"
+    The current product focus is: Circuit Netlist validation -> `repeat` expansion (next iteration) -> `JosephsonCircuits` simulation.
 
-1. why a new source language is required
-2. why Live Preview and Simulation must share one SoT
-3. why `Schemdraw` must remain a renderer rather than a layout engine
+!!! note "Live Preview"
+    Live Preview remains paused, and the related design and experiments are archived in [Archived Live Preview Research](../../../notebooks/archived-live-preview/index.md).
 
-## Topics
+## Active Topics
 
-- [LayoutPlan and Renderer Boundaries](layout-plan-and-renderer-boundaries.md)
-- [Schematic Netlist Live Preview](../design-decisions/circuit-schema-live-preview.md)
-- [Schema Editor Formatting](../design-decisions/schema-editor-formatting.md)
-- [Live Preview Domain Semantics Profiles](../design-decisions/live-preview-domain-semantics.md)
+- [Restricted Netlist Generators](restricted-netlist-generators.md)
 - [Simulation Result Views](simulation-result-views.md)
-
-## Related
-
-- [Architecture Reference / Schematic Netlist Core](../../../reference/architecture/schematic-netlist-core.md)
-- [Architecture](../index.md)
-- [Pipeline](../pipeline/index.md)

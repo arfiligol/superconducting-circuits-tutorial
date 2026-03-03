@@ -160,6 +160,54 @@ with ui.row().classes("w-full gap-6 flex-wrap lg:flex-nowrap"):
 └────────────────────────────────┘
 ```
 
+### Result Family Explorer（結果族檢視）
+
+適用於單一結果批次具有多個 trace family（如 `S / Y / Z / QE`）的情境。
+
+```
+┌──────────────────────────────────────────────┐
+│ Tabs (family)          Shared controls       │
+├──────────────────────────────────────────────┤
+│ Add Trace                                       │
+├──────────────────────────────────────────────┤
+│ Trace Card 1                                    │
+├──────────────────────────────────────────────┤
+│ Trace Card 2                                    │
+├──────────────────────────────────────────────┤
+│ Shared Plot (overlay traces)                    │
+└──────────────────────────────────────────────┘
+```
+
+規則：
+
+1. Tabs 控制資料 family，不應導致重跑 solver。
+2. 共享控制項（如 metric / reference value）應集中在 tabs 同列或鄰近列。
+3. 每條 trace 的選擇器應封裝成獨立 card，可新增 / 刪除。
+4. 所有 trace card 應共同驅動同一張圖，而不是各自產生一張圖。
+5. Result View 屬於 quick-inspect / compare surface，可與正式分析頁面重疊，不必強迫移除。
+
+### Large Data Explorer（大量資料探索）
+
+適用於資料筆數可達數千～數萬的頁面（例如 Raw Data / Characterization Trace Selection）。
+
+```
+┌──────────────────────────────────────────────┐
+│ Filters + Sort + Page Controls               │
+├──────────────────────────────────────────────┤
+│ Summary Table (current page only)            │
+├──────────────────────────────────────────────┤
+│ Detail/Plot Panel (selected row only)        │
+└──────────────────────────────────────────────┘
+```
+
+規則：
+
+1. 控制列（過濾/排序/分頁）應放在表格上方，並固定為同一操作區塊。
+2. 表格僅渲染當前頁資料；禁止整批資料一次渲染。
+3. 詳細資訊或圖表只在 row selection 後載入，不應在列表刷新時全量重算。
+4. 若頁面採 Master-Detail，Master 應維持 `lg:w-[45%]` 左右、Detail 維持 `lg:w-[55%]` 左右，避免單側過寬空白。
+5. 任何「全選」預設都需要風險控制（例如 sideband traces 應提供 Base traces quick select）。
+
 ## 內容區域規格
 
 | 屬性 | 值 | 說明 |
@@ -199,5 +247,7 @@ ui.button(
 - Master/Detail proportions: tables should usually be `w-[45%]`, visualizations `w-[55%]`.
 - Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
 - Navigation: add new pages to the left drawer in `layout.py`.
+- Result Family Explorer: when one result bundle has multiple trace families, prefer tabs + shared controls + trace cards + one shared plot. Changing selectors inside this explorer must not trigger a rerun by itself.
+- Large Data Explorer: for record-heavy pages, keep controls above table, render current page only, and load detail payload lazily by row selection.
 - Forbidden: standalone pages outside `app_shell()`.
 ```

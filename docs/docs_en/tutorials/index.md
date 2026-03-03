@@ -1,49 +1,37 @@
 ---
 aliases:
 - Tutorials
-- 教學
-tags:
-- diataxis/tutorial
-- audience/user
-- topic/schematic-netlist
+- Learning Paths
 status: draft
 owner: docs-team
-audience: user
-scope: WebUI-first learning path for Schematic Netlist, Live Preview, and Simulation
-version: v0.2.0
 last_updated: 2026-03-02
 updated_by: docs-team
 ---
 
 # Tutorials
 
-This section provides the main WebUI learning path for `Schematic Netlist v0.1`.
+This section provides WebUI-centered learning paths so you can move from zero knowledge to writing **Circuit Netlist v0.3**, using `components + topology` as the baseline, then adding `parameters` and `repeat` only when needed, and finally running successful simulations.
 
-## Recommended Learning Path
+!!! info "Diataxis position"
+    This section contains guided learning only. For syntax rules, see [Circuit Netlist Format](../reference/data-formats/circuit-netlist.md). For design rationale, see [Circuit Simulation](../explanation/architecture/circuit-simulation/index.md).
 
-1. [Schematic Netlist Getting Started](schematic-netlist-getting-started.md)
-2. [From Preview to Simulation](schematic-netlist-simulation.md)
-3. [Understand Live Preview](schematic-netlist-live-preview.md)
+## App Circuit Simulation
+
+Start with [App Circuit Simulation: Overview](app-circuit-simulation/index.md), then complete these four tutorials in order.
+
+1. [Circuit Netlist Getting Started](schematic-netlist-getting-started.md)
+2. [Repeating Circuit Sections](repeating-circuit-sections.md)
+3. [From Netlist to Simulation](schematic-netlist-simulation.md)
 4. [Designing Custom Circuits](designing-custom-circuits.md)
 
-## Supporting References
-
-- [Schematic Netlist Core](../reference/architecture/schematic-netlist-core.md)
-- [Schematic Netlist Format](../reference/data-formats/circuit-netlist.md)
-- [Schema Editor](../reference/ui/schema-editor.md)
-- [Circuit Simulation](../reference/ui/circuit-simulation.md)
-
-## Supporting Explanations
-
-- [Circuit Simulation](../explanation/architecture/circuit-simulation/index.md)
-- [LayoutPlan and Renderer Boundaries](../explanation/architecture/circuit-simulation/layout-plan-and-renderer-boundaries.md)
-- [Schematic Netlist Live Preview](../explanation/architecture/design-decisions/circuit-schema-live-preview.md)
-
-## Legacy Tutorials
+## Analysis Workflows
 
 - [End-to-End Fitting](end-to-end-fitting.md)
+- [Resonance Fitting](resonance-fitting.md)
+- [Flux Analysis](flux-analysis.md)
+
+## Simulation Walkthroughs
+
 - [Simulation Workflow](simulation-workflow.md)
 - [LC Resonator](lc-resonator.md)
 - [Parameter Sweep](parameter-sweep.md)
-- [Resonance Fitting](resonance-fitting.md)
-- [Flux Analysis](flux-analysis.md)

@@ -30,8 +30,8 @@ tags:
 | 規範 | 說明 | Agent Rule |
 |---|---|---|
 | [主題系統](./theming.md) | Design Token、深色模式、Plotly 主題同步 | [#agent-rule](./theming.md#agent-rule) |
-| [元件規範](./component-guidelines.md) | NiceGUI 元件使用規則、禁止項目 | [#agent-rule](./component-guidelines.md#agent-rule) |
-| [佈局規範](./layout-patterns.md) | Shell 架構、Card 排版、響應式規則 | [#agent-rule](./layout-patterns.md#agent-rule) |
+| [元件規範](./component-guidelines.md) | NiceGUI 元件使用規則、禁止項目、資料密集表格契約 | [#agent-rule](./component-guidelines.md#agent-rule) |
+| [佈局規範](./layout-patterns.md) | Shell 架構、Card 排版、響應式規則、Large Data Explorer | [#agent-rule](./layout-patterns.md#agent-rule) |
 
 ---
 

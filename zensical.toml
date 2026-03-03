@@ -60,16 +60,23 @@ nav = [
   ] },
   { "Tutorials" = [
     { "Overview" = "tutorials/index.md" },
-    { "Schematic Netlist Getting Started" = "tutorials/schematic-netlist-getting-started.md" },
-    { "Understand Live Preview" = "tutorials/schematic-netlist-live-preview.md" },
-    { "From Preview to Simulation" = "tutorials/schematic-netlist-simulation.md" },
-    { "Designing Custom Circuits" = "tutorials/designing-custom-circuits.md" },
-    { "End-to-End Fitting" = "tutorials/end-to-end-fitting.md" },
-    { "Simulation Workflow" = "tutorials/simulation-workflow.md" },
-    { "LC Resonator" = "tutorials/lc-resonator.md" },
-    { "Parameter Sweep" = "tutorials/parameter-sweep.md" },
-    { "Resonance Fitting" = "tutorials/resonance-fitting.md" },
-    { "Flux Analysis" = "tutorials/flux-analysis.md" },
+    { "App Circuit Simulation" = [
+      { "Overview" = "tutorials/app-circuit-simulation/index.md" },
+      { "Circuit Netlist Getting Started" = "tutorials/schematic-netlist-getting-started.md" },
+      { "Repeating Circuit Sections" = "tutorials/repeating-circuit-sections.md" },
+      { "From Netlist to Simulation" = "tutorials/schematic-netlist-simulation.md" },
+      { "Designing Custom Circuits" = "tutorials/designing-custom-circuits.md" },
+    ] },
+    { "Analysis Workflows" = [
+      { "End-to-End Fitting" = "tutorials/end-to-end-fitting.md" },
+      { "Resonance Fitting" = "tutorials/resonance-fitting.md" },
+      { "Flux Analysis" = "tutorials/flux-analysis.md" },
+    ] },
+    { "Simulation Walkthroughs" = [
+      { "Simulation Workflow" = "tutorials/simulation-workflow.md" },
+      { "LC Resonator" = "tutorials/lc-resonator.md" },
+      { "Parameter Sweep" = "tutorials/parameter-sweep.md" },
+    ] },
   ] },
   { "Explanation" = [
     { "Overview" = "explanation/index.md" },
@@ -87,10 +94,8 @@ nav = [
       ] },
       { "Circuit Simulation" = [
         { "Overview" = "explanation/architecture/circuit-simulation/index.md" },
-        { "LayoutPlan and Renderer Boundaries" = "explanation/architecture/circuit-simulation/layout-plan-and-renderer-boundaries.md" },
-        { "Schematic Netlist Live Preview" = "explanation/architecture/design-decisions/circuit-schema-live-preview.md" },
+        { "Restricted Netlist Generators" = "explanation/architecture/circuit-simulation/restricted-netlist-generators.md" },
         { "Schema Editor Formatting" = "explanation/architecture/design-decisions/schema-editor-formatting.md" },
-        { "Live Preview Domain Semantics Profiles" = "explanation/architecture/design-decisions/live-preview-domain-semantics.md" },
         { "Simulation Result Views" = "explanation/architecture/circuit-simulation/simulation-result-views.md" },
       ] },
       { "Visualization Backend" = "explanation/architecture/design-decisions/visualization-backend.md" },
@@ -100,7 +105,7 @@ nav = [
     { "Overview" = "reference/index.md" },
     { "Architecture" = [
       { "Overview" = "reference/architecture/index.md" },
-      { "Schematic Netlist Core" = "reference/architecture/schematic-netlist-core.md" },
+      { "Circuit Netlist Core" = "reference/architecture/schematic-netlist-core.md" },
     ] },
     { "CLI Options" = [
       { "Overview" = "reference/cli/index.md" },
@@ -132,13 +137,16 @@ nav = [
     ] },
     { "App" = [
       { "Overview" = "reference/ui/index.md" },
+      { "Raw Data Browser" = "reference/ui/raw-data-browser.md" },
+      { "Schemas" = "reference/ui/schemas.md" },
       { "Schema Editor" = "reference/ui/schema-editor.md" },
       { "Circuit Simulation" = "reference/ui/circuit-simulation.md" },
+      { "Characterization" = "reference/ui/characterization.md" },
     ] },
     { "Data Formats" = [
       { "Overview" = "reference/data-formats/index.md" },
       { "Dataset Record" = "reference/data-formats/dataset-record.md" },
-      { "Schematic Netlist" = "reference/data-formats/circuit-netlist.md" },
+      { "Circuit Netlist" = "reference/data-formats/circuit-netlist.md" },
       { "Raw Data Layout" = "reference/data-formats/raw-data-layout.md" },
       { "Analysis Result" = "reference/data-formats/analysis-result.md" },
     ] },
@@ -183,6 +191,14 @@ nav = [
     { "Plotting Utilities" = "reference/utilities.md" },
   ] },
   { "Notebooks" = [
+    { "Archived Live Preview Research" = [
+      { "Overview" = "notebooks/archived-live-preview/index.md" },
+      { "Tutorial Draft" = "notebooks/archived-live-preview/tutorial-live-preview.md" },
+      { "Circuit Schema Live Preview" = "notebooks/archived-live-preview/circuit-schema-live-preview.md" },
+      { "Live Preview Domain Semantics" = "notebooks/archived-live-preview/live-preview-domain-semantics.md" },
+      { "LayoutPlan and Renderer Boundaries" = "notebooks/archived-live-preview/layout-plan-and-renderer-boundaries.md" },
+      { "Schematic Netlist Core (Archived)" = "notebooks/archived-live-preview/schematic-netlist-core.md" },
+    ] },
     { "Floating Qubit Study" = "notebooks/floating-qubit-study.md" },
     { "S-Parameter Resonance Fit Theory" = "notebooks/s-parameter-resonance-fit-theory.md" },
     { "Macroscopic Wavefunction" = "notebooks/macroscopic-wavefunction.md" },

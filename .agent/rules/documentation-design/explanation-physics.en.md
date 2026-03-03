@@ -1,0 +1,11 @@
+## Explanation Physics
+- **Positioning**: `docs/explanation/physics/` must be both a full learning backbone and reusable concept nodes
+- **Audience**: physics students with four-core-physics background; support bridging + review
+- **Start point**: begin superconductivity from a single-superconductor macroscopic wavefunction
+- **Depth boundary**: no full BCS derivation; include minimum chain: wavefunction/phase -> Josephson relations -> circuit equivalent -> measurable engineering quantities
+- **Per-page contract**: question, prerequisites mapping, physics core equations/assumptions, engineering mapping, limits/approximations, cross-links
+- **Cross-links**: provide 1-3 relevant links chosen by concept fit (Tutorial/How-to/Reference/Design Decisions); no mandatory pair
+- **Narrative consistency**: place each page in the global path and maintain prev/next conceptual links
+- **Diataxis boundary**: Explanation explains reasoning, not command-style procedures
+- **Question-driven**: each page starts from a physics question, not an engineering operation question
+- **Admonition usage**: include at least one history/application admonition per page

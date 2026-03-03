@@ -1,0 +1,25 @@
+## Folder Structure
+- **Source Code (`src/`)**:
+    - `core/analysis/`: **Data Analysis** (Pydantic models, Fitting, Extraction). NO Print here, use `logging`.
+    - `core/simulation/`: **Circuit Simulation** (JuliaCall adapter to JosephsonCircuits.jl).
+    - `core/shared/`: **Shared Utilities** (logging, visualization, persistence, units).
+    - `app/`: **NiceGUI Native App**.
+    - `scripts/analysis/`: **Analysis CLI Entry Points**. Use `argparse`. ONLY layer allowed to `print()`.
+    - `scripts/simulation/`: **Simulation CLI Entry Points**.
+    - `scripts/database/`: **Database CLI Entry Points**.
+- **Data (`data/`)**:
+    - `raw/`: **READ-ONLY**. HFSS/VNA files.
+    - `processed/`: Final Reports/Plots.
+    - `database.db`: SQLite database.
+- **Config** (Root):
+    - `pyproject.toml`: Python Dependencies (uv).
+    - `juliapkg.json`: Julia Dependencies (JosephsonCircuits.jl).
+    - `Project.toml`: Julia Project Settings.
+- **Decision Tree**:
+    - IF "simulation CLI" -> `src/scripts/simulation/`
+    - IF "analysis CLI" -> `src/scripts/analysis/`
+    - IF "database CLI" -> `src/scripts/database/`
+    - IF "reusable analysis logic" -> `src/core/analysis/`
+    - IF "simulation interop" -> `src/core/simulation/`
+    - IF "shared plotting/utils/logging/persistence" -> `src/core/shared/`
+    - IF "UI" -> `src/app/`

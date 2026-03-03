@@ -1,0 +1,13 @@
+## Script Authoring
+- **Location**:
+    - Analysis scripts: `src/scripts/analysis/`
+    - Simulation scripts: `src/scripts/simulation/`
+- **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
+- **Structure**:
+    - MUST have `def main():`.
+    - MUST use `typer` for arguments.
+    - MUST use `if __name__ == "__main__": app()`.
+- **Logic**:
+    - Analysis CLI: minimal wrappers around `core/analysis` logic.
+    - Simulation CLI: minimal wrappers around `core/simulation` logic.
+- **I/O**: Print to stdout is allowed here (and only here).
