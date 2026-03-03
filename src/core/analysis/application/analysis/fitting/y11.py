@@ -23,12 +23,32 @@ def _prepare_dataframe(df_raw: pd.DataFrame) -> pd.DataFrame:
         "Freq [GHz]": "Freq",
         "im(Yt(Rectangle1_T1,Rectangle1_T1)) []": "ImY",
     }
+    alias_cols = {
+        "im(Y) []": "ImY",
+        "im(y) []": "ImY",
+    }
     # Check if renamed columns already exist (if pre-processed)
     if all(col in df_raw.columns for col in required_cols.values()):
         return df_raw.dropna()
 
     missing = [col for col in required_cols if col not in df_raw.columns]
     if missing:
+        if all(col in df_raw.columns for col in ("L_jun [nH]", "Freq [GHz]")):
+            for source_name, target_name in alias_cols.items():
+                if source_name in df_raw.columns:
+                    return (
+                        df_raw.rename(columns={source_name: target_name})[
+                            ["L_jun [nH]", "Freq [GHz]", target_name]
+                        ]
+                        .rename(
+                            columns={
+                                "L_jun [nH]": "L_jun",
+                                "Freq [GHz]": "Freq",
+                                target_name: "ImY",
+                            }
+                        )
+                        .dropna()
+                    )
         # Fallback: check if we just have standard names
         alt_required = {"L_jun", "Freq", "ImY"}
         if all(c in df_raw.columns for c in alt_required):
@@ -40,7 +60,14 @@ def _prepare_dataframe(df_raw: pd.DataFrame) -> pd.DataFrame:
     return df.dropna()
 
 
-def fit_y11_response(df_raw: pd.DataFrame) -> Y11FitResult:
+def fit_y11_response(
+    df_raw: pd.DataFrame,
+    *,
+    ls1_init_nh: float = 0.01,
+    ls2_init_nh: float = 0.01,
+    c_init_pf: float = 0.885,
+    c_max_pf: float = 3.0,
+) -> Y11FitResult:
     try:
         df = _prepare_dataframe(df_raw)
     except ValueError as e:
@@ -54,11 +81,15 @@ def fit_y11_response(df_raw: pd.DataFrame) -> Y11FitResult:
     imag_y = df["ImY"].to_numpy(dtype=float)
 
     model = Model(calculate_y11_imaginary, independent_vars=["L_jun", "freq_ghz"])
-    params = model.make_params(Ls1_nH=0.01, Ls2_nH=0.01, C_pF=0.885)
+    params = model.make_params(
+        Ls1_nH=float(ls1_init_nh),
+        Ls2_nH=float(ls2_init_nh),
+        C_pF=float(c_init_pf),
+    )
     params["Ls1_nH"].min = 0.0
     params["Ls2_nH"].min = 0.0
     params["C_pF"].min = 0.0
-    params["C_pF"].max = 3.0
+    params["C_pF"].max = float(c_max_pf)
 
     try:
         result = model.fit(imag_y, params=params, L_jun=l_jun, freq_ghz=freq)

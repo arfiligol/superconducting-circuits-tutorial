@@ -57,18 +57,54 @@ ANALYSIS_REGISTRY = [
                 "options": ["NO_LS", "WITH_LS", "FIXED_C"],
                 "default": "WITH_LS",
             },
+            {"name": "ls_min_nh", "label": "Ls min (nH)", "type": "number", "default": 0.0},
+            {"name": "ls_max_nh", "label": "Ls max (nH)", "type": "number", "default": None},
+            {"name": "c_min_pf", "label": "C min (pF)", "type": "number", "default": 0.0},
+            {"name": "c_max_pf", "label": "C max (pF)", "type": "number", "default": None},
+            {"name": "fixed_c_pf", "label": "Fixed C (pF)", "type": "number", "default": None},
+            {
+                "name": "fit_min_nh",
+                "label": "Fit L_jun min (nH)",
+                "type": "number",
+                "default": None,
+            },
+            {
+                "name": "fit_max_nh",
+                "label": "Fit L_jun max (nH)",
+                "type": "number",
+                "default": None,
+            },
         ],
         "scope": "per_dataset",
         "description": "Fits flux-dependent resonance frequencies to a SQUID-LC model.",
-        "completed_methods": ["squid_fit"],
+        "completed_methods": ["lc_squid_fit"],
     },
     {
         "id": "y11_fit",
         "label": "Y11 Response Fit",
         "icon": "insights",
-        "requires": {"data_type": "y_parameters", "parameter": ["Y11"]},
+        "requires": {
+            "data_type": "y_parameters",
+            "parameter": ["Y11"],
+            "representation": "imaginary",
+        },
         "auto_run": False,
-        "config_fields": [],
+        "config_fields": [
+            {
+                "name": "ls1_init_nh",
+                "label": "Ls1 init (nH)",
+                "type": "number",
+                "default": 0.01,
+            },
+            {
+                "name": "ls2_init_nh",
+                "label": "Ls2 init (nH)",
+                "type": "number",
+                "default": 0.01,
+            },
+            {"name": "c_init_pf", "label": "C init (pF)", "type": "number", "default": 0.885},
+            {"name": "c_max_pf", "label": "C max (pF)", "type": "number", "default": 3.0},
+        ],
         "scope": "per_dataset",
         "description": "Detailed fitting of the Y11 response over frequency and flux.",
         "completed_methods": ["y11_fit"],
@@ -131,7 +167,4 @@ def is_analysis_completed(analysis: dict[str, Any], params: list[Any]) -> bool:
     if not completed_methods:
         return False
 
-    for param in params:
-        if param.method in completed_methods:
-            return True
-    return False
+    return any(param.method in completed_methods for param in params)
