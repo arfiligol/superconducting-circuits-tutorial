@@ -17,9 +17,10 @@ class DataRecordManagementService:
         """List data records, optionally filtered by dataset ID."""
         with get_unit_of_work() as uow:
             if dataset_id is not None:
-                records = uow.data_records.list_by_dataset(dataset_id)
-            else:
-                records = uow.data_records.list_all()
+                summary_rows = uow.data_records.list_summary_by_dataset(dataset_id)
+                return [DataRecordSummaryDTO.model_validate(row) for row in summary_rows]
+
+            records = uow.data_records.list_all()
             return [self._to_summary(r) for r in records]
 
     def get_record(self, id: int) -> DataRecordDetailDTO | None:

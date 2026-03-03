@@ -7,6 +7,8 @@ from core.shared.persistence.models import (
     DatasetTagLink,
     DerivedParameter,
     DeviceType,
+    ResultBundleDataLink,
+    ResultBundleRecord,
     Tag,
 )
 from core.shared.persistence.unit_of_work import SqliteUnitOfWork, get_unit_of_work
@@ -22,6 +24,8 @@ __all__ = [  # noqa: RUF022
     "DatasetTagLink",
     "DerivedParameter",
     "DeviceType",
+    "ResultBundleDataLink",
+    "ResultBundleRecord",
     "Tag",
     # Unit of Work
     "SqliteUnitOfWork",

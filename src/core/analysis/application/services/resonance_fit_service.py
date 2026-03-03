@@ -35,6 +35,7 @@ class ResonanceFitService:
         f_min: float | None = None,
         f_max: float | None = None,
         bias_index: int | None = None,
+        record_ids: list[int] | None = None,
     ) -> dict[str, "typing.Any"]:
         """
         Perform a CPZM notch resonance fit on a given dataset and parameter.
@@ -55,12 +56,15 @@ class ResonanceFitService:
 
         # We need a method to get DataRecords by Dataset ID and parameter
         # Let's search through all records and filter (in-memory for now, assuming small DB)
-        all_records = self.data_record_service.list_records()
+        all_records = self.data_record_service.list_records(dataset.id)
+        if record_ids is not None:
+            selected_ids = set(record_ids)
+            all_records = [record for record in all_records if record.id in selected_ids]
         s_records = [
             r
             for r in all_records
             if r.dataset_id == dataset.id
-            and r.data_type == "s_parameters"
+            and r.data_type in ("s_parameters", "s_params")
             and r.parameter == parameter
         ]
 

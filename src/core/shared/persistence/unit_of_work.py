@@ -10,6 +10,7 @@ from core.shared.persistence.repositories import (
     DataRecordRepository,
     DatasetRepository,
     DerivedParameterRepository,
+    ResultBundleRepository,
     TagRepository,
 )
 
@@ -42,6 +43,11 @@ class SqliteUnitOfWork:
         return DerivedParameterRepository(self._session)
 
     @property
+    def result_bundles(self) -> ResultBundleRepository:
+        """Access ResultBundleRecord repository."""
+        return ResultBundleRepository(self._session)
+
+    @property
     def circuits(self) -> CircuitRepository:
         """Access CircuitRecord repository."""
         return CircuitRepository(self._session)
@@ -65,6 +71,10 @@ class SqliteUnitOfWork:
     def commit(self) -> None:
         """Commit the current transaction."""
         self._session.commit()
+
+    def flush(self) -> None:
+        """Flush pending changes without committing."""
+        self._session.flush()
 
     def rollback(self) -> None:
         """Rollback the current transaction."""

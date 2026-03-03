@@ -1,5 +1,7 @@
 """Repository for DatasetRecord operations."""
 
+from datetime import datetime
+
 from sqlmodel import Session, select
 
 from core.shared.persistence.models import DatasetRecord, DatasetTagLink, Tag
@@ -20,12 +22,58 @@ class DatasetRepository:
         statement = select(DatasetRecord).where(DatasetRecord.name == name)
         return self._session.exec(statement).first()
 
-    def list_all(self) -> list[DatasetRecord]:
-        """List all datasets."""
-        statement = select(DatasetRecord).order_by(DatasetRecord.id)
-        return list(self._session.exec(statement).all())
+    @staticmethod
+    def _is_hidden(dataset: DatasetRecord) -> bool:
+        """Return whether this dataset should stay hidden from normal listings."""
+        return bool(dataset.source_meta.get("system_hidden"))
 
-    def list_by_tag(self, tag_name: str) -> list[DatasetRecord]:
+    def list_all(self, *, include_hidden: bool = False) -> list[DatasetRecord]:
+        """List datasets, excluding system-hidden containers by default."""
+        statement = select(DatasetRecord).order_by(DatasetRecord.id)  # type: ignore[arg-type]
+        records = list(self._session.exec(statement).all())
+        if include_hidden:
+            return records
+        return [record for record in records if not self._is_hidden(record)]
+
+    def list_summary_page(
+        self,
+        *,
+        search: str = "",
+        sort_by: str = "id",
+        descending: bool = False,
+        limit: int = 20,
+        offset: int = 0,
+        include_hidden: bool = False,
+    ) -> tuple[list[dict[str, int | str | datetime]], int]:
+        """List one page of dataset summaries for UI tables/cards."""
+        records = self.list_all(include_hidden=include_hidden)
+
+        search_text = search.strip().lower()
+        if search_text:
+            records = [record for record in records if search_text in record.name.lower()]
+
+        if sort_by == "name":
+            records.sort(key=lambda record: record.name.lower(), reverse=descending)
+        elif sort_by == "created_at":
+            records.sort(key=lambda record: record.created_at, reverse=descending)
+        else:
+            records.sort(key=lambda record: int(record.id or 0), reverse=descending)
+
+        total = len(records)
+        page_rows = records[offset : offset + max(1, limit)]
+        return (
+            [
+                {
+                    "id": int(record.id or 0),
+                    "name": record.name,
+                    "created_at": record.created_at,
+                }
+                for record in page_rows
+            ],
+            total,
+        )
+
+    def list_by_tag(self, tag_name: str, *, include_hidden: bool = False) -> list[DatasetRecord]:
         """List datasets with a specific tag."""
         statement = (
             select(DatasetRecord)
@@ -34,7 +82,10 @@ class DatasetRepository:
             .where(Tag.name == tag_name)
             .order_by(DatasetRecord.id)  # type: ignore[arg-type]
         )
-        return list(self._session.exec(statement).all())
+        records = list(self._session.exec(statement).all())
+        if include_hidden:
+            return records
+        return [record for record in records if not self._is_hidden(record)]
 
     def add(self, dataset: DatasetRecord) -> DatasetRecord:
         """Add a new dataset."""
@@ -74,32 +125,46 @@ class DatasetRepository:
         # but raw update is cleaner for batch updates.
         from sqlmodel import update
 
-        from core.shared.persistence.models import DataRecord, DatasetTagLink, DerivedParameter
+        from core.shared.persistence.models import (
+            DataRecord,
+            DatasetTagLink,
+            DerivedParameter,
+            ResultBundleRecord,
+        )
 
         self._session.exec(
-            update(DataRecord).where(DataRecord.dataset_id == old_id).values(dataset_id=new_id)
+            update(DataRecord)
+            .where(DataRecord.dataset_id == old_id)  # type: ignore[arg-type]
+            .values(dataset_id=new_id)
         )
 
         # 4. Update dependencies (DerivedParameter)
         self._session.exec(
             update(DerivedParameter)
-            .where(DerivedParameter.dataset_id == old_id)
+            .where(DerivedParameter.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
         )
 
-        # 5. Update dependencies (DatasetTagLink)
+        # 5. Update dependencies (ResultBundleRecord)
+        self._session.exec(
+            update(ResultBundleRecord)
+            .where(ResultBundleRecord.dataset_id == old_id)  # type: ignore[arg-type]
+            .values(dataset_id=new_id)
+        )
+
+        # 6. Update dependencies (DatasetTagLink)
         self._session.exec(
             update(DatasetTagLink)
-            .where(DatasetTagLink.dataset_id == old_id)
+            .where(DatasetTagLink.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
         )
 
-        # 6. Delete old record
+        # 7. Delete old record
         original_name = dataset.name
         self._session.delete(dataset)
         self._session.flush()  # Ensure deletion happens before rename
 
-        # 7. Restore original name
+        # 8. Restore original name
         new_dataset.name = original_name
         self._session.add(new_dataset)
         self._session.flush()

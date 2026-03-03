@@ -8,6 +8,9 @@ from core.shared.persistence.repositories.dataset_repository import DatasetRepos
 from core.shared.persistence.repositories.derived_parameter_repository import (
     DerivedParameterRepository,
 )
+from core.shared.persistence.repositories.result_bundle_repository import (
+    ResultBundleRepository,
+)
 from core.shared.persistence.repositories.tag_repository import TagRepository
 
 __all__ = [
@@ -15,5 +18,6 @@ __all__ = [
     "DataRecordRepository",
     "DatasetRepository",
     "DerivedParameterRepository",
+    "ResultBundleRepository",
     "TagRepository",
 ]

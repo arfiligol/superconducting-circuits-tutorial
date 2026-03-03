@@ -32,6 +32,8 @@ def init_db() -> None:
         DatasetTagLink,
         DerivedParameter,
         ParameterDesignation,
+        ResultBundleDataLink,
+        ResultBundleRecord,
         Tag,
     )
 

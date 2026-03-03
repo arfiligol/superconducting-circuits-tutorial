@@ -12,6 +12,7 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
+from core.shared.persistence import get_unit_of_work
 
 
 class ResonanceExtractService:
@@ -29,6 +30,8 @@ class ResonanceExtractService:
         self,
         dataset_identifier: str,
         bias_index: int | None = None,
+        record_ids: list[int] | None = None,
+        trace_mode_group: str | None = None,
     ) -> dict[str, typing.Any]:
         """
         Extract resonance modes from a dataset's Admittance (Im(Y)) records.
@@ -39,12 +42,15 @@ class ResonanceExtractService:
             raise ValueError(f"Dataset not found: {dataset_identifier}")
 
         # Find matching admittance records
-        all_records = self.data_record_service.list_records()
+        all_records = self.data_record_service.list_records(dataset.id)
+        if record_ids is not None:
+            selected_ids = set(record_ids)
+            all_records = [record for record in all_records if record.id in selected_ids]
         y_records = [
             r
             for r in all_records
             if r.dataset_id == dataset.id
-            and r.data_type == "y_parameters"
+            and r.data_type in ("y_parameters", "y_params")
             and r.representation in ("imaginary", "imag")
         ]
 
@@ -128,6 +134,14 @@ class ResonanceExtractService:
 
         # Persist extracted modes to the dataset as derived parameters
         method_name = "admittance_zero_crossing"
+        normalized_trace_mode = str(trace_mode_group or "").strip().lower() or "unknown"
+
+        # Replace previous outputs from the same extraction method to avoid stale mode inflation.
+        with get_unit_of_work() as cleanup_uow:
+            for existing_param in cleanup_uow.derived_params.list_by_dataset(dataset.id):
+                if existing_param.method == method_name:
+                    cleanup_uow.derived_params.delete(existing_param)
+            cleanup_uow.commit()
 
         for idx, row in result_df.iterrows():
             l_jun_val = row.get("L_jun", None)
@@ -143,6 +157,7 @@ class ResonanceExtractService:
                     unit="nH",
                     device_type="resonator",
                     method=method_name,
+                    extra={"trace_mode_group": normalized_trace_mode},
                 )
 
             mode_cols = [c for c in row.index if "Mode" in str(c)]
@@ -161,6 +176,7 @@ class ResonanceExtractService:
                     unit="GHz",
                     device_type="resonator",
                     method=method_name,
+                    extra={"trace_mode_group": normalized_trace_mode},
                 )
 
         return {

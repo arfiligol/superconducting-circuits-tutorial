@@ -31,6 +31,15 @@ class DatasetTagLink(SQLModel, table=True):
     tag_id: int = Field(foreign_key="tags.id", primary_key=True)
 
 
+class ResultBundleDataLink(SQLModel, table=True):
+    """Link table for ResultBundleRecord <-> DataRecord membership."""
+
+    __tablename__ = "result_bundle_data_links"  # type: ignore[assignment]
+
+    result_bundle_id: int = Field(foreign_key="result_bundle_records.id", primary_key=True)
+    data_record_id: int = Field(foreign_key="data_records.id", primary_key=True)
+
+
 # ===================
 # Tag
 # ===================
@@ -73,6 +82,10 @@ class DatasetRecord(SQLModel, table=True):
         back_populates="dataset",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+    result_bundles: list["ResultBundleRecord"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
     derived_params: list["DerivedParameter"] = Relationship(
         back_populates="dataset",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
@@ -110,6 +123,42 @@ class DataRecord(SQLModel, table=True):
 
     # Relationship
     dataset: Optional["DatasetRecord"] = Relationship(back_populates="data_records")
+    result_bundles: list["ResultBundleRecord"] = Relationship(
+        back_populates="data_records",
+        link_model=ResultBundleDataLink,
+    )
+
+
+# ===================
+# ResultBundleRecord (One Run / Import / Analysis Batch)
+# ===================
+class ResultBundleRecord(SQLModel, table=True):
+    """One run, import, or analysis batch inside a dataset."""
+
+    __tablename__ = "result_bundle_records"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+
+    bundle_type: str = Field(index=True)
+    role: str = Field(default="cache", index=True)
+    status: str = Field(default="completed", index=True)
+
+    schema_source_hash: str | None = Field(default=None, index=True)
+    simulation_setup_hash: str | None = Field(default=None, index=True)
+
+    source_meta: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    config_snapshot: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    result_payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime | None = None
+
+    dataset: Optional["DatasetRecord"] = Relationship(back_populates="result_bundles")
+    data_records: list["DataRecord"] = Relationship(
+        back_populates="result_bundles",
+        link_model=ResultBundleDataLink,
+    )
 
 
 # ===================
