@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.5.0
+version: v0.7.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -23,7 +23,7 @@ updated_by: docs-team
 ## Page Sections
 
 1. `Active Circuit`
-2. `Dataset Metadata`
+2. `Dataset Metadata Summary (Read-only)`
 3. `Netlist Configuration`
 4. `Simulation Setup`
 5. `Logs`
@@ -47,6 +47,20 @@ updated_by: docs-team
 !!! note "Result View 互動不重跑"
     在 Result View 內切換 family/metric、增減 trace card、調整 trace selector，
     僅更新同一張 shared plot，不得觸發 solver 或 post-processing rerun。
+
+### Post-Processed 命名一致性契約
+
+!!! note "Current behavior（2026-03-04）"
+    某些視圖可能回退到 index-only 命名（例如 `Z11`），與 Trace Card 選單文案不一致。
+
+!!! important "Contract"
+    `Post-Processed Result View` 的 title / legend / trace label（含 hover 中可見名稱）必須與
+    Trace Card `Output Port` / `Input Port` 一致。命名格式：
+    `<MatrixSymbol>_<OutputPortLabel>_<InputPortLabel>`。
+
+!!! warning "禁止退回 index-only"
+    在 basis 轉換場景（例如 `dm(1,2)`、`cm(1,2)`）不得顯示 `Z11`、`Y21`、`S12` 這類僅 index 命名。  
+    僅當 output/input 全為原始數字 port 且未經 basis 轉換時，才可接受 index-only 變體。
 
 ## Netlist Configuration
 
@@ -109,27 +123,32 @@ updated_by: docs-team
 2. 建立可見 `ResultBundleRecord`
 3. 將此 run 產生的 `DataRecord` 綁到該 bundle
 
-## Dataset Metadata Entry Contract
+## Simulation -> Characterization Bridge Contract
 
-`/simulation` 必須提供 dataset metadata 編輯入口，與 `/raw-data` 使用一致欄位語意：
+!!! note "Current implementation（2026-03-04）"
+    `Save Raw Simulation Results` 與 `Save Post-Processed Results` 都會建立 `ResultBundleRecord`，
+    並使用 `ResultBundleDataLink` 關聯該次輸出的 traces。
 
-- `Target Dataset` selector（從現有可見 dataset 中選擇）
-- `Device Type`
-- `Capabilities`（multi-select）
-- `Auto Suggest`
-- `Save Metadata`
+!!! important "Contract"
+    Characterization `Source Scope` 選到特定 bundle 時，只能分析該 bundle linked traces。  
+    `All Dataset Records` 可混合多來源 records，但仍由 trace-first 相容性決定可執行分析。
 
-!!! important "與 Save Results 的邊界"
-    Metadata 編輯入口屬於 dataset profile 管理，不等同於 solver 設定或 Run 行為；
-    修改 metadata 不可觸發 solver rerun。
+!!! important "Provenance"
+    Simulation 端建立 bundle 時，`source_meta` + `config_snapshot` 必須足以回推上游輸入：
+    至少包含 `origin`、來源 bundle（若有）、flow/setup snapshot。
 
-!!! note "一致性"
-    Simulation 與 Raw Data 修改的是同一份 `source_meta.dataset_profile`，
-    兩頁面應可互相看到一致結果。
+## Dataset Metadata Summary Contract
 
-!!! warning "不在本次範圍"
-    Characterization Result View 主流程不在本次變更範圍。
-    本頁只保證 metadata 入口完整，供 Characterization gating 讀取。
+!!! note "Current behavior（2026-03-04）"
+    舊版 `/simulation` 提供 metadata 編輯卡片（含 `Auto Suggest` 與 `Save Metadata`）。
+
+!!! important "Contract（Dashboard-only edit entry）"
+    `/simulation` 不再提供 dataset metadata 寫入入口。  
+    本頁僅可顯示 read-only profile summary；metadata 編輯唯一入口在 Pipeline `Dashboard`。
+
+!!! warning "與 Run 行為邊界"
+    metadata summary 屬於提示資訊，不得影響 solver setup 提交流程；
+    也不可在本頁提供任何 metadata 寫入按鈕。
 
 ## Post Processing
 

@@ -8,8 +8,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema definition and usage"
-version: v1.0.0
-last_updated: 2026-01-28
+version: v1.2.0
+last_updated: 2026-03-04
 updated_by: docs-team
 ---
 
@@ -79,7 +79,8 @@ Collection that contains multiple `DataRecord` entries.
 
 ### dataset_profile (source_meta sub-contract)
 
-`source_meta.dataset_profile` is the formal metadata contract for analysis availability:
+`source_meta.dataset_profile` is a dataset-level summary and recommendation contract, not
+trace-level run authority.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -88,13 +89,25 @@ Collection that contains multiple `DataRecord` entries.
 | `capabilities` | list[str] | ✅ | canonical capability keys |
 | `source` | str | ✅ | `inferred` / `template` / `manual_override` |
 
-!!! important "Capability-first"
-    Characterization analysis gating must be decided by `capabilities` first.
-    `device_type` is a template/suggestion entry point only.
+!!! note "Current implementation (2026-03-04)"
+    Characterization UI still renders profile-derived `Recommended/Available` hints and
+    keeps `required_capabilities` / `excluded_capabilities` fields as recommendation signals.
+
+!!! important "Contract (Trace-first authority)"
+    Executability and run input scope must be decided by trace compatibility plus user-selected
+    trace ids. `dataset_profile.capabilities` is recommendation/default/hint metadata only and
+    must not hard-block runs by itself.
 
 !!! warning "Backward compatibility"
     Legacy datasets without `dataset_profile` should fall back to `inferred`,
     derived from existing DataRecord metadata, so current workflows remain usable.
+
+!!! note "Current behavior (2026-03-04)"
+    Previous builds exposed metadata write entry points on `/raw-data` and `/simulation`.
+
+!!! important "Metadata entry contract (Dashboard-only)"
+    The only editable entry for `source_meta.dataset_profile` is Pipeline `/dashboard`.  
+    `/raw-data` and `/simulation` must remain read-only summary surfaces for metadata.
 
 ---
 
@@ -111,6 +124,33 @@ Single data record (e.g., Y11 imaginary part).
 | `representation` | str | ✅ | `real`, `imaginary`, `amplitude`, `phase` |
 | `axes` | JSON | ✅ | Axis definitions |
 | `values` | JSON | ✅ | Value array |
+
+---
+
+### ResultBundleRecord and ResultBundleDataLink
+
+`ResultBundleRecord` models one run/import/analysis batch, and `ResultBundleDataLink`
+models bundle-to-trace membership (`DataRecord` linkage).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | int | Auto | Primary key |
+| `dataset_id` | int | ✅ | Parent Dataset |
+| `bundle_type` | str | ✅ | e.g. `circuit_simulation` / `simulation_postprocess` / `characterization` |
+| `role` | str | ✅ | e.g. `manual_export` / `derived_from_simulation` / `analysis_run` |
+| `status` | str | ✅ | e.g. `completed` |
+| `source_meta` | JSON | ✅ | Source description and provenance index |
+| `config_snapshot` | JSON | ✅ | Run input snapshot |
+| `result_payload` | JSON | - | Optional compact payload |
+
+!!! important "Bundle scope contract"
+    Characterization UI is dataset-centric and defaults to `All Dataset Records`.  
+    When internal provenance points to one specific `ResultBundleRecord`, only traces linked
+    through `ResultBundleDataLink` may be analyzed; UI should not force explicit bundle operations.
+
+!!! important "Provenance contract"
+    `source_meta` + `config_snapshot` must be sufficient to reconstruct analysis input.
+    At minimum: input bundle (nullable for full-dataset scope) and selected trace ids.
 
 ---
 

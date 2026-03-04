@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /raw-data page contract for dataset browsing, preview tables, and large-data UX boundaries
-version: v0.2.0
+version: v0.3.0
 last_updated: 2026-03-03
 updated_by: docs-team
 ---
@@ -25,7 +25,7 @@ This page defines the formal UI/UX contract for `/raw-data`, with emphasis on la
 1. `Dataset List`
 2. `Dataset Preview`
 3. `Visualization Preview`
-4. `Dataset Metadata`
+4. `Dataset Metadata Summary (Read-only)`
 
 !!! note "Layout"
     `Dataset List` and `Dataset Preview` should be stacked vertically in full width
@@ -63,24 +63,18 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
     Preview tables should only render metadata (`id`, `data_type`, `parameter`, `representation`).
     Do not send full `axes` / `values` payloads to the frontend in one batch.
 
-## Dataset Metadata Contract
+## Dataset Metadata Summary Contract
 
-`Dataset Preview` must provide an in-place dataset metadata editor (no separate page):
+!!! note "Current behavior (2026-03-04)"
+    Older `/raw-data` builds exposed editable metadata controls
+    (`Device Type`, `Capabilities`, `Auto Suggest`, `Save Metadata`).
 
-- `Device Type` selector
-- `Capabilities` multi-select
-- `Auto Suggest` (apply template from selected `device_type`)
-- `Save Metadata`
+!!! important "Contract (Dashboard-only edit entry)"
+    `/raw-data` must not expose any metadata write path.  
+    This page may only display a read-only summary of `source_meta.dataset_profile`.
 
-!!! important "Suggest, then allow override"
-    `device_type` provides capability suggestions only.
-    Users must be able to manually add/remove capabilities before saving.
-
-!!! note "Source marker"
-    After `Save Metadata`, `source_meta.dataset_profile.source` should be persisted as `manual_override`.
-
-!!! warning "Save interaction"
-    During save, action buttons must be disabled with loading state; success/failure must be surfaced with toast-level feedback.
+!!! warning "No write interactions"
+    Raw Data Browser must not render `Auto Suggest`, `Save Metadata`, or equivalent write controls.
 
 ## Visualization Preview Contract
 
@@ -101,7 +95,7 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
 
 !!! important "Relation to Characterization"
     Characterization analysis availability consumes `source_meta.dataset_profile`.
-    Raw Data metadata edits therefore directly affect later analysis availability states.
+    Metadata writes must happen on Dashboard; Raw Data only presents summary state.
 
 ## Performance SLO (UI Layer)
 

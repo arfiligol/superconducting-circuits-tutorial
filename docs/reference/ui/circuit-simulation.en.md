@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.5.0
+version: v0.7.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -23,7 +23,7 @@ This page defines the formal `/simulation` UI contract.
 ## Page Sections
 
 1. `Active Circuit`
-2. `Dataset Metadata`
+2. `Dataset Metadata Summary (Read-only)`
 3. `Netlist Configuration`
 4. `Simulation Setup`
 5. `Logs`
@@ -47,6 +47,23 @@ This page defines the formal `/simulation` UI contract.
 !!! note "Result-view interactions must not rerun execution"
     Changes inside the result view (family/metric switches, adding or removing trace cards,
     trace selector edits) must only update the shared plot and must not rerun solver or post-processing.
+
+### Post-Processed naming consistency contract
+
+!!! note "Current behavior (2026-03-04)"
+    Some views may still fall back to index-only names (for example `Z11`) that do not match
+    Trace Card `Output Port` / `Input Port` labels.
+
+!!! important "Contract"
+    In `Post-Processed Result View`, title / legend / trace labels (including hover-visible labels)
+    must use names consistent with Trace Card selections:
+    `<MatrixSymbol>_<OutputPortLabel>_<InputPortLabel>`.
+
+!!! warning "No index-only fallback in transformed basis"
+    In transformed-basis cases (for example `dm(1,2)`, `cm(1,2)`), do not render index-only names
+    like `Z11`, `Y21`, `S12`.  
+    Index-only naming is acceptable only when output/input are purely numeric raw ports and no
+    basis transformation is active.
 
 ## Netlist Configuration
 
@@ -151,27 +168,34 @@ Expected model:
 2. create visible `ResultBundleRecord`
 3. attach exported `DataRecord` rows to that bundle
 
-## Dataset Metadata Entry Contract
+## Simulation -> Characterization Bridge Contract
 
-`/simulation` must provide a dataset metadata editing entry point, using the same field semantics as `/raw-data`:
+!!! note "Current implementation (2026-03-04)"
+    Both `Save Raw Simulation Results` and `Save Post-Processed Results` create a
+    `ResultBundleRecord` and link generated traces through `ResultBundleDataLink`.
 
-- `Target Dataset` selector (choose from visible datasets)
-- `Device Type`
-- `Capabilities` (multi-select)
-- `Auto Suggest`
-- `Save Metadata`
+!!! important "Contract"
+    When Characterization `Source Scope` selects one specific bundle, only that bundle's linked
+    traces are valid analysis input. `All Dataset Records` may mix multiple sources, but
+    trace-first compatibility remains the run authority.
 
-!!! important "Boundary vs Save Results"
-    Metadata editing belongs to dataset profile management, not solver configuration/run behavior.
-    Editing metadata must not trigger solver reruns.
+!!! important "Provenance"
+    Simulation-created bundles must keep enough provenance in `source_meta` + `config_snapshot`
+    to reconstruct upstream input (at minimum: `origin`, source bundle when present, and flow/setup snapshot).
 
-!!! note "Cross-page consistency"
-    Simulation and Raw Data edit the same `source_meta.dataset_profile`.
-    Both pages should display consistent metadata after save.
+## Dataset Metadata Summary Contract
 
-!!! warning "Out of scope for this change"
-    Characterization Result View core flow is out of scope.
-    This page only guarantees metadata entry availability for downstream gating.
+!!! note "Current behavior (2026-03-04)"
+    Older `/simulation` builds included an editable metadata card
+    (`Auto Suggest` + `Save Metadata`).
+
+!!! important "Contract (Dashboard-only edit entry)"
+    `/simulation` must not expose dataset metadata write controls.  
+    This page may only display a read-only profile summary; the only edit entry is Pipeline `Dashboard`.
+
+!!! warning "Boundary vs run behavior"
+    Metadata summary is informational and must not alter solver setup submission flow.
+    No metadata write button/form may exist on this page.
 
 ## Post Processing
 

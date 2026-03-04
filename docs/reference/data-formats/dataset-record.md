@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema 詳細定義與使用規範"
-version: v1.0.0
-last_updated: 2026-01-28
+version: v1.2.0
+last_updated: 2026-03-04
 updated_by: docs-team
 ---
 
@@ -80,7 +80,8 @@ DatasetRecord (集合)
 
 ### dataset_profile（source_meta 子契約）
 
-`source_meta.dataset_profile` 是 Dataset 對分析可用性的正式 metadata 契約：
+`source_meta.dataset_profile` 是 Dataset 層級的摘要與建議契約（summary/recommendation），
+不是 trace-level run authority。
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -89,13 +90,24 @@ DatasetRecord (集合)
 | `capabilities` | list[str] | ✅ | canonical capability keys |
 | `source` | str | ✅ | `inferred` / `template` / `manual_override` |
 
-!!! important "capability-first"
-    Characterization analysis gating 必須先看 `capabilities`。
-    `device_type` 只用於提供建議模板，不可直接取代 capability 判斷。
+!!! note "Current implementation（2026-03-04）"
+    Characterization UI 仍會顯示 profile 衍生的 `Recommended/Available` 提示，
+    並保留 `required_capabilities` / `excluded_capabilities` 欄位作為建議訊息來源。
+
+!!! important "Contract（Trace-first authority）"
+    Analysis 可執行性與實際輸入範圍必須由 trace 相容性 + 使用者選取 trace ids 決定。  
+    `dataset_profile.capabilities` 僅作為建議、預設與提示，不可單獨 hard-block run。
 
 !!! warning "Backward compatibility"
     舊資料若沒有 `dataset_profile`，應 fallback 為 `inferred`，
     從現有 DataRecord metadata 推導基礎 capabilities，避免既有流程中斷。
+
+!!! note "Current behavior（2026-03-04）"
+    歷史版本曾在 `/raw-data` 與 `/simulation` 提供 metadata 寫入入口。
+
+!!! important "Metadata entry contract（Dashboard-only）"
+    `source_meta.dataset_profile` 的可編輯入口唯一位於 Pipeline `/dashboard`。  
+    `/raw-data` 與 `/simulation` 僅可顯示 read-only summary，不得直接寫入 metadata。
 
 ---
 
@@ -125,6 +137,32 @@ DatasetRecord (集合)
 **values 格式**:
 - 1D: `[0.01, 0.02, 0.03]`
 - 2D: `[[0.01, 0.02], [0.03, 0.04], [0.05, 0.06]]` (row=axis[0], col=axis[1])
+
+---
+
+### ResultBundleRecord 與 ResultBundleDataLink
+
+`ResultBundleRecord` 表示一次 run/import/analysis 批次；`ResultBundleDataLink` 負責 bundle 與 trace (`DataRecord`) 關聯。
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | int | Auto | 主鍵 |
+| `dataset_id` | int | ✅ | 所屬 Dataset |
+| `bundle_type` | str | ✅ | 例如 `circuit_simulation` / `simulation_postprocess` / `characterization` |
+| `role` | str | ✅ | 例如 `manual_export` / `derived_from_simulation` / `analysis_run` |
+| `status` | str | ✅ | 例如 `completed` |
+| `source_meta` | JSON | ✅ | 來源描述與 provenance 索引 |
+| `config_snapshot` | JSON | ✅ | 本次 run 輸入設定快照 |
+| `result_payload` | JSON | - | 可選摘要 payload |
+
+!!! important "Bundle Scope Contract"
+    Characterization UI 以 dataset-centric 為主，預設使用 `All Dataset Records`。  
+    若內部 provenance 指向特定 `ResultBundleRecord`，僅能分析該 bundle 透過
+    `ResultBundleDataLink` 連結的 traces；不應在 UI 強迫使用者手動操作 bundle。
+
+!!! important "Provenance Contract"
+    `source_meta` + `config_snapshot` 必須能回推一次分析輸入：  
+    至少包含 input bundle（可為 `null` 代表全 dataset）與 selected trace ids。
 
 ---
 

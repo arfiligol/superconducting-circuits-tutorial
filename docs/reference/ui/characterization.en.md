@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization contract for Source Scope, Run Analysis, trace selection, and unified Result View
-version: v0.6.0
+version: v0.8.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -55,13 +55,22 @@ Minimum `ResultArtifact` fields:
 
 ## Source Scope Contract
 
-- user can switch between `All Dataset Records` and one specific `Result Bundle`
-- scope summary must show at least: `Trace Records`, `Result Bundles`
-- scope switch changes analysis source only; it must not rerun analysis
+!!! note "Current behavior (2026-03-04)"
+    Older UI builds exposed a `Result Bundle` selector and let users directly scope
+    Characterization runs to one bundle.
+
+!!! important "Contract (Dataset-centric)"
+    Users should operate on `Dataset` only. The `Source Scope` surface must not expose
+    "choose a characterization bundle then rerun" as a primary interaction.  
+    Run Analysis trace candidates default to dataset-level trace index, with trace-first compatibility.
+
+!!! note "Internal provenance"
+    The system may still persist bundle-level provenance (for example `input_bundle_id`)
+    internally, but UI must not require users to understand or manipulate bundle internals.
 
 ## Dataset Profile Contract
 
-Characterization analysis gating must consume dataset profile as the primary contract source:
+`dataset_profile` is a Characterization summary/recommendation source:
 
 - storage path: `DatasetRecord.source_meta.dataset_profile`
 - versioned schema:
@@ -70,9 +79,13 @@ Characterization analysis gating must consume dataset profile as the primary con
   - `capabilities`: string list (canonical capability keys)
   - `source`: `inferred` / `template` / `manual_override`
 
-!!! important "Capability-first"
-    Analysis run eligibility must be decided by `capabilities` first.
-    `device_type` is a template/suggestion entry point only, not the final gating authority.
+!!! note "Current implementation (2026-03-04)"
+    The UI still renders profile-derived recommendation labels and hints,
+    and keeps `required_capabilities` / `excluded_capabilities` as hint signals.
+
+!!! important "Contract (Trace-first authority)"
+    Analysis executability must be decided by trace compatibility, and run input must include
+    selected trace ids. `dataset_profile.capabilities` must not be the only hard-block condition.
 
 !!! warning "Backward compatibility"
     Legacy datasets without `dataset_profile` must fall back to an `inferred` profile,
@@ -87,6 +100,15 @@ Characterization analysis gating must consume dataset profile as the primary con
 - one `Run Selected Analysis` button
 - execution log/status in the same panel
 
+!!! note "Current behavior (2026-03-04)"
+    Availability information may be duplicated across multiple surfaces
+    (headline text + status row + summary table).
+
+!!! important "Contract (Single availability render)"
+    Availability must have one primary UI surface (for example chip/label + reason line),
+    driven by a single `availability state`: `state` + `reason` + `severity`.  
+    Debug reasons may remain available, but duplicate rendering of the same information is not allowed.
+
 ## Analysis Gating Contract (by capabilities)
 
 Analysis registry must support:
@@ -95,20 +117,28 @@ Analysis registry must support:
 - `excluded_capabilities`
 - `recommended_for` (device_type list)
 
-Run Analysis UI must expose one of the following states per analysis:
+Run Analysis UI must expose one of the following trace-first states per analysis:
 
-- `Recommended`: capability + data compatibility both pass, and `recommended_for` matches
-- `Available`: capability + data compatibility pass, but not recommended
-- `Unavailable`: at least one gating condition fails
+- `Recommended`: compatible traces exist, and profile/recommended-for hints match
+- `Available`: compatible traces exist, without recommendation or with profile warnings
+- `Unavailable`: compatible traces = 0 (the only hard block)
 
-Unavailable state must include a machine-composable reason:
+Reasons must be machine-composable and include at least:
 
-- `Missing capability: <capability_key>`
-- `Excluded by capability: <capability_key>`
 - `No compatible traces in current scope`
+- `Select at least one trace to run.`
+
+Optional profile hints (non-blocking):
+
+- `Profile hint: missing capability <capability_key>`
+- `Profile hint: excluded capability <capability_key>`
 
 !!! note "Single-page dynamic behavior"
     Characterization stays on one page; analysis status, reasons, and run interactions must be rendered dynamically in that single surface.
+
+!!! warning "De-dup requirement"
+    If an analysis summary table is kept for diagnostics, it must not duplicate the same
+    availability information shown by the primary status render.
 
 ## Trace Selection Contract
 

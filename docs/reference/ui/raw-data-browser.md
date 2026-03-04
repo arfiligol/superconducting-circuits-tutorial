@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /raw-data 頁面的 Dataset 清單、Data Record 預覽與大資料量互動契約
-version: v0.2.0
+version: v0.3.0
 last_updated: 2026-03-03
 updated_by: docs-team
 ---
@@ -25,7 +25,7 @@ updated_by: docs-team
 1. `Dataset List`
 2. `Dataset Preview`
 3. `Visualization Preview`
-4. `Dataset Metadata`
+4. `Dataset Metadata Summary (Read-only)`
 
 !!! note "版面配置"
     `Dataset List` 與 `Dataset Preview` 採上下堆疊（全寬）而非左右分欄，
@@ -63,24 +63,18 @@ updated_by: docs-team
     預覽表格只顯示 Data Record metadata（`id`, `data_type`, `parameter`, `representation`）。
     不可一次把 `axes` / `values` 全部送進前端。
 
-## Dataset Metadata Contract
+## Dataset Metadata Summary Contract
 
-`Dataset Preview` 需提供 dataset metadata 編輯入口（不新增獨立頁）：
+!!! note "Current behavior（2026-03-04）"
+    舊版 `/raw-data` 曾提供 metadata 編輯元件（`Device Type`、`Capabilities`、
+    `Auto Suggest`、`Save Metadata`）。
 
-- `Device Type` selector
-- `Capabilities` multi-select
-- `Auto Suggest`（依目前 `device_type` 套用模板）
-- `Save Metadata`
+!!! important "Contract（Dashboard-only edit entry）"
+    `/raw-data` 不可再提供任何 metadata 寫入入口。  
+    本頁僅可顯示 `source_meta.dataset_profile` 的 read-only summary。
 
-!!! important "可建議、可覆寫"
-    `device_type` 僅提供 capability 建議模板；
-    使用者可手動增減 capabilities，且系統必須保存手動覆寫結果。
-
-!!! note "來源語意"
-    使用者按 `Save Metadata` 後，`source_meta.dataset_profile.source` 應寫為 `manual_override`。
-
-!!! warning "儲存互動"
-    儲存中按鈕需 disabled + loading，成功/失敗需有 toast 或同等級回饋。
+!!! warning "禁止互動寫入"
+    Raw Data Browser 不得出現 `Auto Suggest`、`Save Metadata` 或等價可寫入按鈕/表單。
 
 ## Visualization Preview Contract
 
@@ -101,7 +95,7 @@ updated_by: docs-team
 
 !!! important "與 Characterization 的關係"
     Characterization analysis availability 會讀取 `source_meta.dataset_profile`。
-    因此 Raw Data metadata 修改會直接影響後續可執行/不可執行分析狀態。
+    metadata 寫入需從 Dashboard 完成，Raw Data 僅負責顯示摘要狀態。
 
 ## Performance SLO (UI Layer)
 
