@@ -38,6 +38,7 @@ Development standards that ensure code quality and consistency.
 | [Testing](./execution-verification/testing.en.md) | Pytest, Julia Pkg.test | [#agent-rule](./execution-verification/testing.en.md#agent-rule) |
 | [CI Gates](./execution-verification/ci-gates.en.md) | Required checks before merge | [#agent-rule](./execution-verification/ci-gates.en.md#agent-rule) |
 | [Multiple Agent Collaboration](./execution-verification/multi-agent-collaboration.en.md) | Single Integrator and local parallel-work conflict prevention | [#agent-rule](./execution-verification/multi-agent-collaboration.en.md#agent-rule) |
+| [Contributor Reporting Format](./execution-verification/contributor-reporting.en.md) | Standard contributor handoff template (readable + integrator-ready) | [#agent-rule](./execution-verification/contributor-reporting.en.md#agent-rule) |
 
 ### Code Quality
 

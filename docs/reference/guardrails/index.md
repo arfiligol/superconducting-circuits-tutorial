@@ -38,6 +38,7 @@ tags:
 | [測試規範](./execution-verification/testing.md) | Pytest, Julia Pkg.test | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI 品質關卡](./execution-verification/ci-gates.md) | 合併前必通過的檢查 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
 | [多 Agent 協作](./execution-verification/multi-agent-collaboration.md) | 單一 Integrator 與本地並行防衝突規範 | [#agent-rule](./execution-verification/multi-agent-collaboration.md#agent-rule) |
+| [Contributor 回報格式](./execution-verification/contributor-reporting.md) | Contributor 標準交接模板（可讀 + 可複製貼上） | [#agent-rule](./execution-verification/contributor-reporting.md#agent-rule) |
 
 ### 程式品質 (Code Quality)
 
