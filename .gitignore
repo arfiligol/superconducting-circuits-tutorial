@@ -121,3 +121,6 @@ data/raw/
 
 # NiceGUI local user storage generated during local UI/E2E sessions
 .nicegui/storage-user-*.json
+
+# Local Playwright runtime outputs/logs
+output/playwright/
