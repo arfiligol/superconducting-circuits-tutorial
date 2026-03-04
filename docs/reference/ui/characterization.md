@@ -149,7 +149,7 @@ updated_by: docs-team
 
 輸入契約（最小）：
 - `fit_model`: `NO_LS` / `WITH_LS` / `FIXED_C`
-- `fit_min_ghz`, `fit_max_ghz`
+- `fit_min_nh`, `fit_max_nh`
 - `ls_min_nh`, `ls_max_nh`, `c_min_pf`, `c_max_pf`
 - `fixed_c_pf`（僅 `FIXED_C` 必要）
 
@@ -170,6 +170,35 @@ updated_by: docs-team
 輸出契約（最小）：
 - 擬合參數（`Ls1_nH`, `Ls2_nH`, `C_pF`）與 `RMSE`
 - 至少一個可檢視 artifact（建議 `scalar_cards`）
+
+### Run → Persistence → Artifact Mapping（SQUID / Y11）
+
+下表為 Result View 可見性的正式資料契約（必須成立）：
+
+- `squid_fitting`：
+  - run 入口：`CharacterizationFittingService.run_squid_fitting()`
+  - persisted method：`lc_squid_fit`
+  - 最小 derived params：`Ls_nH`, `C_eff_pF`（`extra` 含 `mode`, `rmse`, `trace_mode_group`）
+  - Result View：`fit` category，至少含 `fit_parameters` artifact
+- `y11_fit`：
+  - run 入口：`CharacterizationFittingService.run_y11_fitting()`
+  - persisted method：`y11_fit`
+  - 最小 derived params：`Ls1_nH`, `Ls2_nH`, `C_pF`, `RMSE`（`extra.trace_mode_group` 必填）
+  - Result View：`fit` category，至少含 `fit_parameters` artifact
+
+!!! important "method 對齊規則"
+    `analysis_registry.completed_methods` 與 persistence `DerivedParameter.method` 必須字串完全一致（例如 `squid_fitting -> lc_squid_fit`）。
+    任一字串不一致都會導致 Result View analysis tab/artifact 不可見。
+
+### Empty Artifact 異常顯示契約
+
+當「資料存在但 artifact 為空」時，UI 必須顯示可診斷訊息：
+
+- 若目前分析/trace mode 下存在 persisted method groups，但 artifact builder 回傳空集合：
+  - 顯示「Persisted results found but no renderable artifacts...」等級訊息
+  - 訊息需包含 method key（供除錯）
+- 若是 trace mode 過濾後為空：
+  - 顯示目前 trace mode 下無 artifact（不得觸發 rerun）
 
 !!! tip "Result View 承載方式"
     `squid_fitting` 與 `y11_fit` 均屬 `fit` category。

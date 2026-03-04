@@ -149,7 +149,7 @@ Before each run, users must be able to choose which traces will be analyzed.
 
 Input contract (minimum):
 - `fit_model`: `NO_LS` / `WITH_LS` / `FIXED_C`
-- `fit_min_ghz`, `fit_max_ghz`
+- `fit_min_nh`, `fit_max_nh`
 - `ls_min_nh`, `ls_max_nh`, `c_min_pf`, `c_max_pf`
 - `fixed_c_pf` (required only for `FIXED_C`)
 
@@ -170,6 +170,35 @@ Input contract (minimum):
 Output contract (minimum):
 - fitted parameters (`Ls1_nH`, `Ls2_nH`, `C_pF`) and `RMSE`
 - at least one inspectable artifact (recommended `scalar_cards`)
+
+### Run -> Persistence -> Artifact Mapping (SQUID / Y11)
+
+The following is the formal visibility contract for Result View:
+
+- `squid_fitting`:
+  - run entry: `CharacterizationFittingService.run_squid_fitting()`
+  - persisted method: `lc_squid_fit`
+  - minimum derived params: `Ls_nH`, `C_eff_pF` (`extra` includes `mode`, `rmse`, `trace_mode_group`)
+  - Result View: `fit` category, with at least one `fit_parameters` artifact
+- `y11_fit`:
+  - run entry: `CharacterizationFittingService.run_y11_fitting()`
+  - persisted method: `y11_fit`
+  - minimum derived params: `Ls1_nH`, `Ls2_nH`, `C_pF`, `RMSE` (`extra.trace_mode_group` required)
+  - Result View: `fit` category, with at least one `fit_parameters` artifact
+
+!!! important "Method alignment rule"
+    `analysis_registry.completed_methods` and persistence `DerivedParameter.method` must match exactly (for example `squid_fitting -> lc_squid_fit`).
+    Any mismatch makes Result View tabs/artifacts invisible for that analysis.
+
+### Empty Artifact Fallback Contract
+
+When persisted data exists but artifact manifest is empty, UI must surface a diagnosable message:
+
+- if persisted method groups exist for current analysis/trace mode but artifact builder returns empty:
+  - show a warning-level message like `Persisted results found but no renderable artifacts...`
+  - include method keys in the message for debugging
+- if emptiness is caused by trace-mode filtering:
+  - show a mode-scoped empty-state message (must not trigger rerun)
 
 !!! tip "Result View hosting"
     Both `squid_fitting` and `y11_fit` belong to `fit` category.
