@@ -134,7 +134,7 @@ def main():
             if file.endswith(".md"):
                 file_path = os.path.join(root, file)
 
-                success, message = fix_frontmatter_in_file(file_path)
+                success, _message = fix_frontmatter_in_file(file_path)
                 if success:
                     print(f"Fixed: {file_path}")
                     fixed_count += 1

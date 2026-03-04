@@ -40,7 +40,8 @@ def extract_admittance(
     service = ResonanceExtractService()
     try:
         console.print(
-            f"[cyan]Extracting resonance modes[/cyan] from dataset: [bold]{dataset_identifier}[/bold]"
+            "[cyan]Extracting resonance modes[/cyan] from dataset: "
+            f"[bold]{dataset_identifier}[/bold]"
         )
 
         result = service.extract_admittance(
@@ -70,7 +71,7 @@ def extract_admittance(
         raise
     except Exception as e:
         console.print(f"[red]Error during extraction:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 def main() -> None:

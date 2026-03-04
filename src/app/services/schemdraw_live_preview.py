@@ -249,7 +249,7 @@ def _extract_pen_position(drawing: schemdraw.Drawing) -> tuple[float, float] | N
         except (TypeError, ValueError):
             return None
 
-    if isinstance(here, (tuple, list)) and len(here) >= 2:
+    if isinstance(here, tuple | list) and len(here) >= 2:
         try:
             return (float(here[0]), float(here[1]))
         except (TypeError, ValueError):

@@ -432,7 +432,7 @@ def _parse_source_mode_text(raw_value: object) -> tuple[int, ...] | None:
     """Parse the UI/source-payload mode field into a normalized tuple."""
     if raw_value is None:
         return None
-    if isinstance(raw_value, (list, tuple)):
+    if isinstance(raw_value, list | tuple):
         parsed = tuple(int(value) for value in raw_value)
         return parsed or None
 
@@ -841,7 +841,7 @@ def _normalize_termination_selected_ports(
     """Normalize one dynamic selected-port payload into sorted unique port indices."""
     if isinstance(raw_ports, int | float | str):
         candidates: list[object] = [raw_ports]
-    elif isinstance(raw_ports, (list, tuple, set)):
+    elif isinstance(raw_ports, list | tuple | set):
         candidates = list(raw_ports)
     else:
         candidates = []

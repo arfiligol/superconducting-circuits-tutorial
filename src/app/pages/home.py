@@ -32,9 +32,8 @@ def home_page():
                 ui.label("Database Status").classes(
                     "text-sm text-muted font-semibold uppercase tracking-wider"
                 )
-                ui.label(stats["status"]).classes(
-                    f"text-xl font-bold {'text-success' if stats['status'] == 'Connected' else 'text-danger'} mt-2"
-                )
+                status_class = "text-success" if stats["status"] == "Connected" else "text-danger"
+                ui.label(stats["status"]).classes(f"text-xl font-bold {status_class} mt-2")
 
             with ui.column().classes("app-card p-6 flex-1 min-w-[200px]"):
                 ui.label("Total Datasets").classes(
@@ -66,7 +65,8 @@ def home_page():
                 )
 
             with ui.column().classes(
-                "app-card p-6 w-full md:w-[calc(50%-12px)] lg:w-[calc(33%-16px)] items-start opacity-70"
+                "app-card p-6 w-full md:w-[calc(50%-12px)] lg:w-[calc(33%-16px)] "
+                "items-start opacity-70"
             ):
                 ui.icon("functions", size="2rem").classes("text-muted mb-2")
                 ui.label("Analysis (Planned)").classes("app-section-title text-muted mb-4")
@@ -76,7 +76,8 @@ def home_page():
                 ui.button("Coming Soon").classes("app-btn-primary w-full").props("disable")
 
             with ui.column().classes(
-                "app-card p-6 w-full md:w-[calc(50%-12px)] lg:w-[calc(33%-16px)] items-start opacity-70"
+                "app-card p-6 w-full md:w-[calc(50%-12px)] lg:w-[calc(33%-16px)] "
+                "items-start opacity-70"
             ):
                 ui.icon("science", size="2rem").classes("text-muted mb-2")
                 ui.label("Simulation (Planned)").classes("app-section-title text-muted mb-4")

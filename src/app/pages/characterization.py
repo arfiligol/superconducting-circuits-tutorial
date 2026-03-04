@@ -1027,7 +1027,7 @@ def _render_bias_plotly(df: pd.DataFrame):
         except (ValueError, IndexError):
             x_numeric.append(label)
 
-    if all(isinstance(x, (int, float)) for x in x_numeric):
+    if all(isinstance(x, int | float) for x in x_numeric):
         x_data = x_numeric
         has_valid_numeric_x = True
     else:

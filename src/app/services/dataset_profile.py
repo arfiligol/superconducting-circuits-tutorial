@@ -67,7 +67,7 @@ def normalize_device_type(raw_value: object) -> str:
 
 def normalize_capabilities(raw_values: object) -> list[str]:
     """Normalize, deduplicate, and sort capability keys."""
-    if not isinstance(raw_values, Sequence) or isinstance(raw_values, (str, bytes)):
+    if not isinstance(raw_values, Sequence) or isinstance(raw_values, str | bytes):
         return []
 
     normalized: set[str] = set()

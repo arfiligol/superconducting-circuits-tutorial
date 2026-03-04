@@ -104,7 +104,8 @@ def estimate_notch_initial_guess(f: np.ndarray, s21_complex: np.ndarray) -> dict
 
     # 3dB threshold magnitude
     # For a deep notch, the 3dB point from the baseline is approx a_guess / sqrt(2)
-    # However, if it's shallow, a better robust guess is halfway between baseline and minimum (in power)
+    # However, if it's shallow, a better robust guess is halfway between baseline
+    # and minimum (in power).
     threshold_power = (min_mag**2 + a_guess**2) / 2
     threshold_mag = np.sqrt(threshold_power)
 
@@ -381,7 +382,7 @@ class MultiResonanceVectorFitter:
         self.s21_complex = s21_complex
         self.vf_engine = None
 
-    def _create_skrf_network(self) -> "skrf.Network":
+    def _create_skrf_network(self) -> object:
         """Construct an skrf Network from numpy arrays."""
         import skrf
 
@@ -405,18 +406,17 @@ class MultiResonanceVectorFitter:
         Perform Vector Fitting to extract multi-modal resonances.
 
         Arguments:
-            n_resonators: Expected number of physical resonance structures (e.g., Readout + Purcell).
+            n_resonators: Expected number of physical resonance structures
+                (e.g., Readout + Purcell).
             bg_poles: Number of real poles to dedicate to resolving background delay/slopes.
 
         Returns:
-            A dictionary containing the extracted physical poles, residues, and the reconstructed model.
+            A dictionary containing the extracted physical poles, residues,
+            and the reconstructed model.
         """
         import skrf
 
         ntwk = self._create_skrf_network()
-
-        # 1 resonator -> 1 complex conjugate pair -> 2 poles.
-        total_poles = (n_resonators * 2) + bg_poles
 
         self.vf_engine = skrf.VectorFitting(ntwk)
 
@@ -453,7 +453,8 @@ class MultiResonanceVectorFitter:
         poles = self.vf_engine.poles
 
         for p in poles:
-            # Physical resonances are complex conjugate pairs, we only analyze the positive frequency part.
+            # Physical resonances are complex conjugate pairs. Analyze only the
+            # positive-frequency half.
             omega = np.imag(p)
             sigma = -np.real(p)  # skrf poles should be in Left-Half Plane (negative real part)
 

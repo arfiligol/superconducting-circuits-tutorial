@@ -76,15 +76,9 @@ def build_heatmap(record: DataRecord, dark: bool = True) -> go.Figure:
     y_vals = y_axis.get("values", [])
 
     matrix = np.asarray(record.values, dtype=float)
-    if matrix.shape == (len(x_vals), len(y_vals)):
-        # Plotly heatmap expects Z to have shape (len(y), len(x))
-        # Wait, for go.Heatmap: x is horizontal (x_vals), y is vertical (y_vals),
-        # z should be z[y_idx, x_idx]. Our matrix is (len(x), len(y)).
-        # Need to transpose.
-        z_data = matrix.T
-    else:
-        # Attempt to plot as is or warn
-        z_data = matrix
+    # go.Heatmap expects z[y_idx, x_idx]. If matrix was stored as (x, y),
+    # transpose to align with Plotly's convention.
+    z_data = matrix.T if matrix.shape == (len(x_vals), len(y_vals)) else matrix
 
     fig.add_trace(
         go.Heatmap(

@@ -16,7 +16,8 @@ def dashboard_page():
 
         if not selected_dataset_ids:
             with ui.column().classes(
-                "w-full p-12 items-center justify-center border-2 border-dashed border-border rounded-xl"
+                "w-full p-12 items-center justify-center border-2 "
+                "border-dashed border-border rounded-xl"
             ):
                 ui.icon("dashboard", size="xl").classes("text-muted mb-4 opacity-50")
                 ui.label("No Datasets Selected").classes("text-xl text-fg font-bold")
@@ -44,7 +45,7 @@ def dashboard_page():
                     # We can use the same state variable or a new one
                     current_ds_id = app.storage.user.get("dashboard_current_dataset")
                     if current_ds_id not in ds_options:
-                        current_ds_id = list(ds_options.keys())[0]
+                        current_ds_id = next(iter(ds_options.keys()))
                         app.storage.user["dashboard_current_dataset"] = current_ds_id
 
                     def on_change(e):
@@ -70,12 +71,14 @@ def dashboard_page():
 
                     if not designations:
                         with ui.column().classes(
-                            "w-full p-8 mt-4 items-center justify-center bg-bg rounded-xl border border-border"
+                            "w-full p-8 mt-4 items-center justify-center bg-bg "
+                            "rounded-xl border border-border"
                         ):
                             ui.icon("sell", size="lg").classes("text-muted opacity-40 mb-2")
                             ui.label("No Metrics Tagged").classes("text-lg font-bold text-muted")
                             ui.label(
-                                "Use the Identify Mode tool in the Characterization page to tag key parameters."
+                                "Use the Identify Mode tool in the Characterization page "
+                                "to tag key parameters."
                             ).classes("text-sm text-muted")
                         return
 
@@ -122,7 +125,9 @@ def dashboard_page():
                                 )
 
                             with ui.column().classes(
-                                "app-card p-6 min-w-[240px] flex-grow flex-shrink bg-surface border border-border rounded-xl hover:border-primary transition-colors"
+                                "app-card p-6 min-w-[240px] flex-grow flex-shrink bg-surface "
+                                "border border-border rounded-xl hover:border-primary "
+                                "transition-colors"
                             ):
                                 with ui.row().classes("w-full items-center justify-between mb-2"):
                                     ui.label(desig.designated_name).classes(

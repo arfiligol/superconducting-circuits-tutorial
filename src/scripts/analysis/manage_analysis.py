@@ -185,7 +185,7 @@ def fit_scattering(
 
     except Exception as e:
         console.print(f"[red]Error during fitting:[/red] {e}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=1) from e
 
 
 def main() -> None:

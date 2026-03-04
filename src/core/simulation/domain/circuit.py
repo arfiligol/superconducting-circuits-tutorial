@@ -471,7 +471,7 @@ def _resolve_float(raw_value: object, context: RepeatContext | None, *, field_na
     value = _resolve_template_value(raw_value, context)
     if isinstance(value, bool):
         raise ValueError(f"{field_name} must be numeric.")
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return float(value)
     if isinstance(value, str):
         try:
@@ -550,9 +550,9 @@ def _build_repeat_iteration_context(
         series_spec = _coerce_mapping(series_spec_raw)
         base_raw = series_spec.get("base")
         step_raw = series_spec.get("step")
-        if isinstance(base_raw, bool) or not isinstance(base_raw, (int, float)):
+        if isinstance(base_raw, bool) or not isinstance(base_raw, int | float):
             raise ValueError(f"repeat.series.{normalized_series_name}.base must be numeric.")
-        if isinstance(step_raw, bool) or not isinstance(step_raw, (int, float)):
+        if isinstance(step_raw, bool) or not isinstance(step_raw, int | float):
             raise ValueError(f"repeat.series.{normalized_series_name}.step must be numeric.")
         series_values[normalized_series_name] = float(base_raw) + (float(step_raw) * offset)
 
@@ -636,7 +636,7 @@ def _expand_topology_row(raw_item: object, context: RepeatContext | None) -> Top
         if "repeat" in raw_item:
             raise ValueError("Nested repeat blocks are not supported.")
         raise ValueError("topology rows must be 4-item tuples/lists or repeat blocks.")
-    if not isinstance(raw_item, Sequence) or isinstance(raw_item, (str, bytes)):
+    if not isinstance(raw_item, Sequence) or isinstance(raw_item, str | bytes):
         raise ValueError("topology rows must be 4-item tuples/lists or repeat blocks.")
 
     values = list(raw_item)
