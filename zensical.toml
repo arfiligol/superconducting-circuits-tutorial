@@ -83,6 +83,7 @@ nav = [
     { "Physics" = [
       { "Overview" = "explanation/physics/index.md" },
       { "Symbol Glossary" = "explanation/physics/symbol-glossary.md" },
+      { "Schur Complement & Kron Reduction" = "explanation/physics/schur-complement-kron-reduction.md" },
     ] },
     { "Architecture" = [
       { "Overview" = "explanation/architecture/index.md" },
