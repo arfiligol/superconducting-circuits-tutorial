@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import time
@@ -40,7 +41,13 @@ def _wait_for_server(url: str, timeout_seconds: float = 60.0) -> None:
     raise TimeoutError(f"Timed out waiting for app server at {url}")
 
 
-def _seed_characterization_dataset(dataset_name: str) -> None:
+def _seed_characterization_dataset(
+    dataset_name: str,
+    *,
+    dataset_profile: dict[str, object],
+    include_y11: bool,
+    include_s21: bool,
+) -> None:
     freq_ghz = np.linspace(4.0, 8.0, 201)
     l_jun_nh = np.linspace(0.8, 2.8, 9)
     values_matrix = [
@@ -65,7 +72,11 @@ def _seed_characterization_dataset(dataset_name: str) -> None:
             uow.datasets.delete(existing)
             uow.commit()
 
-        dataset = DatasetRecord(name=dataset_name, source_meta={}, parameters={})
+        dataset = DatasetRecord(
+            name=dataset_name,
+            source_meta={"dataset_profile": dataset_profile},
+            parameters={},
+        )
         uow.datasets.add(dataset)
         uow.flush()
         if dataset.id is None:
@@ -75,41 +86,109 @@ def _seed_characterization_dataset(dataset_name: str) -> None:
             {"name": "Freq", "unit": "GHz", "values": [float(x) for x in freq_ghz]},
             {"name": "L_jun", "unit": "nH", "values": [float(x) for x in l_jun_nh]},
         ]
-        uow.data_records.add(
-            DataRecord(
-                dataset_id=int(dataset.id),
-                data_type="y_parameters",
-                parameter="Y11",
-                representation="imaginary",
-                axes=common_axes,
-                values=values_matrix,
+        if include_y11:
+            uow.data_records.add(
+                DataRecord(
+                    dataset_id=int(dataset.id),
+                    data_type="y_parameters",
+                    parameter="Y11",
+                    representation="imaginary",
+                    axes=common_axes,
+                    values=values_matrix,
+                )
             )
-        )
-        uow.data_records.add(
-            DataRecord(
-                dataset_id=int(dataset.id),
-                data_type="y_parameters",
-                parameter="Y11 [om=(1,), im=(0,)]",
-                representation="imaginary",
-                axes=common_axes,
-                values=values_matrix,
+            uow.data_records.add(
+                DataRecord(
+                    dataset_id=int(dataset.id),
+                    data_type="y_parameters",
+                    parameter="Y11 [om=(1,), im=(0,)]",
+                    representation="imaginary",
+                    axes=common_axes,
+                    values=values_matrix,
+                )
             )
-        )
+
+        if include_s21:
+            uow.data_records.add(
+                DataRecord(
+                    dataset_id=int(dataset.id),
+                    data_type="s_parameters",
+                    parameter="S21",
+                    representation="real",
+                    axes=[
+                        {
+                            "name": "Freq",
+                            "unit": "GHz",
+                            "values": [float(x) for x in freq_ghz],
+                        }
+                    ],
+                    values=[float(v[0]) for v in values_matrix],
+                )
+            )
         uow.commit()
 
 
 @pytest.fixture(scope="session")
-def seeded_dataset_name() -> str:
-    return f"E2E-Characterization-{uuid.uuid4().hex[:8]}"
+def seeded_dataset_names() -> dict[str, str]:
+    suffix = uuid.uuid4().hex[:8]
+    return {
+        "squid": f"E2E-Characterization-SQUID-{suffix}",
+        "single_junction": f"E2E-Characterization-SJ-{suffix}",
+        "traveling_wave": f"E2E-Characterization-TW-{suffix}",
+    }
 
 
 @pytest.fixture(scope="session", autouse=True)
-def seed_characterization_data(seeded_dataset_name: str) -> None:
-    _seed_characterization_dataset(seeded_dataset_name)
+def seed_characterization_data(seeded_dataset_names: dict[str, str]) -> None:
+    _seed_characterization_dataset(
+        seeded_dataset_names["squid"],
+        dataset_profile={
+            "schema_version": "1.0",
+            "device_type": "squid",
+            "capabilities": [
+                "y_parameter_characterization",
+                "y11_response_fitting",
+                "squid_characterization",
+            ],
+            "source": "manual_override",
+        },
+        include_y11=True,
+        include_s21=False,
+    )
+    _seed_characterization_dataset(
+        seeded_dataset_names["single_junction"],
+        dataset_profile={
+            "schema_version": "1.0",
+            "device_type": "single_junction",
+            "capabilities": [
+                "y_parameter_characterization",
+                "y11_response_fitting",
+            ],
+            "source": "manual_override",
+        },
+        include_y11=True,
+        include_s21=False,
+    )
+    _seed_characterization_dataset(
+        seeded_dataset_names["traveling_wave"],
+        dataset_profile={
+            "schema_version": "1.0",
+            "device_type": "traveling_wave",
+            "capabilities": [
+                "s_parameter_characterization",
+                "traveling_wave_gain",
+            ],
+            "source": "manual_override",
+        },
+        include_y11=True,
+        include_s21=True,
+    )
     yield
     with get_unit_of_work() as uow:
-        existing = uow.datasets.get_by_name(seeded_dataset_name)
-        if existing is not None:
+        for dataset_name in seeded_dataset_names.values():
+            existing = uow.datasets.get_by_name(dataset_name)
+            if existing is None:
+                continue
             uow.datasets.delete(existing)
             uow.commit()
 
@@ -175,15 +254,22 @@ def _select_option(page: Page, label: str, option_text: str, index: int = 0) -> 
     select = page.get_by_role("combobox", name=label).nth(index)
     expect(select).to_be_visible(timeout=15000)
     select.click()
-    page.get_by_role("option", name=option_text, exact=True).click()
+    page.get_by_role("option", name=re.compile(rf"^{re.escape(option_text)}")).first.click()
+
+
+def _expect_analysis_status(page: Page, analysis_label: str, status: str) -> None:
+    _select_option(page, "Analysis", analysis_label)
+    expect(page.get_by_text(f"Status: {status}", exact=True)).to_be_visible(timeout=30000)
 
 
 def test_characterization_runs_squid_and_y11_and_renders_results(
     page: Page,
-    seeded_dataset_name: str,
+    seeded_dataset_names: dict[str, str],
 ) -> None:
-    _select_active_dataset(page, seeded_dataset_name)
+    _select_active_dataset(page, seeded_dataset_names["squid"])
     expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
+    _expect_analysis_status(page, "SQUID Fitting", "Recommended")
+    _expect_analysis_status(page, "Y11 Response Fit", "Recommended")
 
     _select_option(page, "Analysis", "SQUID Fitting")
     run_button = page.get_by_role("button", name="Run Selected Analysis")
@@ -191,8 +277,6 @@ def test_characterization_runs_squid_and_y11_and_renders_results(
     run_button.click()
     expect(page.get_by_text("SQUID Fitting completed.")).to_be_visible(timeout=60000)
 
-    _select_option(page, "Trace Mode Filter", "Sideband", index=0)
-    page.get_by_role("button", name="All").first.click()
     _select_option(page, "Analysis", "Y11 Response Fit")
     expect(run_button).to_be_enabled(timeout=15000)
     run_button.click()
@@ -216,3 +300,20 @@ def test_characterization_runs_squid_and_y11_and_renders_results(
     assert abs(float(trace_box["y"]) - float(category_box["y"])) < 48
 
     expect(page.get_by_text("Fit Parameters")).to_be_visible(timeout=30000)
+
+
+def test_characterization_capability_gating_shows_unavailable_reasons(
+    page: Page,
+    seeded_dataset_names: dict[str, str],
+) -> None:
+    _select_active_dataset(page, seeded_dataset_names["single_junction"])
+    expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
+    _expect_analysis_status(page, "SQUID Fitting", "Unavailable")
+    expect(page.get_by_text("Missing capability: SQUID Characterization").first).to_be_visible(
+        timeout=30000
+    )
+
+    _select_active_dataset(page, seeded_dataset_names["traveling_wave"])
+    expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
+    _select_option(page, "Analysis", "S21 Resonance Fit")
+    expect(page.get_by_text(re.compile(r"^Status: "))).to_be_visible(timeout=30000)

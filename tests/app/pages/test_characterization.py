@@ -2,6 +2,7 @@
 
 from app.pages.characterization import (
     _analysis_record_index,
+    _build_analysis_run_availability,
     _build_analysis_run_bundle_record,
     _build_analysis_run_ui_state,
     _build_mode_vs_ljun_dataframe,
@@ -156,6 +157,29 @@ def test_compatible_scope_with_selected_trace_enables_run() -> None:
     assert compatibility.has_compatible_traces is True
     assert ui_state.run_disabled is False
     assert ui_state.availability_text == "Available for current scope"
+
+
+def test_build_analysis_run_availability_with_missing_capability_is_unavailable() -> None:
+    availability = _build_analysis_run_availability(
+        capability_allowed=False,
+        capability_recommended=False,
+        capability_reasons=["Missing capability: SQUID Characterization"],
+        has_compatible_traces=True,
+    )
+    assert availability.status == "Unavailable"
+    assert availability.capability_allowed is False
+    assert "Missing capability" in availability.reason
+
+
+def test_build_analysis_run_availability_marks_recommended_when_all_checks_pass() -> None:
+    availability = _build_analysis_run_availability(
+        capability_allowed=True,
+        capability_recommended=True,
+        capability_reasons=[],
+        has_compatible_traces=True,
+    )
+    assert availability.status == "Recommended"
+    assert availability.has_compatible_traces is True
 
 
 def test_compatibility_normalizes_y_params_aliases_for_scope_matching() -> None:
