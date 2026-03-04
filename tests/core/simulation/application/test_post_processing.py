@@ -6,12 +6,15 @@ import numpy as np
 
 from core.simulation.application.post_processing import (
     apply_coordinate_transform,
+    apply_shunt_termination_compensation,
     build_common_differential_transform,
     build_port_y_sweep,
+    compensate_simulation_result_port_terminations,
     filtered_modes,
+    infer_port_termination_resistance_ohm,
     kron_reduce,
 )
-from core.simulation.domain.circuit import SimulationResult
+from core.simulation.domain.circuit import SimulationResult, parse_circuit_definition_source
 
 
 def _mode_label(mode: tuple[int, ...], op: int, ip: int) -> str:
@@ -135,3 +138,79 @@ def test_coordinate_transform_and_kron_reduction_pipeline() -> None:
     y_oo = expected_first[0:1, 0:1]
     expected_reduced = y_dd - (y_do @ np.linalg.solve(y_oo, y_od))
     assert np.allclose(reduced.y_matrices[0], expected_reduced)
+
+
+def test_infer_port_termination_resistance_from_schema_shunts() -> None:
+    circuit = parse_circuit_definition_source(
+        {
+            "name": "Termination infer",
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "R100", "default": 0.1, "unit": "kOhm"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("P2", "2", "0", 2),
+                ("R1", "1", "0", "R50"),
+                ("R2", "2", "0", "R100"),
+            ],
+        }
+    )
+
+    inferred = infer_port_termination_resistance_ohm(circuit)
+
+    assert inferred.resistance_ohm_by_port == {1: 50.0, 2: 100.0}
+    assert inferred.source_by_port == {1: "schema_infer", 2: "schema_infer"}
+    assert inferred.warning_by_port == {}
+
+
+def test_infer_port_termination_resistance_reports_fallback_warnings() -> None:
+    circuit = parse_circuit_definition_source(
+        {
+            "name": "Termination fallback",
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "R60", "default": 60.0, "unit": "Ohm"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("P2", "2", "0", 2),
+                ("R1a", "1", "0", "R50"),
+                ("R1b", "1", "0", "R60"),
+            ],
+        }
+    )
+
+    inferred = infer_port_termination_resistance_ohm(circuit)
+
+    assert inferred.source_by_port[1] == "fallback_default_50"
+    assert inferred.source_by_port[2] == "fallback_default_50"
+    assert "multiple shunt resistors" in inferred.warning_by_port[1]
+    assert "no shunt resistor to ground" in inferred.warning_by_port[2]
+    assert inferred.resistance_ohm_by_port[1] == 50.0
+    assert inferred.resistance_ohm_by_port[2] == 50.0
+
+
+def test_apply_shunt_termination_compensation_subtracts_selected_port_conductance() -> None:
+    base = _base_result_with_y()
+    sweep = build_port_y_sweep(result=base, mode=(0,))
+
+    compensated = apply_shunt_termination_compensation(
+        sweep,
+        resistance_ohm_by_port={1: 50.0, 2: 100.0},
+    )
+
+    assert np.allclose(compensated.y_matrices[0], np.array([[1.98, -1.0], [-1.0, 1.99]]))
+
+
+def test_compensate_simulation_result_port_terminations_updates_mode_aware_y() -> None:
+    base = _base_result_with_y()
+    compensated = compensate_simulation_result_port_terminations(
+        base,
+        resistance_ohm_by_port={1: 50.0},
+        reference_impedance_ohm=50.0,
+    )
+
+    label = _mode_label((0,), 1, 1)
+    assert compensated.y_parameter_mode_real[label] == [1.98, 1.98]
+    assert compensated.available_mode_indices == [(0,), (1,)]

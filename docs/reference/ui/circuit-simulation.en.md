@@ -74,6 +74,49 @@ This page defines the formal `/simulation` UI contract.
     Source Port, Source Mode, pump frequency, harmonics, and hbsolve options are Simulation Setup,
     not Circuit Netlist syntax.
 
+### Port Termination Compensation (optional)
+
+`Simulation Setup` must expose a `Port Termination Compensation` section that is separate from hbsolve options.
+
+The mode set is fixed to:
+
+1. `Auto (Schema infer)`
+2. `Manual` (default `R=50 Ohm` per selected port)
+
+Compensation rule (normative):
+
+- execute in Y-domain before any Post Processing step
+- apply on selected ports as: `Y_clean = Y_meas - diag(1/R_i)`
+- selected ports must be multi-selectable
+- when disabled, behavior must remain identical to current flow
+
+!!! important "Port-Level only"
+    Termination compensation applies to port-level matrices only; no nodal/internal-node flow is allowed.
+
+!!! warning "Nodal out of scope"
+    Internal-node elimination or nodal topology compensation is out of scope on this page.
+
+#### Auto (Schema infer) contract
+
+- infer each port shunt resistor from expanded netlist (`R*` from port signal node to ground)
+- inferred values must be visible/debuggable in UI (value + source)
+- if a port cannot be inferred reliably, UI must show fallback and warning explicitly
+
+#### Manual contract
+
+- `R_i` per selected port must be editable
+- default for new/manual-selected ports must be `50 Ohm`
+- UI must provide a quick reset-to-default action
+
+#### Execution and cache contract
+
+- this compensation is solver post-processing and must not trigger a Julia rerun
+- compensation settings must not pollute hbsolve advanced options
+- result-cache identity remains schema + solver setup; termination compensation setup is managed separately
+
+!!! note "No Julia rerun"
+    Changing termination compensation (`enabled/mode/ports/R`) must only update Python-side result flow and must not resubmit Julia `hbsolve`.
+
 ## `Run Simulation` Contract (Load-or-Run)
 
 Formal `Run Simulation` semantics:
@@ -118,6 +161,9 @@ Expected model:
 !!! important "M1 boundary"
     Version 1 supports `Port-level` post-processing only.
     `Nodal-level` elimination over internal nodes is out of scope for M1.
+
+!!! important "Compensation ordering"
+    When enabled, `Port Termination Compensation` must be applied before the Post Processing pipeline starts.
 
 ### Pipeline layout contract
 

@@ -27,7 +27,9 @@ from core.simulation.application.post_processing import (
     apply_coordinate_transform,
     build_common_differential_transform,
     build_port_y_sweep,
+    compensate_simulation_result_port_terminations,
     filtered_modes,
+    infer_port_termination_resistance_ohm,
     kron_reduce,
 )
 from core.simulation.application.run_simulation import run_simulation
@@ -124,6 +126,11 @@ _POST_PROCESS_MODE_FILTER_OPTIONS = {
     "sideband": "Sideband",
     "all": "All Modes",
 }
+_TERMINATION_MODE_OPTIONS = {
+    "auto": "Auto (Schema infer)",
+    "manual": "Manual",
+}
+_TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
 
@@ -820,6 +827,119 @@ def _coordinate_weight_fields_editable(weight_mode: str) -> bool:
     return str(weight_mode).strip().lower() == "manual"
 
 
+def _normalize_termination_mode(mode: object) -> str:
+    """Normalize termination compensation mode token."""
+    normalized = str(mode or "auto").strip().lower()
+    return normalized if normalized in _TERMINATION_MODE_OPTIONS else "auto"
+
+
+def _normalize_termination_selected_ports(
+    raw_ports: object,
+    *,
+    available_ports: list[int],
+) -> list[int]:
+    """Normalize one dynamic selected-port payload into sorted unique port indices."""
+    if isinstance(raw_ports, int | float | str):
+        candidates: list[object] = [raw_ports]
+    elif isinstance(raw_ports, (list, tuple, set)):
+        candidates = list(raw_ports)
+    else:
+        candidates = []
+    normalized: set[int] = set()
+    allowed = set(available_ports)
+    for candidate in candidates:
+        try:
+            port = int(float(str(candidate)))
+        except Exception:
+            continue
+        if port in allowed:
+            normalized.add(port)
+    return sorted(normalized)
+
+
+def _normalize_manual_termination_resistance_map(
+    raw_map: object,
+    *,
+    available_ports: list[int],
+    default_ohm: float = _TERMINATION_DEFAULT_RESISTANCE_OHM,
+) -> dict[int, float]:
+    """Normalize one manual resistance mapping into positive Ohm values per available port."""
+    normalized: dict[int, float] = {}
+    source_map = raw_map if isinstance(raw_map, dict) else {}
+    for port in available_ports:
+        value = source_map.get(port, source_map.get(str(port), default_ohm))
+        try:
+            resistance = float(value)
+        except Exception:
+            resistance = float(default_ohm)
+        if resistance <= 0:
+            resistance = float(default_ohm)
+        normalized[int(port)] = resistance
+    return normalized
+
+
+def _build_termination_compensation_plan(
+    *,
+    enabled: bool,
+    mode: str,
+    selected_ports: list[int],
+    manual_resistance_ohm_by_port: dict[int, float],
+    inferred_resistance_ohm_by_port: dict[int, float],
+    inferred_source_by_port: dict[int, str],
+    inferred_warning_by_port: dict[int, str],
+    fallback_ohm: float = _TERMINATION_DEFAULT_RESISTANCE_OHM,
+) -> dict[str, Any]:
+    """Build one resolved termination-compensation execution plan."""
+    normalized_mode = _normalize_termination_mode(mode)
+    normalized_ports = sorted(set(int(port) for port in selected_ports))
+    if not enabled or not normalized_ports:
+        return {
+            "enabled": False,
+            "mode": normalized_mode,
+            "selected_ports": normalized_ports,
+            "resistance_ohm_by_port": {},
+            "source_by_port": {},
+            "warnings": [],
+        }
+
+    resolved_resistance: dict[int, float] = {}
+    resolved_source: dict[int, str] = {}
+    warnings: list[str] = []
+    if normalized_mode == "manual":
+        for port in normalized_ports:
+            resistance = float(
+                manual_resistance_ohm_by_port.get(port, _TERMINATION_DEFAULT_RESISTANCE_OHM)
+            )
+            if resistance <= 0:
+                resistance = float(fallback_ohm)
+                warnings.append(
+                    f"Port {port}: invalid manual resistance; fallback to {fallback_ohm:g} Ohm."
+                )
+            resolved_resistance[port] = resistance
+            resolved_source[port] = "manual"
+    else:
+        for port in normalized_ports:
+            resistance = float(
+                inferred_resistance_ohm_by_port.get(port, _TERMINATION_DEFAULT_RESISTANCE_OHM)
+            )
+            if resistance <= 0:
+                resistance = float(fallback_ohm)
+            resolved_resistance[port] = resistance
+            resolved_source[port] = str(inferred_source_by_port.get(port, "fallback_default_50"))
+            warning = inferred_warning_by_port.get(port)
+            if warning:
+                warnings.append(str(warning))
+
+    return {
+        "enabled": True,
+        "mode": normalized_mode,
+        "selected_ports": normalized_ports,
+        "resistance_ohm_by_port": resolved_resistance,
+        "source_by_port": resolved_source,
+        "warnings": warnings,
+    }
+
+
 def _can_save_post_processed_results(
     sweep: PortMatrixSweep | None,
     flow_spec: dict[str, Any] | None,
@@ -992,9 +1112,9 @@ def _render_result_family_explorer(
             if not port_options:
                 port_options = _result_port_options(result_to_render)
             if not mode_options or not port_options:
-                ui.label(
-                    "Result bundle does not contain selectable mode/port entries."
-                ).classes("text-sm text-warning")
+                ui.label("Result bundle does not contain selectable mode/port entries.").classes(
+                    "text-sm text-warning"
+                )
                 return
 
             family_tabs = list(family_options.items())
@@ -1552,16 +1672,11 @@ def _render_post_processing_panel(
         }
         options = {"": "Current (Unsaved)"}
         options.update(
-            {
-                setup_id: str(setup.get("name"))
-                for setup_id, setup in saved_post_setup_by_id.items()
-            }
+            {setup_id: str(setup.get("name")) for setup_id, setup in saved_post_setup_by_id.items()}
         )
         post_setup_select.options = options
         selected_value = (
-            preferred_id
-            if preferred_id in options
-            else str(post_setup_select.value or "")
+            preferred_id if preferred_id in options else str(post_setup_select.value or "")
         )
         if selected_value not in options:
             selected_value = ""
@@ -1600,8 +1715,7 @@ def _render_post_processing_panel(
         with ui.dialog() as dialog, ui.card().classes("w-full max-w-md bg-surface p-4"):
             ui.label("Save Post-Processing Setup").classes("text-lg font-bold text-fg mb-3")
             default_name = (
-                f"{schema_name or 'Schema'} "
-                f"Post-Processing Setup {len(saved_post_setups) + 1}"
+                f"{schema_name or 'Schema'} Post-Processing Setup {len(saved_post_setups) + 1}"
             )
             name_input = ui.input("Setup Name", value=default_name).classes("w-full")
 
@@ -1949,8 +2063,7 @@ def _render_post_processing_panel(
                                     "px-3 py-1 rounded-md text-xs border "
                                     "border-primary bg-primary/10 text-primary"
                                     if selected
-                                    else "px-3 py-1 rounded-md text-xs border "
-                                    "border-border text-fg"
+                                    else "px-3 py-1 rounded-md text-xs border border-border text-fg"
                                 )
                                 ui.button(
                                     label,
@@ -3159,6 +3272,9 @@ def _render_simulation_environment():
                 ui.label("Selected schema is missing a persistent id.").classes("text-danger")
             return
         displayed_netlist = format_expanded_circuit_definition(active_circuit_def)
+        latest_circuit_definition_ref: dict[str, CircuitDefinition] = {
+            "definition": active_circuit_def
+        }
 
         status_history: list[dict[str, str]] = []
         status_container: Any | None = None
@@ -3187,6 +3303,52 @@ def _render_simulation_environment():
             "z0": 50.0,
             "traces": [],
         }
+        available_setup_ports = sorted(active_circuit_def.available_port_indices)
+        termination_inferred_resistance_ohm_by_port: dict[int, float] = {
+            port: _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
+        }
+        termination_inferred_source_by_port: dict[int, str] = {
+            port: "fallback_default_50" for port in available_setup_ports
+        }
+        termination_inferred_warning_by_port: dict[int, str] = {
+            port: (
+                f"Port {port}: fallback to {_TERMINATION_DEFAULT_RESISTANCE_OHM:g} Ohm "
+                "because schema inference is unavailable."
+            )
+            for port in available_setup_ports
+        }
+        try:
+            termination_inference = infer_port_termination_resistance_ohm(active_circuit_def)
+            termination_inferred_resistance_ohm_by_port = dict(
+                termination_inference.resistance_ohm_by_port
+            )
+            termination_inferred_source_by_port = dict(termination_inference.source_by_port)
+            termination_inferred_warning_by_port = dict(termination_inference.warning_by_port)
+        except Exception as inference_exc:
+            for port in available_setup_ports:
+                termination_inferred_warning_by_port[port] = (
+                    f"Port {port}: schema inference failed ({inference_exc}); "
+                    f"fallback to {_TERMINATION_DEFAULT_RESISTANCE_OHM:g} Ohm."
+                )
+
+        termination_state: dict[str, Any] = {
+            "enabled": False,
+            "mode": "auto",
+            "selected_ports": list(available_setup_ports),
+            "manual_resistance_ohm_by_port": {
+                int(port): _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
+            },
+        }
+        termination_view_elements: dict[str, Any] = {
+            "enabled_switch": None,
+            "mode_select": None,
+            "ports_select": None,
+            "reset_button": None,
+            "summary_label": None,
+            "details_container": None,
+        }
+        termination_last_warning: dict[str, str] = {"message": ""}
+        termination_last_summary: dict[str, str] = {"message": ""}
 
         def append_status(level: str, message: str) -> None:
             status_history.append(
@@ -3256,10 +3418,96 @@ def _render_simulation_environment():
             )
             view_state["traces"] = []
 
-        def _raw_result_provider(_reference_impedance: float) -> tuple[
-            SimulationResult, dict[int, str]
-        ] | None:
+        def _resolved_termination_plan() -> dict[str, Any]:
+            return _build_termination_compensation_plan(
+                enabled=bool(termination_state.get("enabled", False)),
+                mode=_normalize_termination_mode(termination_state.get("mode", "auto")),
+                selected_ports=_normalize_termination_selected_ports(
+                    termination_state.get("selected_ports", []),
+                    available_ports=available_setup_ports,
+                ),
+                manual_resistance_ohm_by_port=_normalize_manual_termination_resistance_map(
+                    termination_state.get("manual_resistance_ohm_by_port", {}),
+                    available_ports=available_setup_ports,
+                    default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+                ),
+                inferred_resistance_ohm_by_port=termination_inferred_resistance_ohm_by_port,
+                inferred_source_by_port=termination_inferred_source_by_port,
+                inferred_warning_by_port=termination_inferred_warning_by_port,
+                fallback_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+            )
+
+        def _termination_plan_summary(plan: dict[str, Any]) -> str:
+            if not bool(plan.get("enabled", False)):
+                return "Termination compensation: disabled."
+            selected_ports = [int(port) for port in plan.get("selected_ports", [])]
+            resistance_map = dict(plan.get("resistance_ohm_by_port", {}))
+            source_map = dict(plan.get("source_by_port", {}))
+            details = []
+            for port in selected_ports:
+                resistance = float(resistance_map.get(port, _TERMINATION_DEFAULT_RESISTANCE_OHM))
+                source = str(source_map.get(port, "manual"))
+                details.append(f"p{port}={resistance:g} Ohm ({source})")
+            mode = str(plan.get("mode", "auto"))
+            return (
+                "Termination compensation: "
+                f"enabled, mode={mode}, ports={selected_ports or []}, values={'; '.join(details)}."
+            )
+
+        def _effective_simulation_result(
+            *,
+            reference_impedance_ohm: float,
+        ) -> SimulationResult | None:
             result = latest_simulation_result.get("result")
+            if not isinstance(result, SimulationResult):
+                return None
+            plan = _resolved_termination_plan()
+            if not bool(plan.get("enabled", False)):
+                return result
+            try:
+                return compensate_simulation_result_port_terminations(
+                    result,
+                    resistance_ohm_by_port=dict(plan.get("resistance_ohm_by_port", {})),
+                    reference_impedance_ohm=reference_impedance_ohm,
+                )
+            except Exception as exc:
+                message = f"Termination compensation skipped: {exc}"
+                if termination_last_warning["message"] != message:
+                    termination_last_warning["message"] = message
+                    append_status("warning", message)
+                return result
+
+        def _render_post_processing_input_panel() -> None:
+            if post_processing_container is None:
+                return
+            post_processing_container.clear()
+            result_for_post_processing = _effective_simulation_result(
+                reference_impedance_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+            )
+            if not isinstance(result_for_post_processing, SimulationResult):
+                with post_processing_container:
+                    ui.label(
+                        "Run a simulation first, then apply port-level coordinate transforms "
+                        "and Kron reduction here."
+                    ).classes("text-sm text-muted")
+                return
+
+            with post_processing_container:
+                _render_post_processing_panel(
+                    result=result_for_post_processing,
+                    circuit_definition=latest_circuit_definition_ref["definition"],
+                    schema_id=active_record_id,
+                    schema_name=active_record.name,
+                    append_status=append_status,
+                    on_result=handle_post_processing_result,
+                )
+
+        def _raw_result_provider(
+            _reference_impedance: float,
+        ) -> tuple[SimulationResult, dict[int, str]] | None:
+            result = _effective_simulation_result(
+                reference_impedance_ohm=float(_reference_impedance),
+            )
             if not isinstance(result, SimulationResult):
                 return None
             return (result, _result_port_options(result))
@@ -3545,6 +3793,218 @@ def _render_simulation_environment():
                     )
                 )
 
+                termination_state["selected_ports"] = list(available_setup_ports)
+                termination_state["manual_resistance_ohm_by_port"] = {
+                    int(port): _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
+                }
+
+                with ui.card().classes(
+                    "w-full bg-elevated border border-border rounded-lg p-4 mt-4"
+                ):
+                    ui.label("Port Termination Compensation (Optional)").classes(
+                        "text-sm font-bold text-fg mb-2"
+                    )
+                    with ui.row().classes("w-full items-end gap-3 flex-wrap"):
+                        termination_enabled_switch = ui.switch(
+                            "Enable",
+                            value=bool(termination_state["enabled"]),
+                        )
+                        termination_mode_select = (
+                            ui.select(
+                                label="Mode",
+                                options=_TERMINATION_MODE_OPTIONS,
+                                value=str(termination_state["mode"]),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-56")
+                        )
+                        termination_ports_select = (
+                            ui.select(
+                                label="Compensate Ports",
+                                options={port: str(port) for port in available_setup_ports},
+                                value=list(termination_state["selected_ports"]),
+                                multiple=True,
+                            )
+                            .props("dense outlined options-dense use-chips")
+                            .classes("w-64")
+                        )
+                        termination_reset_button = (
+                            ui.button(
+                                "Reset Manual to 50 Ohm",
+                                icon="restart_alt",
+                            )
+                            .props("outline color=primary size=sm")
+                            .classes("shrink-0")
+                        )
+                    termination_summary_label = ui.label("").classes("text-xs text-muted mt-2")
+                    termination_details_container = ui.column().classes("w-full gap-1 mt-2")
+
+                termination_view_elements["enabled_switch"] = termination_enabled_switch
+                termination_view_elements["mode_select"] = termination_mode_select
+                termination_view_elements["ports_select"] = termination_ports_select
+                termination_view_elements["reset_button"] = termination_reset_button
+                termination_view_elements["summary_label"] = termination_summary_label
+                termination_view_elements["details_container"] = termination_details_container
+
+                def refresh_termination_controls() -> None:
+                    enabled_switch = termination_view_elements.get("enabled_switch")
+                    mode_select = termination_view_elements.get("mode_select")
+                    ports_select = termination_view_elements.get("ports_select")
+                    reset_button = termination_view_elements.get("reset_button")
+                    summary_label = termination_view_elements.get("summary_label")
+                    details_container = termination_view_elements.get("details_container")
+                    if (
+                        enabled_switch is None
+                        or mode_select is None
+                        or ports_select is None
+                        or reset_button is None
+                        or summary_label is None
+                        or details_container is None
+                    ):
+                        return
+
+                    normalized_mode = _normalize_termination_mode(mode_select.value)
+                    mode_select.value = normalized_mode
+                    selected_ports = _normalize_termination_selected_ports(
+                        ports_select.value,
+                        available_ports=available_setup_ports,
+                    )
+                    if enabled_switch.value and not selected_ports and available_setup_ports:
+                        selected_ports = [available_setup_ports[0]]
+                    ports_select.value = selected_ports
+
+                    normalized_manual_map = _normalize_manual_termination_resistance_map(
+                        termination_state.get("manual_resistance_ohm_by_port", {}),
+                        available_ports=available_setup_ports,
+                        default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+                    )
+                    termination_state["enabled"] = bool(enabled_switch.value)
+                    termination_state["mode"] = normalized_mode
+                    termination_state["selected_ports"] = list(selected_ports)
+                    termination_state["manual_resistance_ohm_by_port"] = normalized_manual_map
+
+                    resolved_plan = _resolved_termination_plan()
+                    summary_label.text = _termination_plan_summary(resolved_plan)
+                    if normalized_mode == "manual":
+                        reset_button.enable()
+                    else:
+                        reset_button.disable()
+
+                    details_container.clear()
+                    with details_container:
+                        if not bool(resolved_plan.get("enabled", False)):
+                            ui.label("Disabled: raw solver output is used directly.").classes(
+                                "text-xs text-muted"
+                            )
+                            return
+
+                        selected = [int(port) for port in resolved_plan.get("selected_ports", [])]
+                        resolved_values = dict(resolved_plan.get("resistance_ohm_by_port", {}))
+                        source_values = dict(resolved_plan.get("source_by_port", {}))
+                        for port in selected:
+                            source = str(source_values.get(port, "manual"))
+                            resistance = float(
+                                resolved_values.get(port, _TERMINATION_DEFAULT_RESISTANCE_OHM)
+                            )
+                            if normalized_mode == "manual":
+                                row_label = f"Port {port} · Manual R (Ohm)"
+                                manual_input = (
+                                    ui.number(
+                                        row_label,
+                                        value=float(
+                                            normalized_manual_map.get(
+                                                port,
+                                                _TERMINATION_DEFAULT_RESISTANCE_OHM,
+                                            )
+                                        ),
+                                        format="%.6g",
+                                    )
+                                    .props("dense outlined")
+                                    .classes("w-56")
+                                )
+
+                                def _on_manual_change(
+                                    e: Any,
+                                    *,
+                                    target_port: int,
+                                ) -> None:
+                                    manual_map = dict(
+                                        termination_state.get(
+                                            "manual_resistance_ohm_by_port",
+                                            {},
+                                        )
+                                    )
+                                    try:
+                                        value = float(e.value)
+                                    except Exception:
+                                        value = _TERMINATION_DEFAULT_RESISTANCE_OHM
+                                    manual_map[target_port] = value
+                                    termination_state["manual_resistance_ohm_by_port"] = manual_map
+                                    if not applying_saved_setup:
+                                        on_termination_setup_change()
+                                    else:
+                                        refresh_termination_controls()
+
+                                manual_input.on_value_change(
+                                    lambda e, target_port=port: _on_manual_change(
+                                        e,
+                                        target_port=target_port,
+                                    )
+                                )
+                                ui.label(f"Resolved: {resistance:g} Ohm ({source})").classes(
+                                    "text-xs text-muted"
+                                )
+                            else:
+                                ui.label(f"Port {port}: {resistance:g} Ohm ({source})").classes(
+                                    "text-xs text-fg"
+                                )
+
+                        for warning in list(resolved_plan.get("warnings", [])):
+                            ui.label(str(warning)).classes("text-xs text-warning")
+
+                def on_termination_setup_change() -> None:
+                    refresh_termination_controls()
+                    if applying_saved_setup:
+                        return
+                    if not isinstance(latest_simulation_result.get("result"), SimulationResult):
+                        return
+                    handle_post_processing_result(None, None)
+                    render_simulation_result_view()
+                    _render_post_processing_input_panel()
+                    render_post_processed_result_view()
+                    summary_text = _termination_plan_summary(_resolved_termination_plan())
+                    if termination_last_summary["message"] != summary_text:
+                        termination_last_summary["message"] = summary_text
+                        append_status(
+                            "info",
+                            (
+                                "Termination compensation updated without Julia rerun. "
+                                f"{summary_text}"
+                            ),
+                        )
+
+                termination_enabled_switch.on_value_change(lambda _e: on_termination_setup_change())
+                termination_mode_select.on_value_change(lambda _e: on_termination_setup_change())
+                termination_ports_select.on_value_change(lambda _e: on_termination_setup_change())
+
+                def on_reset_termination_manual_defaults() -> None:
+                    manual_map = _normalize_manual_termination_resistance_map(
+                        termination_state.get("manual_resistance_ohm_by_port", {}),
+                        available_ports=available_setup_ports,
+                        default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+                    )
+                    selected_ports = _normalize_termination_selected_ports(
+                        termination_state.get("selected_ports", []),
+                        available_ports=available_setup_ports,
+                    )
+                    for port in selected_ports:
+                        manual_map[port] = _TERMINATION_DEFAULT_RESISTANCE_OHM
+                    termination_state["manual_resistance_ohm_by_port"] = manual_map
+                    on_termination_setup_change()
+
+                termination_reset_button.on_click(lambda _e: on_reset_termination_manual_defaults())
+                refresh_termination_controls()
+
                 def collect_current_setup_payload() -> dict[str, Any] | None:
                     required_values = [
                         start_input.value,
@@ -3625,6 +4085,24 @@ def _render_simulation_environment():
                             "line_search_switch_tol": float(linesearch_tol_input.value),
                             "alpha_min": float(alpha_min_input.value),
                         },
+                        "termination_compensation": {
+                            "enabled": bool(termination_state.get("enabled", False)),
+                            "mode": _normalize_termination_mode(
+                                termination_state.get("mode", "auto")
+                            ),
+                            "selected_ports": _normalize_termination_selected_ports(
+                                termination_state.get("selected_ports", []),
+                                available_ports=available_setup_ports,
+                            ),
+                            "manual_resistance_ohm_by_port": {
+                                str(port): float(value)
+                                for port, value in _normalize_manual_termination_resistance_map(
+                                    termination_state.get("manual_resistance_ohm_by_port", {}),
+                                    available_ports=available_setup_ports,
+                                    default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+                                ).items()
+                            },
+                        },
                     }
 
                 def apply_saved_setup(setup_record: dict[str, Any]) -> None:
@@ -3638,6 +4116,7 @@ def _render_simulation_environment():
                     harmonics_payload = payload.get("harmonics", {})
                     sources_payload = payload.get("sources", [])
                     advanced_payload = payload.get("advanced", {})
+                    termination_payload = payload.get("termination_compensation", {})
 
                     applying_saved_setup = True
                     try:
@@ -3664,6 +4143,42 @@ def _render_simulation_environment():
                             advanced_payload.get("line_search_switch_tol", 1e-5)
                         )
                         alpha_min_input.value = float(advanced_payload.get("alpha_min", 1e-4))
+                        termination_enabled = bool(
+                            termination_payload.get("enabled", False)
+                            if isinstance(termination_payload, dict)
+                            else False
+                        )
+                        termination_mode = _normalize_termination_mode(
+                            termination_payload.get("mode", "auto")
+                            if isinstance(termination_payload, dict)
+                            else "auto"
+                        )
+                        termination_selected_ports = _normalize_termination_selected_ports(
+                            termination_payload.get("selected_ports", available_setup_ports)
+                            if isinstance(termination_payload, dict)
+                            else available_setup_ports,
+                            available_ports=available_setup_ports,
+                        )
+                        termination_manual_map = _normalize_manual_termination_resistance_map(
+                            termination_payload.get("manual_resistance_ohm_by_port", {})
+                            if isinstance(termination_payload, dict)
+                            else {},
+                            available_ports=available_setup_ports,
+                            default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+                        )
+                        termination_state["enabled"] = termination_enabled
+                        termination_state["mode"] = termination_mode
+                        termination_state["selected_ports"] = list(termination_selected_ports)
+                        termination_state["manual_resistance_ohm_by_port"] = termination_manual_map
+                        if termination_view_elements.get("enabled_switch") is not None:
+                            termination_view_elements["enabled_switch"].value = termination_enabled
+                        if termination_view_elements.get("mode_select") is not None:
+                            termination_view_elements["mode_select"].value = termination_mode
+                        if termination_view_elements.get("ports_select") is not None:
+                            termination_view_elements[
+                                "ports_select"
+                            ].value = termination_selected_ports
+                        refresh_termination_controls()
 
                         for source_form in list(source_forms):
                             source_card = source_form["card"]
@@ -3750,6 +4265,7 @@ def _render_simulation_environment():
                         ui.notify("Saved setup not found.", type="warning")
                         return
                     apply_saved_setup(setup_record)
+                    on_termination_setup_change()
                     ui.notify(f"Loaded setup: {setup_record.get('name')}", type="positive")
 
                 saved_setup_select.on_value_change(on_saved_setup_change)
@@ -3829,6 +4345,7 @@ def _render_simulation_environment():
 
                 if selected_setup_id and selected_setup_id in saved_setup_by_id:
                     apply_saved_setup(saved_setup_by_id[selected_setup_id])
+                    on_termination_setup_change()
 
                 async def run_sim():
                     harmonic_grid_hits: list[tuple[int, int, float, int]] = []
@@ -3837,6 +4354,7 @@ def _render_simulation_environment():
                         latest_record, latest_circuit_def = _load_latest_circuit_definition(
                             active_record_id
                         )
+                        latest_circuit_definition_ref["definition"] = latest_circuit_def
 
                         # Basic validation
                         required_values = [
@@ -4064,6 +4582,10 @@ def _render_simulation_environment():
                                     config.n_modulation_harmonics,
                                 ),
                             )
+                        termination_plan = _resolved_termination_plan()
+                        append_status("info", _termination_plan_summary(termination_plan))
+                        for warning in list(termination_plan.get("warnings", [])):
+                            append_status("warning", str(warning))
                         setup_snapshot = _normalized_simulation_setup_snapshot(freq_range, config)
                         schema_source_hash = _hash_schema_source(latest_record.definition_json)
                         simulation_setup_hash = _hash_stable_json(setup_snapshot)
@@ -4220,21 +4742,10 @@ def _render_simulation_environment():
                         latest_pipeline_result["circuit_record"] = latest_record
                         latest_pipeline_result["source_simulation_bundle_id"] = cache_bundle_id
                         latest_pipeline_result["schema_source_hash"] = last_schema_source_hash
-                        latest_pipeline_result["simulation_setup_hash"] = (
-                            last_simulation_setup_hash
-                        )
+                        latest_pipeline_result["simulation_setup_hash"] = last_simulation_setup_hash
                         render_simulation_result_view()
                         handle_post_processing_result(None, None)
-                        post_processing_container.clear()
-                        with post_processing_container:
-                            _render_post_processing_panel(
-                                result=last_sim_result,
-                                circuit_definition=latest_circuit_def,
-                                schema_id=active_record_id,
-                                schema_name=latest_record.name,
-                                append_status=append_status,
-                                on_result=handle_post_processing_result,
-                            )
+                        _render_post_processing_input_panel()
                         render_post_processed_result_view()
 
                     except Exception as e:

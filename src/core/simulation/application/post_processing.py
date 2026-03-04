@@ -7,9 +7,25 @@ from typing import Literal
 
 import numpy as np
 
-from core.simulation.domain.circuit import SimulationResult
+from core.simulation.domain.circuit import CircuitDefinition, SimulationResult
 
 type ModeFilter = Literal["base", "sideband", "all"]
+type PortTerminationSource = Literal["schema_infer", "fallback_default_50", "manual"]
+
+_RESISTANCE_UNIT_MULTIPLIER = {
+    "ohm": 1.0,
+    "kohm": 1e3,
+    "mohm": 1e6,
+}
+
+
+@dataclass(frozen=True)
+class PortTerminationInference:
+    """Resolved termination resistance inference snapshot."""
+
+    resistance_ohm_by_port: dict[int, float]
+    source_by_port: dict[int, PortTerminationSource]
+    warning_by_port: dict[int, str]
 
 
 @dataclass(frozen=True)
@@ -32,6 +48,257 @@ class PortMatrixSweep:
         if row < 0 or col < 0 or row >= self.dimension or col >= self.dimension:
             raise IndexError("Trace index out of range.")
         return [complex(matrix[row, col]) for matrix in self.y_matrices]
+
+
+def infer_port_termination_resistance_ohm(
+    circuit_definition: CircuitDefinition,
+    *,
+    fallback_ohm: float = 50.0,
+) -> PortTerminationInference:
+    """Infer one shunt termination resistor value per port from expanded netlist topology."""
+    if fallback_ohm <= 0:
+        raise ValueError("fallback_ohm must be positive.")
+
+    port_node_by_index: dict[int, str] = {}
+    for row in circuit_definition.expanded_definition.topology:
+        if not row.is_port:
+            continue
+        try:
+            port_index = int(row.value_ref)
+        except Exception:
+            continue
+        if circuit_definition.is_ground_node(row.node1) and not circuit_definition.is_ground_node(
+            row.node2
+        ):
+            port_node_by_index[port_index] = str(row.node2)
+            continue
+        if circuit_definition.is_ground_node(row.node2) and not circuit_definition.is_ground_node(
+            row.node1
+        ):
+            port_node_by_index[port_index] = str(row.node1)
+
+    shunt_resistors_by_node: dict[str, list[tuple[str, float]]] = {}
+    for element in circuit_definition.to_ir().elements:
+        if element.kind != "resistor" or element.is_port or element.is_mutual_coupling:
+            continue
+        if not isinstance(element.value_ref, str):
+            continue
+        if circuit_definition.is_ground_node(element.node1):
+            node = str(element.node2)
+        elif circuit_definition.is_ground_node(element.node2):
+            node = str(element.node1)
+        else:
+            continue
+        try:
+            resolved_value = circuit_definition.resolve_component_value(element.value_ref)
+            component = circuit_definition.component_spec(element.value_ref)
+            unit = component.unit if component is not None else "Ohm"
+            value_ohm = _resistance_to_ohm(resolved_value, unit=unit)
+        except Exception:
+            continue
+        shunt_resistors_by_node.setdefault(node, []).append((str(element.name), float(value_ohm)))
+
+    inferred: dict[int, float] = {}
+    sources: dict[int, PortTerminationSource] = {}
+    warnings: dict[int, str] = {}
+    for port in circuit_definition.available_port_indices:
+        node = port_node_by_index.get(port)
+        if node is None:
+            inferred[port] = float(fallback_ohm)
+            sources[port] = "fallback_default_50"
+            warnings[port] = (
+                f"Port {port}: cannot infer a unique signal node from topology; "
+                f"fallback to {fallback_ohm:g} Ohm."
+            )
+            continue
+
+        candidates = shunt_resistors_by_node.get(node, [])
+        if len(candidates) != 1:
+            inferred[port] = float(fallback_ohm)
+            sources[port] = "fallback_default_50"
+            if not candidates:
+                warnings[port] = (
+                    f"Port {port}: no shunt resistor to ground found at node '{node}'; "
+                    f"fallback to {fallback_ohm:g} Ohm."
+                )
+            else:
+                candidate_names = ", ".join(name for name, _ in candidates)
+                warnings[port] = (
+                    f"Port {port}: multiple shunt resistors to ground found at node '{node}' "
+                    f"({candidate_names}); fallback to {fallback_ohm:g} Ohm."
+                )
+            continue
+
+        _, value_ohm = candidates[0]
+        if value_ohm <= 0:
+            inferred[port] = float(fallback_ohm)
+            sources[port] = "fallback_default_50"
+            warnings[port] = (
+                f"Port {port}: inferred non-positive resistance ({value_ohm:g} Ohm); "
+                f"fallback to {fallback_ohm:g} Ohm."
+            )
+            continue
+
+        inferred[port] = float(value_ohm)
+        sources[port] = "schema_infer"
+
+    return PortTerminationInference(
+        resistance_ohm_by_port=inferred,
+        source_by_port=sources,
+        warning_by_port=warnings,
+    )
+
+
+def apply_shunt_termination_compensation(
+    sweep: PortMatrixSweep,
+    *,
+    resistance_ohm_by_port: dict[int, float],
+) -> PortMatrixSweep:
+    """Apply Y_clean = Y_meas - diag(1/R_i) on selected sweep labels/ports."""
+    if not resistance_ohm_by_port:
+        return sweep
+
+    diagonal = np.zeros((sweep.dimension, sweep.dimension), dtype=np.complex128)
+    any_port_selected = False
+    for idx, label in enumerate(sweep.labels):
+        if not str(label).isdigit():
+            continue
+        port = int(label)
+        if port not in resistance_ohm_by_port:
+            continue
+        resistance_ohm = float(resistance_ohm_by_port[port])
+        if resistance_ohm <= 0:
+            raise ValueError(f"Port {port} has non-positive termination resistance.")
+        diagonal[idx, idx] = 1.0 / resistance_ohm
+        any_port_selected = True
+
+    if not any_port_selected:
+        return sweep
+
+    compensated = tuple(
+        (np.asarray(matrix, dtype=np.complex128) - diagonal) for matrix in sweep.y_matrices
+    )
+    return PortMatrixSweep(
+        frequencies_ghz=sweep.frequencies_ghz,
+        mode=sweep.mode,
+        labels=sweep.labels,
+        y_matrices=compensated,
+        source_kind=sweep.source_kind,
+    )
+
+
+def compensate_simulation_result_port_terminations(
+    result: SimulationResult,
+    *,
+    resistance_ohm_by_port: dict[int, float],
+    reference_impedance_ohm: float = 50.0,
+) -> SimulationResult:
+    """Return one SimulationResult where selected port terminations are removed in Y-domain."""
+    if not resistance_ohm_by_port:
+        return result
+    if reference_impedance_ohm <= 0:
+        raise ValueError("reference_impedance_ohm must be positive.")
+    if not result.frequencies_ghz:
+        return result
+
+    port_indices = list(result.available_port_indices)
+    if not port_indices:
+        return result
+
+    mode_indices = list(result.available_mode_indices)
+    if not mode_indices:
+        mode_indices = [(0,)]
+
+    # Start from existing families so modes without resolvable matrix traces remain intact.
+    s_mode_real: dict[str, list[float]] = dict(result.s_parameter_mode_real)
+    s_mode_imag: dict[str, list[float]] = dict(result.s_parameter_mode_imag)
+    z_mode_real: dict[str, list[float]] = dict(result.z_parameter_mode_real)
+    z_mode_imag: dict[str, list[float]] = dict(result.z_parameter_mode_imag)
+    y_mode_real: dict[str, list[float]] = dict(result.y_parameter_mode_real)
+    y_mode_imag: dict[str, list[float]] = dict(result.y_parameter_mode_imag)
+    s_zero_mode_real: dict[str, list[float]] = dict(result.s_parameter_real)
+    s_zero_mode_imag: dict[str, list[float]] = dict(result.s_parameter_imag)
+
+    for mode in mode_indices:
+        try:
+            sweep = build_port_y_sweep(
+                result=result,
+                mode=mode,
+                ports=port_indices,
+                reference_impedance_ohm=reference_impedance_ohm,
+            )
+        except ValueError:
+            continue
+        compensated = apply_shunt_termination_compensation(
+            sweep,
+            resistance_ohm_by_port=resistance_ohm_by_port,
+        )
+        dimension = compensated.dimension
+        identity = np.eye(dimension, dtype=np.complex128)
+        y_matrices = [np.asarray(matrix, dtype=np.complex128) for matrix in compensated.y_matrices]
+        z_matrices = [
+            _safe_matrix_inverse(matrix, context="termination compensation Y->Z conversion")
+            for matrix in y_matrices
+        ]
+        s_matrices = [
+            np.linalg.solve(
+                (z_matrix + (reference_impedance_ohm * identity)).T,
+                (z_matrix - (reference_impedance_ohm * identity)).T,
+            ).T
+            for z_matrix in z_matrices
+        ]
+
+        for output_idx, output_port in enumerate(port_indices):
+            for input_idx, input_port in enumerate(port_indices):
+                trace_label = SimulationResult._mode_trace_label(
+                    mode,
+                    output_port,
+                    mode,
+                    input_port,
+                )
+                zero_label = f"S{output_port}{input_port}"
+                s_trace = [complex(matrix[output_idx, input_idx]) for matrix in s_matrices]
+                z_trace = [complex(matrix[output_idx, input_idx]) for matrix in z_matrices]
+                y_trace = [complex(matrix[output_idx, input_idx]) for matrix in y_matrices]
+
+                s_mode_real[trace_label] = [float(value.real) for value in s_trace]
+                s_mode_imag[trace_label] = [float(value.imag) for value in s_trace]
+                z_mode_real[trace_label] = [float(value.real) for value in z_trace]
+                z_mode_imag[trace_label] = [float(value.imag) for value in z_trace]
+                y_mode_real[trace_label] = [float(value.real) for value in y_trace]
+                y_mode_imag[trace_label] = [float(value.imag) for value in y_trace]
+
+                if all(value == 0 for value in mode):
+                    s_zero_mode_real[zero_label] = list(s_mode_real[trace_label])
+                    s_zero_mode_imag[zero_label] = list(s_mode_imag[trace_label])
+
+    base_mode = next(
+        (mode for mode in mode_indices if all(value == 0 for value in mode)),
+        mode_indices[0],
+    )
+    first_port = int(port_indices[0])
+    s11_label = SimulationResult._mode_trace_label(base_mode, first_port, base_mode, first_port)
+    s11_real = list(s_mode_real.get(s11_label, result.s11_real))
+    s11_imag = list(s_mode_imag.get(s11_label, result.s11_imag))
+
+    return SimulationResult(
+        frequencies_ghz=[float(value) for value in result.frequencies_ghz],
+        s11_real=s11_real,
+        s11_imag=s11_imag,
+        port_indices=port_indices,
+        mode_indices=[SimulationResult.normalize_mode(mode) for mode in mode_indices],
+        s_parameter_real=s_zero_mode_real,
+        s_parameter_imag=s_zero_mode_imag,
+        s_parameter_mode_real=s_mode_real,
+        s_parameter_mode_imag=s_mode_imag,
+        z_parameter_mode_real=z_mode_real,
+        z_parameter_mode_imag=z_mode_imag,
+        y_parameter_mode_real=y_mode_real,
+        y_parameter_mode_imag=y_mode_imag,
+        qe_parameter_mode=dict(result.qe_parameter_mode),
+        qe_ideal_parameter_mode=dict(result.qe_ideal_parameter_mode),
+        cm_parameter_mode=dict(result.cm_parameter_mode),
+    )
 
 
 def filtered_modes(result: SimulationResult, mode_filter: ModeFilter) -> list[tuple[int, ...]]:
@@ -97,8 +364,7 @@ def build_port_y_sweep(
             frequency_count=freq_count,
         )
         y_matrices = tuple(
-            _safe_matrix_inverse(matrix, context="Z->Y conversion")
-            for matrix in z_matrices
+            _safe_matrix_inverse(matrix, context="Z->Y conversion") for matrix in z_matrices
         )
         return PortMatrixSweep(
             frequencies_ghz=tuple(float(value) for value in result.frequencies_ghz),
@@ -236,6 +502,13 @@ def build_common_differential_transform(
 
 def _is_base_mode(mode: tuple[int, ...]) -> bool:
     return all(value == 0 for value in mode)
+
+
+def _resistance_to_ohm(value: float, *, unit: str) -> float:
+    normalized = str(unit).strip().replace(" ", "").casefold()
+    if normalized not in _RESISTANCE_UNIT_MULTIPLIER:
+        raise ValueError(f"Unsupported resistance unit for inference: {unit}")
+    return float(value) * _RESISTANCE_UNIT_MULTIPLIER[normalized]
 
 
 def _try_mode_matrix_from_family(

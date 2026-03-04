@@ -85,6 +85,26 @@ def _jpa_definition() -> str:
     )
 
 
+def _two_port_compensation_definition() -> str:
+    return str(
+        {
+            "name": "E2E Two Port Compensation",
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "R100", "default": 100.0, "unit": "Ohm"},
+                {"name": "C12", "default": 200.0, "unit": "fF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("P2", "2", "0", 2),
+                ("R1", "1", "0", "R50"),
+                ("R2", "2", "0", "R100"),
+                ("C1", "1", "2", "C12"),
+            ],
+        }
+    )
+
+
 @pytest.fixture(scope="session")
 def example_cases() -> tuple[ExampleCase, ...]:
     """Representative example categories from JosephsonCircuits README usage."""
@@ -126,6 +146,17 @@ def example_cases() -> tuple[ExampleCase, ...]:
             n_mod=4,
             n_pump=4,
             sources=((4.65001, 1, double_ip), (4.85001, 1, double_ip)),
+        ),
+        ExampleCase(
+            slug="two_port_compensation",
+            schema_name=f"E2E-{suffix}-TwoPortCompensation",
+            definition=_two_port_compensation_definition(),
+            start_ghz=4.8,
+            stop_ghz=5.2,
+            points=201,
+            n_mod=6,
+            n_pump=6,
+            sources=((5.0, 1, 0.0),),
         ),
     )
 
@@ -283,9 +314,9 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     expect(run_button).to_be_visible(timeout=30000)
     expect(save_button).to_be_visible(timeout=30000)
     expect(save_button).to_be_disabled()
-    expect(
-        post_input_card.get_by_role("button", name="Save Post-Processed Results")
-    ).to_have_count(0)
+    expect(post_input_card.get_by_role("button", name="Save Post-Processed Results")).to_have_count(
+        0
+    )
     expect(
         post_results_card.get_by_role("button", name="Save Post-Processed Results")
     ).to_have_count(1)
@@ -330,6 +361,70 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
 
 
+def _configure_raw_result_to_y22_real(page: Page) -> None:
+    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
+    output_port_select = raw_results_card.get_by_role("combobox", name="Output Port")
+    output_port_select.click()
+    output_port_select.press("ArrowDown")
+    output_port_select.press("Enter")
+    input_port_select = raw_results_card.get_by_role("combobox", name="Input Port")
+    input_port_select.click()
+    input_port_select.press("ArrowDown")
+    input_port_select.press("Enter")
+    expect(raw_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
+
+
+def _read_first_plot_y_value(page: Page) -> float:
+    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    plot = raw_results_card.locator(".js-plotly-plot").first
+    expect(plot).to_be_visible(timeout=30000)
+    value = plot.evaluate("el => el.data[0].y[0]")
+    return float(value)
+
+
+def _configure_termination_mode_auto(page: Page) -> None:
+    term_card = (
+        page.locator(".q-card").filter(has_text="Port Termination Compensation (Optional)").first
+    )
+    expect(term_card).to_be_visible(timeout=30000)
+    enable_switch = term_card.get_by_role("switch", name="Enable")
+    if enable_switch.count() == 0:
+        enable_switch = term_card.get_by_role("checkbox", name="Enable")
+    if enable_switch.count() > 0:
+        if not enable_switch.first.is_checked():
+            enable_switch.first.click()
+    else:
+        toggle = term_card.locator(".q-toggle").first
+        expect(toggle).to_be_visible(timeout=30000)
+        classes = str(toggle.get_attribute("class") or "")
+        if "q-toggle--truthy" not in classes:
+            toggle.click()
+    mode_select = term_card.get_by_role("combobox", name="Mode")
+    mode_select.click()
+    page.get_by_role("option", name="Auto (Schema infer)").click()
+    expect(term_card.get_by_text("mode=auto", exact=False).first).to_be_visible(timeout=30000)
+    expect(term_card.get_by_text("ports=[1, 2]", exact=False).first).to_be_visible(timeout=30000)
+
+
+def _configure_termination_mode_manual_custom(page: Page) -> None:
+    term_card = (
+        page.locator(".q-card").filter(has_text="Port Termination Compensation (Optional)").first
+    )
+    mode_select = term_card.get_by_role("combobox", name="Mode")
+    mode_select.click()
+    page.get_by_role("option", name="Manual").click()
+    port1_resistance = term_card.get_by_role("spinbutton", name=re.compile(r"Port 1 .*Manual R"))
+    expect(port1_resistance).to_be_visible(timeout=30000)
+    port1_resistance.click()
+    port1_resistance.fill("75")
+    port1_resistance.press("Enter")
+    expect(term_card.get_by_text("mode=manual", exact=False).first).to_be_visible(timeout=30000)
+    expect(term_card.get_by_text("p1=75 Ohm (manual)", exact=False).first).to_be_visible(
+        timeout=30000
+    )
+
+
 @pytest.mark.parametrize(
     "example_case",
     ["linear_series_lc", "jpa_single_pump", "jpa_double_pump"],
@@ -357,3 +452,55 @@ def test_josephson_example_runs_in_ui(
     )
     if simulation_completed:
         _run_post_processing_and_expect_output(page)
+
+
+def test_port_termination_compensation_modes_in_ui(
+    page: Page,
+    example_cases: tuple[ExampleCase, ...],
+    tmp_path: Path,
+) -> None:
+    case = next(c for c in example_cases if c.slug == "two_port_compensation")
+
+    _choose_schema(page, case.schema_name)
+    _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+    _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+    _set_spinbutton_value(page, "Points", case.points)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
+    _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+    _configure_sources(page, case.sources)
+
+    assert _run_and_expect_success(page) is True
+    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    expect(raw_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
+    baseline_y22 = _read_first_plot_y_value(page)
+    baseline_log_count = page.get_by_text(
+        "Simulation completed successfully",
+        exact=False,
+    ).count()
+    page.screenshot(path=str(tmp_path / "termination_case_baseline.png"), full_page=True)
+
+    _configure_termination_mode_auto(page)
+    auto_y22 = _read_first_plot_y_value(page)
+    assert auto_y22 != pytest.approx(baseline_y22, abs=1e-9)
+    assert (
+        page.get_by_text("Simulation completed successfully", exact=False).count()
+        == baseline_log_count
+    )
+    expect(
+        page.get_by_text("Termination compensation updated without Julia rerun", exact=False)
+    ).to_be_visible(timeout=30000)
+    page.screenshot(path=str(tmp_path / "termination_case_auto.png"), full_page=True)
+
+    _configure_termination_mode_manual_custom(page)
+    manual_y22 = _read_first_plot_y_value(page)
+    assert manual_y22 != pytest.approx(auto_y22, abs=1e-9)
+    assert (
+        page.get_by_text("Simulation completed successfully", exact=False).count()
+        == baseline_log_count
+    )
+    page.screenshot(path=str(tmp_path / "termination_case_manual.png"), full_page=True)
+
+    _run_post_processing_and_expect_output(page)
+    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
+    page.screenshot(path=str(tmp_path / "termination_case_post_processing.png"), full_page=True)

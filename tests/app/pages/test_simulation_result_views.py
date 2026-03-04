@@ -13,18 +13,23 @@ from app.pages.simulation import (
     _build_result_bundle_data_records,
     _build_s_parameter_data_records,
     _build_simulation_result_figure,
+    _build_termination_compensation_plan,
     _can_save_post_processed_results,
     _coordinate_weight_fields_editable,
     _hash_schema_source,
     _hash_stable_json,
     _load_saved_post_process_setups_for_schema,
+    _load_saved_setups_for_schema,
     _load_selected_post_process_setup_id,
+    _normalize_termination_mode,
+    _normalize_termination_selected_ports,
     _normalized_simulation_setup_snapshot,
     _result_metric_options_for_family,
     _result_mode_options,
     _result_port_options,
     _result_trace_options_for_family,
     _save_saved_post_process_setups_for_schema,
+    _save_saved_setups_for_schema,
     _save_selected_post_process_setup_id,
 )
 from core.simulation.application.post_processing import PortMatrixSweep
@@ -297,6 +302,47 @@ def test_coordinate_weight_fields_editable_depends_on_weight_mode() -> None:
     assert _coordinate_weight_fields_editable("AUTO") is False
 
 
+def test_termination_mode_and_selected_ports_are_normalized() -> None:
+    assert _normalize_termination_mode("MANUAL") == "manual"
+    assert _normalize_termination_mode("unexpected") == "auto"
+    assert _normalize_termination_selected_ports(
+        ["2", "1", "not-a-port", "2"],
+        available_ports=[1, 2, 3],
+    ) == [1, 2]
+
+
+def test_build_termination_compensation_plan_handles_auto_and_manual() -> None:
+    auto_plan = _build_termination_compensation_plan(
+        enabled=True,
+        mode="auto",
+        selected_ports=[1, 2],
+        manual_resistance_ohm_by_port={1: 33.0, 2: 44.0},
+        inferred_resistance_ohm_by_port={1: 50.0, 2: 100.0},
+        inferred_source_by_port={1: "schema_infer", 2: "fallback_default_50"},
+        inferred_warning_by_port={2: "Port 2 fallback warning"},
+    )
+    assert auto_plan["enabled"] is True
+    assert auto_plan["mode"] == "auto"
+    assert auto_plan["resistance_ohm_by_port"] == {1: 50.0, 2: 100.0}
+    assert auto_plan["source_by_port"] == {1: "schema_infer", 2: "fallback_default_50"}
+    assert auto_plan["warnings"] == ["Port 2 fallback warning"]
+
+    manual_plan = _build_termination_compensation_plan(
+        enabled=True,
+        mode="manual",
+        selected_ports=[2],
+        manual_resistance_ohm_by_port={1: 55.0, 2: 75.0},
+        inferred_resistance_ohm_by_port={1: 50.0, 2: 100.0},
+        inferred_source_by_port={1: "schema_infer", 2: "schema_infer"},
+        inferred_warning_by_port={},
+    )
+    assert manual_plan["enabled"] is True
+    assert manual_plan["mode"] == "manual"
+    assert manual_plan["resistance_ohm_by_port"] == {2: 75.0}
+    assert manual_plan["source_by_port"] == {2: "manual"}
+    assert manual_plan["warnings"] == []
+
+
 def test_can_save_post_processed_results_requires_valid_output_state() -> None:
     sweep = PortMatrixSweep(
         mode=(0,),
@@ -389,6 +435,53 @@ def test_hash_stable_json_is_order_independent() -> None:
 
 def test_hash_schema_source_changes_with_source_text() -> None:
     assert _hash_schema_source('{"name":"A"}') != _hash_schema_source('{"name":"B"}')
+
+
+def test_simulation_setup_storage_roundtrip_preserves_termination_compensation(monkeypatch) -> None:
+    storage: dict[str, object] = {}
+
+    def fake_get(key: str, default: object = None) -> object:
+        return storage.get(key, default)
+
+    def fake_set(key: str, value: object) -> None:
+        storage[key] = value
+
+    monkeypatch.setattr(simulation_page, "_user_storage_get", fake_get)
+    monkeypatch.setattr(simulation_page, "_user_storage_set", fake_set)
+
+    schema_id = 183
+    setup_payload = {
+        "freq_range": {"start_ghz": 4.0, "stop_ghz": 5.0, "points": 101},
+        "harmonics": {"n_modulation_harmonics": 4, "n_pump_harmonics": 8},
+        "sources": [{"pump_freq_ghz": 4.75, "port": 1, "current_amp": 0.0, "mode": [1]}],
+        "advanced": {
+            "include_dc": False,
+            "enable_three_wave_mixing": False,
+            "enable_four_wave_mixing": True,
+            "max_intermod_order": -1,
+            "max_iterations": 1000,
+            "f_tol": 1e-8,
+            "line_search_switch_tol": 1e-5,
+            "alpha_min": 1e-4,
+        },
+        "termination_compensation": {
+            "enabled": True,
+            "mode": "manual",
+            "selected_ports": [1, 2],
+            "manual_resistance_ohm_by_port": {"1": 50.0, "2": 75.0},
+        },
+    }
+    _save_saved_setups_for_schema(
+        schema_id,
+        [{"id": "sim-a", "name": "Simulation Setup A", "payload": setup_payload}],
+    )
+
+    loaded = _load_saved_setups_for_schema(schema_id)
+    assert [entry["id"] for entry in loaded] == ["sim-a"]
+    assert (
+        loaded[0]["payload"]["termination_compensation"]
+        == setup_payload["termination_compensation"]
+    )
 
 
 def test_post_process_setup_storage_roundtrip_per_schema(monkeypatch) -> None:
