@@ -12,9 +12,9 @@ from app.pages import (  # noqa: F401
     dashboard,
     home,
     raw_data,
-    schemdraw_live_preview,
     schema_editor,
     schemas,
+    schemdraw_live_preview,
     simulation,
 )
 from app.services.browser_tooling import shared_frontend_tooling_head_html

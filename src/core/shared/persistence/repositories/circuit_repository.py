@@ -63,11 +63,7 @@ class CircuitRepository:
             count_statement = count_statement.where(name_column.ilike(like_value))
 
         order_expression = desc(sort_column) if descending else asc(sort_column)
-        statement = (
-            statement.order_by(order_expression)
-            .offset(max(0, offset))
-            .limit(max(1, limit))
-        )
+        statement = statement.order_by(order_expression).offset(max(0, offset)).limit(max(1, limit))
 
         rows = self._session.exec(statement).all()
         total_rows = int(self._session.exec(count_statement).one())

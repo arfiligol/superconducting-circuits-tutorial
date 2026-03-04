@@ -160,11 +160,7 @@ class CharacterizationFittingService:
             if selected_ids:
                 records = [record for record in records if record.id in selected_ids]
 
-            y11_records = [
-                record
-                for record in records
-                if self._is_y11_imaginary_record(record)
-            ]
+            y11_records = [record for record in records if self._is_y11_imaginary_record(record)]
             if not y11_records:
                 raise ValueError("No compatible Y11 imaginary trace found in selected scope.")
 

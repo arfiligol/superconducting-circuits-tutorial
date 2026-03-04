@@ -169,8 +169,7 @@ def schemdraw_live_preview_page() -> None:
 
                 ui.label("Shortcut: Ctrl/Cmd + Shift + F").classes("text-xs text-muted")
                 ui.label(
-                    "Tip: insert `probe_here(d, \"name\")` "
-                    "to record cursor coordinates at that line."
+                    'Tip: insert `probe_here(d, "name")` to record cursor coordinates at that line.'
                 ).classes("text-xs text-muted")
                 format_status = ui.label("").classes("text-xs text-muted hidden")
 

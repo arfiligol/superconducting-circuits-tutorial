@@ -120,9 +120,9 @@ def test_loop_generated_seeded_examples_use_repeat_source_form() -> None:
     assert floquet_circuit.resolve_component_value(
         "Lj1_2"
     ) != floquet_circuit.resolve_component_value("Lj2_3")
-    assert jtwpa_circuit.resolve_component_value(
-        "Lj1_2"
-    ) == jtwpa_circuit.resolve_component_value("Lj4_5")
+    assert jtwpa_circuit.resolve_component_value("Lj1_2") == jtwpa_circuit.resolve_component_value(
+        "Lj4_5"
+    )
 
 
 def test_merge_saved_setups_with_builtin_keeps_user_setup() -> None:

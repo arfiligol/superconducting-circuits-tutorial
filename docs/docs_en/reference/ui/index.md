@@ -23,15 +23,15 @@ This section defines the app-level UI contracts that are expected to stay stable
 
 ## Topics
 
-- [Raw Data Browser](raw-data-browser.md)  
+- [Raw Data Browser](raw-data-browser.md)
   Dataset list, data-record preview, and pagination/sort/filter/lazy-loading contract.
-- [Schemas](schemas.md)  
+- [Schemas](schemas.md)
   Circuit schema list contract with search, sorting, pagination, and large-list handling.
-- [Schema Editor](schema-editor.md)  
+- [Schema Editor](schema-editor.md)
   Source-form editing contract, format/save behavior, and expanded netlist preview.
-- [Circuit Simulation](circuit-simulation.md)  
+- [Circuit Simulation](circuit-simulation.md)
   Expanded netlist config, setup boundary, load-or-run behavior, and result view contract.
-- [Characterization](characterization.md)  
+- [Characterization](characterization.md)
   Centralized run-analysis flow, trace selection, and unified result view/provenance contract.
 
 ## Related

@@ -39,8 +39,7 @@ def test_squid_fitting_unavailable_when_squid_capability_missing() -> None:
     assert decision.recommended is False
     assert decision.status == "unavailable"
     assert any(
-        "Missing capability: SQUID Characterization" in reason
-        for reason in decision.reasons
+        "Missing capability: SQUID Characterization" in reason for reason in decision.reasons
     )
 
 

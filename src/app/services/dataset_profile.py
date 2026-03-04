@@ -168,8 +168,4 @@ def profile_summary_text(profile: Mapping[str, object]) -> str:
     else:
         capability_text = "None"
     source = normalize_profile_source(profile.get("source"), default="inferred")
-    return (
-        f"Device Type: {device_type} | "
-        f"Capabilities: {capability_text} | "
-        f"Source: {source}"
-    )
+    return f"Device Type: {device_type} | Capabilities: {capability_text} | Source: {source}"

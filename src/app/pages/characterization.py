@@ -914,8 +914,7 @@ def _result_view_empty_state_message(
         )
     if selected_analysis_groups_raw:
         return (
-            "No artifacts available for selected analysis "
-            f"under trace mode: {selected_mode_label}."
+            f"No artifacts available for selected analysis under trace mode: {selected_mode_label}."
         )
     return "No artifacts available for selected analysis."
 
@@ -1577,9 +1576,7 @@ def characterization_page():
 
                         def current_filtered_candidate_trace_rows() -> list[dict[str, str | int]]:
                             table_state = trace_table_state_by_scope[trace_scope_key]
-                            mode_filter = str(
-                                table_state.get("trace_mode_filter", _TRACE_MODE_ALL)
-                            )
+                            mode_filter = str(table_state.get("trace_mode_filter", _TRACE_MODE_ALL))
                             return _filter_trace_rows_by_mode(
                                 candidate_trace_rows,
                                 mode_filter=mode_filter,
@@ -1611,9 +1608,7 @@ def characterization_page():
                                 int(row["id"]) for row in current_filtered_candidate_trace_rows()
                             }
                             selected_trace_ids_by_scope[trace_scope_key] = {
-                                trace_id
-                                for trace_id in updated_ids
-                                if trace_id in filtered_ids
+                                trace_id for trace_id in updated_ids if trace_id in filtered_ids
                             }
 
                         def current_run_ui_state() -> AnalysisRunUiState:
@@ -1751,10 +1746,7 @@ def characterization_page():
                                     if availability_label is not None:
                                         availability_label.set_text(availability_text)
                                         availability_label.classes(
-                                            replace=(
-                                                "text-sm font-semibold "
-                                                f"{availability_class}"
-                                            )
+                                            replace=(f"text-sm font-semibold {availability_class}")
                                         )
                                     if analysis_status_label is not None:
                                         analysis_status_label.set_text(

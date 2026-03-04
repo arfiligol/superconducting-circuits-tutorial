@@ -102,11 +102,7 @@ class DataRecordRepository:
         }
         sort_column = sort_columns.get(sort_by, id_col)
         order_expression = desc(sort_column) if descending else asc(sort_column)
-        statement = (
-            statement.order_by(order_expression)
-            .offset(max(0, offset))
-            .limit(max(1, limit))
-        )
+        statement = statement.order_by(order_expression).offset(max(0, offset)).limit(max(1, limit))
 
         rows = self._session.execute(statement).all()
         total_rows = int(self._session.execute(count_statement).scalar_one())

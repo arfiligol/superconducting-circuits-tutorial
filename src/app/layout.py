@@ -152,6 +152,7 @@ def app_shell(content_builder):
             .props("width=220") as left_drawer,
             ui.column().classes("w-full px-1"),
         ):
+
             def nav_btn(label: str, icon_name: str, route: str, disabled: bool = False):
                 with (
                     ui.button(
