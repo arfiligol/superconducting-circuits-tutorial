@@ -8,12 +8,12 @@ tags:
   - topic/physics
   - topic/simulation
   - node_type/method
-status: draft
+status: stable
 owner: docs-team
 audience: team
 scope: Physical meaning, derivation, and project usage boundaries of Kron reduction via Schur complement
-version: v0.1.0
-last_updated: 2026-03-04
+version: v0.1.1
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -125,10 +125,10 @@ You can apply PTC before Kron, or intentionally keep some port terminations befo
 
 ## Related
 
-- [Physics Overview](./index.md)
-- [Symbol Glossary](./symbol-glossary.md)
-- [Simulation Result Views](../architecture/circuit-simulation/simulation-result-views.md)
-- [Floating Qubit Real-Part Admittance Notebook](../../notebooks/floating-qubit-real-part-admittance-extraction.md)
+- [Physics Overview](./)
+- [Symbol Glossary](./symbol-glossary/)
+- [Simulation Result Views](../architecture/circuit-simulation/simulation-result-views/)
+- [Floating Qubit Real-Part Admittance Notebook](../../notebooks/floating-qubit-real-part-admittance-extraction/)
 
 ## References
 

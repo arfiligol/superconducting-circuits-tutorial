@@ -51,7 +51,7 @@ Each page opens with either a **physics question** or a **historical/community n
 | B3 | Impedance, Admittance, Matching | Model |
 | B4 | Scattering Parameters (S-parameters) | Model |
 | B5 | Resonators & Coupling (Q, κ, bandwidth, ringdown) | Model |
-| B6 | [Network Reduction (Kron, port reduction, equivalent circuits)](./schur-complement-kron-reduction.md) | Model |
+| B6 | [Network Reduction (Kron, port reduction, equivalent circuits)](./schur-complement-kron-reduction/) | Model |
 
 ---
 

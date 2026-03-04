@@ -8,12 +8,12 @@ tags:
   - topic/physics
   - topic/simulation
   - node_type/method
-status: draft
+status: stable
 owner: docs-team
 audience: team
 scope: 以 Schur Complement 實作 Kron Reduction 的物理語意、數學推導與在本專案的使用邊界
-version: v0.1.0
-last_updated: 2026-03-04
+version: v0.1.1
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -124,10 +124,10 @@ PTC 與 Kron Reduction 是兩個不同操作：
 
 ## 相關連結
 
-- [Physics Overview](./index.md)
-- [符號總表](./symbol-glossary.md)
-- [Simulation Result Views](../architecture/circuit-simulation/simulation-result-views.md)
-- [Floating Qubit Real-Part Admittance Notebook](../../notebooks/floating-qubit-real-part-admittance-extraction.md)
+- [Physics Overview](./)
+- [符號總表](./symbol-glossary/)
+- [Simulation Result Views](../architecture/circuit-simulation/simulation-result-views/)
+- [Floating Qubit Real-Part Admittance Notebook](../../notebooks/floating-qubit-real-part-admittance-extraction/)
 
 ## References
 
