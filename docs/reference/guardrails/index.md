@@ -37,6 +37,7 @@ tags:
 | [Linting & Formatting](./execution-verification/linting.md) | Ruff, Pre-commit, BasedPyright | [#agent-rule](./execution-verification/linting.md#agent-rule) |
 | [測試規範](./execution-verification/testing.md) | Pytest, Julia Pkg.test | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI 品質關卡](./execution-verification/ci-gates.md) | 合併前必通過的檢查 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
+| [多 Agent 協作](./execution-verification/multi-agent-collaboration.md) | 單一 Integrator 與本地並行防衝突規範 | [#agent-rule](./execution-verification/multi-agent-collaboration.md#agent-rule) |
 
 ### 程式品質 (Code Quality)
 
