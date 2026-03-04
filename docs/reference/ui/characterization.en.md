@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization contract for Source Scope, Run Analysis, trace selection, and unified Result View
-version: v0.5.0
+version: v0.6.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -59,6 +59,25 @@ Minimum `ResultArtifact` fields:
 - scope summary must show at least: `Trace Records`, `Result Bundles`
 - scope switch changes analysis source only; it must not rerun analysis
 
+## Dataset Profile Contract
+
+Characterization analysis gating must consume dataset profile as the primary contract source:
+
+- storage path: `DatasetRecord.source_meta.dataset_profile`
+- versioned schema:
+  - `schema_version`: currently `1.0`
+  - `device_type`: `unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other`
+  - `capabilities`: string list (canonical capability keys)
+  - `source`: `inferred` / `template` / `manual_override`
+
+!!! important "Capability-first"
+    Analysis run eligibility must be decided by `capabilities` first.
+    `device_type` is a template/suggestion entry point only, not the final gating authority.
+
+!!! warning "Backward compatibility"
+    Legacy datasets without `dataset_profile` must fall back to an `inferred` profile,
+    derived from existing record metadata, so existing workflows do not suddenly become unavailable.
+
 ## Run Analysis Contract
 
 `Run Analysis` uses a centralized execution model:
@@ -67,6 +86,29 @@ Minimum `ResultArtifact` fields:
 - analysis-specific configuration controls
 - one `Run Selected Analysis` button
 - execution log/status in the same panel
+
+## Analysis Gating Contract (by capabilities)
+
+Analysis registry must support:
+
+- `required_capabilities`
+- `excluded_capabilities`
+- `recommended_for` (device_type list)
+
+Run Analysis UI must expose one of the following states per analysis:
+
+- `Recommended`: capability + data compatibility both pass, and `recommended_for` matches
+- `Available`: capability + data compatibility pass, but not recommended
+- `Unavailable`: at least one gating condition fails
+
+Unavailable state must include a machine-composable reason:
+
+- `Missing capability: <capability_key>`
+- `Excluded by capability: <capability_key>`
+- `No compatible traces in current scope`
+
+!!! note "Single-page dynamic behavior"
+    Characterization stays on one page; analysis status, reasons, and run interactions must be rendered dynamically in that single surface.
 
 ## Trace Selection Contract
 

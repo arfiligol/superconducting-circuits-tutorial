@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization 的 Source Scope、Run Analysis、Trace Selection 與 Result View 契約
-version: v0.5.0
+version: v0.6.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -59,6 +59,25 @@ updated_by: docs-team
 - 顯示 scope 摘要（至少：Trace Records, Result Bundles）
 - scope 切換只影響分析資料來源，不應重跑任何分析
 
+## Dataset Profile Contract
+
+Characterization 的 analysis gating 必須以 dataset profile 為主資料來源：
+
+- 儲存位置：`DatasetRecord.source_meta.dataset_profile`
+- schema（versioned）：
+  - `schema_version`：目前 `1.0`
+  - `device_type`：`unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other`
+  - `capabilities`：字串陣列（canonical capability keys）
+  - `source`：`inferred` / `template` / `manual_override`
+
+!!! important "capability-first"
+    analysis 是否可執行必須優先由 `capabilities` 判定；
+    `device_type` 只作為模板入口（suggestion），不可取代 capability 判斷。
+
+!!! warning "backward compatibility"
+    舊 dataset 若沒有 `dataset_profile`，系統必須自動 fallback 到 `inferred` profile，
+    由現有 record metadata 推導最低必要 capabilities，避免既有流程突然全部變成不可用。
+
 ## Run Analysis Contract
 
 `Run Analysis` 採集中式執行模型：
@@ -67,6 +86,29 @@ updated_by: docs-team
 - 依 analysis 顯示對應 config fields
 - 單一 `Run Selected Analysis` 按鈕
 - 同一區塊顯示執行 log/status
+
+## Analysis Gating Contract（by capabilities）
+
+analysis registry 必須可宣告：
+
+- `required_capabilities`
+- `excluded_capabilities`
+- `recommended_for`（device_type 清單）
+
+Run Analysis UI 必須顯示每個 analysis 的狀態：
+
+- `Recommended`：capability 與資料相容性都成立，且命中 `recommended_for`
+- `Available`：capability 與資料相容性成立，但不屬於 recommended
+- `Unavailable`：任一 gating 條件不成立
+
+Unavailable 必須提供 reason（可機器組合）：
+
+- `Missing capability: <capability_key>`
+- `Excluded by capability: <capability_key>`
+- `No compatible traces in current scope`
+
+!!! note "單頁動態呈現"
+    Characterization 不拆多頁；同一頁面需同時呈現 analysis 列表狀態、reason 與 run 互動。
 
 ## Trace Selection Contract
 
