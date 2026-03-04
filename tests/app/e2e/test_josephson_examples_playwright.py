@@ -573,7 +573,7 @@ def test_port_termination_compensation_modes_in_ui(
     assert _run_and_expect_success(page) is True
     raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
     expect(raw_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
-    baseline_y22 = _read_first_plot_y_value(page)
+    baseline_raw_s = _read_first_plot_y_value(page)
     baseline_log_count = page.get_by_text(
         "Simulation completed successfully",
         exact=False,
@@ -581,8 +581,8 @@ def test_port_termination_compensation_modes_in_ui(
     page.screenshot(path=str(tmp_path / "termination_case_baseline.png"), full_page=True)
 
     _configure_termination_mode_auto(page)
-    auto_y22 = _read_first_plot_y_value(page)
-    assert auto_y22 != pytest.approx(baseline_y22, abs=1e-9)
+    auto_raw_s = _read_first_plot_y_value(page)
+    assert auto_raw_s == pytest.approx(baseline_raw_s, abs=1e-9)
     assert (
         page.get_by_text("Simulation completed successfully", exact=False).count()
         == baseline_log_count
@@ -592,9 +592,30 @@ def test_port_termination_compensation_modes_in_ui(
     ).to_be_visible(timeout=30000)
     page.screenshot(path=str(tmp_path / "termination_case_auto.png"), full_page=True)
 
+    raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
+    _select_card_option(page, raw_results_card, "Output Port", "1")
+    _select_card_option(page, raw_results_card, "Input Port", "1")
+    _select_card_option(page, raw_results_card, "Y Source", "Raw Y")
+    y_source_select = raw_results_card.get_by_role("combobox", name="Y Source")
+    assert y_source_select.input_value() == "Raw Y"
+    y_source_select.click()
+    y_source_select.press("ArrowDown")
+    y_source_select.press("Enter")
+    assert y_source_select.input_value() in {"Raw Y", "PTC Y"}
+
     _configure_termination_mode_manual_custom(page)
-    manual_y22 = _read_first_plot_y_value(page)
-    assert manual_y22 != pytest.approx(auto_y22, abs=1e-9)
+    assert y_source_select.input_value() in {"Raw Y", "PTC Y"}
+
+    raw_results_card.get_by_role("tab", name="Impedance (Z)").click()
+    _select_card_option(page, raw_results_card, "Output Port", "1")
+    _select_card_option(page, raw_results_card, "Input Port", "1")
+    _select_card_option(page, raw_results_card, "Z Source", "Raw Z")
+    z_source_select = raw_results_card.get_by_role("combobox", name="Z Source")
+    assert z_source_select.input_value() == "Raw Z"
+    z_source_select.click()
+    z_source_select.press("ArrowDown")
+    z_source_select.press("Enter")
+    assert z_source_select.input_value() in {"Raw Z", "PTC Z"}
     assert (
         page.get_by_text("Simulation completed successfully", exact=False).count()
         == baseline_log_count
@@ -605,6 +626,42 @@ def test_port_termination_compensation_modes_in_ui(
     post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
     page.screenshot(path=str(tmp_path / "termination_case_post_processing.png"), full_page=True)
+
+
+def test_post_processing_hfss_comparable_status(
+    page: Page,
+    example_cases: tuple[ExampleCase, ...],
+) -> None:
+    case = next(c for c in example_cases if c.slug == "two_port_compensation")
+    _choose_schema(page, case.schema_name)
+    _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+    _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+    _set_spinbutton_value(page, "Points", case.points)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
+    _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+    _configure_sources(page, case.sources)
+
+    assert _run_and_expect_success(page) is True
+    _configure_termination_mode_auto(page)
+
+    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    _select_card_option(page, post_input_card, "Input Y Source", "Raw Y")
+    post_input_card.get_by_role("button", name="Run Post Processing").click()
+    expect(page.get_by_text("HFSS Comparable: No", exact=False)).to_be_visible(timeout=30000)
+    expect(
+        page.get_by_text("Coordinate Transformation step is missing", exact=False).first
+    ).to_be_visible(timeout=30000)
+
+    input_source_select = post_input_card.get_by_role("combobox", name="Input Y Source")
+    input_source_select.click()
+    input_source_select.press("ArrowDown")
+    input_source_select.press("Enter")
+    assert input_source_select.input_value() in {"Raw Y", "PTC Y"}
+    _select_card_option(page, post_input_card, "Step Type", "Coordinate Transformation")
+    post_input_card.get_by_role("button", name="Add Step").click()
+    expect(page.get_by_text("Step 1 · Coordinate Transformation", exact=False).first).to_be_visible(
+        timeout=30000
+    )
 
 
 def test_post_processed_result_view_uses_trace_card_port_labels_for_matrix_names(

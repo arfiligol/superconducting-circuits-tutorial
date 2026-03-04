@@ -6,6 +6,8 @@ import numpy as np
 
 import app.pages.simulation as simulation_page
 from app.pages.simulation import (
+    _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS,
+    _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY,
     _Z0_CONTROL_CLASSES,
     _Z0_CONTROL_PROPS,
     _build_post_processed_result_payload,
@@ -99,6 +101,19 @@ def test_result_trace_options_for_complex_family_supports_s_z_y_traces() -> None
         "z": "Z",
         "y": "Y",
     }
+
+
+def test_raw_result_view_matrix_source_options_cover_only_y_and_z() -> None:
+    assert set(_RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY) == {"admittance", "impedance"}
+    assert _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY["admittance"] == {
+        "raw": "Raw Y",
+        "ptc": "PTC Y",
+    }
+    assert _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY["impedance"] == {
+        "raw": "Raw Z",
+        "ptc": "PTC Z",
+    }
+    assert _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS == {"raw_y": "Raw Y", "ptc_y": "PTC Y"}
 
 
 def test_result_port_options_follow_result_bundle() -> None:
@@ -395,6 +410,13 @@ def test_z0_control_tokens_are_shared_across_views() -> None:
     assert _Z0_CONTROL_CLASSES == "w-32"
 
 
+def test_result_family_explorer_z0_commits_on_enter_or_blur_without_value_change_render() -> None:
+    source = inspect.getsource(simulation_page._render_result_family_explorer)
+    assert 'z0_input.on("keydown.enter"' in source
+    assert 'z0_input.on("blur"' in source
+    assert "z0_input.on_value_change" not in source
+
+
 def test_post_processing_input_panel_does_not_define_save_button() -> None:
     source = inspect.getsource(simulation_page._render_post_processing_panel)
     assert "Save Post-Processed Results" not in source
@@ -404,6 +426,20 @@ def test_post_processing_panel_exposes_setup_save_load_controls() -> None:
     source = inspect.getsource(simulation_page._render_post_processing_panel)
     assert "Post-Processing Setup" in source
     assert "Save Post-Processing Setup" in source
+
+
+def test_post_processing_panel_exposes_input_source_and_hfss_fields() -> None:
+    source = inspect.getsource(simulation_page._render_post_processing_panel)
+    assert "Input Y Source" in source
+    assert '"input_y_source"' in source
+    assert '"hfss_comparable"' in source
+    assert '"hfss_not_comparable_reason"' in source
+
+
+def test_raw_result_provider_scopes_ptc_to_yz_families_only() -> None:
+    source = inspect.getsource(simulation_page._render_simulation_environment)
+    assert "view_family in _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY" in source
+    assert "return (raw_result, _result_port_options(raw_result))" in source
 
 
 def test_kron_keep_basis_uses_non_dropdown_multi_select_interaction() -> None:
