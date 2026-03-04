@@ -2708,6 +2708,49 @@ def _matrix_element_name(
     return f"{matrix_symbol}_{output_token}_{input_token}"
 
 
+def _result_axis_titles_for_family_metric(
+    *,
+    view_family: str,
+    metric: str,
+) -> tuple[str, str]:
+    """Return deterministic axis titles from the current family+metric selection."""
+    if view_family == "complex":
+        return ("Real", "Imaginary")
+
+    x_axis_title = "Frequency (GHz)"
+    if view_family == "impedance":
+        if metric == "real":
+            return (x_axis_title, "Real (Ohm)")
+        if metric == "imag":
+            return (x_axis_title, "Imaginary (Ohm)")
+        return (x_axis_title, "Magnitude (Ohm)")
+    if view_family == "admittance":
+        if metric == "real":
+            return (x_axis_title, "Real (S)")
+        if metric == "imag":
+            return (x_axis_title, "Imaginary (S)")
+        return (x_axis_title, "Magnitude (S)")
+    if view_family == "gain":
+        if metric == "gain_linear":
+            return (x_axis_title, "Gain (linear)")
+        return (x_axis_title, "Gain (dB)")
+    if view_family == "s":
+        if metric == "magnitude_db":
+            return (x_axis_title, "Magnitude (dB)")
+        if metric == "phase_deg":
+            return (x_axis_title, "Phase (deg)")
+        if metric == "real":
+            return (x_axis_title, "Real")
+        if metric == "imag":
+            return (x_axis_title, "Imaginary")
+        return (x_axis_title, "Magnitude (linear)")
+    if view_family == "qe":
+        return (x_axis_title, "Quantum Efficiency")
+    if view_family == "cm":
+        return (x_axis_title, "Commutation")
+    return (x_axis_title, "Value")
+
+
 def _build_simulation_result_figure(
     result: SimulationResult,
     view_family: str,
@@ -2725,8 +2768,6 @@ def _build_simulation_result_figure(
     """Build the selected simulation result figure from the cached result bundle."""
     freq_values = result.frequencies_ghz
     fig = go.Figure()
-    x_axis_title = "Frequency (GHz)"
-    y_axis_title = "Value"
     title = "Simulation Result"
     single_selection: _ResultTraceSelection = {
         "trace": trace,
@@ -2747,8 +2788,6 @@ def _build_simulation_result_figure(
         selected_input_mode: tuple[int, ...],
         selected_input_port: int,
     ) -> str:
-        nonlocal x_axis_title, y_axis_title
-
         mode_suffix = _format_export_suffix(selected_output_mode, selected_input_mode)
         s_name = _matrix_element_name(
             matrix_symbol="S",
@@ -2791,7 +2830,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Magnitude (dB)"
                 trace_title = f"{s_label} Magnitude (dB)"
             elif metric == "phase_deg":
                 y_values = result.get_mode_s_parameter_phase_deg(
@@ -2800,7 +2838,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Phase (deg)"
                 trace_title = f"{s_label} Phase"
             elif metric == "real":
                 y_values = result.get_mode_s_parameter_real(
@@ -2809,7 +2846,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Real"
                 trace_title = f"{s_label} Real Part"
             elif metric == "imag":
                 y_values = result.get_mode_s_parameter_imag(
@@ -2818,7 +2854,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Imaginary"
                 trace_title = f"{s_label} Imaginary Part"
             else:
                 y_values = result.get_mode_s_parameter_magnitude(
@@ -2827,7 +2862,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Magnitude (linear)"
                 trace_title = f"{s_label} Magnitude"
 
             fig.add_trace(
@@ -2849,7 +2883,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Gain (linear)"
                 trace_title = f"{gain_label} (linear)"
             else:
                 y_values = result.get_mode_gain_db(
@@ -2858,7 +2891,6 @@ def _build_simulation_result_figure(
                     selected_input_mode,
                     selected_input_port,
                 )
-                y_axis_title = "Gain (dB)"
                 trace_title = f"{gain_label} (dB)"
 
             fig.add_trace(
@@ -2888,13 +2920,10 @@ def _build_simulation_result_figure(
             y_values = _complex_component_series(z_values, metric)
             if metric == "real":
                 trace_title = f"{z_label} Real Part"
-                y_axis_title = "Real (Ohm)"
             elif metric == "imag":
                 trace_title = f"{z_label} Imaginary Part"
-                y_axis_title = "Imaginary (Ohm)"
             else:
                 trace_title = f"{z_label} Magnitude"
-                y_axis_title = "Magnitude (Ohm)"
 
             fig.add_trace(
                 go.Scatter(
@@ -2923,13 +2952,10 @@ def _build_simulation_result_figure(
             y_values = _complex_component_series(y_values_complex, metric)
             if metric == "real":
                 trace_title = f"{y_label} Real Part"
-                y_axis_title = "Real (S)"
             elif metric == "imag":
                 trace_title = f"{y_label} Imaginary Part"
-                y_axis_title = "Imaginary (S)"
             else:
                 trace_title = f"{y_label} Magnitude"
-                y_axis_title = "Magnitude (S)"
 
             fig.add_trace(
                 go.Scatter(
@@ -2959,7 +2985,6 @@ def _build_simulation_result_figure(
                     selected_input_port,
                 )
                 trace_title = f"QE {selected_output_port}{selected_input_port}{mode_suffix}"
-            y_axis_title = "Quantum Efficiency"
             fig.add_trace(
                 go.Scatter(
                     x=freq_values,
@@ -2974,7 +2999,6 @@ def _build_simulation_result_figure(
         if view_family == "cm":
             y_values = result.get_mode_cm(selected_output_mode, selected_output_port)
             trace_title = f"CM{selected_output_port}{_format_export_suffix(selected_output_mode)}"
-            y_axis_title = "Commutation"
             fig.add_trace(
                 go.Scatter(
                     x=freq_values,
@@ -3042,8 +3066,6 @@ def _build_simulation_result_figure(
                     ),
                 )
             )
-            x_axis_title = "Real"
-            y_axis_title = "Imaginary"
             return trace_title
 
         raise ValueError(f"Unsupported result view family: {view_family}")
@@ -3099,11 +3121,17 @@ def _build_simulation_result_figure(
     else:
         raise ValueError(f"Unsupported result view family: {view_family}")
 
-    theme_layout = get_plotly_layout(dark=dark_mode)
+    x_axis_title, y_axis_title = _result_axis_titles_for_family_metric(
+        view_family=view_family,
+        metric=metric,
+    )
+    theme_layout = dict(get_plotly_layout(dark=dark_mode))
+    xaxis_theme = dict(theme_layout.pop("xaxis", {}))
+    yaxis_theme = dict(theme_layout.pop("yaxis", {}))
     fig.update_layout(
         title=title,
-        xaxis_title=x_axis_title,
-        yaxis_title=y_axis_title,
+        xaxis={**xaxis_theme, "title": {"text": x_axis_title}},
+        yaxis={**yaxis_theme, "title": {"text": y_axis_title}},
         margin=dict(l=40, r=20, t=40, b=40),
         showlegend=True,
         hovermode="closest" if view_family == "complex" else "x unified",
