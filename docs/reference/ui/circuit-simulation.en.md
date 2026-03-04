@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.8.0
-last_updated: 2026-03-04
+version: v0.8.1
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -47,6 +47,22 @@ This page defines the formal `/simulation` UI contract.
 !!! note "Result-view interactions must not rerun execution"
     Changes inside the result view (family/metric switches, adding or removing trace cards,
     trace selector edits) must only update the shared plot and must not rerun solver or post-processing.
+
+### Result-view title and axis synchronization contract
+
+After any `family` / `metric` / `trace` change, the chart must update in sync:
+
+- `figure title`
+- `y-axis title` (including unit)
+
+!!! important "No stale labels"
+    The chart must not keep y-axis/title text from the previously selected family/metric.
+    At minimum, the `Y -> Z -> Y` switching loop must restore the correct y-axis label each time.
+
+Minimum requirement for `Impedance (Z)` and `Admittance (Y)`:
+
+- `Z + Real/Imaginary/Magnitude` -> `Real (Ohm)` / `Imaginary (Ohm)` / `Magnitude (Ohm)`
+- `Y + Real/Imaginary/Magnitude` -> `Real (S)` / `Imaginary (S)` / `Magnitude (S)`
 
 ### Raw Simulation Results family semantics (normative)
 

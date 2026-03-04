@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.8.0
-last_updated: 2026-03-04
+version: v0.8.1
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -47,6 +47,22 @@ updated_by: docs-team
 !!! note "Result View 互動不重跑"
     在 Result View 內切換 family/metric、增減 trace card、調整 trace selector，
     僅更新同一張 shared plot，不得觸發 solver 或 post-processing rerun。
+
+### Result View 標題與軸標同步契約
+
+任何 `family` / `metric` / `trace` 切換後，圖表必須同步更新：
+
+- `figure title`
+- `y-axis title`（含單位）
+
+!!! important "禁止 stale label"
+    不得出現沿用上一個 family/metric 的軸標題。
+    至少需滿足 `Y -> Z -> Y` 循環切換後，y-axis 標示可正確回復。
+
+`Impedance (Z)` / `Admittance (Y)` 最低要求：
+
+- `Z + Real/Imaginary/Magnitude` -> `Real (Ohm)` / `Imaginary (Ohm)` / `Magnitude (Ohm)`
+- `Y + Real/Imaginary/Magnitude` -> `Real (S)` / `Imaginary (S)` / `Magnitude (S)`
 
 ### Raw Simulation Results Family 語義（固定）
 
