@@ -135,6 +135,18 @@ _TERMINATION_MODE_OPTIONS = {
     "auto": "Auto (Schema infer)",
     "manual": "Manual",
 }
+_RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY = {
+    "admittance": {"raw": "Raw Y", "ptc": "PTC Y"},
+    "impedance": {"raw": "Raw Z", "ptc": "PTC Z"},
+}
+_RAW_RESULT_MATRIX_SOURCE_LABEL_BY_FAMILY = {
+    "admittance": "Y Source",
+    "impedance": "Z Source",
+}
+_POST_PROCESS_INPUT_Y_SOURCE_OPTIONS = {
+    "raw_y": "Raw Y",
+    "ptc_y": "PTC Y",
+}
 _TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
@@ -772,6 +784,23 @@ def _first_option_key(options: dict[str, str]) -> str:
     return next(iter(options))
 
 
+def _resolve_option_key(options: dict[str, str], value: object) -> str:
+    """Resolve a select value to one option key, accepting either key or label."""
+    if not options:
+        return ""
+    first_key = _first_option_key(options)
+    if value is None:
+        return first_key
+    text = str(value).strip()
+    if text in options:
+        return text
+    normalized = text.casefold()
+    for key, label in options.items():
+        if normalized == str(label).strip().casefold():
+            return key
+    return first_key
+
+
 def _coerce_int_value(value: object, default: int) -> int:
     """Convert a dynamic UI value to int with a safe fallback."""
     try:
@@ -1072,13 +1101,15 @@ def _render_result_family_explorer(
     container: Any,
     view_state: dict[str, Any],
     family_options: dict[str, str],
-    result_provider: Callable[[float], tuple[SimulationResult, dict[int, str]] | None],
+    result_provider: Callable[[float, str, str], tuple[SimulationResult, dict[int, str]] | None],
     header_message: str,
     empty_message: str,
     save_button_label: str | None = None,
     on_save_click: Callable[[], None] | None = None,
     save_enabled: bool = True,
     context_line: str | None = None,
+    family_source_options: dict[str, dict[str, str]] | None = None,
+    family_source_labels: dict[str, str] | None = None,
 ) -> None:
     """Render one family/metric/trace-card result explorer into a container."""
 
@@ -1099,9 +1130,49 @@ def _render_result_family_explorer(
             if context_line:
                 ui.label(context_line).classes("text-xs text-muted mb-2")
 
+            family_tabs = list(family_options.items())
+            family_keys = {family for family, _ in family_tabs}
+            family_label_to_key = {label.casefold(): family for family, label in family_tabs}
+            fallback_family = family_tabs[0][0] if family_tabs else "s"
+            view_family = str(view_state.get("family", fallback_family))
+            if view_family not in family_keys:
+                view_family = fallback_family
+                view_state["family"] = view_family
+
+            source_options_by_family = (
+                dict(family_source_options) if isinstance(family_source_options, dict) else {}
+            )
+            source_labels_by_family = (
+                dict(family_source_labels) if isinstance(family_source_labels, dict) else {}
+            )
+            source_options = dict(source_options_by_family.get(view_family, {}))
+            selected_source = ""
+            if source_options:
+                family_sources_state = view_state.get("family_sources")
+                if not isinstance(family_sources_state, dict):
+                    family_sources_state = {}
+                    view_state["family_sources"] = family_sources_state
+                selected_source = _resolve_option_key(
+                    source_options,
+                    family_sources_state.get(view_family, _first_option_key(source_options)),
+                )
+                if selected_source not in source_options:
+                    selected_source = _first_option_key(source_options)
+                    family_sources_state[view_family] = selected_source
+
+            metric_options = _result_metric_options_for_family(view_family)
+            metric_key = str(view_state.get("metric", ""))
+            if metric_key not in metric_options:
+                metric_key = _first_option_key(metric_options)
+                view_state["metric"] = metric_key
+
             z0_value = float(view_state.get("z0", 50.0) or 50.0)
             try:
-                resolved_payload = result_provider(z0_value)
+                resolved_payload = result_provider(
+                    z0_value,
+                    view_family,
+                    selected_source,
+                )
             except Exception as exc:
                 with ui.column().classes("w-full items-center justify-center py-10"):
                     ui.icon("error", size="lg").classes("text-danger mb-3")
@@ -1122,21 +1193,6 @@ def _render_result_family_explorer(
                     "text-sm text-warning"
                 )
                 return
-
-            family_tabs = list(family_options.items())
-            family_keys = {family for family, _ in family_tabs}
-            family_label_to_key = {label.casefold(): family for family, label in family_tabs}
-            fallback_family = family_tabs[0][0] if family_tabs else "s"
-            view_family = str(view_state.get("family", fallback_family))
-            if view_family not in family_keys:
-                view_family = fallback_family
-                view_state["family"] = view_family
-
-            metric_options = _result_metric_options_for_family(view_family)
-            metric_key = str(view_state.get("metric", ""))
-            if metric_key not in metric_options:
-                metric_key = _first_option_key(metric_options)
-                view_state["metric"] = metric_key
 
             trace_options = _result_trace_options_for_family(view_family)
             normalized_traces: list[_ResultTraceSelection] = []
@@ -1181,6 +1237,17 @@ def _render_result_family_explorer(
                 with ui.tabs(value=view_family).classes("mb-1") as family_switch:
                     for family_key, family_label in family_tabs:
                         ui.tab(family_key, label=family_label)
+                source_select = None
+                if source_options:
+                    source_select = (
+                        ui.select(
+                            label=source_labels_by_family.get(view_family, "Source"),
+                            options=source_options,
+                            value=selected_source,
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-52")
+                    )
                 metric_select = (
                     ui.select(label="Metric", options=metric_options, value=metric_key)
                     .props("dense outlined options-dense")
@@ -1220,13 +1287,35 @@ def _render_result_family_explorer(
                 view_state["metric"] = str(e.value or _first_option_key(metric_options))
                 render()
 
-            def _on_z0_change(e: Any) -> None:
-                view_state["z0"] = float(e.value or 50.0)
+            def _on_source_change(e: Any) -> None:
+                if not source_options:
+                    return
+                family_sources_state = view_state.get("family_sources")
+                if not isinstance(family_sources_state, dict):
+                    family_sources_state = {}
+                    view_state["family_sources"] = family_sources_state
+                selected = _resolve_option_key(source_options, e.value)
+                family_sources_state[view_family] = selected
+                render()
+
+            def _commit_z0(raw_value: Any) -> None:
+                try:
+                    resolved = float(raw_value)
+                except Exception:
+                    return
+                if resolved <= 0:
+                    return
+                if float(view_state.get("z0", 50.0) or 50.0) == resolved:
+                    return
+                view_state["z0"] = resolved
                 render()
 
             family_switch.on_value_change(_on_family_change)
             metric_select.on_value_change(_on_metric_change)
-            z0_input.on_value_change(_on_z0_change)
+            if source_select is not None:
+                source_select.on_value_change(_on_source_change)
+            z0_input.on("keydown.enter", lambda _e: _commit_z0(z0_input.value))
+            z0_input.on("blur", lambda _e: _commit_z0(z0_input.value))
 
             with ui.row().classes("w-full items-center gap-3 mt-1"):
                 ui.button(
@@ -1436,7 +1525,10 @@ def _estimate_port_ground_cap_weights(
 
 def _render_post_processing_panel(
     *,
-    result: SimulationResult,
+    raw_result: SimulationResult,
+    ptc_result: SimulationResult | None = None,
+    initial_input_y_source: str = "raw_y",
+    on_input_y_source_change: Callable[[str], None] | None = None,
     circuit_definition: CircuitDefinition | None = None,
     schema_id: int | None = None,
     schema_name: str | None = None,
@@ -1456,7 +1548,17 @@ def _render_post_processing_panel(
         if on_result is not None:
             on_result(sweep, flow_spec)
 
-    port_options = _result_port_options(result)
+    input_y_source_options = {"raw_y": _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["raw_y"]}
+    if isinstance(ptc_result, SimulationResult):
+        input_y_source_options["ptc_y"] = _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["ptc_y"]
+    resolved_input_y_source = _resolve_option_key(input_y_source_options, initial_input_y_source)
+
+    def _active_input_result(source: str) -> SimulationResult:
+        if source == "ptc_y" and isinstance(ptc_result, SimulationResult):
+            return ptc_result
+        return raw_result
+
+    port_options = _result_port_options(raw_result)
     default_ports = list(port_options)
     default_port_a = default_ports[0] if default_ports else None
     default_port_b = default_ports[1] if len(default_ports) > 1 else default_port_a
@@ -1517,6 +1619,15 @@ def _render_post_processing_panel(
                 if not selected_post_setup_id:
                     delete_post_setup_button.disable()
             with ui.row().classes("w-full items-end gap-3 flex-wrap"):
+                input_y_source_select = (
+                    ui.select(
+                        label="Input Y Source",
+                        options=input_y_source_options,
+                        value=resolved_input_y_source,
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-44")
+                )
                 mode_filter_select = (
                     ui.select(
                         label="Mode Filter",
@@ -1529,7 +1640,15 @@ def _render_post_processing_panel(
                 mode_select = (
                     ui.select(
                         label="Mode",
-                        options=_post_process_mode_options(result, "base"),
+                        options=_post_process_mode_options(
+                            _active_input_result(
+                                _resolve_option_key(
+                                    input_y_source_options,
+                                    input_y_source_select.value,
+                                )
+                            ),
+                            "base",
+                        ),
                     )
                     .props("dense outlined options-dense")
                     .classes("w-52")
@@ -1612,6 +1731,10 @@ def _render_post_processing_panel(
 
     def collect_current_post_setup_payload() -> dict[str, Any]:
         return {
+            "input_y_source": _resolve_option_key(
+                input_y_source_options,
+                input_y_source_select.value,
+            ),
             "mode_filter": str(mode_filter_select.value or "base"),
             "mode_token": str(mode_select.value or ""),
             "reference_impedance_ohm": float(z0_input.value or 50.0),
@@ -1627,6 +1750,13 @@ def _render_post_processing_panel(
 
         applying_saved_post_setup = True
         try:
+            desired_input_source = _resolve_option_key(
+                input_y_source_options,
+                payload.get("input_y_source", "raw_y"),
+            )
+            input_y_source_select.value = desired_input_source
+            if on_input_y_source_change is not None:
+                on_input_y_source_change(desired_input_source)
             mode_filter_select.value = str(payload.get("mode_filter", "base"))
             refresh_mode_selector()
             desired_mode_token = str(payload.get("mode_token", mode_select.value or ""))
@@ -1773,7 +1903,7 @@ def _render_post_processing_panel(
         ui.notify("Deleted post-processing setup.", type="positive")
 
     def _pipeline_labels_before_step(step_id: int | None = None) -> tuple[str, ...]:
-        labels = tuple(str(port) for port in sorted(result.available_port_indices))
+        labels = tuple(str(port) for port in sorted(raw_result.available_port_indices))
         if not labels:
             return labels
 
@@ -2100,7 +2230,12 @@ def _render_post_processing_panel(
                             ).classes("text-xs text-muted")
 
     def refresh_mode_selector() -> None:
-        options = _post_process_mode_options(result, str(mode_filter_select.value or "base"))
+        options = _post_process_mode_options(
+            _active_input_result(
+                _resolve_option_key(input_y_source_options, input_y_source_select.value)
+            ),
+            str(mode_filter_select.value or "base"),
+        )
         mode_select.options = options
         if not options:
             mode_select.value = None
@@ -2129,6 +2264,9 @@ def _render_post_processing_panel(
     def run_post_processing() -> None:
         output_container.clear()
         try:
+            input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
+            input_y_source_select.value = input_source
+            active_result = _active_input_result(input_source)
             mode_token = str(mode_select.value or "").strip()
             if not mode_token:
                 raise ValueError("Please select one mode before running post-processing.")
@@ -2138,7 +2276,7 @@ def _render_post_processing_panel(
                 raise ValueError("Z0 must be positive.")
 
             sweep = build_port_y_sweep(
-                result=result,
+                result=active_result,
                 mode=mode,
                 reference_impedance_ohm=z0,
             )
@@ -2256,28 +2394,56 @@ def _render_post_processing_panel(
                     }
                 )
 
+            has_enabled_coordinate_transform = any(
+                bool(step.get("enabled", True))
+                and str(step.get("type", "coordinate_transform")) == "coordinate_transform"
+                for step in step_sequence
+            )
+            hfss_not_comparable_reasons: list[str] = []
+            if not isinstance(ptc_result, SimulationResult):
+                hfss_not_comparable_reasons.append("Port Termination Compensation is disabled.")
+            if input_source != "ptc_y":
+                hfss_not_comparable_reasons.append("Input Y Source is not PTC Y.")
+            if not has_enabled_coordinate_transform:
+                hfss_not_comparable_reasons.append("Coordinate Transformation step is missing.")
+            hfss_comparable = not hfss_not_comparable_reasons
+            hfss_not_comparable_reason = (
+                "; ".join(hfss_not_comparable_reasons) if hfss_not_comparable_reasons else ""
+            )
+
             flow_spec: dict[str, Any] = {
+                "input_y_source": input_source,
                 "mode_filter": str(mode_filter_select.value or "base"),
                 "mode_token": SimulationResult.mode_token(mode),
                 "reference_impedance_ohm": z0,
                 "steps": flow_steps,
+                "hfss_comparable": hfss_comparable,
+                "hfss_not_comparable_reason": hfss_not_comparable_reason,
             }
             emit_result(sweep, flow_spec)
             render_step_cards.refresh()
 
             log_info(
                 "Post Processing completed: "
-                f"mode={sweep.mode}, dim={sweep.dimension}, source={sweep.source_kind}."
+                f"mode={sweep.mode}, dim={sweep.dimension}, source={sweep.source_kind}, "
+                f"input={input_source}, hfss_comparable={hfss_comparable}."
             )
 
             with output_container:
                 ui.label("Pipeline output ready. Post Processing Result View is updated.").classes(
                     "text-sm text-positive"
                 )
+                if hfss_comparable:
+                    ui.label("HFSS Comparable: Yes").classes("text-xs text-positive")
+                else:
+                    ui.label(f"HFSS Comparable: No ({hfss_not_comparable_reason})").classes(
+                        "text-xs text-warning"
+                    )
                 ui.label(
                     f"Basis labels: {', '.join(sweep.labels)} | "
                     f"dim={sweep.dimension} | "
-                    f"mode={SimulationResult.mode_token(sweep.mode)}"
+                    f"mode={SimulationResult.mode_token(sweep.mode)} | "
+                    f"input={input_source}"
                 ).classes("text-xs text-muted")
         except Exception as exc:
             invalidate_processed_state()
@@ -2294,11 +2460,21 @@ def _render_post_processing_panel(
         if isinstance(selected_setup_record, dict):
             apply_saved_post_setup(selected_setup_record)
 
+    def _on_input_y_source_change() -> None:
+        resolved_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
+        input_y_source_select.value = resolved_source
+        if on_input_y_source_change is not None:
+            on_input_y_source_change(resolved_source)
+        invalidate_processed_state()
+        refresh_mode_selector()
+
+    input_y_source_select.on_value_change(lambda _e: _on_input_y_source_change())
     mode_filter_select.on_value_change(
         lambda _e: (invalidate_processed_state(), refresh_mode_selector())
     )
     mode_select.on_value_change(lambda _e: invalidate_processed_state())
-    z0_input.on_value_change(lambda _e: invalidate_processed_state())
+    z0_input.on("keydown.enter", lambda _e: invalidate_processed_state())
+    z0_input.on("blur", lambda _e: invalidate_processed_state())
     add_step_button.on_click(lambda _e: add_step())
     run_button.on("click", lambda _e: run_post_processing())
 
@@ -2527,11 +2703,7 @@ def _matrix_element_name(
     labels_are_plain_numeric = (not port_label_by_index) or all(
         str(label).strip().isdigit() for label in port_label_by_index.values()
     )
-    if (
-        labels_are_plain_numeric
-        and output_token.isdigit()
-        and input_token.isdigit()
-    ):
+    if labels_are_plain_numeric and output_token.isdigit() and input_token.isdigit():
         return f"{matrix_symbol}{output_token}{input_token}"
     return f"{matrix_symbol}_{output_token}_{input_token}"
 
@@ -3407,9 +3579,9 @@ def _render_simulation_environment():
                 ).classes("text-xs text-muted mb-2")
 
                 with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
-                    ui.label(
-                        "Metadata editing is centralized in Pipeline Dashboard."
-                    ).classes("text-xs text-muted")
+                    ui.label("Metadata editing is centralized in Pipeline Dashboard.").classes(
+                        "text-xs text-muted"
+                    )
                     ui.button(
                         "Edit in Dashboard",
                         icon="dashboard",
@@ -3459,6 +3631,10 @@ def _render_simulation_environment():
             "metric": "magnitude_linear",
             "z0": 50.0,
             "traces": [],
+            "family_sources": {
+                family: _first_option_key(options)
+                for family, options in _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY.items()
+            },
         }
         post_view_state: dict[str, Any] = {
             "family": "s",
@@ -3466,6 +3642,7 @@ def _render_simulation_environment():
             "z0": 50.0,
             "traces": [],
         }
+        post_processing_input_state: dict[str, str] = {"input_y_source": "raw_y"}
         available_setup_ports = sorted(active_circuit_def.available_port_indices)
         termination_inferred_resistance_ohm_by_port: dict[int, float] = {
             port: _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
@@ -3617,19 +3794,25 @@ def _render_simulation_environment():
                 f"enabled, mode={mode}, ports={selected_ports or []}, values={'; '.join(details)}."
             )
 
-        def _effective_simulation_result(
-            *,
-            reference_impedance_ohm: float,
-        ) -> SimulationResult | None:
+        def _raw_simulation_result() -> SimulationResult | None:
             result = latest_simulation_result.get("result")
             if not isinstance(result, SimulationResult):
                 return None
+            return result
+
+        def _ptc_simulation_result(
+            *,
+            reference_impedance_ohm: float,
+        ) -> SimulationResult | None:
+            raw_result = _raw_simulation_result()
+            if not isinstance(raw_result, SimulationResult):
+                return None
             plan = _resolved_termination_plan()
             if not bool(plan.get("enabled", False)):
-                return result
+                return None
             try:
                 return compensate_simulation_result_port_terminations(
-                    result,
+                    raw_result,
                     resistance_ohm_by_port=dict(plan.get("resistance_ohm_by_port", {})),
                     reference_impedance_ohm=reference_impedance_ohm,
                 )
@@ -3638,26 +3821,37 @@ def _render_simulation_environment():
                 if termination_last_warning["message"] != message:
                     termination_last_warning["message"] = message
                     append_status("warning", message)
-                return result
+                return raw_result
 
         def _render_post_processing_input_panel() -> None:
             if post_processing_container is None:
                 return
             post_processing_container.clear()
-            result_for_post_processing = _effective_simulation_result(
-                reference_impedance_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
-            )
-            if not isinstance(result_for_post_processing, SimulationResult):
+            raw_result = _raw_simulation_result()
+            if not isinstance(raw_result, SimulationResult):
                 with post_processing_container:
                     ui.label(
                         "Run a simulation first, then apply port-level coordinate transforms "
                         "and Kron reduction here."
                     ).classes("text-sm text-muted")
                 return
+            ptc_result = _ptc_simulation_result(
+                reference_impedance_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+            )
 
             with post_processing_container:
                 _render_post_processing_panel(
-                    result=result_for_post_processing,
+                    raw_result=raw_result,
+                    ptc_result=ptc_result,
+                    initial_input_y_source=str(
+                        post_processing_input_state.get("input_y_source", "raw_y")
+                    ),
+                    on_input_y_source_change=(
+                        lambda source: post_processing_input_state.__setitem__(
+                            "input_y_source",
+                            str(source),
+                        )
+                    ),
                     circuit_definition=latest_circuit_definition_ref["definition"],
                     schema_id=active_record_id,
                     schema_name=active_record.name,
@@ -3667,16 +3861,28 @@ def _render_simulation_environment():
 
         def _raw_result_provider(
             _reference_impedance: float,
+            view_family: str,
+            source_token: str,
         ) -> tuple[SimulationResult, dict[int, str]] | None:
-            result = _effective_simulation_result(
-                reference_impedance_ohm=float(_reference_impedance),
-            )
-            if not isinstance(result, SimulationResult):
+            raw_result = _raw_simulation_result()
+            if not isinstance(raw_result, SimulationResult):
                 return None
-            return (result, _result_port_options(result))
+            use_ptc_matrix_source = (
+                view_family in _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY
+                and str(source_token or "raw") == "ptc"
+            )
+            if use_ptc_matrix_source:
+                ptc_result = _ptc_simulation_result(
+                    reference_impedance_ohm=float(_reference_impedance),
+                )
+                if isinstance(ptc_result, SimulationResult):
+                    return (ptc_result, _result_port_options(ptc_result))
+            return (raw_result, _result_port_options(raw_result))
 
         def _post_processed_result_provider(
             reference_impedance: float,
+            _view_family: str,
+            _source_token: str,
         ) -> tuple[SimulationResult, dict[int, str]] | None:
             sweep = latest_pipeline_result.get("sweep")
             if not isinstance(sweep, PortMatrixSweep):
@@ -3696,6 +3902,8 @@ def _render_simulation_environment():
                 view_state=raw_view_state,
                 family_options=_RESULT_FAMILY_OPTIONS,
                 result_provider=_raw_result_provider,
+                family_source_options=_RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY,
+                family_source_labels=_RAW_RESULT_MATRIX_SOURCE_LABEL_BY_FAMILY,
                 header_message="Raw quick-inspect view from latest simulation run.",
                 empty_message="Run simulation to inspect raw result traces.",
                 save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
@@ -3738,10 +3946,17 @@ def _render_simulation_environment():
                     typed_flow_spec = None
                 if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
                     step_count = len(typed_flow_spec.get("steps", []))
+                    input_source = str(typed_flow_spec.get("input_y_source", "raw_y"))
+                    hfss_comparable = bool(typed_flow_spec.get("hfss_comparable", False))
+                    hfss_reason = str(typed_flow_spec.get("hfss_not_comparable_reason", "")).strip()
+                    hfss_token = "HFSS Comparable=Yes" if hfss_comparable else "HFSS Comparable=No"
+                    if not hfss_comparable and hfss_reason:
+                        hfss_token = f"{hfss_token} ({hfss_reason})"
                     context_line = (
                         f"Pipeline steps applied: {step_count} | "
                         f"mode={SimulationResult.mode_token(typed_sweep.mode)} | "
-                        f"basis={', '.join(typed_sweep.labels)}"
+                        f"basis={', '.join(typed_sweep.labels)} | "
+                        f"input={input_source} | {hfss_token}"
                     )
             _render_result_family_explorer(
                 container=post_processing_results_container,
