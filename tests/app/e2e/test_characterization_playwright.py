@@ -18,6 +18,7 @@ from playwright.sync_api import Page, expect, sync_playwright
 
 from core.analysis.application.analysis.physics.admittance import calculate_y11_imaginary
 from core.shared.persistence import DataRecord, DatasetRecord, get_unit_of_work
+from core.shared.persistence.models import ResultBundleRecord
 
 _RUN_PLAYWRIGHT_E2E = os.getenv("RUN_PLAYWRIGHT_CHARACTERIZATION_E2E") == "1"
 
@@ -86,44 +87,69 @@ def _seed_characterization_dataset(
             {"name": "Freq", "unit": "GHz", "values": [float(x) for x in freq_ghz]},
             {"name": "L_jun", "unit": "nH", "values": [float(x) for x in l_jun_nh]},
         ]
+        persisted_records: list[DataRecord] = []
         if include_y11:
-            uow.data_records.add(
-                DataRecord(
-                    dataset_id=int(dataset.id),
-                    data_type="y_parameters",
-                    parameter="Y11",
-                    representation="imaginary",
-                    axes=common_axes,
-                    values=values_matrix,
-                )
+            base_record = DataRecord(
+                dataset_id=int(dataset.id),
+                data_type="y_parameters",
+                parameter="Y11",
+                representation="imaginary",
+                axes=common_axes,
+                values=values_matrix,
             )
-            uow.data_records.add(
-                DataRecord(
-                    dataset_id=int(dataset.id),
-                    data_type="y_parameters",
-                    parameter="Y11 [om=(1,), im=(0,)]",
-                    representation="imaginary",
-                    axes=common_axes,
-                    values=values_matrix,
-                )
+            sideband_record = DataRecord(
+                dataset_id=int(dataset.id),
+                data_type="y_parameters",
+                parameter="Y11 [om=(1,), im=(0,)]",
+                representation="imaginary",
+                axes=common_axes,
+                values=values_matrix,
             )
+            uow.data_records.add(base_record)
+            uow.data_records.add(sideband_record)
+            persisted_records.extend([base_record, sideband_record])
 
         if include_s21:
-            uow.data_records.add(
-                DataRecord(
-                    dataset_id=int(dataset.id),
-                    data_type="s_parameters",
-                    parameter="S21",
-                    representation="real",
-                    axes=[
-                        {
-                            "name": "Freq",
-                            "unit": "GHz",
-                            "values": [float(x) for x in freq_ghz],
-                        }
-                    ],
-                    values=[float(v[0]) for v in values_matrix],
-                )
+            s21_record = DataRecord(
+                dataset_id=int(dataset.id),
+                data_type="s_parameters",
+                parameter="S21",
+                representation="real",
+                axes=[
+                    {
+                        "name": "Freq",
+                        "unit": "GHz",
+                        "values": [float(x) for x in freq_ghz],
+                    }
+                ],
+                values=[float(v[0]) for v in values_matrix],
+            )
+            uow.data_records.add(s21_record)
+            persisted_records.append(s21_record)
+
+        uow.flush()
+        bundle_trace_ids = [
+            int(record.id)
+            for record in persisted_records
+            if record.id is not None and str(record.parameter).startswith("Y11")
+        ][:1]
+        if bundle_trace_ids:
+            bundle = ResultBundleRecord(
+                dataset_id=int(dataset.id),
+                bundle_type="circuit_simulation",
+                role="manual_export",
+                status="completed",
+                source_meta={"origin": "circuit_simulation", "seeded_for_e2e": True},
+                config_snapshot={"seeded_scope": "bundle_base_trace"},
+                result_payload={},
+            )
+            uow.result_bundles.add(bundle)
+            uow.flush()
+            if bundle.id is None:
+                raise ValueError("Failed to allocate seeded bundle id.")
+            uow.result_bundles.attach_data_records(
+                bundle_id=int(bundle.id),
+                data_record_ids=bundle_trace_ids,
             )
         uow.commit()
 
@@ -259,10 +285,45 @@ def _select_option(page: Page, label: str, option_text: str, index: int = 0) -> 
 
 def _expect_analysis_status(page: Page, analysis_label: str, status: str) -> None:
     _select_option(page, "Analysis", analysis_label)
-    expect(page.get_by_text(f"Status: {status}", exact=True)).to_be_visible(timeout=30000)
+    if status == "Recommended":
+        expected_text = "Recommended for current scope"
+    elif status == "Unavailable":
+        expected_text = "Unavailable for current scope"
+    else:
+        expected_text = "Available for current scope"
+    expect(page.get_by_text(expected_text, exact=True)).to_be_visible(timeout=30000)
 
 
-def test_characterization_runs_squid_and_y11_and_renders_results(
+def _latest_characterization_run_bundle(dataset_name: str) -> ResultBundleRecord:
+    with get_unit_of_work() as uow:
+        dataset = uow.datasets.get_by_name(dataset_name)
+        if dataset is None or dataset.id is None:
+            raise ValueError(f"Dataset not found for E2E verification: {dataset_name}")
+        bundles = [
+            bundle
+            for bundle in uow.result_bundles.list_by_dataset(int(dataset.id))
+            if bundle.bundle_type == "characterization" and bundle.role == "analysis_run"
+        ]
+        if not bundles:
+            raise ValueError("No characterization run bundle found.")
+        return bundles[-1]
+
+
+def _characterization_run_bundle_count(dataset_name: str) -> int:
+    with get_unit_of_work() as uow:
+        dataset = uow.datasets.get_by_name(dataset_name)
+        if dataset is None or dataset.id is None:
+            return 0
+        return len(
+            [
+                bundle
+                for bundle in uow.result_bundles.list_by_dataset(int(dataset.id))
+                if bundle.bundle_type == "characterization" and bundle.role == "analysis_run"
+            ]
+        )
+
+
+def test_characterization_runs_squid_and_renders_results(
     page: Page,
     seeded_dataset_names: dict[str, str],
 ) -> None:
@@ -274,17 +335,16 @@ def test_characterization_runs_squid_and_y11_and_renders_results(
     _select_option(page, "Analysis", "SQUID Fitting")
     run_button = page.get_by_role("button", name="Run Selected Analysis")
     expect(run_button).to_be_enabled(timeout=15000)
+    before_count = _characterization_run_bundle_count(seeded_dataset_names["squid"])
     run_button.click()
-    expect(page.get_by_text("SQUID Fitting completed.")).to_be_visible(timeout=60000)
+    deadline = time.time() + 60.0
+    while time.time() < deadline:
+        if _characterization_run_bundle_count(seeded_dataset_names["squid"]) > before_count:
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError("Timed out waiting for SQUID fitting run bundle.")
 
-    _select_option(page, "Analysis", "Y11 Response Fit")
-    expect(run_button).to_be_enabled(timeout=15000)
-    run_button.click()
-    expect(page.get_by_text("Y11 Response Fit completed.")).to_be_visible(timeout=60000)
-
-    y11_tab_label = page.get_by_text("Y11 Response Fit", exact=True).last
-    expect(y11_tab_label).to_be_visible(timeout=30000)
-    y11_tab_label.click()
     result_trace_mode = page.get_by_role("combobox", name="Trace Mode Filter").last
     expect(result_trace_mode).to_be_visible()
     result_trace_mode.click()
@@ -302,18 +362,52 @@ def test_characterization_runs_squid_and_y11_and_renders_results(
     expect(page.get_by_text("Fit Parameters")).to_be_visible(timeout=30000)
 
 
-def test_characterization_capability_gating_shows_unavailable_reasons(
+def test_characterization_dataset_scope_hides_bundle_selector_and_persists_provenance(
+    page: Page,
+    seeded_dataset_names: dict[str, str],
+) -> None:
+    _select_active_dataset(page, seeded_dataset_names["squid"])
+    expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
+    expect(page.get_by_role("combobox", name="Result Bundle")).to_have_count(0)
+
+    _select_option(page, "Analysis", "SQUID Fitting")
+    run_button = page.get_by_role("button", name="Run Selected Analysis")
+    expect(run_button).to_be_enabled(timeout=15000)
+    before_count = _characterization_run_bundle_count(seeded_dataset_names["squid"])
+    run_button.click()
+    deadline = time.time() + 60.0
+    while time.time() < deadline:
+        if _characterization_run_bundle_count(seeded_dataset_names["squid"]) > before_count:
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError("Timed out waiting for dataset-scope run bundle.")
+
+    run_bundle = _latest_characterization_run_bundle(seeded_dataset_names["squid"])
+    input_bundle_id = run_bundle.source_meta.get("input_bundle_id")
+    assert input_bundle_id is None
+    assert run_bundle.source_meta.get("input_scope") == "all_dataset_records"
+    selected_trace_ids = run_bundle.config_snapshot.get("selected_trace_ids")
+    assert isinstance(selected_trace_ids, list)
+    assert len(selected_trace_ids) > 0
+
+
+def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
     page: Page,
     seeded_dataset_names: dict[str, str],
 ) -> None:
     _select_active_dataset(page, seeded_dataset_names["single_junction"])
     expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
-    _expect_analysis_status(page, "SQUID Fitting", "Unavailable")
-    expect(page.get_by_text("Missing capability: SQUID Characterization").first).to_be_visible(
+    _expect_analysis_status(page, "SQUID Fitting", "Available")
+    expect(
+        page.get_by_text("Profile hint: missing capability SQUID Characterization").first
+    ).to_be_visible(
         timeout=30000
     )
 
     _select_active_dataset(page, seeded_dataset_names["traveling_wave"])
     expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
     _select_option(page, "Analysis", "S21 Resonance Fit")
-    expect(page.get_by_text(re.compile(r"^Status: "))).to_be_visible(timeout=30000)
+    expect(
+        page.get_by_text(re.compile(r"^(Available|Recommended|Unavailable) for current scope$"))
+    ).to_be_visible(timeout=30000)

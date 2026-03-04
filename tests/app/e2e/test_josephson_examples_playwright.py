@@ -105,6 +105,33 @@ def _two_port_compensation_definition() -> str:
     )
 
 
+def _three_port_basis_definition() -> str:
+    return str(
+        {
+            "name": "E2E Three Port Basis Labels",
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "C12", "default": 120.0, "unit": "fF"},
+                {"name": "C23", "default": 80.0, "unit": "fF"},
+                {"name": "Cg1", "default": 30.0, "unit": "fF"},
+                {"name": "Cg2", "default": 35.0, "unit": "fF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("P2", "2", "0", 2),
+                ("P3", "3", "0", 3),
+                ("R1", "1", "0", "R50"),
+                ("R2", "2", "0", "R50"),
+                ("R3", "3", "0", "R50"),
+                ("C12", "1", "2", "C12"),
+                ("C23", "2", "3", "C23"),
+                ("Cg1", "1", "0", "Cg1"),
+                ("Cg2", "2", "0", "Cg2"),
+            ],
+        }
+    )
+
+
 @pytest.fixture(scope="session")
 def example_cases() -> tuple[ExampleCase, ...]:
     """Representative example categories from JosephsonCircuits README usage."""
@@ -156,6 +183,17 @@ def example_cases() -> tuple[ExampleCase, ...]:
             points=201,
             n_mod=6,
             n_pump=6,
+            sources=((5.0, 1, 0.0),),
+        ),
+        ExampleCase(
+            slug="three_port_basis_labels",
+            schema_name=f"E2E-{suffix}-ThreePortBasisLabels",
+            definition=_three_port_basis_definition(),
+            start_ghz=4.8,
+            stop_ghz=5.2,
+            points=121,
+            n_mod=4,
+            n_pump=4,
             sources=((5.0, 1, 0.0),),
         ),
     )
@@ -361,6 +399,69 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
 
 
+def _select_card_option(
+    page: Page,
+    card,
+    label: str,
+    option_text: str,
+    index: int = 0,
+) -> None:  # type: ignore[no-untyped-def]
+    select = card.get_by_role("combobox", name=label).nth(index)
+    expect(select).to_be_visible(timeout=15000)
+    controls_id = select.get_attribute("aria-controls")
+    select.click()
+    desired = re.sub(r"\s+", "", option_text).lower()
+    page.keyboard.type(option_text)
+    page.keyboard.press("Enter")
+    current_value = (select.input_value() or "").strip()
+    current_normalized = re.sub(r"\s+", "", current_value).lower()
+    if current_normalized == desired or desired in current_normalized:
+        return
+
+    select.click()
+    option_scope = page.locator(f"#{controls_id}") if controls_id else page.locator("body")
+    options = option_scope.get_by_role("option")
+    for idx_option in range(options.count()):
+        option_text_value = options.nth(idx_option).inner_text()
+        normalized = re.sub(r"\s+", "", option_text_value).lower()
+        if normalized == desired or desired in normalized:
+            options.nth(idx_option).click()
+            return
+
+    option_pattern = re.compile(re.escape(option_text))
+    options.filter(has_text=option_pattern).first.click()
+
+
+def _post_plot_title_and_legend(post_results_card) -> tuple[str, list[str]]:  # type: ignore[no-untyped-def]
+    plot = post_results_card.locator(".js-plotly-plot").first
+    expect(plot).to_be_visible(timeout=30000)
+    payload = plot.evaluate(
+        "el => ({ title: String(el.layout?.title?.text || ''), "
+        "legend: (el.data || []).map(trace => String(trace.name || '')) })"
+    )
+    title = str(payload.get("title", ""))
+    legend = [str(item) for item in payload.get("legend", [])]
+    return (title, legend)
+
+
+def _nudge_combobox_option(
+    page: Page,
+    card,
+    label: str,
+    *,
+    direction: str,
+    steps: int,
+    index: int = 0,
+) -> None:  # type: ignore[no-untyped-def]
+    select = card.get_by_role("combobox", name=label).nth(index)
+    expect(select).to_be_visible(timeout=15000)
+    select.click()
+    key = "ArrowUp" if direction == "up" else "ArrowDown"
+    for _ in range(max(1, steps)):
+        page.keyboard.press(key)
+    page.keyboard.press("Enter")
+
+
 def _configure_raw_result_to_y22_real(page: Page) -> None:
     raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
     raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
@@ -504,3 +605,80 @@ def test_port_termination_compensation_modes_in_ui(
     post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
     page.screenshot(path=str(tmp_path / "termination_case_post_processing.png"), full_page=True)
+
+
+def test_post_processed_result_view_uses_trace_card_port_labels_for_matrix_names(
+    page: Page,
+    example_cases: tuple[ExampleCase, ...],
+    tmp_path: Path,
+) -> None:
+    case = next(c for c in example_cases if c.slug == "three_port_basis_labels")
+
+    _choose_schema(page, case.schema_name)
+    _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+    _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+    _set_spinbutton_value(page, "Points", case.points)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
+    _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+    _configure_sources(page, case.sources)
+    assert _run_and_expect_success(page) is True
+
+    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    _select_card_option(page, post_input_card, "Step Type", "Coordinate Transformation")
+    post_input_card.get_by_role("button", name="Add Step").click()
+
+    post_input_card.get_by_role("button", name="Run Post Processing").click()
+    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=60000)
+    post_results_card.get_by_role("tab", name="Impedance (Z)").click()
+
+    def _assert_name(expected_name: str, screenshot_suffix: str) -> None:
+        deadline = time.time() + 12.0
+        matched = False
+        title = ""
+        legend: list[str] = []
+        while time.time() < deadline:
+            title, legend = _post_plot_title_and_legend(post_results_card)
+            if expected_name in title and expected_name in legend:
+                matched = True
+                break
+            time.sleep(0.25)
+        assert matched, (
+            f"Expected {expected_name} in title+legend, got title={title!r}, legend={legend!r}"
+        )
+        page.screenshot(
+            path=str(tmp_path / f"post_processed_matrix_name_{screenshot_suffix}.png"),
+            full_page=True,
+        )
+
+    _nudge_combobox_option(
+        page,
+        post_results_card,
+        "Output Port",
+        direction="down",
+        steps=1,
+    )
+    _nudge_combobox_option(
+        page,
+        post_results_card,
+        "Input Port",
+        direction="down",
+        steps=1,
+    )
+    _assert_name("Z_dm_dm", "dm_to_dm")
+    _nudge_combobox_option(
+        page,
+        post_results_card,
+        "Input Port",
+        direction="up",
+        steps=1,
+    )
+    _assert_name("Z_dm_cm", "dm_to_cm")
+    _nudge_combobox_option(
+        page,
+        post_results_card,
+        "Input Port",
+        direction="down",
+        steps=2,
+    )
+    _assert_name("Z_dm_3", "dm_to_3")

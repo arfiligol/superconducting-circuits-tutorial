@@ -7,7 +7,6 @@ from app.pages.characterization import (
     _build_analysis_run_ui_state,
     _build_mode_vs_ljun_dataframe,
     _build_result_artifacts_for_analysis,
-    _bundle_option_label,
     _evaluate_analysis_scope_compatibility,
     _filter_method_groups_by_trace_mode,
     _result_view_controls_row_classes,
@@ -19,7 +18,6 @@ from core.shared.persistence.models import (
     DataRecord,
     DerivedParameter,
     DeviceType,
-    ResultBundleRecord,
 )
 
 
@@ -57,27 +55,13 @@ def test_analysis_record_index_normalizes_simulation_record_aliases() -> None:
     ]
 
 
-def test_bundle_option_label_includes_identity_and_status() -> None:
-    bundle = ResultBundleRecord(
-        id=12,
-        dataset_id=3,
-        bundle_type="circuit_simulation",
-        role="manual_export",
-        status="completed",
-        source_meta={},
-        config_snapshot={},
-        result_payload={},
-    )
-
-    assert _bundle_option_label(bundle) == "#12 circuit_simulation (manual_export, completed)"
-
-
-def test_build_analysis_run_bundle_record_captures_selected_input_bundle() -> None:
+def test_build_analysis_run_bundle_record_captures_dataset_scope_input() -> None:
     bundle = _build_analysis_run_bundle_record(
         dataset_id=9,
         analysis_id="s21_resonance_fit",
         analysis_label="S21 Resonance Fit",
-        selected_bundle_id=5,
+        selected_bundle_id=None,
+        selected_scope_token="all_dataset_records",
         config_snapshot={"model": "notch", "f_min": 4.5},
     )
 
@@ -86,7 +70,8 @@ def test_build_analysis_run_bundle_record_captures_selected_input_bundle() -> No
     assert bundle.role == "analysis_run"
     assert bundle.status == "completed"
     assert bundle.source_meta["analysis_id"] == "s21_resonance_fit"
-    assert bundle.source_meta["input_bundle_id"] == 5
+    assert bundle.source_meta["input_bundle_id"] is None
+    assert bundle.source_meta["input_scope"] == "all_dataset_records"
     assert bundle.config_snapshot == {"model": "notch", "f_min": 4.5}
 
 
@@ -159,23 +144,21 @@ def test_compatible_scope_with_selected_trace_enables_run() -> None:
     assert ui_state.availability_text == "Available for current scope"
 
 
-def test_build_analysis_run_availability_with_missing_capability_is_unavailable() -> None:
+def test_build_analysis_run_availability_with_profile_hints_is_available() -> None:
     availability = _build_analysis_run_availability(
-        capability_allowed=False,
-        capability_recommended=False,
-        capability_reasons=["Missing capability: SQUID Characterization"],
+        profile_recommended=False,
+        profile_hints=["Profile hint: missing capability SQUID Characterization"],
         has_compatible_traces=True,
     )
-    assert availability.status == "Unavailable"
-    assert availability.capability_allowed is False
-    assert "Missing capability" in availability.reason
+    assert availability.status == "Available"
+    assert availability.has_compatible_traces is True
+    assert "Profile hint" in availability.reason
 
 
 def test_build_analysis_run_availability_marks_recommended_when_all_checks_pass() -> None:
     availability = _build_analysis_run_availability(
-        capability_allowed=True,
-        capability_recommended=True,
-        capability_reasons=[],
+        profile_recommended=True,
+        profile_hints=[],
         has_compatible_traces=True,
     )
     assert availability.status == "Recommended"

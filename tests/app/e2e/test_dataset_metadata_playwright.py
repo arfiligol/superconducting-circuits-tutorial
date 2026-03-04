@@ -213,7 +213,18 @@ def page(app_base_url: str) -> Page:
 def _select_option(page: Page, label: str, option_text: str, index: int = 0) -> None:
     select = page.get_by_role("combobox", name=label).nth(index)
     expect(select).to_be_visible(timeout=15000)
-    select.click()
+    last_error: Exception | None = None
+    for _ in range(3):
+        try:
+            select = page.get_by_role("combobox", name=label).nth(index)
+            select.click(timeout=5000)
+            last_error = None
+            break
+        except Exception as exc:  # pragma: no cover - flaky detach protection
+            last_error = exc
+            time.sleep(0.2)
+    if last_error is not None:
+        raise last_error
     page.get_by_role("option", name=re.compile(rf"^{re.escape(option_text)}")).first.click()
 
 
@@ -227,7 +238,7 @@ def _select_active_dataset_in_characterization(page: Page, dataset_name: str) ->
     page.keyboard.press("Escape")
 
 
-def test_dataset_metadata_edit_flow_across_raw_simulation_and_characterization(
+def test_dataset_metadata_dashboard_single_entry_flow(
     page: Page,
     app_base_url: str,
     seeded_names: dict[str, str],
@@ -240,33 +251,46 @@ def test_dataset_metadata_edit_flow_across_raw_simulation_and_characterization(
 
     page.on("console", _capture_console)
 
-    # Step 1: edit metadata in Raw Data
+    # Step 1: choose active dataset, then edit metadata in Dashboard (single editable entry)
     page.goto(f"{app_base_url}/raw-data", wait_until="networkidle")
-    expect(page.get_by_text("Raw Data Browser")).to_be_visible(timeout=30000)
-    page.get_by_role("cell", name=seeded_names["dataset"], exact=True).click()
-
+    _select_active_dataset_in_characterization(page, seeded_names["dataset"])
+    page.goto(f"{app_base_url}/dashboard", wait_until="networkidle")
+    expect(page.get_by_role("main").get_by_text("Dashboard", exact=True)).to_be_visible(
+        timeout=30000
+    )
     _select_option(page, "Device Type", "Single Junction")
     page.get_by_role("button", name="Auto Suggest").first.click()
     page.get_by_role("button", name="Save Metadata").first.click()
     expect(page.get_by_text("Dataset metadata saved.")).to_be_visible(timeout=30000)
 
-    # Step 2: check consistent metadata entry in Simulation
+    # Step 2: Raw Data shows read-only metadata summary only
+    page.goto(f"{app_base_url}/raw-data", wait_until="networkidle")
+    expect(page.get_by_text("Raw Data Browser")).to_be_visible(timeout=30000)
+    page.get_by_role("cell", name=seeded_names["dataset"], exact=True).click()
+    expect(page.get_by_text("Dataset Metadata Summary", exact=True)).to_be_visible(timeout=30000)
+    expect(page.get_by_role("button", name="Auto Suggest")).to_have_count(0)
+    expect(page.get_by_role("button", name="Save Metadata")).to_have_count(0)
+
+    # Step 3: Simulation shows read-only metadata summary only
     page.goto(f"{app_base_url}/simulation", wait_until="networkidle")
-    expect(page.get_by_text("Dataset Metadata", exact=True).first).to_be_visible(timeout=30000)
+    expect(page.get_by_text("Dataset Metadata Summary", exact=True).first).to_be_visible(
+        timeout=30000
+    )
     _select_option(page, "Target Dataset", seeded_names["dataset"])
     expect(page.get_by_text("Device Type: single_junction")).to_be_visible(timeout=30000)
+    expect(page.get_by_role("button", name="Auto Suggest")).to_have_count(0)
+    expect(page.get_by_role("button", name="Save Metadata")).to_have_count(0)
 
-    # Step 3: Characterization gating reflects metadata change
+    # Step 4: Characterization trace-first availability keeps profile hints non-blocking
     page.goto(f"{app_base_url}/characterization", wait_until="networkidle")
     _select_active_dataset_in_characterization(page, seeded_names["dataset"])
     expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)
-    _select_option(page, "Analysis", "SQUID Fitting")
-    expect(page.get_by_text("Status: Unavailable", exact=True)).to_be_visible(timeout=30000)
-    expect(page.get_by_text("Missing capability: SQUID Characterization").first).to_be_visible(
-        timeout=30000
-    )
+    expect(page.get_by_role("combobox", name="Result Bundle")).to_have_count(0)
+    expect(
+        page.get_by_text(re.compile(r"^(Available|Recommended|Unavailable) for current scope$"))
+    ).to_be_visible(timeout=30000)
 
-    # Step 4: basic stability assertions
+    # Step 5: basic stability assertions
     connection_lost = page.get_by_text("Connection lost", exact=False)
     if connection_lost.count() > 0:
         expect(connection_lost.first).not_to_be_visible(timeout=30000)

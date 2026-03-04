@@ -21,6 +21,7 @@ from app.pages.simulation import (
     _load_saved_post_process_setups_for_schema,
     _load_saved_setups_for_schema,
     _load_selected_post_process_setup_id,
+    _matrix_element_name,
     _normalize_termination_mode,
     _normalize_termination_selected_ports,
     _normalized_simulation_setup_snapshot,
@@ -198,7 +199,9 @@ def test_build_simulation_result_figure_overlays_multiple_s_parameter_traces() -
         ],
     )
 
-    assert figure.layout.title.text == "S-Parameter Magnitude"
+    assert str(figure.layout.title.text).startswith("S-Parameter Magnitude")
+    assert "S11 Magnitude" in str(figure.layout.title.text)
+    assert "S21 Magnitude" in str(figure.layout.title.text)
     assert [trace.name for trace in figure.data] == ["S11", "S21"]
 
 
@@ -294,6 +297,37 @@ def test_build_post_processed_y_data_records_for_transformed_sideband_labels() -
     parameter_names = {record.parameter for record in records}
     assert "Y_cm_1_2_cm_1_2 [om=(1,), im=(1,)]" in parameter_names
     assert "Y_dm_1_2_dm_1_2 [om=(1,), im=(1,)]" in parameter_names
+
+
+def test_matrix_element_name_uses_transformed_port_label_tokens() -> None:
+    labels = {1: "cm(1,2)", 2: "dm(1,2)", 3: "3"}
+    assert (
+        _matrix_element_name(
+            matrix_symbol="Z",
+            output_port=2,
+            input_port=2,
+            port_label_by_index=labels,
+        )
+        == "Z_dm_dm"
+    )
+    assert (
+        _matrix_element_name(
+            matrix_symbol="Z",
+            output_port=2,
+            input_port=1,
+            port_label_by_index=labels,
+        )
+        == "Z_dm_cm"
+    )
+    assert (
+        _matrix_element_name(
+            matrix_symbol="Z",
+            output_port=2,
+            input_port=3,
+            port_label_by_index=labels,
+        )
+        == "Z_dm_3"
+    )
 
 
 def test_coordinate_weight_fields_editable_depends_on_weight_mode() -> None:
