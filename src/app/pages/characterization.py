@@ -12,7 +12,8 @@ import pandas as pd
 from nicegui import app, ui
 
 from app.layout import app_shell
-from app.services.analysis_registry import ANALYSIS_REGISTRY
+from app.services.analysis_registry import ANALYSIS_REGISTRY, evaluate_analysis_capability_gating
+from app.services.dataset_profile import normalize_dataset_profile, profile_summary_text
 from core.analysis.application.services.characterization_fitting_service import (
     CharacterizationFittingService,
     SquidFittingConfig,
@@ -93,6 +94,16 @@ class AnalysisRunUiState:
     availability_class: str
     run_disabled: bool
     run_hint: str
+
+
+@dataclass(frozen=True)
+class AnalysisRunAvailability:
+    """Combined capability + scope availability for one analysis."""
+
+    status: str
+    reason: str
+    capability_allowed: bool
+    has_compatible_traces: bool
 
 
 @dataclass(frozen=True)
@@ -375,6 +386,43 @@ def _build_analysis_run_ui_state(
         availability_class="text-positive",
         run_disabled=False,
         run_hint="Ready to run selected analysis.",
+    )
+
+
+def _build_analysis_run_availability(
+    *,
+    capability_allowed: bool,
+    capability_recommended: bool,
+    capability_reasons: Sequence[str],
+    has_compatible_traces: bool,
+) -> AnalysisRunAvailability:
+    """Merge capability gating and metadata compatibility into one availability state."""
+    if not capability_allowed:
+        return AnalysisRunAvailability(
+            status="Unavailable",
+            reason="; ".join(capability_reasons),
+            capability_allowed=False,
+            has_compatible_traces=has_compatible_traces,
+        )
+    if not has_compatible_traces:
+        return AnalysisRunAvailability(
+            status="Unavailable",
+            reason="No compatible traces in current scope.",
+            capability_allowed=True,
+            has_compatible_traces=False,
+        )
+    if capability_recommended:
+        return AnalysisRunAvailability(
+            status="Recommended",
+            reason="Recommended for this dataset profile.",
+            capability_allowed=True,
+            has_compatible_traces=True,
+        )
+    return AnalysisRunAvailability(
+        status="Available",
+        reason="Compatible with current dataset profile.",
+        capability_allowed=True,
+        has_compatible_traces=True,
     )
 
 
@@ -1409,8 +1457,13 @@ def characterization_page():
                                 "text-danger"
                             )
                             return
+                        dataset_profile = normalize_dataset_profile(
+                            ds.source_meta,
+                            record_index=dataset_record_index,
+                        )
 
                         analysis_scope_compatibility: dict[str, AnalysisScopeCompatibility] = {}
+                        analysis_run_availability_by_id: dict[str, AnalysisRunAvailability] = {}
                         scope_revision = (
                             f"{len(scoped_record_index)}:"
                             f"{scoped_record_index[-1]['id'] if scoped_record_index else 0}"
@@ -1436,8 +1489,26 @@ def characterization_page():
                                     compatibility
                                 )
                             analysis_scope_compatibility[analysis_id] = compatibility
+                            capability_decision = evaluate_analysis_capability_gating(
+                                analysis,
+                                dataset_profile=dataset_profile,
+                            )
+                            analysis_run_availability_by_id[analysis_id] = (
+                                _build_analysis_run_availability(
+                                    capability_allowed=capability_decision.allowed,
+                                    capability_recommended=capability_decision.recommended,
+                                    capability_reasons=capability_decision.reasons,
+                                    has_compatible_traces=compatibility.has_compatible_traces,
+                                )
+                            )
 
-                        analysis_options = {str(a["id"]): str(a["label"]) for a in analyses}
+                        analysis_options = {
+                            str(analysis["id"]): (
+                                f"{analysis['label']} "
+                                f"[{analysis_run_availability_by_id[str(analysis['id'])].status}]"
+                            )
+                            for analysis in analyses
+                        }
                         analysis_ids = list(analysis_options)
                         selected_run_analysis_id = _resolve_selected_option(
                             _load_dataset_text_selection(_ANALYSIS_RUN_SELECTED_KEY, active_id),
@@ -1456,6 +1527,9 @@ def characterization_page():
                             ),
                             analyses[0],
                         )
+                        selected_run_availability = analysis_run_availability_by_id[
+                            selected_run_analysis_id
+                        ]
                         selected_scope_compatibility = analysis_scope_compatibility[
                             selected_run_analysis_id
                         ]
@@ -1636,29 +1710,85 @@ def characterization_page():
                                 run_config_numbers: dict[str, Any] = {}
                                 run_button: Any | None = None
                                 availability_label: Any | None = None
+                                analysis_status_label: Any | None = None
+                                analysis_reason_label: Any | None = None
                                 run_hint_label: Any | None = None
 
                                 def refresh_run_controls() -> None:
                                     ui_state = current_run_ui_state()
+                                    selected_ids = current_selected_trace_ids()
+                                    if not selected_run_availability.capability_allowed:
+                                        availability_text = (
+                                            "Unavailable for current dataset profile"
+                                        )
+                                        availability_class = "text-warning"
+                                        run_hint = selected_run_availability.reason
+                                        run_disabled = True
+                                    elif not selected_run_availability.has_compatible_traces:
+                                        availability_text = ui_state.availability_text
+                                        availability_class = ui_state.availability_class
+                                        run_hint = selected_run_availability.reason
+                                        run_disabled = True
+                                    elif selected_run_availability.status == "Recommended":
+                                        if selected_ids:
+                                            availability_text = "Recommended for current scope"
+                                            availability_class = "text-positive"
+                                            run_hint = "Ready to run selected analysis."
+                                            run_disabled = False
+                                        else:
+                                            availability_text = (
+                                                "Recommended for current scope (no traces selected)"
+                                            )
+                                            availability_class = "text-positive"
+                                            run_hint = "Select at least one trace to run."
+                                            run_disabled = True
+                                    else:
+                                        availability_text = ui_state.availability_text
+                                        availability_class = ui_state.availability_class
+                                        run_hint = ui_state.run_hint
+                                        run_disabled = ui_state.run_disabled
+
                                     if availability_label is not None:
-                                        availability_label.set_text(ui_state.availability_text)
+                                        availability_label.set_text(availability_text)
                                         availability_label.classes(
                                             replace=(
                                                 "text-sm font-semibold "
-                                                f"{ui_state.availability_class}"
+                                                f"{availability_class}"
                                             )
                                         )
+                                    if analysis_status_label is not None:
+                                        analysis_status_label.set_text(
+                                            f"Status: {selected_run_availability.status}"
+                                        )
+                                        analysis_status_label.classes(
+                                            replace=(
+                                                "text-sm font-semibold text-warning"
+                                                if selected_run_availability.status == "Unavailable"
+                                                else (
+                                                    "text-sm font-semibold text-positive"
+                                                    if (
+                                                        selected_run_availability.status
+                                                        == "Recommended"
+                                                    )
+                                                    else "text-sm font-semibold text-primary"
+                                                )
+                                            )
+                                        )
+                                    if analysis_reason_label is not None:
+                                        analysis_reason_label.set_text(
+                                            selected_run_availability.reason
+                                        )
                                     if run_hint_label is not None:
-                                        run_hint_label.set_text(ui_state.run_hint)
+                                        run_hint_label.set_text(run_hint)
                                         run_hint_label.classes(
                                             replace=(
                                                 "text-sm text-warning mb-2"
-                                                if ui_state.run_disabled
+                                                if run_disabled
                                                 else "text-sm text-muted mb-2"
                                             )
                                         )
                                     if run_button is not None:
-                                        if ui_state.run_disabled:
+                                        if run_disabled:
                                             run_button.disable()
                                         else:
                                             run_button.enable()
@@ -1694,10 +1824,19 @@ def characterization_page():
                                                 config_state[name] = run_config_numbers[name].value
 
                                         run_ui_state = current_run_ui_state()
+                                        if not selected_run_availability.capability_allowed:
+                                            append_analysis_status(
+                                                "warning",
+                                                selected_run_availability.reason,
+                                            )
+                                            return
                                         if not selected_scope_compatibility.has_compatible_traces:
                                             append_analysis_status(
                                                 "warning",
-                                                run_ui_state.run_hint,
+                                                (
+                                                    selected_run_availability.reason
+                                                    or run_ui_state.run_hint
+                                                ),
                                             )
                                             return
                                         if not run_trace_ids:
@@ -1788,6 +1927,9 @@ def characterization_page():
                                     "Run control is centralized here. Choose one analysis, set "
                                     "parameters, then execute."
                                 ).classes("text-sm text-muted mb-3")
+                                ui.label(profile_summary_text(dataset_profile)).classes(
+                                    "text-xs text-muted mb-2"
+                                )
 
                                 with ui.row().classes("w-full items-end gap-4 flex-wrap"):
                                     ui.select(
@@ -1807,8 +1949,57 @@ def characterization_page():
                                     availability_label = ui.label("").classes(
                                         "text-sm font-semibold"
                                     )
+                                    analysis_status_label = ui.label("").classes(
+                                        "text-sm font-semibold"
+                                    )
+                                analysis_reason_label = ui.label("").classes(
+                                    "text-xs text-muted mb-1"
+                                )
                                 run_hint_label = ui.label("").classes("text-sm mb-2")
                                 refresh_run_controls()
+                                analysis_status_rows = [
+                                    {
+                                        "analysis": str(analysis["label"]),
+                                        "status": analysis_run_availability_by_id[
+                                            str(analysis["id"])
+                                        ].status,
+                                        "reason": analysis_run_availability_by_id[
+                                            str(analysis["id"])
+                                        ].reason,
+                                    }
+                                    for analysis in analyses
+                                ]
+                                analysis_status_columns = [
+                                    {
+                                        "name": "analysis",
+                                        "label": "Analysis",
+                                        "field": "analysis",
+                                        "align": "left",
+                                        "sortable": True,
+                                    },
+                                    {
+                                        "name": "status",
+                                        "label": "Status",
+                                        "field": "status",
+                                        "align": "left",
+                                        "sortable": True,
+                                    },
+                                    {
+                                        "name": "reason",
+                                        "label": "Reason",
+                                        "field": "reason",
+                                        "align": "left",
+                                        "sortable": True,
+                                    },
+                                ]
+                                ui.table(
+                                    columns=analysis_status_columns,
+                                    rows=analysis_status_rows,
+                                    row_key="analysis",
+                                    pagination=10,
+                                ).classes(
+                                    "w-full rounded-lg border border-border bg-bg mb-3"
+                                ).props("dense flat bordered separator=horizontal")
 
                                 ui.separator().classes("my-4 bg-border")
 
