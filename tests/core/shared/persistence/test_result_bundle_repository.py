@@ -38,6 +38,40 @@ def test_dataset_repository_hides_system_datasets_by_default() -> None:
         ]
 
 
+def test_dataset_repository_update_source_meta_replaces_payload() -> None:
+    with _memory_session() as session:
+        repo = DatasetRepository(session)
+        dataset = repo.add(
+            DatasetRecord(
+                name="WithProfile",
+                source_meta={"origin": "measurement"},
+                parameters={},
+            )
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        updated = repo.update_source_meta(
+            int(dataset.id),
+            {
+                "origin": "measurement",
+                "dataset_profile": {
+                    "schema_version": "1.0",
+                    "device_type": "squid",
+                    "capabilities": [
+                        "y_parameter_characterization",
+                        "squid_characterization",
+                    ],
+                    "source": "manual_override",
+                },
+            },
+        )
+        session.commit()
+
+        assert updated.source_meta["origin"] == "measurement"
+        assert updated.source_meta["dataset_profile"]["device_type"] == "squid"
+
+
 def test_result_bundle_repository_finds_cache_bundle_and_lists_member_records() -> None:
     with _memory_session() as session:
         dataset_repo = DatasetRepository(session)
