@@ -100,6 +100,19 @@ PY
 
 # Scan .md navigation links (warning/diff check, not hard-fail empty in current baseline)
 rg -n "href=\"[^\"]+\\.md\"" docs/site
+
+# Verify legacy .md URLs auto-normalize to canonical directory routes (prevents typed-URL 404s)
+uv run python - <<'PY'
+from playwright.sync_api import sync_playwright
+legacy_url = "http://localhost:8000/superconducting-circuits-tutorial/explanation/physics/schur-complement-kron-reduction.md"
+with sync_playwright() as p:
+    b = p.chromium.launch(headless=True)
+    page = b.new_page()
+    page.goto(legacy_url, wait_until="domcontentloaded", timeout=30000)
+    assert page.locator("h1").first.inner_text().strip() != "404 - Not found"
+    assert page.url.endswith("/explanation/physics/schur-complement-kron-reduction/")
+    b.close()
+PY
 ```
 
 !!! warning "URL format"
@@ -123,6 +136,7 @@ rg -n "href=\"[^\"]+\\.md\"" docs/site
     - Serve (zh-TW): `uv run --group dev zensical serve`
     - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
     - Route smoke: Playwright check (HTTP 200 + no "404 - Not found")
+    - `.md` compatibility route check (legacy `.md` URL auto-redirects to canonical route)
     - Broken nav scan (warning/diff): `rg -n "href=\"[^\"]+\\.md\"" docs/site`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`

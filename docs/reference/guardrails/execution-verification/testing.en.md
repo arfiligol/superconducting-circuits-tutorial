@@ -89,6 +89,24 @@ with sync_playwright() as p:
 PY
 ```
 
+### `.md` compatibility route check (required)
+
+```bash
+uv run python - <<'PY'
+from playwright.sync_api import sync_playwright
+
+legacy_url = "http://localhost:8000/superconducting-circuits-tutorial/explanation/physics/schur-complement-kron-reduction.md"
+
+with sync_playwright() as p:
+    b = p.chromium.launch(headless=True)
+    page = b.new_page()
+    page.goto(legacy_url, wait_until="domcontentloaded", timeout=30000)
+    assert page.locator("h1").first.inner_text().strip() != "404 - Not found"
+    assert page.url.endswith("/explanation/physics/schur-complement-kron-reduction/")
+    b.close()
+PY
+```
+
 ### Navigation-link scan (warning/diff check)
 
 ```bash
@@ -121,7 +139,8 @@ julia --project=. -e 'using Pkg; Pkg.test()'
     3) `uv run --group dev zensical build -f zensical.en.toml`
     4) `./scripts/build_docs_sites.sh`
     5) Playwright route smoke (HTTP 200 + no "404 - Not found")
-    6) `rg -n "href=\"[^\"]+\\.md\"" docs/site` for warning/diff review (not hard-fail against current baseline)
+    6) `.md` compatibility route check (legacy `.md` URL auto-normalizes to canonical route)
+    7) `rg -n "href=\"[^\"]+\\.md\"" docs/site` for warning/diff review (not hard-fail against current baseline)
 - **Route rule**: final docs URL uses directory routes (`/.../page/`), not source `.md` paths.
 - **Julia tests (if touched)**: `julia --project=. -e 'using Pkg; Pkg.test()'`
 ```

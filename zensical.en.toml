@@ -13,6 +13,7 @@ extra_css = [
   "stylesheets/extra.css",
 ]
 extra_javascript = [
+  "javascripts/md-route-redirect.js",
   "javascripts/mathjax.js",
   "javascripts/language-switcher.js",
   "https://polyfill.io/v3/polyfill.min.js?features=es6",
