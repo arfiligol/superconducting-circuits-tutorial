@@ -1,6 +1,7 @@
 """Repository for DatasetRecord operations."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlmodel import Session, select
 
@@ -89,6 +90,15 @@ class DatasetRepository:
 
     def add(self, dataset: DatasetRecord) -> DatasetRecord:
         """Add a new dataset."""
+        self._session.add(dataset)
+        return dataset
+
+    def update_source_meta(self, dataset_id: int, source_meta: dict[str, Any]) -> DatasetRecord:
+        """Replace one dataset's source_meta payload."""
+        dataset = self.get(dataset_id)
+        if dataset is None:
+            raise ValueError(f"Dataset ID {dataset_id} not found.")
+        dataset.source_meta = dict(source_meta)
         self._session.add(dataset)
         return dataset
 

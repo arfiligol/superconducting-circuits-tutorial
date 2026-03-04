@@ -32,6 +32,15 @@ CAPABILITY_LABELS: dict[str, str] = {
     CAPABILITY_TWPA_GAIN: "Traveling-wave Gain Characterization",
 }
 
+DEVICE_TYPE_LABELS: dict[str, str] = {
+    DEVICE_TYPE_UNSPECIFIED: "Unspecified",
+    "single_junction": "Single Junction",
+    "squid": "SQUID",
+    "traveling_wave": "Traveling Wave",
+    "resonator": "Resonator",
+    "other": "Other",
+}
+
 DEVICE_TYPE_CAPABILITY_TEMPLATES: dict[str, tuple[str, ...]] = {
     DEVICE_TYPE_UNSPECIFIED: (),
     "single_junction": (
@@ -84,11 +93,38 @@ def capability_label(capability_key: str) -> str:
     return CAPABILITY_LABELS.get(capability_key, capability_key.replace("_", " ").title())
 
 
+def device_type_label(device_type_key: str) -> str:
+    """Resolve a user-facing label for one device_type key."""
+    canonical_device_type = normalize_device_type(device_type_key)
+    return DEVICE_TYPE_LABELS.get(
+        canonical_device_type,
+        canonical_device_type.replace("_", " ").title(),
+    )
+
+
+def device_type_option_labels() -> dict[str, str]:
+    """Build stable option labels for dataset profile device type selector."""
+    return {device_type: device_type_label(device_type) for device_type in DATASET_DEVICE_TYPES}
+
+
+def capability_option_labels() -> dict[str, str]:
+    """Build stable option labels for dataset profile capability multi-select."""
+    return {
+        capability_key: capability_label(capability_key)
+        for capability_key in sorted(CAPABILITY_LABELS)
+    }
+
+
 def template_capabilities_for_device_type(device_type: str) -> list[str]:
     """Return template capabilities for one canonical device_type."""
     canonical_device_type = normalize_device_type(device_type)
     template = DEVICE_TYPE_CAPABILITY_TEMPLATES.get(canonical_device_type, ())
     return sorted(template)
+
+
+def suggested_capabilities_for_device_type(device_type: str) -> list[str]:
+    """Return recommended capabilities for one device type."""
+    return template_capabilities_for_device_type(device_type)
 
 
 def infer_capabilities_from_record_index(
@@ -157,6 +193,32 @@ def normalize_dataset_profile(
         "capabilities": capabilities,
         "source": source,
     }
+
+
+def build_dataset_profile_payload(
+    *,
+    device_type: object,
+    capabilities: object,
+    source: object = "manual_override",
+) -> dict[str, Any]:
+    """Build a canonical profile payload for persistence in source_meta."""
+    return {
+        "schema_version": DATASET_PROFILE_SCHEMA_VERSION,
+        "device_type": normalize_device_type(device_type),
+        "capabilities": normalize_capabilities(capabilities),
+        "source": normalize_profile_source(source, default="manual_override"),
+    }
+
+
+def merge_dataset_profile_into_source_meta(
+    source_meta: Mapping[str, object] | None,
+    *,
+    profile_payload: Mapping[str, object],
+) -> dict[str, Any]:
+    """Merge one canonical profile payload into dataset source_meta."""
+    merged = dict(source_meta) if isinstance(source_meta, Mapping) else {}
+    merged["dataset_profile"] = dict(profile_payload)
+    return merged
 
 
 def profile_summary_text(profile: Mapping[str, object]) -> str:

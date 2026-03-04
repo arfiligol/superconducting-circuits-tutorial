@@ -14,6 +14,17 @@ import plotly.graph_objects as go
 from nicegui import app, run, ui
 
 from app.layout import app_shell
+from app.services.dataset_profile import (
+    build_dataset_profile_payload,
+    capability_option_labels,
+    device_type_option_labels,
+    merge_dataset_profile_into_source_meta,
+    normalize_capabilities,
+    normalize_dataset_profile,
+    normalize_device_type,
+    profile_summary_text,
+    suggested_capabilities_for_device_type,
+)
 from core.shared.persistence import SqliteUnitOfWork, get_unit_of_work
 from core.shared.persistence.models import (
     CircuitRecord,
@@ -133,6 +144,9 @@ _TERMINATION_MODE_OPTIONS = {
 _TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
+_SIM_METADATA_TARGET_DATASET_KEY = "simulation_metadata_target_dataset_id"
+_SIM_METADATA_DEVICE_TYPE_OPTIONS = device_type_option_labels()
+_SIM_METADATA_CAPABILITY_OPTIONS = capability_option_labels()
 
 
 class _ResultTraceSelection(TypedDict):
@@ -398,6 +412,20 @@ def _build_source_payload(
         "current_amp": float(current_amp),
         "mode": [int(value) for value in mode],
     }
+
+
+def _persist_dataset_profile_metadata(*, dataset_id: int, profile_payload: dict[str, Any]) -> None:
+    """Persist one dataset profile payload into dataset source_meta."""
+    with get_unit_of_work() as uow:
+        dataset = uow.datasets.get(dataset_id)
+        if dataset is None:
+            raise ValueError("Target dataset not found.")
+        updated_source_meta = merge_dataset_profile_into_source_meta(
+            dataset.source_meta,
+            profile_payload=profile_payload,
+        )
+        uow.datasets.update_source_meta(dataset_id, updated_source_meta)
+        uow.commit()
 
 
 def _compress_source_mode_components(
@@ -3252,6 +3280,150 @@ def _render_simulation_environment():
             ui.select(
                 options=circuit_options, value=active_circuit_id, on_change=on_circuit_change
             ).props("dense outlined options-dense").classes("w-64")
+
+        try:
+            with get_unit_of_work() as uow:
+                editable_datasets = uow.datasets.list_all()
+        except Exception:
+            editable_datasets = []
+
+        metadata_dataset_options = {
+            int(dataset.id): str(dataset.name)
+            for dataset in editable_datasets
+            if dataset.id is not None
+        }
+        metadata_target_dataset_id = _user_storage_get(_SIM_METADATA_TARGET_DATASET_KEY)
+        if metadata_target_dataset_id not in metadata_dataset_options:
+            metadata_target_dataset_id = next(iter(metadata_dataset_options), None)
+            _user_storage_set(_SIM_METADATA_TARGET_DATASET_KEY, metadata_target_dataset_id)
+        metadata_target_dataset = next(
+            (dataset for dataset in editable_datasets if dataset.id == metadata_target_dataset_id),
+            None,
+        )
+        metadata_profile_state = normalize_dataset_profile(
+            metadata_target_dataset.source_meta if metadata_target_dataset is not None else {}
+        )
+        metadata_profile_state["device_type"] = normalize_device_type(
+            metadata_profile_state["device_type"]
+        )
+        metadata_profile_state["capabilities"] = normalize_capabilities(
+            metadata_profile_state["capabilities"]
+        )
+
+        with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with ui.row().classes("items-center gap-2 mb-3"):
+                ui.icon("inventory_2", size="sm").classes("text-primary")
+                ui.label("Dataset Metadata").classes("text-lg font-bold text-fg")
+            ui.label("Edit dataset profile for Characterization capability gating.").classes(
+                "text-sm text-muted mb-3"
+            )
+
+            if not metadata_dataset_options:
+                ui.label("No datasets available for metadata editing.").classes(
+                    "text-sm text-muted"
+                )
+            else:
+                profile_save_button: Any | None = None
+                profile_auto_button: Any | None = None
+                profile_capability_select: Any | None = None
+
+                def _on_target_dataset_change(event: Any) -> None:
+                    selected = event.value
+                    dataset_id = int(selected) if isinstance(selected, int) else None
+                    _user_storage_set(_SIM_METADATA_TARGET_DATASET_KEY, dataset_id)
+                    sim_env.refresh()
+
+                def _auto_suggest_profile_capabilities() -> None:
+                    suggested = suggested_capabilities_for_device_type(
+                        metadata_profile_state["device_type"]
+                    )
+                    metadata_profile_state["capabilities"] = list(suggested)
+                    if profile_capability_select is not None:
+                        profile_capability_select.value = list(suggested)
+                    ui.notify("Capabilities suggested from selected device type.", type="info")
+
+                async def _save_dataset_metadata() -> None:
+                    if (
+                        profile_save_button is None
+                        or profile_auto_button is None
+                        or metadata_target_dataset is None
+                        or metadata_target_dataset.id is None
+                    ):
+                        return
+                    profile_save_button.disable()
+                    profile_auto_button.disable()
+                    profile_save_button.props(add="loading")
+                    await asyncio.sleep(0)
+                    try:
+                        payload = build_dataset_profile_payload(
+                            device_type=metadata_profile_state["device_type"],
+                            capabilities=metadata_profile_state["capabilities"],
+                            source="manual_override",
+                        )
+                        await run.io_bound(
+                            _persist_dataset_profile_metadata,
+                            dataset_id=int(metadata_target_dataset.id),
+                            profile_payload=payload,
+                        )
+                        ui.notify("Dataset metadata saved.", type="positive")
+                        sim_env.refresh()
+                    except Exception as exc:
+                        ui.notify(f"Failed to save metadata: {exc}", type="negative")
+                    finally:
+                        profile_save_button.props(remove="loading")
+                        profile_save_button.enable()
+                        profile_auto_button.enable()
+
+                ui.select(
+                    options=metadata_dataset_options,
+                    value=metadata_target_dataset_id,
+                    label="Target Dataset",
+                    on_change=_on_target_dataset_change,
+                ).props("dense outlined options-dense").classes("w-80 mb-2")
+
+                ui.label(
+                    profile_summary_text(
+                        {
+                            "device_type": metadata_profile_state["device_type"],
+                            "capabilities": metadata_profile_state["capabilities"],
+                            "source": metadata_profile_state["source"],
+                        }
+                    )
+                ).classes("text-xs text-muted mb-2")
+
+                with ui.row().classes("w-full items-end gap-3 flex-wrap"):
+                    ui.select(
+                        options=_SIM_METADATA_DEVICE_TYPE_OPTIONS,
+                        value=metadata_profile_state["device_type"],
+                        label="Device Type",
+                        on_change=lambda e: metadata_profile_state.__setitem__(
+                            "device_type",
+                            normalize_device_type(e.value),
+                        ),
+                    ).props("dense outlined options-dense").classes("w-56")
+
+                    profile_capability_select = (
+                        ui.select(
+                            options=_SIM_METADATA_CAPABILITY_OPTIONS,
+                            value=list(metadata_profile_state["capabilities"]),
+                            label="Capabilities",
+                            on_change=lambda e: metadata_profile_state.__setitem__(
+                                "capabilities",
+                                normalize_capabilities(e.value),
+                            ),
+                        )
+                        .props("dense outlined options-dense use-chips multiple")
+                        .classes("min-w-[280px] flex-1")
+                    )
+
+                    profile_auto_button = ui.button(
+                        "Auto Suggest",
+                        on_click=_auto_suggest_profile_capabilities,
+                    ).props("outline color=primary no-caps")
+                    profile_save_button = ui.button(
+                        "Save Metadata",
+                        on_click=_save_dataset_metadata,
+                    ).props("unelevated color=primary no-caps")
 
         # Get active record
         active_record = next((c for c in circuits if c.id == active_circuit_id), circuits[0])

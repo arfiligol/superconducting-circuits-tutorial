@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 import math
 from typing import Any
 
-from nicegui import app, ui
+from nicegui import app, run, ui
 
 from app.layout import app_shell
+from app.services.dataset_profile import (
+    build_dataset_profile_payload,
+    capability_option_labels,
+    device_type_option_labels,
+    merge_dataset_profile_into_source_meta,
+    normalize_capabilities,
+    normalize_dataset_profile,
+    normalize_device_type,
+    profile_summary_text,
+    suggested_capabilities_for_device_type,
+)
 from core.shared.persistence import get_unit_of_work
 from core.shared.visualization.figure_builders import (
     build_heatmap,
@@ -31,6 +43,8 @@ _REPRESENTATION_FILTER_OPTIONS = {
 _DATASET_SORT_FIELDS = {"id", "name", "created_at"}
 _RECORD_SORT_FIELDS = {"id", "data_type", "parameter", "representation"}
 _HEADER_CLASSES = "text-primary text-weight-bold text-uppercase tracking-wide"
+_DEVICE_TYPE_OPTIONS = device_type_option_labels()
+_CAPABILITY_OPTIONS = capability_option_labels()
 
 
 def _total_pages(total_rows: int, page_size: int) -> int:
@@ -77,6 +91,19 @@ def raw_data_page() -> None:
     record_search_input: ui.input | None = None
     record_type_select: ui.select | None = None
     record_repr_select: ui.select | None = None
+    dataset_profile_edit_state: dict[int, dict[str, Any]] = {}
+
+    def _persist_dataset_profile(dataset_id: int, profile_payload: dict[str, Any]) -> None:
+        with get_unit_of_work() as uow:
+            dataset = uow.datasets.get(dataset_id)
+            if dataset is None:
+                raise ValueError("Dataset not found.")
+            updated_source_meta = merge_dataset_profile_into_source_meta(
+                dataset.source_meta,
+                profile_payload=profile_payload,
+            )
+            uow.datasets.update_source_meta(dataset_id, updated_source_meta)
+            uow.commit()
 
     def _load_dataset_page() -> list[dict[str, Any]]:
         with get_unit_of_work() as uow:
@@ -327,6 +354,18 @@ def raw_data_page() -> None:
         if not _selected_record_visible(record_rows):
             selected_record_id = None
 
+        current_dataset_id = int(selected_dataset_id)
+        persisted_profile = normalize_dataset_profile(dataset.source_meta)
+        state = dataset_profile_edit_state.setdefault(
+            current_dataset_id,
+            {
+                "device_type": str(persisted_profile["device_type"]),
+                "capabilities": list(persisted_profile["capabilities"]),
+            },
+        )
+        state["device_type"] = normalize_device_type(state.get("device_type"))
+        state["capabilities"] = normalize_capabilities(state.get("capabilities", []))
+
         with detail_container:
             with ui.row().classes("w-full justify-between items-center mb-3 flex-wrap gap-3"):
                 with ui.column().classes("gap-1"):
@@ -339,6 +378,91 @@ def raw_data_page() -> None:
                     on_click=lambda: _navigate_to_characterization(selected_dataset_id),
                     icon="science",
                 ).props("unelevated color=primary no-caps")
+
+            with ui.column().classes("w-full gap-2 rounded-lg border border-border bg-bg p-3 mb-3"):
+                ui.label("Dataset Metadata").classes("text-sm font-bold text-fg uppercase")
+                ui.label(
+                    profile_summary_text(
+                        {
+                            "device_type": persisted_profile["device_type"],
+                            "capabilities": persisted_profile["capabilities"],
+                            "source": persisted_profile["source"],
+                        }
+                    )
+                ).classes("text-xs text-muted")
+
+                capability_select: Any | None = None
+                save_metadata_button: Any | None = None
+                auto_suggest_button: Any | None = None
+
+                def _apply_auto_suggest() -> None:
+                    suggested = suggested_capabilities_for_device_type(state["device_type"])
+                    state["capabilities"] = list(suggested)
+                    if capability_select is not None:
+                        capability_select.value = list(suggested)
+                    ui.notify("Capabilities suggested from selected device type.", type="info")
+
+                async def _save_dataset_metadata() -> None:
+                    if save_metadata_button is None or auto_suggest_button is None:
+                        return
+                    save_metadata_button.disable()
+                    auto_suggest_button.disable()
+                    save_metadata_button.props(add="loading")
+                    await asyncio.sleep(0)
+                    try:
+                        payload = build_dataset_profile_payload(
+                            device_type=state["device_type"],
+                            capabilities=state["capabilities"],
+                            source="manual_override",
+                        )
+                        await run.io_bound(
+                            _persist_dataset_profile,
+                            current_dataset_id,
+                            payload,
+                        )
+                        state["device_type"] = payload["device_type"]
+                        state["capabilities"] = list(payload["capabilities"])
+                        ui.notify("Dataset metadata saved.", type="positive")
+                        render_dataset_detail.refresh()
+                    except Exception as exc:
+                        ui.notify(f"Failed to save metadata: {exc}", type="negative")
+                    finally:
+                        save_metadata_button.props(remove="loading")
+                        save_metadata_button.enable()
+                        auto_suggest_button.enable()
+
+                with ui.row().classes("w-full items-end gap-3 flex-wrap"):
+                    ui.select(
+                        _DEVICE_TYPE_OPTIONS,
+                        value=state["device_type"],
+                        label="Device Type",
+                        on_change=lambda e: state.__setitem__(
+                            "device_type",
+                            normalize_device_type(e.value),
+                        ),
+                    ).props("dense outlined options-dense").classes("w-56")
+                    capability_select = (
+                        ui.select(
+                            _CAPABILITY_OPTIONS,
+                            value=list(state["capabilities"]),
+                            label="Capabilities",
+                            on_change=lambda e: state.__setitem__(
+                                "capabilities",
+                                normalize_capabilities(e.value),
+                            ),
+                        )
+                        .props("dense outlined options-dense use-chips multiple")
+                        .classes("min-w-[260px] flex-1")
+                    )
+                    auto_suggest_button = ui.button(
+                        "Auto Suggest",
+                        on_click=_apply_auto_suggest,
+                    ).props("outline color=primary no-caps")
+                    save_metadata_button = ui.button(
+                        "Save Metadata",
+                        on_click=_save_dataset_metadata,
+                    ).props("unelevated color=primary no-caps")
+
             record_columns = [
                 {
                     "name": "id",
