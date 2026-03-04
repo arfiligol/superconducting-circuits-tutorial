@@ -19,7 +19,7 @@ updated_by: docs-team
 Rules for safe parallel work when multiple local agents contribute to the same delivery stream.
 
 !!! important "Single Integrator Rule (Mandatory)"
-    One delivery stream (same topic/PR) must have exactly **one Integrator Agent** at a time.  
+    One delivery stream (same topic/PR) must have exactly **one Integrator Agent** at a time.
     All other agents are contributors and must not perform cross-agent integration on their own.
 
 ## Roles

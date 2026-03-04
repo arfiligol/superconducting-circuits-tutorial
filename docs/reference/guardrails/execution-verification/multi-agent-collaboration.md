@@ -19,7 +19,7 @@ updated_by: docs-team
 規範本地多 Agent 並行工作時的責任分工與防衝突流程。
 
 !!! important "單一整合者原則（Mandatory）"
-    同一條交付線（同一主題/PR）在同一時間只允許 **1 位 Integrator Agent**。  
+    同一條交付線（同一主題/PR）在同一時間只允許 **1 位 Integrator Agent**。
     其餘 Agent 僅負責各自子任務，不得自行整合他人變更。
 
 ## 角色定義
