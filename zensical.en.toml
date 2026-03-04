@@ -193,15 +193,8 @@ nav = [
     { "Plotting Utilities" = "reference/utilities.md" },
   ] },
   { "Notebooks" = [
-    { "Archived Live Preview Research" = [
-      { "Overview" = "notebooks/archived-live-preview/index.md" },
-      { "Tutorial Draft" = "notebooks/archived-live-preview/tutorial-live-preview.md" },
-      { "Circuit Schema Live Preview" = "notebooks/archived-live-preview/circuit-schema-live-preview.md" },
-      { "Live Preview Domain Semantics" = "notebooks/archived-live-preview/live-preview-domain-semantics.md" },
-      { "LayoutPlan and Renderer Boundaries" = "notebooks/archived-live-preview/layout-plan-and-renderer-boundaries.md" },
-      { "Schematic Netlist Core (Archived)" = "notebooks/archived-live-preview/schematic-netlist-core.md" },
-    ] },
     { "Floating Qubit Study" = "notebooks/floating-qubit-study.md" },
+    { "Floating Qubit Real-Part Admittance Extraction" = "notebooks/floating-qubit-real-part-admittance-extraction.md" },
     { "S-Parameter Resonance Fit Theory" = "notebooks/s-parameter-resonance-fit-theory.md" },
     { "Macroscopic Wavefunction" = "notebooks/macroscopic-wavefunction.md" },
     { "Why Flux Is Quantized" = "notebooks/why-flux-is-quantized.md" },
