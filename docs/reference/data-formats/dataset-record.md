@@ -9,7 +9,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema 詳細定義與使用規範"
-version: v1.2.0
+version: v1.3.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -95,7 +95,7 @@ DatasetRecord (集合)
     並保留 `required_capabilities` / `excluded_capabilities` 欄位作為建議訊息來源。
 
 !!! important "Contract（Trace-first authority）"
-    Analysis 可執行性與實際輸入範圍必須由 trace 相容性 + 使用者選取 trace ids 決定。  
+    Analysis 可執行性與實際輸入範圍必須由 trace 相容性 + 使用者選取 trace ids 決定。
     `dataset_profile.capabilities` 僅作為建議、預設與提示，不可單獨 hard-block run。
 
 !!! warning "Backward compatibility"
@@ -106,7 +106,7 @@ DatasetRecord (集合)
     歷史版本曾在 `/raw-data` 與 `/simulation` 提供 metadata 寫入入口。
 
 !!! important "Metadata entry contract（Dashboard-only）"
-    `source_meta.dataset_profile` 的可編輯入口唯一位於 Pipeline `/dashboard`。  
+    `source_meta.dataset_profile` 的可編輯入口唯一位於 Pipeline `/dashboard`。
     `/raw-data` 與 `/simulation` 僅可顯示 read-only summary，不得直接寫入 metadata。
 
 ---
@@ -156,13 +156,25 @@ DatasetRecord (集合)
 | `result_payload` | JSON | - | 可選摘要 payload |
 
 !!! important "Bundle Scope Contract"
-    Characterization UI 以 dataset-centric 為主，預設使用 `All Dataset Records`。  
+    Characterization UI 以 dataset-centric 為主，預設使用 `All Dataset Records`。
     若內部 provenance 指向特定 `ResultBundleRecord`，僅能分析該 bundle 透過
     `ResultBundleDataLink` 連結的 traces；不應在 UI 強迫使用者手動操作 bundle。
 
 !!! important "Provenance Contract"
-    `source_meta` + `config_snapshot` 必須能回推一次分析輸入：  
+    `source_meta` + `config_snapshot` 必須能回推一次分析輸入：
     至少包含 input bundle（可為 `null` 代表全 dataset）與 selected trace ids。
+
+### Simulation Post-Process provenance（新增）
+
+當 `bundle_type=simulation_postprocess` 時，`config_snapshot` 應包含：
+
+- `input_y_source`: `raw_y` 或 `ptc_y`
+- `hfss_comparable`: `true` / `false`
+- `hfss_not_comparable_reason`: 當 `hfss_comparable=false` 時的可讀理由
+
+!!! important "Raw/Processed 語意對齊"
+    `hfss_comparable` 只描述 post-processed 輸出是否符合 HFSS 比對前提，
+    不代表 Raw Result View 的 `S` 已被改寫或替換。
 
 ---
 

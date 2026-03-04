@@ -8,7 +8,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema definition and usage"
-version: v1.2.0
+version: v1.3.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -106,7 +106,7 @@ trace-level run authority.
     Previous builds exposed metadata write entry points on `/raw-data` and `/simulation`.
 
 !!! important "Metadata entry contract (Dashboard-only)"
-    The only editable entry for `source_meta.dataset_profile` is Pipeline `/dashboard`.  
+    The only editable entry for `source_meta.dataset_profile` is Pipeline `/dashboard`.
     `/raw-data` and `/simulation` must remain read-only summary surfaces for metadata.
 
 ---
@@ -144,13 +144,25 @@ models bundle-to-trace membership (`DataRecord` linkage).
 | `result_payload` | JSON | - | Optional compact payload |
 
 !!! important "Bundle scope contract"
-    Characterization UI is dataset-centric and defaults to `All Dataset Records`.  
+    Characterization UI is dataset-centric and defaults to `All Dataset Records`.
     When internal provenance points to one specific `ResultBundleRecord`, only traces linked
     through `ResultBundleDataLink` may be analyzed; UI should not force explicit bundle operations.
 
 !!! important "Provenance contract"
     `source_meta` + `config_snapshot` must be sufficient to reconstruct analysis input.
     At minimum: input bundle (nullable for full-dataset scope) and selected trace ids.
+
+### Simulation post-process provenance (new)
+
+When `bundle_type=simulation_postprocess`, `config_snapshot` should include:
+
+- `input_y_source`: `raw_y` or `ptc_y`
+- `hfss_comparable`: `true` / `false`
+- `hfss_not_comparable_reason`: human-readable reason when `hfss_comparable=false`
+
+!!! important "Raw/processed semantic alignment"
+    `hfss_comparable` describes only whether the post-processed output satisfies
+    HFSS-comparison preconditions. It does not mean Raw Result View `S` is rewritten.
 
 ---
 

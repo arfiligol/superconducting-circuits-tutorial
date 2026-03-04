@@ -11,7 +11,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: Characterization analysis run 的 persistence / provenance 契約
-version: v0.3.0
+version: v0.3.1
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -73,12 +73,17 @@ updated_by: docs-team
     既有資料模型仍可記錄 bundle 層級來源（`input_bundle_id`）。
 
 !!! important "Contract（Dataset-centric UI, bundle provenance internal）"
-    Characterization UI 以 dataset 為主，不暴露「手動選 Characterization bundle 作為輸入」流程。  
+    Characterization UI 以 dataset 為主，不暴露「手動選 Characterization bundle 作為輸入」流程。
     run 候選 traces 由 dataset-level trace index 做 trace-first 篩選；
     provenance 仍可在內部保存 `input_bundle_id` 以支援追溯。
 
 !!! warning "Input hygiene"
     `analysis_result` 型資料不得被當作下一輪 trace 輸入，除非特定 analysis 有明確契約宣告。
+
+!!! note "Simulation post-process HFSS metadata"
+    `hfss_comparable` 與 `input_y_source` 屬於 `simulation_postprocess` bundle 的 provenance 欄位，
+    定義於 `Dataset Record Schema`。
+    Characterization `analysis_run` bundle 不應重複宣告這些欄位作為 authority。
 
 ## JSON Example（characterization run bundle）
 

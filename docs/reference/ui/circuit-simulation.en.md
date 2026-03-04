@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.7.0
+version: v0.8.0
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -48,6 +48,20 @@ This page defines the formal `/simulation` UI contract.
     Changes inside the result view (family/metric switches, adding or removing trace cards,
     trace selector edits) must only update the shared plot and must not rerun solver or post-processing.
 
+### Raw Simulation Results family semantics (normative)
+
+- `S`: must always show solver-native raw `S`; Port Termination Compensation (PTC) must not be applied
+- `Y`: must provide `Raw Y` / `PTC Y` source switching
+- `Z`: must provide `Raw Z` / `PTC Z` source switching
+
+!!! important "PTC scope in Raw View"
+    In `Simulation Results`, PTC may affect only the `Y/Z` paths.
+    `S` must remain raw to preserve solver-native semantics.
+
+!!! note "Y-domain first"
+    PTC is defined as `Y_clean = Y_raw - diag(1/R_i)`.
+    `PTC Z` must be derived from compensated `Y`; direct `S` compensation is not allowed.
+
 ### Post-Processed naming consistency contract
 
 !!! note "Current behavior (2026-03-04)"
@@ -61,7 +75,7 @@ This page defines the formal `/simulation` UI contract.
 
 !!! warning "No index-only fallback in transformed basis"
     In transformed-basis cases (for example `dm(1,2)`, `cm(1,2)`), do not render index-only names
-    like `Z11`, `Y21`, `S12`.  
+    like `Z11`, `Y21`, `S12`.
     Index-only naming is acceptable only when output/input are purely numeric raw ports and no
     basis transformation is active.
 
@@ -190,7 +204,7 @@ Expected model:
     (`Auto Suggest` + `Save Metadata`).
 
 !!! important "Contract (Dashboard-only edit entry)"
-    `/simulation` must not expose dataset metadata write controls.  
+    `/simulation` must not expose dataset metadata write controls.
     This page may only display a read-only profile summary; the only edit entry is Pipeline `Dashboard`.
 
 !!! warning "Boundary vs run behavior"
@@ -234,6 +248,17 @@ Expected model:
     `Keep Basis Labels` must support continuous multi-select without closing after each click.
     A chip-toggle or top-nav style selector is acceptable, and it must provide `Select All` / `Clear` quick actions.
 
+### Post-Processing input source contract
+
+`Input Node` must expose `Input Y Source` with:
+
+- `Raw Y`
+- `PTC Y`
+
+!!! important "Source visibility"
+    `Post Processing Results` must clearly indicate whether output comes from `Raw Y` or `PTC Y`.
+    The persisted flow snapshot must also carry this source field.
+
 ### Scope and Input Matrix
 
 - post-processing uses port-space `Y(ω)` as the canonical input
@@ -258,6 +283,10 @@ with:
 
 - `V_m = A · V`
 - `I_m = A^{-T} · I`
+
+!!! warning "No direct S-domain CT"
+    Coordinate Transformation and Kron Reduction are allowed only in the `Y/Z` domain.
+    Direct coordinate transformation on `S` is forbidden.
 
 #### cm/dm template and normalization
 
@@ -345,6 +374,21 @@ Recommended model:
 - `config_snapshot` stores flow spec (mode filter, A, keep/drop, step order)
 - bundle must attach output `DataRecord` rows (at least `y_params` with `real/imaginary`)
 
+### HFSS Comparable semantic marker
+
+`Post Processing Results` must expose an `HFSS Comparable` state marker (badge/label).
+
+Conditions (all required):
+
+1. `Port Termination Compensation` is enabled
+2. At least one enabled `Coordinate Transformation` exists in the pipeline
+3. `Input Y Source = PTC Y`
+
+!!! warning "Reason is required when not comparable"
+    If `HFSS Comparable` is false, UI must show an explicit reason,
+    for example "PTC is disabled", "Coordinate Transformation missing", or
+    "Input Y Source is not PTC Y".
+
 ## Normalization Domains (Avoid Mixing Terms)
 
 This page only implements the first of two normalization contexts:
@@ -386,6 +430,10 @@ Full nodal internal-node elimination (steps 1/2 UI flow) is explicitly out of M1
 - it becomes available immediately after solver success (no Post Processing required)
 - it keeps the multi-family `S/Y/Z/QE/CM/Complex` tabs, metric selector, add-trace cards, and shared plot
 
+!!! important "Raw S must never be rewritten by PTC"
+    Even when PTC is enabled, `Simulation Results` `S` must remain solver-native raw `S`.
+    In Raw View, PTC may affect only `Y/Z` families through explicit source switching.
+
 ## Post Processing Results Node Semantics
 
 `Post Processing Results` is a separate section that renders the latest successful post-processing output node:
@@ -393,3 +441,7 @@ Full nodal internal-node elimination (steps 1/2 UI flow) is explicitly out of M1
 - before Post Processing run: show waiting state
 - after successful run: use the same Result Family Explorer interaction pattern as `Simulation Results` (family/metric/trace cards/shared plot)
 - after pipeline-step parameter changes: invalidate previous output and require rerun
+
+!!! note "Processed S source"
+    `Post Processing Results` `S` must be converted from post-processed `Y/Z`,
+    not produced by direct S-domain transformation.

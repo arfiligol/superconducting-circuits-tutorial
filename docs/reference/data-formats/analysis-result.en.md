@@ -11,7 +11,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: Persistence and provenance contract for Characterization analysis runs
-version: v0.3.0
+version: v0.3.1
 last_updated: 2026-03-04
 updated_by: docs-team
 ---
@@ -81,6 +81,11 @@ Analysis outputs are persisted as `DerivedParameter` rows, minimum requirements:
 !!! warning "Input hygiene"
     `analysis_result`-typed data must not be reused as trace input unless a specific analysis
     explicitly declares that contract.
+
+!!! note "Simulation post-process HFSS metadata"
+    `hfss_comparable` and `input_y_source` belong to `simulation_postprocess` bundle provenance,
+    defined in `Dataset Record Schema`.
+    Characterization `analysis_run` bundles should not duplicate these fields as run authority.
 
 ## JSON Example (characterization run bundle)
 
