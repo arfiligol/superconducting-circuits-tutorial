@@ -44,7 +44,6 @@ _IDX_RE = re.compile(r"^(.+?)_(\d+)$")
 _MODE_CANONICAL_RE = re.compile(r"^mode_(\d+)_ghz$")
 _MODE_LEGACY_INDEX_RE = re.compile(r"^(?:mode_ghz|fr_ghz)_(\d+)$")
 _MODE_LEGACY_SINGLE_RE = re.compile(r"^(?:mode_ghz|fr_ghz)$")
-_ANALYSIS_BUNDLE_SELECTED_KEY = "analysis_selected_bundle_by_dataset"
 _ANALYSIS_RUN_SELECTED_KEY = "analysis_selected_run_by_dataset"
 _ANALYSIS_RESULT_SELECTED_KEY = "analysis_selected_result_by_dataset"
 _ANALYSIS_RESULT_CATEGORY_SELECTED_KEY = "analysis_selected_result_category_by_scope"
@@ -68,6 +67,7 @@ _TRACE_MODE_FILTER_OPTIONS: dict[str, str] = {
     "base": "Base",
     "sideband": "Sideband",
 }
+_MAX_BULK_TRACE_SELECTION = 2000
 _ANALYSIS_CATEGORY_DEFAULTS: dict[str, str] = {
     "admittance_extraction": "resonance",
     "s21_resonance_fit": "fit",
@@ -81,6 +81,7 @@ class AnalysisScopeCompatibility:
     """Compatibility summary for one analysis under current record scope."""
 
     compatible_trace_rows: list[dict[str, str | int]]
+    compatible_trace_count: int
     has_compatible_traces: bool
     status: str
     message: str
@@ -90,6 +91,7 @@ class AnalysisScopeCompatibility:
 class AnalysisRunUiState:
     """UI contract for availability label and run-button enabled state."""
 
+    has_compatible_traces: bool
     availability_text: str
     availability_class: str
     run_disabled: bool
@@ -98,12 +100,12 @@ class AnalysisRunUiState:
 
 @dataclass(frozen=True)
 class AnalysisRunAvailability:
-    """Combined capability + scope availability for one analysis."""
+    """Profile recommendation + scope compatibility for one analysis."""
 
     status: str
     reason: str
-    capability_allowed: bool
     has_compatible_traces: bool
+    profile_hints: list[str]
 
 
 @dataclass(frozen=True)
@@ -148,20 +150,6 @@ def _format_mode_label(name: str) -> str | None:
 def _display_param_name(name: str) -> str:
     mode_label = _format_mode_label(name)
     return mode_label if mode_label is not None else name
-
-
-def _load_selected_bundle_token(dataset_id: int) -> str:
-    """Load the selected bundle scope for one dataset from user storage."""
-    raw_map = app.storage.user.get(_ANALYSIS_BUNDLE_SELECTED_KEY, {})
-    if not isinstance(raw_map, dict):
-        return ""
-    selected = raw_map.get(str(dataset_id), "")
-    return selected if isinstance(selected, str) else ""
-
-
-def _save_selected_bundle_token(dataset_id: int, token: str) -> None:
-    """Persist the selected bundle scope for one dataset into user storage."""
-    _save_dataset_text_selection(_ANALYSIS_BUNDLE_SELECTED_KEY, dataset_id, token)
 
 
 def _load_dataset_text_selection(storage_key: str, dataset_id: int) -> str:
@@ -351,6 +339,7 @@ def _evaluate_analysis_scope_compatibility(
     has_compatible_traces = bool(compatible_trace_rows)
     return AnalysisScopeCompatibility(
         compatible_trace_rows=compatible_trace_rows,
+        compatible_trace_count=len(compatible_trace_rows),
         has_compatible_traces=has_compatible_traces,
         status="available" if has_compatible_traces else "unavailable",
         message=(
@@ -358,6 +347,91 @@ def _evaluate_analysis_scope_compatibility(
             if has_compatible_traces
             else "Unavailable for current scope"
         ),
+    )
+
+
+def _analysis_data_type_candidates(data_type: str) -> list[str]:
+    """Resolve canonical + alias data_type keys accepted by persistence rows."""
+    normalized = _normalize_analysis_data_type(data_type)
+    aliases = {
+        "s_parameters": ["s_parameters", "s_params"],
+        "y_parameters": ["y_parameters", "y_params"],
+        "z_parameters": ["z_parameters", "z_params"],
+    }
+    return aliases.get(normalized, [normalized])
+
+
+def _analysis_query_filters(analysis_requires: dict[str, object]) -> dict[str, object]:
+    """Convert analysis `requires` into DB-friendly metadata filter clauses."""
+    normalized_requires = _normalize_analysis_requirements(analysis_requires)
+    data_type_value = normalized_requires.get("data_type", "")
+    data_types: list[str] = []
+    if isinstance(data_type_value, str) and data_type_value:
+        data_types = _analysis_data_type_candidates(data_type_value)
+
+    parameter_value = normalized_requires.get("parameter")
+    parameters: list[str] = []
+    if isinstance(parameter_value, list):
+        parameters = [str(item) for item in parameter_value if str(item)]
+    elif isinstance(parameter_value, str) and parameter_value:
+        parameters = [parameter_value]
+
+    representation = str(normalized_requires.get("representation", "") or "")
+    return {
+        "data_types": data_types,
+        "parameters": parameters,
+        "representation": representation,
+    }
+
+
+def _count_scope_trace_records(
+    *,
+    uow: Any,
+    dataset_id: int,
+    selected_bundle_id: int | None,
+) -> int:
+    """Count trace rows for current source scope."""
+    if selected_bundle_id is not None:
+        return uow.result_bundles.count_data_records(selected_bundle_id)
+    return uow.data_records.count_by_dataset(dataset_id)
+
+
+def _list_scope_compatible_trace_index_page(
+    *,
+    uow: Any,
+    dataset_id: int,
+    selected_bundle_id: int | None,
+    analysis_requires: dict[str, object],
+    search: str = "",
+    sort_by: str = "id",
+    descending: bool = False,
+    mode_filter: str = _TRACE_MODE_ALL,
+    ids: Sequence[int] | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[dict[str, str | int]], int]:
+    """List one page of compatible trace metadata under current scope."""
+    filters = _analysis_query_filters(analysis_requires)
+    query_kwargs = {
+        "search": search,
+        "sort_by": sort_by,
+        "descending": descending,
+        "data_types": filters["data_types"],
+        "parameters": filters["parameters"],
+        "representation": filters["representation"],
+        "mode_filter": mode_filter,
+        "ids": ids,
+        "limit": limit,
+        "offset": offset,
+    }
+    if selected_bundle_id is not None:
+        return uow.result_bundles.list_data_record_index_page(
+            selected_bundle_id,
+            **query_kwargs,
+        )
+    return uow.data_records.list_index_page_by_dataset(
+        dataset_id,
+        **query_kwargs,
     )
 
 
@@ -369,6 +443,7 @@ def _build_analysis_run_ui_state(
     """Build availability text and run-button state from one compatibility source."""
     if not has_compatible_traces:
         return AnalysisRunUiState(
+            has_compatible_traces=False,
             availability_text="Unavailable for current scope",
             availability_class="text-warning",
             run_disabled=True,
@@ -376,12 +451,14 @@ def _build_analysis_run_ui_state(
         )
     if selected_trace_count <= 0:
         return AnalysisRunUiState(
+            has_compatible_traces=True,
             availability_text="Available for current scope (no traces selected)",
             availability_class="text-positive",
             run_disabled=True,
             run_hint="Select at least one trace to run.",
         )
     return AnalysisRunUiState(
+        has_compatible_traces=True,
         availability_text="Available for current scope",
         availability_class="text-positive",
         run_disabled=False,
@@ -391,38 +468,35 @@ def _build_analysis_run_ui_state(
 
 def _build_analysis_run_availability(
     *,
-    capability_allowed: bool,
-    capability_recommended: bool,
-    capability_reasons: Sequence[str],
+    profile_recommended: bool,
+    profile_hints: Sequence[str],
     has_compatible_traces: bool,
 ) -> AnalysisRunAvailability:
-    """Merge capability gating and metadata compatibility into one availability state."""
-    if not capability_allowed:
-        return AnalysisRunAvailability(
-            status="Unavailable",
-            reason="; ".join(capability_reasons),
-            capability_allowed=False,
-            has_compatible_traces=has_compatible_traces,
-        )
+    """Merge profile recommendation hints and trace compatibility into one status."""
     if not has_compatible_traces:
         return AnalysisRunAvailability(
             status="Unavailable",
             reason="No compatible traces in current scope.",
-            capability_allowed=True,
             has_compatible_traces=False,
+            profile_hints=list(profile_hints),
         )
-    if capability_recommended:
+    if profile_recommended:
         return AnalysisRunAvailability(
             status="Recommended",
-            reason="Recommended for this dataset profile.",
-            capability_allowed=True,
+            reason="Compatible traces found and dataset profile recommends this analysis.",
             has_compatible_traces=True,
+            profile_hints=list(profile_hints),
         )
+    reason = (
+        "; ".join(profile_hints)
+        if profile_hints
+        else "Compatible traces found in current scope."
+    )
     return AnalysisRunAvailability(
         status="Available",
-        reason="Compatible with current dataset profile.",
-        capability_allowed=True,
+        reason=reason,
         has_compatible_traces=True,
+        profile_hints=list(profile_hints),
     )
 
 
@@ -565,18 +639,13 @@ def _to_int(value: object, default: int) -> int:
     return default
 
 
-def _bundle_option_label(bundle: ResultBundleRecord) -> str:
-    """Format one ResultBundleRecord for the Characterization scope selector."""
-    bundle_id = bundle.id if bundle.id is not None else "?"
-    return f"#{bundle_id} {bundle.bundle_type} ({bundle.role}, {bundle.status})"
-
-
 def _build_analysis_run_bundle_record(
     *,
     dataset_id: int,
     analysis_id: str,
     analysis_label: str,
     selected_bundle_id: int | None,
+    selected_scope_token: str,
     config_snapshot: dict[str, object],
 ) -> ResultBundleRecord:
     """Build a provenance bundle for one Characterization run."""
@@ -590,6 +659,7 @@ def _build_analysis_run_bundle_record(
             "analysis_id": analysis_id,
             "analysis_label": analysis_label,
             "input_bundle_id": selected_bundle_id,
+            "input_scope": selected_scope_token,
         },
         config_snapshot=config_snapshot,
         result_payload={},
@@ -1416,36 +1486,16 @@ def characterization_page():
                         if not ds:
                             return
 
-                        dataset_record_index = refresh_uow.data_records.list_index_by_dataset(
-                            active_id
+                        dataset_profile_index = (
+                            refresh_uow.data_records.list_distinct_index_for_profile(active_id)
                         )
                         bundles = refresh_uow.result_bundles.list_by_dataset(active_id)
-                        bundle_options = {"": "All Dataset Records"}
-                        bundle_options.update(
-                            {
-                                str(bundle.id): _bundle_option_label(bundle)
-                                for bundle in bundles
-                                if bundle.id is not None
-                            }
-                        )
-
-                        selected_bundle_token = _load_selected_bundle_token(active_id)
-                        if selected_bundle_token not in bundle_options:
-                            selected_bundle_token = ""
-                            _save_selected_bundle_token(active_id, selected_bundle_token)
-
-                        selected_bundle = next(
-                            (
-                                bundle
-                                for bundle in bundles
-                                if str(bundle.id) == selected_bundle_token
-                            ),
-                            None,
-                        )
-                        scoped_record_index = (
-                            refresh_uow.result_bundles.list_data_record_index(selected_bundle.id)
-                            if selected_bundle is not None and selected_bundle.id is not None
-                            else dataset_record_index
+                        selected_bundle_id = None
+                        selected_scope_token = "all_dataset_records"
+                        scoped_trace_count = _count_scope_trace_records(
+                            uow=refresh_uow,
+                            dataset_id=active_id,
+                            selected_bundle_id=selected_bundle_id,
                         )
 
                         ds_params = refresh_uow.derived_params.list_by_dataset(active_id)
@@ -1458,30 +1508,46 @@ def characterization_page():
                             return
                         dataset_profile = normalize_dataset_profile(
                             ds.source_meta,
-                            record_index=dataset_record_index,
+                            record_index=dataset_profile_index,
                         )
 
                         analysis_scope_compatibility: dict[str, AnalysisScopeCompatibility] = {}
                         analysis_run_availability_by_id: dict[str, AnalysisRunAvailability] = {}
-                        scope_revision = (
-                            f"{len(scoped_record_index)}:"
-                            f"{scoped_record_index[-1]['id'] if scoped_record_index else 0}"
-                        )
+                        scope_revision = f"{scoped_trace_count}:{selected_scope_token}"
                         for analysis in analyses:
                             analysis_id = str(analysis["id"])
+                            effective_requires = _effective_analysis_requires(
+                                analysis_id=analysis_id,
+                                analysis_requires=dict(analysis.get("requires", {})),
+                            )
                             compatibility_cache_key = (
-                                f"{active_id}:{selected_bundle_token}:"
+                                f"{active_id}:{selected_scope_token}:"
                                 f"{scope_revision}:{analysis_id}"
                             )
                             compatibility = analysis_scope_compatibility_cache.get(
                                 compatibility_cache_key
                             )
                             if compatibility is None:
-                                compatibility = _evaluate_analysis_scope_compatibility(
-                                    scoped_record_index=scoped_record_index,
-                                    analysis_requires=_effective_analysis_requires(
-                                        analysis_id=analysis_id,
-                                        analysis_requires=dict(analysis.get("requires", {})),
+                                _, compatible_trace_count = _list_scope_compatible_trace_index_page(
+                                    uow=refresh_uow,
+                                    dataset_id=active_id,
+                                    selected_bundle_id=selected_bundle_id,
+                                    analysis_requires=effective_requires,
+                                    limit=1,
+                                    offset=0,
+                                )
+                                has_compatible_traces = compatible_trace_count > 0
+                                compatibility = AnalysisScopeCompatibility(
+                                    compatible_trace_rows=[],
+                                    compatible_trace_count=compatible_trace_count,
+                                    has_compatible_traces=has_compatible_traces,
+                                    status=(
+                                        "available" if has_compatible_traces else "unavailable"
+                                    ),
+                                    message=(
+                                        "Available for current scope"
+                                        if has_compatible_traces
+                                        else "Unavailable for current scope"
                                     ),
                                 )
                                 analysis_scope_compatibility_cache[compatibility_cache_key] = (
@@ -1494,9 +1560,8 @@ def characterization_page():
                             )
                             analysis_run_availability_by_id[analysis_id] = (
                                 _build_analysis_run_availability(
-                                    capability_allowed=capability_decision.allowed,
-                                    capability_recommended=capability_decision.recommended,
-                                    capability_reasons=capability_decision.reasons,
+                                    profile_recommended=capability_decision.recommended,
+                                    profile_hints=capability_decision.reasons,
                                     has_compatible_traces=compatibility.has_compatible_traces,
                                 )
                             )
@@ -1529,91 +1594,146 @@ def characterization_page():
                         selected_run_availability = analysis_run_availability_by_id[
                             selected_run_analysis_id
                         ]
-                        selected_scope_compatibility = analysis_scope_compatibility[
-                            selected_run_analysis_id
-                        ]
-                        candidate_trace_rows = list(
-                            selected_scope_compatibility.compatible_trace_rows
+                        selected_analysis_requires = _effective_analysis_requires(
+                            analysis_id=selected_run_analysis_id,
+                            analysis_requires=dict(selected_run_analysis.get("requires", {})),
                         )
+
+                        def _compatible_trace_page(
+                            *,
+                            search: str = "",
+                            sort_by: str = "id",
+                            descending: bool = False,
+                            mode_filter: str = _TRACE_MODE_ALL,
+                            ids: Sequence[int] | None = None,
+                            limit: int = 20,
+                            offset: int = 0,
+                        ) -> tuple[list[dict[str, str | int]], int]:
+                            return _list_scope_compatible_trace_index_page(
+                                uow=refresh_uow,
+                                dataset_id=active_id,
+                                selected_bundle_id=selected_bundle_id,
+                                analysis_requires=selected_analysis_requires,
+                                search=search,
+                                sort_by=sort_by,
+                                descending=descending,
+                                mode_filter=mode_filter,
+                                ids=ids,
+                                limit=limit,
+                                offset=offset,
+                            )
+
                         trace_scope_key = (
-                            f"{active_id}:{selected_bundle_token}:{selected_run_analysis_id}"
+                            f"{active_id}:{selected_scope_token}:{selected_run_analysis_id}"
                         )
                         if trace_scope_key not in selected_trace_ids_by_scope:
-                            base_trace_ids = {
-                                int(row["id"])
-                                for row in candidate_trace_rows
-                                if str(row["mode"]) == "Base"
-                            }
-                            if base_trace_ids:
-                                selected_trace_ids_by_scope[trace_scope_key] = base_trace_ids
-                            else:
+                            base_rows, _ = _compatible_trace_page(
+                                mode_filter="base",
+                                limit=1,
+                                offset=0,
+                            )
+                            if base_rows:
                                 selected_trace_ids_by_scope[trace_scope_key] = {
-                                    int(row["id"]) for row in candidate_trace_rows[:1]
+                                    int(base_rows[0]["id"])
                                 }
+                            else:
+                                first_rows, _ = _compatible_trace_page(limit=1, offset=0)
+                                selected_trace_ids_by_scope[trace_scope_key] = {
+                                    int(first_rows[0]["id"])
+                                } if first_rows else set()
                         if trace_scope_key not in trace_table_state_by_scope:
-                            has_base_traces = any(
-                                str(row.get("mode", "")) == "Base" for row in candidate_trace_rows
+                            _, base_trace_count = _compatible_trace_page(
+                                mode_filter="base",
+                                limit=1,
+                                offset=0,
                             )
                             trace_table_state_by_scope[trace_scope_key] = {
                                 "search": "",
-                                "trace_mode_filter": "base" if has_base_traces else _TRACE_MODE_ALL,
+                                "trace_mode_filter": (
+                                    "base" if base_trace_count > 0 else _TRACE_MODE_ALL
+                                ),
                                 "sort_by": "id",
                                 "descending": False,
                                 "page": 1,
                                 "page_size": 20,
                             }
 
-                        candidate_trace_ids = {int(row["id"]) for row in candidate_trace_rows}
-                        selected_trace_ids = {
-                            trace_id
-                            for trace_id in selected_trace_ids_by_scope[trace_scope_key]
-                            if trace_id in candidate_trace_ids
-                        }
-                        selected_trace_ids_by_scope[trace_scope_key] = selected_trace_ids
-                        candidate_trace_row_by_id = {
-                            int(row["id"]): row for row in candidate_trace_rows
-                        }
-
-                        def current_filtered_candidate_trace_rows() -> list[dict[str, str | int]]:
+                        def _current_mode_filter() -> str:
                             table_state = trace_table_state_by_scope[trace_scope_key]
-                            mode_filter = str(table_state.get("trace_mode_filter", _TRACE_MODE_ALL))
-                            return _filter_trace_rows_by_mode(
-                                candidate_trace_rows,
-                                mode_filter=mode_filter,
+                            return str(table_state.get("trace_mode_filter", _TRACE_MODE_ALL))
+
+                        def current_mode_trace_total() -> int:
+                            _, total = _compatible_trace_page(
+                                mode_filter=_current_mode_filter(),
+                                limit=1,
+                                offset=0,
                             )
+                            return total
 
                         def current_selected_trace_ids() -> set[int]:
-                            filtered_ids = {
-                                int(row["id"]) for row in current_filtered_candidate_trace_rows()
-                            }
                             scope_selected_ids = selected_trace_ids_by_scope.get(
                                 trace_scope_key,
                                 set(),
                             )
-                            return {
-                                trace_id
-                                for trace_id in scope_selected_ids
-                                if trace_id in filtered_ids
+                            if not scope_selected_ids:
+                                return set()
+                            validated_rows, _ = _compatible_trace_page(
+                                mode_filter=_current_mode_filter(),
+                                ids=sorted(scope_selected_ids),
+                                limit=max(1, len(scope_selected_ids)),
+                                offset=0,
+                            )
+                            validated_ids = {
+                                int(row["id"])
+                                for row in validated_rows
+                                if isinstance(row.get("id"), int)
                             }
+                            selected_trace_ids_by_scope[trace_scope_key] = validated_ids
+                            return validated_ids
 
                         def current_selected_trace_rows() -> list[dict[str, str | int]]:
-                            return [
-                                candidate_trace_row_by_id[trace_id]
-                                for trace_id in sorted(current_selected_trace_ids())
-                                if trace_id in candidate_trace_row_by_id
-                            ]
+                            selected_ids = sorted(current_selected_trace_ids())
+                            if not selected_ids:
+                                return []
+                            rows, _ = _compatible_trace_page(
+                                mode_filter=_current_mode_filter(),
+                                ids=selected_ids,
+                                limit=max(1, len(selected_ids)),
+                                offset=0,
+                            )
+                            return rows
 
                         def set_selected_trace_ids(updated_ids: set[int]) -> None:
-                            filtered_ids = {
-                                int(row["id"]) for row in current_filtered_candidate_trace_rows()
-                            }
                             selected_trace_ids_by_scope[trace_scope_key] = {
-                                trace_id for trace_id in updated_ids if trace_id in filtered_ids
+                                int(trace_id) for trace_id in updated_ids
                             }
+
+                        def bulk_select_for_mode(mode_filter: str) -> None:
+                            rows, total = _compatible_trace_page(
+                                mode_filter=mode_filter,
+                                sort_by="id",
+                                descending=False,
+                                limit=_MAX_BULK_TRACE_SELECTION + 1,
+                                offset=0,
+                            )
+                            selected_ids = {
+                                int(row["id"])
+                                for row in rows[:_MAX_BULK_TRACE_SELECTION]
+                                if isinstance(row.get("id"), int)
+                            }
+                            set_selected_trace_ids(selected_ids)
+                            if total > _MAX_BULK_TRACE_SELECTION:
+                                ui.notify(
+                                    (
+                                        "Large selection truncated to "
+                                        f"{_MAX_BULK_TRACE_SELECTION} traces for stability."
+                                    ),
+                                    type="warning",
+                                )
 
                         def current_run_ui_state() -> AnalysisRunUiState:
                             return _build_analysis_run_ui_state(
-                                has_compatible_traces=bool(current_filtered_candidate_trace_rows()),
+                                has_compatible_traces=current_mode_trace_total() > 0,
                                 selected_trace_count=len(current_selected_trace_ids()),
                             )
 
@@ -1646,30 +1766,12 @@ def characterization_page():
                                 with ui.row().classes(
                                     "w-full items-center justify-between gap-4 flex-wrap"
                                 ):
-                                    with ui.row().classes("items-center gap-2"):
-                                        ui.icon("inventory_2", size="sm").classes("text-primary")
-                                        ui.label("Source Scope").classes(
-                                            "text-lg font-bold text-fg"
-                                        )
-                                    ui.select(
-                                        options=bundle_options,
-                                        value=selected_bundle_token,
-                                        label="Result Bundle",
-                                        on_change=lambda e: (
-                                            _save_selected_bundle_token(active_id, str(e.value)),
-                                            render_dataset_view.refresh(),
-                                        ),
-                                    ).props("dense outlined options-dense").classes("w-80")
+                                    ui.icon("inventory_2", size="sm").classes("text-primary")
+                                    ui.label("Source Scope").classes("text-lg font-bold text-fg")
                                 ui.label(
-                                    (
-                                        "Previewing one specific bundle. "
-                                        "Run buttons still execute on the visible dataset."
-                                    )
-                                    if selected_bundle is not None
-                                    else (
-                                        "Using all records currently stored in this dataset, "
-                                        "including legacy unbundled data."
-                                    )
+                                    "Dataset-centric scope is active. Run Analysis uses all "
+                                    "dataset trace records and applies trace-first "
+                                    "compatibility filtering."
                                 ).classes("text-sm text-muted mt-2")
                                 with ui.row().classes("w-full gap-4 mt-3 flex-wrap"):
                                     with ui.column().classes(
@@ -1678,18 +1780,14 @@ def characterization_page():
                                         ui.label("Scope").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
-                                        ui.label(
-                                            _bundle_option_label(selected_bundle)
-                                            if selected_bundle is not None
-                                            else "All Dataset Records"
-                                        ).classes("text-sm text-fg")
+                                        ui.label("All Dataset Records").classes("text-sm text-fg")
                                     with ui.column().classes(
                                         "bg-bg rounded-lg border border-border p-3 min-w-[160px]"
                                     ):
                                         ui.label("Trace Records").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
-                                        ui.label(str(len(scoped_record_index))).classes(
+                                        ui.label(str(scoped_trace_count)).classes(
                                             "text-sm text-fg"
                                         )
                                     with ui.column().classes(
@@ -1705,74 +1803,43 @@ def characterization_page():
                                 run_config_numbers: dict[str, Any] = {}
                                 run_button: Any | None = None
                                 availability_label: Any | None = None
-                                analysis_status_label: Any | None = None
                                 analysis_reason_label: Any | None = None
-                                run_hint_label: Any | None = None
 
                                 def refresh_run_controls() -> None:
                                     ui_state = current_run_ui_state()
-                                    selected_ids = current_selected_trace_ids()
-                                    if not selected_run_availability.capability_allowed:
-                                        availability_text = (
-                                            "Unavailable for current dataset profile"
-                                        )
+                                    has_selected_traces = len(current_selected_trace_ids()) > 0
+                                    if not ui_state.has_compatible_traces:
+                                        availability_text = "Unavailable for current scope"
                                         availability_class = "text-warning"
-                                        run_hint = selected_run_availability.reason
-                                        run_disabled = True
-                                    elif not selected_run_availability.has_compatible_traces:
-                                        availability_text = ui_state.availability_text
-                                        availability_class = ui_state.availability_class
-                                        run_hint = selected_run_availability.reason
+                                        reason_text = "No compatible traces in current scope."
                                         run_disabled = True
                                     elif selected_run_availability.status == "Recommended":
-                                        if selected_ids:
-                                            availability_text = "Recommended for current scope"
-                                            availability_class = "text-positive"
-                                            run_hint = "Ready to run selected analysis."
-                                            run_disabled = False
-                                        else:
-                                            availability_text = (
-                                                "Recommended for current scope (no traces selected)"
-                                            )
-                                            availability_class = "text-positive"
-                                            run_hint = "Select at least one trace to run."
-                                            run_disabled = True
+                                        availability_text = "Recommended for current scope"
+                                        availability_class = "text-positive"
+                                        reason_text = (
+                                            "Select at least one trace to run."
+                                            if not has_selected_traces
+                                            else selected_run_availability.reason
+                                        )
+                                        run_disabled = not has_selected_traces
                                     else:
-                                        availability_text = ui_state.availability_text
+                                        availability_text = "Available for current scope"
                                         availability_class = ui_state.availability_class
-                                        run_hint = ui_state.run_hint
-                                        run_disabled = ui_state.run_disabled
+                                        reason_text = (
+                                            "Select at least one trace to run."
+                                            if not has_selected_traces
+                                            else selected_run_availability.reason
+                                        )
+                                        run_disabled = not has_selected_traces
 
                                     if availability_label is not None:
                                         availability_label.set_text(availability_text)
                                         availability_label.classes(
                                             replace=(f"text-sm font-semibold {availability_class}")
                                         )
-                                    if analysis_status_label is not None:
-                                        analysis_status_label.set_text(
-                                            f"Status: {selected_run_availability.status}"
-                                        )
-                                        analysis_status_label.classes(
-                                            replace=(
-                                                "text-sm font-semibold text-warning"
-                                                if selected_run_availability.status == "Unavailable"
-                                                else (
-                                                    "text-sm font-semibold text-positive"
-                                                    if (
-                                                        selected_run_availability.status
-                                                        == "Recommended"
-                                                    )
-                                                    else "text-sm font-semibold text-primary"
-                                                )
-                                            )
-                                        )
                                     if analysis_reason_label is not None:
-                                        analysis_reason_label.set_text(
-                                            selected_run_availability.reason
-                                        )
-                                    if run_hint_label is not None:
-                                        run_hint_label.set_text(run_hint)
-                                        run_hint_label.classes(
+                                        analysis_reason_label.set_text(reason_text)
+                                        analysis_reason_label.classes(
                                             replace=(
                                                 "text-sm text-warning mb-2"
                                                 if run_disabled
@@ -1816,19 +1883,10 @@ def characterization_page():
                                                 config_state[name] = run_config_numbers[name].value
 
                                         run_ui_state = current_run_ui_state()
-                                        if not selected_run_availability.capability_allowed:
+                                        if not run_ui_state.has_compatible_traces:
                                             append_analysis_status(
                                                 "warning",
-                                                selected_run_availability.reason,
-                                            )
-                                            return
-                                        if not selected_scope_compatibility.has_compatible_traces:
-                                            append_analysis_status(
-                                                "warning",
-                                                (
-                                                    selected_run_availability.reason
-                                                    or run_ui_state.run_hint
-                                                ),
+                                                run_ui_state.run_hint,
                                             )
                                             return
                                         if not run_trace_ids:
@@ -1870,16 +1928,16 @@ def characterization_page():
                                                         analysis_label=str(
                                                             selected_run_analysis["label"]
                                                         ),
-                                                        selected_bundle_id=(
-                                                            selected_bundle.id
-                                                            if selected_bundle is not None
-                                                            else None
-                                                        ),
+                                                        selected_bundle_id=None,
+                                                        selected_scope_token=selected_scope_token,
                                                         config_snapshot={
                                                             **dict(config_state),
                                                             "selected_trace_ids": run_trace_ids,
                                                             "selected_trace_mode_group": (
                                                                 selected_mode_group
+                                                            ),
+                                                            "selected_trace_count": len(
+                                                                run_trace_ids
                                                             ),
                                                         },
                                                     )
@@ -1941,63 +1999,20 @@ def characterization_page():
                                     availability_label = ui.label("").classes(
                                         "text-sm font-semibold"
                                     )
-                                    analysis_status_label = ui.label("").classes(
-                                        "text-sm font-semibold"
-                                    )
                                 analysis_reason_label = ui.label("").classes(
-                                    "text-xs text-muted mb-1"
+                                    "text-sm text-muted mb-2"
                                 )
-                                run_hint_label = ui.label("").classes("text-sm mb-2")
                                 refresh_run_controls()
-                                analysis_status_rows = [
-                                    {
-                                        "analysis": str(analysis["label"]),
-                                        "status": analysis_run_availability_by_id[
-                                            str(analysis["id"])
-                                        ].status,
-                                        "reason": analysis_run_availability_by_id[
-                                            str(analysis["id"])
-                                        ].reason,
-                                    }
-                                    for analysis in analyses
-                                ]
-                                analysis_status_columns = [
-                                    {
-                                        "name": "analysis",
-                                        "label": "Analysis",
-                                        "field": "analysis",
-                                        "align": "left",
-                                        "sortable": True,
-                                    },
-                                    {
-                                        "name": "status",
-                                        "label": "Status",
-                                        "field": "status",
-                                        "align": "left",
-                                        "sortable": True,
-                                    },
-                                    {
-                                        "name": "reason",
-                                        "label": "Reason",
-                                        "field": "reason",
-                                        "align": "left",
-                                        "sortable": True,
-                                    },
-                                ]
-                                ui.table(
-                                    columns=analysis_status_columns,
-                                    rows=analysis_status_rows,
-                                    row_key="analysis",
-                                    pagination=10,
-                                ).classes(
-                                    "w-full rounded-lg border border-border bg-bg mb-3"
-                                ).props("dense flat bordered separator=horizontal")
 
                                 ui.separator().classes("my-4 bg-border")
 
                                 @ui.refreshable
                                 def render_trace_selection() -> None:
-                                    filtered_scope_rows = current_filtered_candidate_trace_rows()
+                                    table_state = trace_table_state_by_scope[trace_scope_key]
+                                    mode_filter = str(
+                                        table_state.get("trace_mode_filter", _TRACE_MODE_ALL)
+                                    )
+                                    mode_total = current_mode_trace_total()
 
                                     with ui.row().classes(
                                         "w-full items-center justify-between gap-3 flex-wrap"
@@ -2008,23 +2023,13 @@ def characterization_page():
                                         with ui.row().classes("items-center gap-2"):
                                             ui.label(
                                                 f"{len(current_selected_trace_ids())} / "
-                                                f"{len(filtered_scope_rows)} selected"
+                                                f"{mode_total} selected"
                                             ).classes("text-xs text-muted")
 
                                             ui.button(
                                                 "Base",
                                                 on_click=lambda: (
-                                                    set_selected_trace_ids(
-                                                        {
-                                                            int(row["id"])
-                                                            for row in filtered_scope_rows
-                                                            if str(row["mode"]) == "Base"
-                                                        }
-                                                        or {
-                                                            int(row["id"])
-                                                            for row in filtered_scope_rows[:1]
-                                                        }
-                                                    ),
+                                                    bulk_select_for_mode("base"),
                                                     refresh_run_controls(),
                                                     render_trace_selection.refresh(),
                                                 ),
@@ -2032,11 +2037,13 @@ def characterization_page():
                                             ui.button(
                                                 "All",
                                                 on_click=lambda: (
-                                                    set_selected_trace_ids(
-                                                        {
-                                                            int(row["id"])
-                                                            for row in filtered_scope_rows
-                                                        }
+                                                    bulk_select_for_mode(
+                                                        str(
+                                                            table_state.get(
+                                                                "trace_mode_filter",
+                                                                _TRACE_MODE_ALL,
+                                                            )
+                                                        )
                                                     ),
                                                     refresh_run_controls(),
                                                     render_trace_selection.refresh(),
@@ -2051,26 +2058,28 @@ def characterization_page():
                                                 ),
                                             ).props("flat dense no-caps color=primary")
 
-                                    if not filtered_scope_rows:
+                                    if mode_total <= 0:
                                         ui.label(
                                             "No compatible traces found for the selected analysis "
                                             "under selected trace mode filter."
                                         ).classes("text-sm text-muted mb-2")
                                         return
 
-                                    table_state = trace_table_state_by_scope[trace_scope_key]
-                                    filtered_trace_rows = _trace_rows_for_view(
-                                        filtered_scope_rows,
-                                        search=str(table_state.get("search", "")),
-                                        mode_filter=_TRACE_MODE_ALL,
-                                        sort_by=str(table_state.get("sort_by", "id")),
-                                        descending=bool(table_state.get("descending", False)),
-                                    )
+                                    search_text = str(table_state.get("search", ""))
+                                    sort_by = str(table_state.get("sort_by", "id"))
+                                    descending = bool(table_state.get("descending", False))
                                     page_size = max(
                                         1,
                                         _to_int(table_state.get("page_size", 20), 20),
                                     )
-                                    total_filtered = len(filtered_trace_rows)
+                                    _, total_filtered = _compatible_trace_page(
+                                        search=search_text,
+                                        mode_filter=mode_filter,
+                                        sort_by=sort_by,
+                                        descending=descending,
+                                        limit=1,
+                                        offset=0,
+                                    )
                                     total_pages = max(
                                         1,
                                         (total_filtered + page_size - 1) // page_size,
@@ -2081,9 +2090,14 @@ def characterization_page():
                                     )
                                     table_state["page"] = current_page
                                     page_offset = (current_page - 1) * page_size
-                                    visible_trace_rows = filtered_trace_rows[
-                                        page_offset : page_offset + page_size
-                                    ]
+                                    visible_trace_rows, _ = _compatible_trace_page(
+                                        search=search_text,
+                                        mode_filter=mode_filter,
+                                        sort_by=sort_by,
+                                        descending=descending,
+                                        limit=page_size,
+                                        offset=page_offset,
+                                    )
 
                                     with ui.row().classes("w-full gap-3 items-end flex-wrap mb-2"):
                                         ui.input(
@@ -2114,6 +2128,7 @@ def characterization_page():
                                                     str(e.value or _TRACE_MODE_ALL),
                                                 ),
                                                 table_state.__setitem__("page", 1),
+                                                set_selected_trace_ids(set()),
                                                 refresh_run_controls(),
                                                 render_trace_selection.refresh(),
                                             ),
@@ -2156,7 +2171,11 @@ def characterization_page():
                                                 else ""
                                             ),
                                             "id": _to_int(row.get("id"), 0),
-                                            "mode": str(row["mode"]),
+                                            "mode": (
+                                                "Sideband"
+                                                if _trace_row_mode_key(row) == "sideband"
+                                                else "Base"
+                                            ),
                                             "parameter": str(row["parameter"]),
                                             "representation": str(row["representation"]),
                                         }

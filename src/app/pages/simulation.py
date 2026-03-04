@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, TypedDict
@@ -15,15 +16,8 @@ from nicegui import app, run, ui
 
 from app.layout import app_shell
 from app.services.dataset_profile import (
-    build_dataset_profile_payload,
-    capability_option_labels,
-    device_type_option_labels,
-    merge_dataset_profile_into_source_meta,
-    normalize_capabilities,
     normalize_dataset_profile,
-    normalize_device_type,
     profile_summary_text,
-    suggested_capabilities_for_device_type,
 )
 from core.shared.persistence import SqliteUnitOfWork, get_unit_of_work
 from core.shared.persistence.models import (
@@ -145,8 +139,6 @@ _TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
 _SIM_METADATA_TARGET_DATASET_KEY = "simulation_metadata_target_dataset_id"
-_SIM_METADATA_DEVICE_TYPE_OPTIONS = device_type_option_labels()
-_SIM_METADATA_CAPABILITY_OPTIONS = capability_option_labels()
 
 
 class _ResultTraceSelection(TypedDict):
@@ -412,20 +404,6 @@ def _build_source_payload(
         "current_amp": float(current_amp),
         "mode": [int(value) for value in mode],
     }
-
-
-def _persist_dataset_profile_metadata(*, dataset_id: int, profile_payload: dict[str, Any]) -> None:
-    """Persist one dataset profile payload into dataset source_meta."""
-    with get_unit_of_work() as uow:
-        dataset = uow.datasets.get(dataset_id)
-        if dataset is None:
-            raise ValueError("Target dataset not found.")
-        updated_source_meta = merge_dataset_profile_into_source_meta(
-            dataset.source_meta,
-            profile_payload=profile_payload,
-        )
-        uow.datasets.update_source_meta(dataset_id, updated_source_meta)
-        uow.commit()
 
 
 def _compress_source_mode_components(
@@ -1389,6 +1367,7 @@ def _render_result_family_explorer(
                 reference_impedance_ohm=float(view_state.get("z0", 50.0)),
                 dark_mode=bool(_user_storage_get("dark_mode", True)),
                 trace_selections=selections,
+                port_label_by_index=port_options,
             )
             ui.plotly(figure).classes("w-full min-h-[420px] mt-3")
 
@@ -2511,6 +2490,52 @@ def _build_post_processed_y_data_records(
     return records
 
 
+def _port_label_token(label: str) -> str:
+    """Convert one port label into a stable matrix-name token."""
+    normalized = str(label).strip()
+    if not normalized:
+        return "x"
+    head = normalized.split("(", maxsplit=1)[0].strip()
+    candidate = head or normalized
+    if candidate.isdigit():
+        return candidate
+    sanitized = re.sub(r"[^0-9a-zA-Z]+", "_", candidate).strip("_")
+    return (sanitized or "x").lower()
+
+
+def _matrix_element_name(
+    *,
+    matrix_symbol: str,
+    output_port: int,
+    input_port: int,
+    port_label_by_index: dict[int, str] | None,
+) -> str:
+    """Build one matrix element name aligned with trace-card port labels."""
+    output_label = (
+        str(port_label_by_index.get(output_port, output_port))
+        if port_label_by_index
+        else str(output_port)
+    )
+    input_label = (
+        str(port_label_by_index.get(input_port, input_port))
+        if port_label_by_index
+        else str(input_port)
+    )
+    output_token = _port_label_token(output_label)
+    input_token = _port_label_token(input_label)
+
+    labels_are_plain_numeric = (not port_label_by_index) or all(
+        str(label).strip().isdigit() for label in port_label_by_index.values()
+    )
+    if (
+        labels_are_plain_numeric
+        and output_token.isdigit()
+        and input_token.isdigit()
+    ):
+        return f"{matrix_symbol}{output_token}{input_token}"
+    return f"{matrix_symbol}_{output_token}_{input_token}"
+
+
 def _build_simulation_result_figure(
     result: SimulationResult,
     view_family: str,
@@ -2523,6 +2548,7 @@ def _build_simulation_result_figure(
     reference_impedance_ohm: float,
     dark_mode: bool,
     trace_selections: list[_ResultTraceSelection] | None = None,
+    port_label_by_index: dict[int, str] | None = None,
 ) -> go.Figure:
     """Build the selected simulation result figure from the cached result bundle."""
     freq_values = result.frequencies_ghz
@@ -2552,9 +2578,34 @@ def _build_simulation_result_figure(
         nonlocal x_axis_title, y_axis_title
 
         mode_suffix = _format_export_suffix(selected_output_mode, selected_input_mode)
-        s_label = f"S{selected_output_port}{selected_input_port}{mode_suffix}"
-        z_label = f"Z{selected_output_port}{selected_input_port}{mode_suffix}"
-        y_label = f"Y{selected_output_port}{selected_input_port}{mode_suffix}"
+        s_name = _matrix_element_name(
+            matrix_symbol="S",
+            output_port=selected_output_port,
+            input_port=selected_input_port,
+            port_label_by_index=port_label_by_index,
+        )
+        z_name = _matrix_element_name(
+            matrix_symbol="Z",
+            output_port=selected_output_port,
+            input_port=selected_input_port,
+            port_label_by_index=port_label_by_index,
+        )
+        y_name = _matrix_element_name(
+            matrix_symbol="Y",
+            output_port=selected_output_port,
+            input_port=selected_input_port,
+            port_label_by_index=port_label_by_index,
+        )
+        gain_name = _matrix_element_name(
+            matrix_symbol="Gain",
+            output_port=selected_output_port,
+            input_port=selected_input_port,
+            port_label_by_index=port_label_by_index,
+        )
+        s_label = f"{s_name}{mode_suffix}"
+        z_label = f"{z_name}{mode_suffix}"
+        y_label = f"{y_name}{mode_suffix}"
+        gain_label = f"{gain_name}{mode_suffix}"
         line_style = dict(
             color=_RESULT_TRACE_COLORS[trace_index % len(_RESULT_TRACE_COLORS)],
             width=2,
@@ -2627,7 +2678,7 @@ def _build_simulation_result_figure(
                     selected_input_port,
                 )
                 y_axis_title = "Gain (linear)"
-                trace_title = f"Gain from {s_label}"
+                trace_title = f"{gain_label} (linear)"
             else:
                 y_values = result.get_mode_gain_db(
                     selected_output_mode,
@@ -2636,14 +2687,14 @@ def _build_simulation_result_figure(
                     selected_input_port,
                 )
                 y_axis_title = "Gain (dB)"
-                trace_title = f"Gain (dB) from {s_label}"
+                trace_title = f"{gain_label} (dB)"
 
             fig.add_trace(
                 go.Scatter(
                     x=freq_values,
                     y=y_values,
                     mode="lines",
-                    name=s_label,
+                    name=gain_label,
                     line=line_style,
                 )
             )
@@ -2813,7 +2864,10 @@ def _build_simulation_result_figure(
                     line=line_style,
                     marker=dict(size=5, color=line_style["color"]),
                     customdata=freq_values,
-                    hovertemplate=("Re=%{x}<br>Im=%{y}<br>f=%{customdata:.6f} GHz<extra></extra>"),
+                    hovertemplate=(
+                        "Re=%{x}<br>Im=%{y}<br>f=%{customdata:.6f} GHz"
+                        f"<extra>{trace_name}</extra>"
+                    ),
                 )
             )
             x_axis_title = "Real"
@@ -2834,31 +2888,42 @@ def _build_simulation_result_figure(
             )
         )
 
+    title_suffix = ""
+    if len(trace_titles) > 1:
+        preview_titles = ", ".join(trace_titles[:3])
+        if len(trace_titles) > 3:
+            preview_titles = f"{preview_titles}, +{len(trace_titles) - 3} more"
+        title_suffix = f": {preview_titles}"
+
     if len(trace_titles) == 1:
         title = trace_titles[0]
     elif view_family == "complex":
-        title = "Complex Plane Comparison"
+        title = f"Complex Plane Comparison{title_suffix}"
     elif view_family == "gain":
-        title = "Gain Comparison" if metric == "gain_linear" else "Gain (dB) Comparison"
+        title = (
+            f"Gain Comparison{title_suffix}"
+            if metric == "gain_linear"
+            else f"Gain (dB) Comparison{title_suffix}"
+        )
     elif view_family == "impedance":
-        title = "Impedance Comparison"
+        title = f"Impedance Comparison{title_suffix}"
     elif view_family == "admittance":
-        title = "Admittance Comparison"
+        title = f"Admittance Comparison{title_suffix}"
     elif view_family == "qe":
-        title = "Quantum Efficiency Comparison"
+        title = f"Quantum Efficiency Comparison{title_suffix}"
     elif view_family == "cm":
-        title = "Commutation Comparison"
+        title = f"Commutation Comparison{title_suffix}"
     elif view_family == "s":
         if metric == "magnitude_db":
-            title = "S-Parameter Magnitude (dB)"
+            title = f"S-Parameter Magnitude (dB){title_suffix}"
         elif metric == "phase_deg":
-            title = "S-Parameter Phase"
+            title = f"S-Parameter Phase{title_suffix}"
         elif metric == "real":
-            title = "S-Parameter Real Part"
+            title = f"S-Parameter Real Part{title_suffix}"
         elif metric == "imag":
-            title = "S-Parameter Imaginary Part"
+            title = f"S-Parameter Imaginary Part{title_suffix}"
         else:
-            title = "S-Parameter Magnitude"
+            title = f"S-Parameter Magnitude{title_suffix}"
     else:
         raise ValueError(f"Unsupported result view family: {view_family}")
 
@@ -3300,79 +3365,29 @@ def _render_simulation_environment():
             (dataset for dataset in editable_datasets if dataset.id == metadata_target_dataset_id),
             None,
         )
-        metadata_profile_state = normalize_dataset_profile(
+        metadata_profile = normalize_dataset_profile(
             metadata_target_dataset.source_meta if metadata_target_dataset is not None else {}
-        )
-        metadata_profile_state["device_type"] = normalize_device_type(
-            metadata_profile_state["device_type"]
-        )
-        metadata_profile_state["capabilities"] = normalize_capabilities(
-            metadata_profile_state["capabilities"]
         )
 
         with ui.card().classes("w-full bg-surface rounded-xl p-6"):
             with ui.row().classes("items-center gap-2 mb-3"):
                 ui.icon("inventory_2", size="sm").classes("text-primary")
-                ui.label("Dataset Metadata").classes("text-lg font-bold text-fg")
-            ui.label("Edit dataset profile for Characterization capability gating.").classes(
+                ui.label("Dataset Metadata Summary").classes("text-lg font-bold text-fg")
+            ui.label("Read-only profile summary used by Characterization hints.").classes(
                 "text-sm text-muted mb-3"
             )
 
             if not metadata_dataset_options:
-                ui.label("No datasets available for metadata editing.").classes(
+                ui.label("No datasets available for metadata summary.").classes(
                     "text-sm text-muted"
                 )
             else:
-                profile_save_button: Any | None = None
-                profile_auto_button: Any | None = None
-                profile_capability_select: Any | None = None
 
                 def _on_target_dataset_change(event: Any) -> None:
                     selected = event.value
                     dataset_id = int(selected) if isinstance(selected, int) else None
                     _user_storage_set(_SIM_METADATA_TARGET_DATASET_KEY, dataset_id)
                     sim_env.refresh()
-
-                def _auto_suggest_profile_capabilities() -> None:
-                    suggested = suggested_capabilities_for_device_type(
-                        metadata_profile_state["device_type"]
-                    )
-                    metadata_profile_state["capabilities"] = list(suggested)
-                    if profile_capability_select is not None:
-                        profile_capability_select.value = list(suggested)
-                    ui.notify("Capabilities suggested from selected device type.", type="info")
-
-                async def _save_dataset_metadata() -> None:
-                    if (
-                        profile_save_button is None
-                        or profile_auto_button is None
-                        or metadata_target_dataset is None
-                        or metadata_target_dataset.id is None
-                    ):
-                        return
-                    profile_save_button.disable()
-                    profile_auto_button.disable()
-                    profile_save_button.props(add="loading")
-                    await asyncio.sleep(0)
-                    try:
-                        payload = build_dataset_profile_payload(
-                            device_type=metadata_profile_state["device_type"],
-                            capabilities=metadata_profile_state["capabilities"],
-                            source="manual_override",
-                        )
-                        await run.io_bound(
-                            _persist_dataset_profile_metadata,
-                            dataset_id=int(metadata_target_dataset.id),
-                            profile_payload=payload,
-                        )
-                        ui.notify("Dataset metadata saved.", type="positive")
-                        sim_env.refresh()
-                    except Exception as exc:
-                        ui.notify(f"Failed to save metadata: {exc}", type="negative")
-                    finally:
-                        profile_save_button.props(remove="loading")
-                        profile_save_button.enable()
-                        profile_auto_button.enable()
 
                 ui.select(
                     options=metadata_dataset_options,
@@ -3384,46 +3399,22 @@ def _render_simulation_environment():
                 ui.label(
                     profile_summary_text(
                         {
-                            "device_type": metadata_profile_state["device_type"],
-                            "capabilities": metadata_profile_state["capabilities"],
-                            "source": metadata_profile_state["source"],
+                            "device_type": metadata_profile["device_type"],
+                            "capabilities": metadata_profile["capabilities"],
+                            "source": metadata_profile["source"],
                         }
                     )
                 ).classes("text-xs text-muted mb-2")
 
-                with ui.row().classes("w-full items-end gap-3 flex-wrap"):
-                    ui.select(
-                        options=_SIM_METADATA_DEVICE_TYPE_OPTIONS,
-                        value=metadata_profile_state["device_type"],
-                        label="Device Type",
-                        on_change=lambda e: metadata_profile_state.__setitem__(
-                            "device_type",
-                            normalize_device_type(e.value),
-                        ),
-                    ).props("dense outlined options-dense").classes("w-56")
-
-                    profile_capability_select = (
-                        ui.select(
-                            options=_SIM_METADATA_CAPABILITY_OPTIONS,
-                            value=list(metadata_profile_state["capabilities"]),
-                            label="Capabilities",
-                            on_change=lambda e: metadata_profile_state.__setitem__(
-                                "capabilities",
-                                normalize_capabilities(e.value),
-                            ),
-                        )
-                        .props("dense outlined options-dense use-chips multiple")
-                        .classes("min-w-[280px] flex-1")
-                    )
-
-                    profile_auto_button = ui.button(
-                        "Auto Suggest",
-                        on_click=_auto_suggest_profile_capabilities,
+                with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
+                    ui.label(
+                        "Metadata editing is centralized in Pipeline Dashboard."
+                    ).classes("text-xs text-muted")
+                    ui.button(
+                        "Edit in Dashboard",
+                        icon="dashboard",
+                        on_click=lambda: ui.navigate.to("/dashboard"),
                     ).props("outline color=primary no-caps")
-                    profile_save_button = ui.button(
-                        "Save Metadata",
-                        on_click=_save_dataset_metadata,
-                    ).props("unelevated color=primary no-caps")
 
         # Get active record
         active_record = next((c for c in circuits if c.id == active_circuit_id), circuits[0])
