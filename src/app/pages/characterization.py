@@ -851,6 +851,27 @@ def _artifacts_in_category(
     return [artifact for artifact in artifacts if artifact.category == category]
 
 
+def _result_view_empty_state_message(
+    *,
+    selected_mode_label: str,
+    selected_analysis_groups_raw: Mapping[str, list],
+    selected_analysis_groups: Mapping[str, list],
+) -> str:
+    """Build one diagnosable empty-state message for Result View."""
+    if selected_analysis_groups:
+        method_keys = ", ".join(sorted(str(method_key) for method_key in selected_analysis_groups))
+        return (
+            "Persisted results found but no renderable artifacts for selected analysis "
+            f"(methods: {method_keys})."
+        )
+    if selected_analysis_groups_raw:
+        return (
+            "No artifacts available for selected analysis "
+            f"under trace mode: {selected_mode_label}."
+        )
+    return "No artifacts available for selected analysis."
+
+
 class ResultViewQueryService:
     """Lazy payload loader for result artifacts."""
 
@@ -2248,8 +2269,13 @@ def characterization_page():
                                             "All",
                                         )
                                         ui.label(
-                                            "No artifacts available for selected analysis "
-                                            f"under trace mode: {selected_mode_label}."
+                                            _result_view_empty_state_message(
+                                                selected_mode_label=selected_mode_label,
+                                                selected_analysis_groups_raw=(
+                                                    selected_analysis_groups_raw
+                                                ),
+                                                selected_analysis_groups=selected_analysis_groups,
+                                            )
                                         ).classes("text-sm text-muted mt-3")
                                     else:
                                         artifacts_for_category = _artifacts_in_category(

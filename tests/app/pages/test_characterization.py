@@ -10,6 +10,7 @@ from app.pages.characterization import (
     _evaluate_analysis_scope_compatibility,
     _filter_method_groups_by_trace_mode,
     _result_view_controls_row_classes,
+    _result_view_empty_state_message,
     _trace_mode_filter_options,
     _trace_mode_group_for_selected_rows,
 )
@@ -254,6 +255,39 @@ def test_build_result_artifacts_for_analysis_emits_mode_vs_ljun_manifest() -> No
     assert mode_artifacts[0].artifact_id.endswith(".mode_vs_ljun")
 
 
+def test_build_result_artifacts_for_squid_emits_fit_parameters_manifest() -> None:
+    params = [
+        DerivedParameter(
+            dataset_id=11,
+            device_type=DeviceType.OTHER,
+            name="Ls_nH",
+            value=0.05,
+            unit="nH",
+            method="lc_squid_fit",
+            extra={"mode": "mode_1", "rmse": 0.001, "trace_mode_group": "base"},
+        ),
+        DerivedParameter(
+            dataset_id=11,
+            device_type=DeviceType.OTHER,
+            name="C_eff_pF",
+            value=1.02,
+            unit="pF",
+            method="lc_squid_fit",
+            extra={"mode": "mode_1", "rmse": 0.001, "trace_mode_group": "base"},
+        ),
+    ]
+
+    artifacts = _build_result_artifacts_for_analysis(
+        analysis_id="squid_fitting",
+        method_groups={"lc_squid_fit": params},
+    )
+
+    fit_artifacts = [a for a in artifacts if str(a.query_spec.get("shape")) == "fit_parameters"]
+    assert fit_artifacts
+    assert all(artifact.category == "fit" for artifact in fit_artifacts)
+    assert any(artifact.artifact_id.endswith(".fit_parameters") for artifact in fit_artifacts)
+
+
 def test_trace_mode_group_for_selected_rows_maps_mixed_selection_to_sideband() -> None:
     assert _trace_mode_group_for_selected_rows([{"mode": "Base"}]) == "base"
     assert _trace_mode_group_for_selected_rows([{"mode": "Sideband"}]) == "sideband"
@@ -301,6 +335,37 @@ def test_trace_mode_filter_options_and_group_filtering() -> None:
     )
     assert list(base_only) == ["admittance_zero_crossing"]
     assert [param.name for param in base_only["admittance_zero_crossing"]] == ["mode_1_ghz"]
+
+
+def test_trace_mode_filter_preserves_lc_squid_fit_base_results() -> None:
+    squid_param = DerivedParameter(
+        dataset_id=12,
+        device_type=DeviceType.OTHER,
+        name="Ls_nH",
+        value=0.05,
+        unit="nH",
+        method="lc_squid_fit",
+        extra={"trace_mode_group": "base"},
+    )
+    method_groups = {"lc_squid_fit": [squid_param]}
+
+    filtered = _filter_method_groups_by_trace_mode(
+        method_groups,
+        trace_mode_filter="base",
+    )
+
+    assert list(filtered) == ["lc_squid_fit"]
+    assert filtered["lc_squid_fit"][0].name == "Ls_nH"
+
+
+def test_result_view_empty_state_message_reports_persisted_but_unmapped_methods() -> None:
+    message = _result_view_empty_state_message(
+        selected_mode_label="Base",
+        selected_analysis_groups_raw={"lc_squid_fit": [object()]},
+        selected_analysis_groups={"lc_squid_fit": [object()]},
+    )
+    assert "Persisted results found but no renderable artifacts" in message
+    assert "lc_squid_fit" in message
 
 
 def test_result_view_controls_row_uses_single_row_desktop_contract() -> None:
