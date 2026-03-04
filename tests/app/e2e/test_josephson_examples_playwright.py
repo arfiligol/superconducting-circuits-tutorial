@@ -444,6 +444,24 @@ def _post_plot_title_and_legend(post_results_card) -> tuple[str, list[str]]:  # 
     return (title, legend)
 
 
+def _plot_y_axis_title(card) -> str:  # type: ignore[no-untyped-def]
+    plot = card.locator(".js-plotly-plot").first
+    expect(plot).to_be_visible(timeout=30000)
+    value = plot.evaluate("el => String(el.layout?.yaxis?.title?.text || '')")
+    return str(value)
+
+
+def _expect_plot_y_axis_title(card, expected: str, *, timeout_seconds: float = 12.0) -> None:  # type: ignore[no-untyped-def]
+    deadline = time.time() + timeout_seconds
+    latest = ""
+    while time.time() < deadline:
+        latest = _plot_y_axis_title(card)
+        if latest == expected:
+            return
+        time.sleep(0.2)
+    raise AssertionError(f"Expected y-axis title {expected!r}, got {latest!r}")
+
+
 def _nudge_combobox_option(
     page: Page,
     card,
@@ -739,3 +757,46 @@ def test_post_processed_result_view_uses_trace_card_port_labels_for_matrix_names
         steps=2,
     )
     _assert_name("Z_dm_3", "dm_to_3")
+
+
+def test_result_view_axis_titles_follow_y_z_family_switches(
+    page: Page,
+    example_cases: tuple[ExampleCase, ...],
+) -> None:
+    case = next(c for c in example_cases if c.slug == "three_port_basis_labels")
+    _choose_schema(page, case.schema_name)
+    _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+    _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+    _set_spinbutton_value(page, "Points", case.points)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
+    _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+    _configure_sources(page, case.sources)
+    assert _run_and_expect_success(page) is True
+
+    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
+    _select_card_option(page, raw_results_card, "Metric", "Real")
+    _expect_plot_y_axis_title(raw_results_card, "Real (S)")
+    raw_results_card.get_by_role("tab", name="Impedance (Z)").click()
+    _select_card_option(page, raw_results_card, "Metric", "Real")
+    _expect_plot_y_axis_title(raw_results_card, "Real (Ohm)")
+    raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
+    _select_card_option(page, raw_results_card, "Metric", "Real")
+    _expect_plot_y_axis_title(raw_results_card, "Real (S)")
+
+    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    _select_card_option(page, post_input_card, "Step Type", "Coordinate Transformation")
+    post_input_card.get_by_role("button", name="Add Step").click()
+    post_input_card.get_by_role("button", name="Run Post Processing").click()
+
+    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=60000)
+    post_results_card.get_by_role("tab", name="Admittance (Y)").click()
+    _select_card_option(page, post_results_card, "Metric", "Real")
+    _expect_plot_y_axis_title(post_results_card, "Real (S)")
+    post_results_card.get_by_role("tab", name="Impedance (Z)").click()
+    _select_card_option(page, post_results_card, "Metric", "Real")
+    _expect_plot_y_axis_title(post_results_card, "Real (Ohm)")
+    post_results_card.get_by_role("tab", name="Admittance (Y)").click()
+    _select_card_option(page, post_results_card, "Metric", "Real")
+    _expect_plot_y_axis_title(post_results_card, "Real (S)")

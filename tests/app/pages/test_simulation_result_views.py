@@ -146,6 +146,53 @@ def test_build_simulation_result_figure_builds_impedance_view() -> None:
     assert len(figure.data) == 1
 
 
+def test_raw_result_figure_y_axis_title_updates_across_y_z_y_switches() -> None:
+    result = _sample_result()
+    fig_y_first = _build_simulation_result_figure(
+        result=result,
+        view_family="admittance",
+        metric="real",
+        trace="admittance",
+        output_mode=(0,),
+        output_port=2,
+        input_mode=(0,),
+        input_port=2,
+        reference_impedance_ohm=50.0,
+        dark_mode=True,
+    )
+    fig_z = _build_simulation_result_figure(
+        result=result,
+        view_family="impedance",
+        metric="real",
+        trace="impedance",
+        output_mode=(0,),
+        output_port=2,
+        input_mode=(0,),
+        input_port=2,
+        reference_impedance_ohm=50.0,
+        dark_mode=True,
+    )
+    fig_y_second = _build_simulation_result_figure(
+        result=result,
+        view_family="admittance",
+        metric="real",
+        trace="admittance",
+        output_mode=(0,),
+        output_port=2,
+        input_mode=(0,),
+        input_port=2,
+        reference_impedance_ohm=50.0,
+        dark_mode=True,
+    )
+
+    assert fig_y_first.layout.title.text == "Y22 Real Part"
+    assert fig_y_first.layout.yaxis.title.text == "Real (S)"
+    assert fig_z.layout.title.text == "Z22 Real Part"
+    assert fig_z.layout.yaxis.title.text == "Real (Ohm)"
+    assert fig_y_second.layout.title.text == "Y22 Real Part"
+    assert fig_y_second.layout.yaxis.title.text == "Real (S)"
+
+
 def test_build_simulation_result_figure_builds_complex_plane_view() -> None:
     figure = _build_simulation_result_figure(
         result=_sample_result(),
@@ -497,6 +544,66 @@ def test_build_post_processed_result_payload_supports_family_metric_trace_render
     )
     assert len(figure.data) == 2
     assert figure.layout.title.text is not None
+
+
+def test_post_processed_result_figure_y_axis_title_updates_across_y_z_y_switches() -> None:
+    sweep = PortMatrixSweep(
+        mode=(1,),
+        labels=("cm(1,2)", "dm(1,2)"),
+        frequencies_ghz=(5.0, 5.2),
+        y_matrices=(
+            np.asarray(((0.02 + 0.01j, 0.001 + 0.0j), (0.002 + 0.0j, 0.03 + 0.02j))),
+            np.asarray(((0.021 + 0.011j, 0.0015 + 0.0j), (0.0025 + 0.0j, 0.031 + 0.021j))),
+        ),
+        source_kind="y",
+    )
+    converted, _ = _build_post_processed_result_payload(
+        sweep,
+        reference_impedance_ohm=50.0,
+    )
+    fig_y_first = _build_simulation_result_figure(
+        result=converted,
+        view_family="admittance",
+        metric="imag",
+        trace="admittance",
+        output_mode=(1,),
+        output_port=1,
+        input_mode=(1,),
+        input_port=1,
+        reference_impedance_ohm=50.0,
+        dark_mode=True,
+    )
+    fig_z = _build_simulation_result_figure(
+        result=converted,
+        view_family="impedance",
+        metric="imag",
+        trace="impedance",
+        output_mode=(1,),
+        output_port=1,
+        input_mode=(1,),
+        input_port=1,
+        reference_impedance_ohm=50.0,
+        dark_mode=True,
+    )
+    fig_y_second = _build_simulation_result_figure(
+        result=converted,
+        view_family="admittance",
+        metric="imag",
+        trace="admittance",
+        output_mode=(1,),
+        output_port=1,
+        input_mode=(1,),
+        input_port=1,
+        reference_impedance_ohm=50.0,
+        dark_mode=True,
+    )
+
+    assert fig_y_first.layout.title.text == "Y11 [om=(1,), im=(1,)] Imaginary Part"
+    assert fig_y_first.layout.yaxis.title.text == "Imaginary (S)"
+    assert fig_z.layout.title.text == "Z11 [om=(1,), im=(1,)] Imaginary Part"
+    assert fig_z.layout.yaxis.title.text == "Imaginary (Ohm)"
+    assert fig_y_second.layout.title.text == "Y11 [om=(1,), im=(1,)] Imaginary Part"
+    assert fig_y_second.layout.yaxis.title.text == "Imaginary (S)"
 
 
 def test_hash_stable_json_is_order_independent() -> None:
