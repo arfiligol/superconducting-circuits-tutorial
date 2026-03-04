@@ -23,12 +23,13 @@ updated_by: docs-team
 ## Page Sections
 
 1. `Active Circuit`
-2. `Netlist Configuration`
-3. `Simulation Setup`
-4. `Logs`
-5. `Simulation Results`
-6. `Post Processing`
-7. `Post Processing Results`
+2. `Dataset Metadata`
+3. `Netlist Configuration`
+4. `Simulation Setup`
+5. `Logs`
+6. `Simulation Results`
+7. `Post Processing`
+8. `Post Processing Results`
 
 ## Result View 互動契約（Raw vs Post-Processed）
 
@@ -107,6 +108,28 @@ updated_by: docs-team
 1. 選擇目標 `DatasetRecord`
 2. 建立可見 `ResultBundleRecord`
 3. 將此 run 產生的 `DataRecord` 綁到該 bundle
+
+## Dataset Metadata Entry Contract
+
+`/simulation` 必須提供 dataset metadata 編輯入口，與 `/raw-data` 使用一致欄位語意：
+
+- `Target Dataset` selector（從現有可見 dataset 中選擇）
+- `Device Type`
+- `Capabilities`（multi-select）
+- `Auto Suggest`
+- `Save Metadata`
+
+!!! important "與 Save Results 的邊界"
+    Metadata 編輯入口屬於 dataset profile 管理，不等同於 solver 設定或 Run 行為；
+    修改 metadata 不可觸發 solver rerun。
+
+!!! note "一致性"
+    Simulation 與 Raw Data 修改的是同一份 `source_meta.dataset_profile`，
+    兩頁面應可互相看到一致結果。
+
+!!! warning "不在本次範圍"
+    Characterization Result View 主流程不在本次變更範圍。
+    本頁只保證 metadata 入口完整，供 Characterization gating 讀取。
 
 ## Post Processing
 

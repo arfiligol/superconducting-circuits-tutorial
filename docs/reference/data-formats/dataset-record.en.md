@@ -58,7 +58,17 @@ Collection that contains multiple `DataRecord` entries.
 {
   "origin": "layout_simulation",
   "solver": "hfss_driven",
-  "raw_file": "data/raw/layout_simulation/admittance/PF6FQ.csv"
+  "raw_file": "data/raw/layout_simulation/admittance/PF6FQ.csv",
+  "dataset_profile": {
+    "schema_version": "1.0",
+    "device_type": "squid",
+    "capabilities": [
+      "y_parameter_characterization",
+      "y11_response_fitting",
+      "squid_characterization"
+    ],
+    "source": "manual_override"
+  }
 }
 ```
 
@@ -66,6 +76,25 @@ Collection that contains multiple `DataRecord` entries.
 - `circuit_simulation` - JosephsonCircuits.jl circuit simulation
 - `layout_simulation` - HFSS/Q3D EM simulation
 - `measurement` - Experimental measurement
+
+### dataset_profile (source_meta sub-contract)
+
+`source_meta.dataset_profile` is the formal metadata contract for analysis availability:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `schema_version` | str | ✅ | currently `1.0` |
+| `device_type` | str | ✅ | `unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other` |
+| `capabilities` | list[str] | ✅ | canonical capability keys |
+| `source` | str | ✅ | `inferred` / `template` / `manual_override` |
+
+!!! important "Capability-first"
+    Characterization analysis gating must be decided by `capabilities` first.
+    `device_type` is a template/suggestion entry point only.
+
+!!! warning "Backward compatibility"
+    Legacy datasets without `dataset_profile` should fall back to `inferred`,
+    derived from existing DataRecord metadata, so current workflows remain usable.
 
 ---
 

@@ -25,6 +25,7 @@ updated_by: docs-team
 1. `Dataset List`
 2. `Dataset Preview`
 3. `Visualization Preview`
+4. `Dataset Metadata`
 
 !!! note "版面配置"
     `Dataset List` 與 `Dataset Preview` 採上下堆疊（全寬）而非左右分欄，
@@ -62,6 +63,25 @@ updated_by: docs-team
     預覽表格只顯示 Data Record metadata（`id`, `data_type`, `parameter`, `representation`）。
     不可一次把 `axes` / `values` 全部送進前端。
 
+## Dataset Metadata Contract
+
+`Dataset Preview` 需提供 dataset metadata 編輯入口（不新增獨立頁）：
+
+- `Device Type` selector
+- `Capabilities` multi-select
+- `Auto Suggest`（依目前 `device_type` 套用模板）
+- `Save Metadata`
+
+!!! important "可建議、可覆寫"
+    `device_type` 僅提供 capability 建議模板；
+    使用者可手動增減 capabilities，且系統必須保存手動覆寫結果。
+
+!!! note "來源語意"
+    使用者按 `Save Metadata` 後，`source_meta.dataset_profile.source` 應寫為 `manual_override`。
+
+!!! warning "儲存互動"
+    儲存中按鈕需 disabled + loading，成功/失敗需有 toast 或同等級回饋。
+
 ## Visualization Preview Contract
 
 - 只有當使用者在 Data Record table 點到某一列時，才讀取該筆詳細資料並繪圖。
@@ -77,6 +97,11 @@ updated_by: docs-team
 - `Analyze This Dataset` 只依賴選中的 dataset id，不依賴 record 是否被選中。
 - 若切換 dataset，應重置目前 selected record 狀態。
 - 若 selected record 不在當前表格頁，應維持可預期狀態（保留或清空需一致，不可隨機）。
+- Metadata 保存成功後，當前 session 應立即反映新 profile（不需重啟 app）。
+
+!!! important "與 Characterization 的關係"
+    Characterization analysis availability 會讀取 `source_meta.dataset_profile`。
+    因此 Raw Data metadata 修改會直接影響後續可執行/不可執行分析狀態。
 
 ## Performance SLO (UI Layer)
 

@@ -59,7 +59,17 @@ DatasetRecord (集合)
 {
   "origin": "layout_simulation",
   "solver": "hfss_driven",
-  "raw_file": "data/raw/layout_simulation/admittance/PF6FQ.csv"
+  "raw_file": "data/raw/layout_simulation/admittance/PF6FQ.csv",
+  "dataset_profile": {
+    "schema_version": "1.0",
+    "device_type": "squid",
+    "capabilities": [
+      "y_parameter_characterization",
+      "y11_response_fitting",
+      "squid_characterization"
+    ],
+    "source": "manual_override"
+  }
 }
 ```
 
@@ -67,6 +77,25 @@ DatasetRecord (集合)
 - `circuit_simulation` - JosephsonCircuits.jl 等電路模擬
 - `layout_simulation` - HFSS/Q3D 等 EM 模擬
 - `measurement` - 實驗量測
+
+### dataset_profile（source_meta 子契約）
+
+`source_meta.dataset_profile` 是 Dataset 對分析可用性的正式 metadata 契約：
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `schema_version` | str | ✅ | 目前 `1.0` |
+| `device_type` | str | ✅ | `unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other` |
+| `capabilities` | list[str] | ✅ | canonical capability keys |
+| `source` | str | ✅ | `inferred` / `template` / `manual_override` |
+
+!!! important "capability-first"
+    Characterization analysis gating 必須先看 `capabilities`。
+    `device_type` 只用於提供建議模板，不可直接取代 capability 判斷。
+
+!!! warning "Backward compatibility"
+    舊資料若沒有 `dataset_profile`，應 fallback 為 `inferred`，
+    從現有 DataRecord metadata 推導基礎 capabilities，避免既有流程中斷。
 
 ---
 

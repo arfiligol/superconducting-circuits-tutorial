@@ -23,12 +23,13 @@ This page defines the formal `/simulation` UI contract.
 ## Page Sections
 
 1. `Active Circuit`
-2. `Netlist Configuration`
-3. `Simulation Setup`
-4. `Logs`
-5. `Simulation Results`
-6. `Post Processing`
-7. `Post Processing Results`
+2. `Dataset Metadata`
+3. `Netlist Configuration`
+4. `Simulation Setup`
+5. `Logs`
+6. `Simulation Results`
+7. `Post Processing`
+8. `Post Processing Results`
 
 ## Result View Interaction Contract (Raw vs Post-Processed)
 
@@ -149,6 +150,28 @@ Expected model:
 1. choose target `DatasetRecord`
 2. create visible `ResultBundleRecord`
 3. attach exported `DataRecord` rows to that bundle
+
+## Dataset Metadata Entry Contract
+
+`/simulation` must provide a dataset metadata editing entry point, using the same field semantics as `/raw-data`:
+
+- `Target Dataset` selector (choose from visible datasets)
+- `Device Type`
+- `Capabilities` (multi-select)
+- `Auto Suggest`
+- `Save Metadata`
+
+!!! important "Boundary vs Save Results"
+    Metadata editing belongs to dataset profile management, not solver configuration/run behavior.
+    Editing metadata must not trigger solver reruns.
+
+!!! note "Cross-page consistency"
+    Simulation and Raw Data edit the same `source_meta.dataset_profile`.
+    Both pages should display consistent metadata after save.
+
+!!! warning "Out of scope for this change"
+    Characterization Result View core flow is out of scope.
+    This page only guarantees metadata entry availability for downstream gating.
 
 ## Post Processing
 

@@ -25,6 +25,7 @@ This page defines the formal UI/UX contract for `/raw-data`, with emphasis on la
 1. `Dataset List`
 2. `Dataset Preview`
 3. `Visualization Preview`
+4. `Dataset Metadata`
 
 !!! note "Layout"
     `Dataset List` and `Dataset Preview` should be stacked vertically in full width
@@ -62,6 +63,25 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
     Preview tables should only render metadata (`id`, `data_type`, `parameter`, `representation`).
     Do not send full `axes` / `values` payloads to the frontend in one batch.
 
+## Dataset Metadata Contract
+
+`Dataset Preview` must provide an in-place dataset metadata editor (no separate page):
+
+- `Device Type` selector
+- `Capabilities` multi-select
+- `Auto Suggest` (apply template from selected `device_type`)
+- `Save Metadata`
+
+!!! important "Suggest, then allow override"
+    `device_type` provides capability suggestions only.
+    Users must be able to manually add/remove capabilities before saving.
+
+!!! note "Source marker"
+    After `Save Metadata`, `source_meta.dataset_profile.source` should be persisted as `manual_override`.
+
+!!! warning "Save interaction"
+    During save, action buttons must be disabled with loading state; success/failure must be surfaced with toast-level feedback.
+
 ## Visualization Preview Contract
 
 - Detailed record payload should be loaded only after the user clicks one row.
@@ -77,6 +97,11 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
 - `Analyze This Dataset` should depend only on selected dataset id.
 - Switching dataset should reset selected-record state.
 - If selected record is no longer visible in current table page, behavior must be deterministic (clear or keep, but not random).
+- Metadata save success must be reflected in the current session immediately (no app restart required).
+
+!!! important "Relation to Characterization"
+    Characterization analysis availability consumes `source_meta.dataset_profile`.
+    Raw Data metadata edits therefore directly affect later analysis availability states.
 
 ## Performance SLO (UI Layer)
 
