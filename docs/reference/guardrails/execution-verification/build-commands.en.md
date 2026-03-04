@@ -76,6 +76,35 @@ uv run --group dev zensical build -f zensical.en.toml
 ./scripts/build_docs_sites.sh
 ```
 
+### Docs route verification (anti-404)
+
+```bash
+# Start docs site first (example: zh-TW)
+uv run --group dev zensical serve -f zensical.toml -a localhost:8000
+
+# In another terminal, run Playwright route smoke checks (replace routes)
+uv run python - <<'PY'
+from playwright.sync_api import sync_playwright
+routes = [
+    "http://localhost:8000/superconducting-circuits-tutorial/",
+]
+with sync_playwright() as p:
+    b = p.chromium.launch(headless=True)
+    page = b.new_page()
+    for url in routes:
+        resp = page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        assert resp is not None and resp.status == 200, f"Route failed: {url}"
+        assert "404 - Not found" not in page.content(), f"404 body found: {url}"
+    b.close()
+PY
+
+# Scan .md navigation links (warning/diff check, not hard-fail empty in current baseline)
+rg -n "href=\"[^\"]+\\.md\"" docs/site
+```
+
+!!! warning "URL format"
+    Validate directory routes (for example `/foo/bar/`), not source-file URLs (`.../bar.md`).
+
 ---
 
 ## Agent Rule { #agent-rule }
@@ -93,6 +122,8 @@ uv run --group dev zensical build -f zensical.en.toml
     - Build (static artifact, emits to `docs/site/`): `./scripts/build_docs_sites.sh`
     - Serve (zh-TW): `uv run --group dev zensical serve`
     - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
+    - Route smoke: Playwright check (HTTP 200 + no "404 - Not found")
+    - Broken nav scan (warning/diff): `rg -n "href=\"[^\"]+\\.md\"" docs/site`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
 - **Clean**: `uv cache clean`
 ```
