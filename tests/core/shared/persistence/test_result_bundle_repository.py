@@ -392,6 +392,71 @@ def test_result_bundle_repository_characterization_contract_methods() -> None:
         assert [int(row["id"]) for row in query_rows] == [int(sideband.id or 0)]
 
 
+def test_result_bundle_repository_exposes_cache_and_provenance_queries() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Bundle Semantics", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        bundle_repo = ResultBundleRepository(session)
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="circuit_simulation",
+                role="cache",
+                status="completed",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="circuit_simulation",
+                role="manual_export",
+                status="completed",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+                status="completed",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        session.commit()
+
+        all_rows = bundle_repo.list_by_dataset(dataset.id)
+        cache_rows = bundle_repo.list_cache_by_dataset(dataset.id)
+        provenance_rows = bundle_repo.list_provenance_by_dataset(dataset.id)
+
+        assert len(all_rows) == 3
+        assert len(cache_rows) == 1
+        assert cache_rows[0].role == "cache"
+        assert len(provenance_rows) == 2
+        assert all(row.role != "cache" for row in provenance_rows)
+        assert bundle_repo.count_by_dataset(dataset.id) == 3
+        assert bundle_repo.count_by_dataset(dataset.id, include_cache=False) == 2
+        assert (
+            bundle_repo.count_by_dataset(
+                dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+            )
+            == 1
+        )
+
+
 def test_circuit_repository_summary_page_supports_search_and_sort() -> None:
     with _memory_session() as session:
         circuit_repo = CircuitRepository(session)

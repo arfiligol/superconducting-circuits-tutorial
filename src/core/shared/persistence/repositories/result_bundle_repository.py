@@ -31,14 +31,61 @@ class ResultBundleRepository:
         self._session.add(bundle)
         return bundle
 
+    def _dataset_statement(
+        self,
+        *,
+        dataset_id: int,
+        bundle_type: str | None = None,
+        role: str | None = None,
+        include_cache: bool = True,
+    ):
+        statement = select(ResultBundleRecord).where(ResultBundleRecord.dataset_id == dataset_id)
+        if bundle_type:
+            statement = statement.where(ResultBundleRecord.bundle_type == bundle_type)
+        if role:
+            statement = statement.where(ResultBundleRecord.role == role)
+        elif not include_cache:
+            statement = statement.where(ResultBundleRecord.role != "cache")
+        return statement
+
     def list_by_dataset(self, dataset_id: int) -> list[ResultBundleRecord]:
         """List all result bundles under one dataset."""
-        statement = (
-            select(ResultBundleRecord)
-            .where(ResultBundleRecord.dataset_id == dataset_id)
-            .order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
-        )
+        statement = self._dataset_statement(dataset_id=dataset_id).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
+
+    def list_cache_by_dataset(self, dataset_id: int) -> list[ResultBundleRecord]:
+        """List cache-role bundles under one dataset."""
+        statement = self._dataset_statement(
+            dataset_id=dataset_id,
+            role="cache",
+        ).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
+        return list(self._session.exec(statement).all())
+
+    def list_provenance_by_dataset(self, dataset_id: int) -> list[ResultBundleRecord]:
+        """List non-cache provenance bundles under one dataset."""
+        statement = self._dataset_statement(
+            dataset_id=dataset_id,
+            include_cache=False,
+        ).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
+        return list(self._session.exec(statement).all())
+
+    def count_by_dataset(
+        self,
+        dataset_id: int,
+        *,
+        bundle_type: str | None = None,
+        role: str | None = None,
+        include_cache: bool = True,
+    ) -> int:
+        """Count bundles under one dataset with optional semantic filters."""
+        statement = self._dataset_statement(
+            dataset_id=dataset_id,
+            bundle_type=bundle_type,
+            role=role,
+            include_cache=include_cache,
+        )
+        count_statement = sa_select(func.count()).select_from(statement.subquery())
+        return int(self._session.execute(count_statement).scalar_one())
 
     def find_simulation_cache(
         self,

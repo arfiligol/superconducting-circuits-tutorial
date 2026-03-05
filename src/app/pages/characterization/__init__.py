@@ -1237,7 +1237,10 @@ def characterization_page():
                         dataset_profile_index = (
                             refresh_uow.data_records.list_distinct_index_for_profile(active_id)
                         )
-                        bundles = refresh_uow.result_bundles.list_by_dataset(active_id)
+                        provenance_bundle_count = refresh_uow.result_bundles.count_by_dataset(
+                            active_id,
+                            include_cache=False,
+                        )
                         selected_bundle_id = None
                         selected_scope_token = "all_dataset_records"
                         scoped_trace_count = count_scope_trace_records(
@@ -1540,7 +1543,9 @@ def characterization_page():
                                         ui.label("Result Bundles").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
-                                        ui.label(str(len(bundles))).classes("text-sm text-fg")
+                                        ui.label(str(provenance_bundle_count)).classes(
+                                            "text-sm text-fg"
+                                        )
 
                             with _with_test_id(
                                 ui.card().classes("w-full bg-surface rounded-xl p-6"),
