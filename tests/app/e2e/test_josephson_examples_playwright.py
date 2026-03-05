@@ -587,6 +587,68 @@ def _configure_termination_mode_manual_custom(page: Page) -> None:
     )
 
 
+def test_simulation_setup_manager_dialog_crud_and_no_metadata_summary(
+    page: Page,
+    example_cases: tuple[ExampleCase, ...],
+) -> None:
+    case = next(c for c in example_cases if c.slug == "linear_series_lc")
+    _choose_schema(page, case.schema_name)
+    expect(page.get_by_text("Dataset Metadata Summary")).to_have_count(0)
+
+    saved_setup_select = page.get_by_test_id("simulation-saved-setup-select").get_by_role(
+        "combobox",
+        name="Saved Setup",
+    )
+    manage_button = _locator_by_testid(
+        page,
+        "simulation-manage-setups-button",
+        fallback=page.get_by_role("button", name="Manage Setups"),
+    )
+    expect(saved_setup_select).to_be_visible(timeout=30000)
+    expect(manage_button).to_be_visible(timeout=30000)
+
+    unique_name = f"E2E Setup {uuid.uuid4().hex[:6]}"
+    renamed_name = f"{unique_name} Renamed"
+    _set_spinbutton_value(page, "Start Freq (GHz)", 6.1)
+    manage_button.click()
+    expect(page.get_by_text("Manage Simulation Setups")).to_be_visible(timeout=30000)
+    page.get_by_role("textbox", name="New Setup Name").fill(unique_name)
+    page.get_by_role("button", name="Add New").click()
+    page.get_by_role("button", name="Close").click()
+
+    _set_spinbutton_value(page, "Start Freq (GHz)", 7.2)
+    manage_button.click()
+    expect(page.get_by_text("Manage Simulation Setups")).to_be_visible(timeout=30000)
+    manage_saved_setup_select = page.get_by_role("combobox", name="Saved Setup").last
+    manage_saved_setup_select.click()
+    page.get_by_role("option", name=unique_name, exact=True).click()
+    page.get_by_role("button", name="Load").click()
+    expect(page.get_by_text("Manage Simulation Setups")).to_have_count(0, timeout=30000)
+    loaded_value = float(
+        page.get_by_role("spinbutton", name="Start Freq (GHz)").first.input_value()
+    )
+    assert loaded_value == pytest.approx(6.1, abs=1e-6)
+
+    manage_button.click()
+    expect(page.get_by_text("Manage Simulation Setups")).to_be_visible(timeout=30000)
+    manage_saved_setup_select = page.get_by_role("combobox", name="Saved Setup").last
+    manage_saved_setup_select.click()
+    page.get_by_role("option", name=unique_name, exact=True).click()
+    page.get_by_role("textbox", name="Rename To").fill(renamed_name)
+    page.get_by_role("button", name="Rename").click()
+    expect(page.get_by_text(f"Renamed setup: {renamed_name}", exact=False)).to_be_visible(
+        timeout=30000
+    )
+    page.get_by_role("button", name="Close").click()
+    expect(page.get_by_text("Manage Simulation Setups")).to_have_count(0, timeout=30000)
+
+    manage_button.click()
+    expect(page.get_by_text("Manage Simulation Setups")).to_be_visible(timeout=30000)
+    page.get_by_role("button", name="Delete").click()
+    expect(page.get_by_text("Deleted setup.", exact=False)).to_be_visible(timeout=30000)
+    page.get_by_role("button", name="Close").click()
+
+
 @pytest.mark.parametrize(
     "example_case",
     ["linear_series_lc", "jpa_single_pump", "jpa_double_pump"],

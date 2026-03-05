@@ -3,6 +3,7 @@
 import inspect
 
 import numpy as np
+import pytest
 
 import app.pages.simulation as simulation_page
 from app.pages.simulation import (
@@ -34,6 +35,11 @@ from app.pages.simulation import (
     _save_saved_post_process_setups_for_schema,
     _save_saved_setups_for_schema,
     _save_selected_post_process_setup_id,
+)
+from app.services.simulation_setup_manager import (
+    delete_setup,
+    rename_setup,
+    save_setup_as,
 )
 from core.simulation.application.post_processing import PortMatrixSweep
 from core.simulation.domain.circuit import (
@@ -659,6 +665,61 @@ def test_simulation_setup_storage_roundtrip_preserves_termination_compensation(m
         loaded[0]["payload"]["termination_compensation"]
         == setup_payload["termination_compensation"]
     )
+
+
+def test_simulation_setup_manager_save_as_requires_unique_name_case_insensitive() -> None:
+    setups = [
+        {
+            "id": "user:a",
+            "name": "Two Pump",
+            "saved_at": "2026-03-05T10:00:00",
+            "payload": {"freq_range": {"start_ghz": 1.0}},
+        }
+    ]
+    with pytest.raises(ValueError, match="already exists"):
+        save_setup_as(
+            setups,
+            name="two pump",
+            payload={"freq_range": {"start_ghz": 2.0}},
+        )
+
+
+def test_simulation_setup_manager_rename_and_delete_block_builtin_setups() -> None:
+    builtin = {
+        "id": "builtin:official",
+        "name": "Official Example",
+        "saved_at": "builtin",
+        "payload": {"freq_range": {"start_ghz": 4.5}},
+    }
+    with pytest.raises(ValueError, match="cannot be renamed"):
+        rename_setup([builtin], setup_id="builtin:official", new_name="Renamed")
+    with pytest.raises(ValueError, match="cannot be deleted"):
+        delete_setup([builtin], setup_id="builtin:official")
+
+
+def test_simulation_setup_manager_rename_updates_only_target_entry() -> None:
+    setups = [
+        {
+            "id": "user:a",
+            "name": "Setup A",
+            "saved_at": "2026-03-05T10:00:00",
+            "payload": {"freq_range": {"start_ghz": 1.0}},
+        },
+        {
+            "id": "user:b",
+            "name": "Setup B",
+            "saved_at": "2026-03-05T10:01:00",
+            "payload": {"freq_range": {"start_ghz": 2.0}},
+        },
+    ]
+    updated_setups, updated_record = rename_setup(
+        setups,
+        setup_id="user:b",
+        new_name="Setup B Prime",
+    )
+    assert updated_record["id"] == "user:b"
+    assert updated_record["name"] == "Setup B Prime"
+    assert [entry["name"] for entry in updated_setups] == ["Setup A", "Setup B Prime"]
 
 
 def test_post_process_setup_storage_roundtrip_per_schema(monkeypatch) -> None:
