@@ -3,13 +3,14 @@
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
 from app.services.analysis_registry import (
     ANALYSIS_REGISTRY,
+    AnalysisDescriptor,
     get_analysis_descriptor,
     list_cross_dataset_analyses,
     list_dataset_analyses,
 )
 
 
-def _analysis_by_id(analysis_id: str) -> dict:
+def _analysis_by_id(analysis_id: str) -> AnalysisDescriptor:
     return next(analysis for analysis in ANALYSIS_REGISTRY if analysis["id"] == analysis_id)
 
 
@@ -50,13 +51,12 @@ def test_squid_fitting_recommended_for_squid_profile() -> None:
         },
     )
 
-    assert decision.allowed is True
     assert decision.recommended is True
     assert decision.status == "recommended"
     assert decision.reasons == []
 
 
-def test_squid_fitting_unavailable_when_squid_capability_missing() -> None:
+def test_squid_fitting_uses_profile_hint_when_squid_capability_missing() -> None:
     decision = evaluate_analysis_capability_gating(
         _analysis_by_id("squid_fitting"),
         dataset_profile={
@@ -65,16 +65,15 @@ def test_squid_fitting_unavailable_when_squid_capability_missing() -> None:
         },
     )
 
-    assert decision.allowed is False
     assert decision.recommended is False
-    assert decision.status == "unavailable"
+    assert decision.status == "available"
     assert any(
         "Profile hint: missing capability SQUID Characterization" in reason
         for reason in decision.reasons
     )
 
 
-def test_y11_fit_unavailable_when_excluded_capability_present() -> None:
+def test_y11_fit_uses_profile_hint_when_excluded_capability_present() -> None:
     decision = evaluate_analysis_capability_gating(
         _analysis_by_id("y11_fit"),
         dataset_profile={
@@ -87,8 +86,7 @@ def test_y11_fit_unavailable_when_excluded_capability_present() -> None:
         },
     )
 
-    assert decision.allowed is False
-    assert decision.status == "unavailable"
+    assert decision.status == "available"
     assert any(
         "Profile hint: excluded by capability Traveling-wave Gain Characterization" in reason
         for reason in decision.reasons

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from app.services.dataset_profile import (
+    DatasetProfile,
     capability_label,
     normalize_capabilities,
     normalize_device_type,
@@ -14,20 +15,24 @@ from app.services.dataset_profile import (
 
 @dataclass(frozen=True)
 class AnalysisCapabilityDecision:
-    """Capability-gating decision for one analysis on one dataset profile."""
+    """Hint-only capability decision for one analysis on one dataset profile."""
 
-    allowed: bool
     recommended: bool
     status: str
     reasons: list[str]
 
 
 def evaluate_analysis_capability_gating(
-    analysis: dict[str, Any],
+    analysis: Mapping[str, object],
     *,
-    dataset_profile: dict[str, Any],
+    dataset_profile: DatasetProfile,
 ) -> AnalysisCapabilityDecision:
-    """Evaluate capability-based gating for one analysis."""
+    """Evaluate capability hints for one analysis.
+
+    This evaluator never hard-blocks execution. Trace compatibility remains the
+    sole runtime authority for run availability; profile capabilities only
+    contribute recommendation/hint text.
+    """
     capabilities = set(normalize_capabilities(dataset_profile.get("capabilities", [])))
     device_type = normalize_device_type(dataset_profile.get("device_type"))
 
@@ -49,11 +54,9 @@ def evaluate_analysis_capability_gating(
         for capability in blocked
     )
 
-    allowed = not reasons
-    recommended = allowed and device_type in recommended_for
-    status = "recommended" if recommended else ("available" if allowed else "unavailable")
+    recommended = not reasons and device_type in recommended_for
+    status = "recommended" if recommended else "available"
     return AnalysisCapabilityDecision(
-        allowed=allowed,
         recommended=recommended,
         status=status,
         reasons=reasons,
