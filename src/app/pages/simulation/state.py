@@ -42,7 +42,9 @@ class SimulationRuntimeState:
     latest_source_simulation_bundle_id: int | None = None
     latest_schema_source_hash: str | None = None
     latest_simulation_setup_hash: str | None = None
+    latest_sweep_setup_hash: str | None = None
     latest_simulation_result: Any | None = None
+    latest_simulation_sweep_payload: dict[str, Any] | None = None
     latest_raw_save_callback: Callable[[], None] | None = None
     termination_last_warning: str = ""
     termination_last_summary: str = ""

@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -55,7 +55,20 @@ from core.simulation.application.post_processing import (
     filtered_modes,
     infer_port_termination_resistance_ohm,
 )
-from core.simulation.application.run_simulation import run_simulation
+from core.simulation.application.run_simulation import (
+    SimulationSweepAxis,
+    SimulationSweepPlan,
+    SimulationSweepPointResult,
+    SimulationSweepRun,
+    apply_simulation_sweep_overrides,
+    build_linear_sweep_values,
+    build_simulation_sweep_plan,
+    list_simulation_sweep_targets,
+    run_simulation,
+    simulation_sweep_run_from_payload,
+    simulation_sweep_run_to_payload,
+    simulation_sweep_setup_snapshot,
+)
 from core.simulation.domain.circuit import (
     CircuitDefinition,
     DriveSourceConfig,
@@ -171,6 +184,7 @@ _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS = {
 _TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
 _SIMULATION_HEARTBEAT_SECONDS = 5.0
 _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
+_SWEEP_MAX_AXIS_COUNT = 2
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
 
@@ -320,7 +334,7 @@ def _load_cached_simulation_result(
     *,
     schema_source_hash: str,
     simulation_setup_hash: str,
-) -> tuple[int, int, SimulationResult] | None:
+) -> tuple[int, int, SimulationResult, dict[str, Any] | None] | None:
     """Load one cached simulation result from the hidden system dataset."""
     cache_dataset = _ensure_simulation_cache_dataset(uow)
     if cache_dataset.id is None:
@@ -335,14 +349,26 @@ def _load_cached_simulation_result(
         return None
 
     try:
-        result = SimulationResult.model_validate(bundle.result_payload)
+        result, sweep_payload = _decode_simulation_result_payload(bundle.result_payload)
     except Exception:
         return None
 
     if bundle.id is None:
         return None
 
-    return (bundle.id, cache_dataset.id, result)
+    return (bundle.id, cache_dataset.id, result, sweep_payload)
+
+
+def _decode_simulation_result_payload(
+    payload: Mapping[str, Any],
+) -> tuple[SimulationResult, dict[str, Any] | None]:
+    """Decode one persisted payload into quick-view result plus optional sweep payload."""
+    run_kind = str(payload.get("run_kind", "")).strip() if isinstance(payload, Mapping) else ""
+    if run_kind == "parameter_sweep":
+        sweep_run = simulation_sweep_run_from_payload(payload)
+        return (sweep_run.representative_result, simulation_sweep_run_to_payload(sweep_run))
+    result = SimulationResult.model_validate(payload)
+    return (result, None)
 
 
 def _persist_simulation_result_bundle(
@@ -356,8 +382,12 @@ def _persist_simulation_result_bundle(
     schema_source_hash: str | None = None,
     simulation_setup_hash: str | None = None,
     include_data_records: bool = True,
+    result_payload: dict[str, Any] | None = None,
 ) -> int:
     """Persist one simulation result bundle plus its trace-level DataRecord rows."""
+    resolved_payload = (
+        dict(result_payload) if isinstance(result_payload, dict) else result.model_dump(mode="json")
+    )
     bundle = ResultBundleRecord(
         dataset_id=dataset_id,
         bundle_type="circuit_simulation",
@@ -367,7 +397,7 @@ def _persist_simulation_result_bundle(
         simulation_setup_hash=simulation_setup_hash,
         source_meta=dict(source_meta),
         config_snapshot=dict(config_snapshot),
-        result_payload=result.model_dump(mode="json"),
+        result_payload=resolved_payload,
         completed_at=datetime.utcnow(),
     )
     uow.result_bundles.add(bundle)
@@ -380,7 +410,16 @@ def _persist_simulation_result_bundle(
     if not include_data_records:
         return bundle_id
 
-    records = _build_result_bundle_data_records(dataset_id=dataset_id, result=result)
+    records: list[DataRecord]
+    if isinstance(result_payload, Mapping) and (
+        str(result_payload.get("run_kind", "")) == "parameter_sweep"
+    ):
+        records = _build_sweep_result_bundle_data_records(
+            dataset_id=dataset_id,
+            sweep_payload=result_payload,
+        )
+    else:
+        records = _build_result_bundle_data_records(dataset_id=dataset_id, result=result)
     for record in records:
         uow.data_records.add(record)
     uow.flush()
@@ -409,9 +448,10 @@ def _build_setup_payload(
     f_tol: float = 1e-8,
     line_search_switch_tol: float = 1e-5,
     alpha_min: float = 1e-4,
+    sweep: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a saved-setup payload matching the UI save format."""
-    return {
+    payload = {
         "freq_range": {
             "start_ghz": start_ghz,
             "stop_ghz": stop_ghz,
@@ -433,6 +473,66 @@ def _build_setup_payload(
             "alpha_min": alpha_min,
         },
     }
+    if isinstance(sweep, dict):
+        payload["sweep"] = dict(sweep)
+    return payload
+
+
+def _default_sweep_setup_payload() -> dict[str, Any]:
+    """Return one default single-axis sweep setup payload."""
+    return {
+        "enabled": False,
+        "axes": [
+            {
+                "target_value_ref": "",
+                "start": 0.0,
+                "stop": 0.0,
+                "points": 11,
+                "unit": "",
+            }
+        ],
+    }
+
+
+def _normalize_sweep_setup_payload(
+    payload: Mapping[str, Any] | None,
+    *,
+    available_target_units: Mapping[str, str],
+) -> dict[str, Any]:
+    """Normalize one persisted sweep setup payload against current schema targets."""
+    normalized = _default_sweep_setup_payload()
+    if isinstance(payload, Mapping):
+        normalized["enabled"] = bool(payload.get("enabled", False))
+        raw_axes = payload.get("axes", [])
+        if isinstance(raw_axes, list):
+            axes: list[dict[str, Any]] = []
+            for raw_axis in raw_axes[:_SWEEP_MAX_AXIS_COUNT]:
+                if not isinstance(raw_axis, Mapping):
+                    continue
+                target = str(raw_axis.get("target_value_ref", "")).strip()
+                start = float(raw_axis.get("start", 0.0) or 0.0)
+                stop = float(raw_axis.get("stop", start) or start)
+                points = max(1, int(raw_axis.get("points", 11) or 11))
+                unit_hint = str(raw_axis.get("unit", "")).strip()
+                if target in available_target_units:
+                    unit_hint = str(available_target_units[target])
+                axes.append(
+                    {
+                        "target_value_ref": target,
+                        "start": start,
+                        "stop": stop,
+                        "points": points,
+                        "unit": unit_hint,
+                    }
+                )
+            if axes:
+                normalized["axes"] = axes
+    axis_1 = normalized["axes"][0]
+    if str(axis_1.get("target_value_ref", "")).strip() not in available_target_units:
+        fallback_target = next(iter(available_target_units), "")
+        axis_1["target_value_ref"] = fallback_target
+        axis_1["unit"] = str(available_target_units.get(fallback_target, ""))
+    return normalized
 
 
 def _build_source_payload(
@@ -2393,13 +2493,19 @@ def _build_mode_complex_data_records(
     real_map: dict[str, list[float]],
     imag_map: dict[str, list[float]],
     frequencies_ghz: list[float],
+    additional_axes: list[dict[str, Any]] | None = None,
+    parameter_suffix: str = "",
 ) -> list[DataRecord]:
     """Convert one complex-valued bundle into DataRecord rows."""
     frequency_axis = [{"name": "frequency", "unit": "GHz", "values": frequencies_ghz}]
+    if additional_axes:
+        frequency_axis.extend(dict(axis) for axis in additional_axes)
     records: list[DataRecord] = []
 
     for label in sorted(set(real_map) & set(imag_map)):
-        parameter_name = _format_mode_matrix_parameter_name(parameter_prefix, label)
+        parameter_name = (
+            f"{_format_mode_matrix_parameter_name(parameter_prefix, label)}{parameter_suffix}"
+        )
         records.append(
             DataRecord(
                 dataset_id=dataset_id,
@@ -2431,9 +2537,13 @@ def _build_mode_scalar_data_records(
     parameter_prefix: str,
     values_map: dict[str, list[float]],
     frequencies_ghz: list[float],
+    additional_axes: list[dict[str, Any]] | None = None,
+    parameter_suffix: str = "",
 ) -> list[DataRecord]:
     """Convert one scalar-valued bundle into DataRecord rows."""
     frequency_axis = [{"name": "frequency", "unit": "GHz", "values": frequencies_ghz}]
+    if additional_axes:
+        frequency_axis.extend(dict(axis) for axis in additional_axes)
     records: list[DataRecord] = []
 
     for label in sorted(values_map):
@@ -2442,6 +2552,7 @@ def _build_mode_scalar_data_records(
             if parameter_prefix == "CM"
             else _format_mode_matrix_parameter_name(parameter_prefix, label)
         )
+        parameter_name = f"{parameter_name}{parameter_suffix}"
         records.append(
             DataRecord(
                 dataset_id=dataset_id,
@@ -3004,17 +3115,26 @@ def _build_simulation_result_figure(
     return fig
 
 
-def _build_s_parameter_data_records(dataset_id: int, result: SimulationResult) -> list[DataRecord]:
+def _build_s_parameter_data_records(
+    dataset_id: int,
+    result: SimulationResult,
+    *,
+    additional_axes: list[dict[str, Any]] | None = None,
+    parameter_suffix: str = "",
+) -> list[DataRecord]:
     """Convert the cached zero-mode S-parameter bundle into DataRecord rows."""
     frequency_axis = [{"name": "frequency", "unit": "GHz", "values": result.frequencies_ghz}]
+    if additional_axes:
+        frequency_axis.extend(dict(axis) for axis in additional_axes)
     records: list[DataRecord] = []
 
     for trace_label in result.available_s_parameter_labels:
+        parameter_name = f"{trace_label}{parameter_suffix}"
         records.append(
             DataRecord(
                 dataset_id=dataset_id,
                 data_type="s_params",
-                parameter=trace_label,
+                parameter=parameter_name,
                 representation="real",
                 axes=frequency_axis,
                 values=result.get_s_parameter_real_by_label(trace_label),
@@ -3024,7 +3144,7 @@ def _build_s_parameter_data_records(dataset_id: int, result: SimulationResult) -
             DataRecord(
                 dataset_id=dataset_id,
                 data_type="s_params",
-                parameter=trace_label,
+                parameter=parameter_name,
                 representation="imaginary",
                 axes=frequency_axis,
                 values=result.get_s_parameter_imag_by_label(trace_label),
@@ -3037,6 +3157,9 @@ def _build_s_parameter_data_records(dataset_id: int, result: SimulationResult) -
 def _build_result_bundle_data_records(
     dataset_id: int,
     result: SimulationResult,
+    *,
+    additional_axes: list[dict[str, Any]] | None = None,
+    parameter_suffix: str = "",
 ) -> list[DataRecord]:
     """Convert all cached simulation bundles into DataRecord rows."""
     records: list[DataRecord] = []
@@ -3049,6 +3172,8 @@ def _build_result_bundle_data_records(
             real_map=result.s_parameter_mode_real or result._resolved_mode_s_parameter_real(),
             imag_map=result.s_parameter_mode_imag or result._resolved_mode_s_parameter_imag(),
             frequencies_ghz=result.frequencies_ghz,
+            additional_axes=additional_axes,
+            parameter_suffix=parameter_suffix,
         )
     )
     records.extend(
@@ -3059,6 +3184,8 @@ def _build_result_bundle_data_records(
             real_map=result.z_parameter_mode_real,
             imag_map=result.z_parameter_mode_imag,
             frequencies_ghz=result.frequencies_ghz,
+            additional_axes=additional_axes,
+            parameter_suffix=parameter_suffix,
         )
     )
     records.extend(
@@ -3069,6 +3196,8 @@ def _build_result_bundle_data_records(
             real_map=result.y_parameter_mode_real,
             imag_map=result.y_parameter_mode_imag,
             frequencies_ghz=result.frequencies_ghz,
+            additional_axes=additional_axes,
+            parameter_suffix=parameter_suffix,
         )
     )
     records.extend(
@@ -3078,6 +3207,8 @@ def _build_result_bundle_data_records(
             parameter_prefix="QE",
             values_map=result.qe_parameter_mode,
             frequencies_ghz=result.frequencies_ghz,
+            additional_axes=additional_axes,
+            parameter_suffix=parameter_suffix,
         )
     )
     records.extend(
@@ -3087,6 +3218,8 @@ def _build_result_bundle_data_records(
             parameter_prefix="QEideal",
             values_map=result.qe_ideal_parameter_mode,
             frequencies_ghz=result.frequencies_ghz,
+            additional_axes=additional_axes,
+            parameter_suffix=parameter_suffix,
         )
     )
     records.extend(
@@ -3096,12 +3229,99 @@ def _build_result_bundle_data_records(
             parameter_prefix="CM",
             values_map=result.cm_parameter_mode,
             frequencies_ghz=result.frequencies_ghz,
+            additional_axes=additional_axes,
+            parameter_suffix=parameter_suffix,
         )
     )
 
     if not records:
-        records.extend(_build_s_parameter_data_records(dataset_id, result))
+        records.extend(
+            _build_s_parameter_data_records(
+                dataset_id,
+                result,
+                additional_axes=additional_axes,
+                parameter_suffix=parameter_suffix,
+            )
+        )
 
+    return records
+
+
+def _format_sweep_value_token(value: float) -> str:
+    """Format one sweep coordinate value into a compact stable token."""
+    return f"{float(value):.10g}"
+
+
+def _format_sweep_parameter_suffix(
+    *,
+    axis_values: Mapping[str, float],
+    axis_units: Mapping[str, str],
+) -> str:
+    """Build one per-point suffix to keep sweep-exported parameters distinguishable."""
+    tokens: list[str] = []
+    for target_value_ref in sorted(axis_values):
+        value = _format_sweep_value_token(float(axis_values[target_value_ref]))
+        unit = str(axis_units.get(target_value_ref, "")).strip()
+        if unit:
+            tokens.append(f"{target_value_ref}={value} {unit}")
+        else:
+            tokens.append(f"{target_value_ref}={value}")
+    if not tokens:
+        return ""
+    return f" [sweep {', '.join(tokens)}]"
+
+
+def _build_sweep_point_axes(
+    *,
+    run: SimulationSweepRun,
+    point_axis_indices: tuple[int, ...],
+    point_axis_values: Mapping[str, float],
+) -> list[dict[str, Any]]:
+    """Build `DataRecord.axes` metadata rows for one sweep point."""
+    axes: list[dict[str, Any]] = []
+    for axis_position, axis in enumerate(run.axes):
+        axis_index = (
+            int(point_axis_indices[axis_position]) if axis_position < len(point_axis_indices) else 0
+        )
+        axis_value = float(point_axis_values.get(axis.target_value_ref, axis.values[axis_index]))
+        axes.append(
+            {
+                "name": f"sweep:{axis.target_value_ref}",
+                "unit": str(axis.unit),
+                "values": [axis_value],
+                "index": axis_index,
+                "axis_points": len(axis.values),
+            }
+        )
+    return axes
+
+
+def _build_sweep_result_bundle_data_records(
+    *,
+    dataset_id: int,
+    sweep_payload: Mapping[str, Any],
+) -> list[DataRecord]:
+    """Convert a structured sweep payload into per-point trace `DataRecord` rows."""
+    sweep_run = simulation_sweep_run_from_payload(sweep_payload)
+    axis_units = {axis.target_value_ref: axis.unit for axis in sweep_run.axes}
+    records: list[DataRecord] = []
+    for point in sweep_run.points:
+        parameter_suffix = _format_sweep_parameter_suffix(
+            axis_values=point.axis_values,
+            axis_units=axis_units,
+        )
+        records.extend(
+            _build_result_bundle_data_records(
+                dataset_id=dataset_id,
+                result=point.result,
+                additional_axes=_build_sweep_point_axes(
+                    run=sweep_run,
+                    point_axis_indices=point.axis_indices,
+                    point_axis_values=point.axis_values,
+                ),
+                parameter_suffix=parameter_suffix,
+            )
+        )
     return records
 
 
@@ -3162,6 +3382,11 @@ def _load_latest_circuit_definition(schema_id: int) -> tuple[CircuitRecord, Circ
 def _extract_available_port_indices(circuit: CircuitDefinition) -> set[int]:
     """Collect schema-declared port indices from public port declarations."""
     return set(circuit.available_port_indices)
+
+
+def _extract_sweep_target_units(circuit: CircuitDefinition) -> dict[str, str]:
+    """Collect sweep target unit hints keyed by `components[*].value_ref`."""
+    return {target.value_ref: target.unit for target in list_simulation_sweep_targets(circuit)}
 
 
 def _detect_harmonic_grid_coincidences(
@@ -3446,6 +3671,7 @@ def _render_simulation_environment():
         )
         post_view_state = default_result_view_state()
         post_processing_input_state = default_post_processing_input_state()
+        sweep_target_unit_by_value_ref = _extract_sweep_target_units(active_circuit_def)
         available_setup_ports = sorted(active_circuit_def.available_port_indices)
         termination_inferred_resistance_ohm_by_port: dict[int, float] = {
             port: _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
@@ -3841,6 +4067,100 @@ def _render_simulation_environment():
                     points_input = ui.number("Points", value=1001, format="%.0f").classes(
                         "flex-grow"
                     )
+
+                sweep_target_options = {
+                    value_ref: (f"{value_ref} ({unit})" if str(unit).strip() else value_ref)
+                    for value_ref, unit in sorted(sweep_target_unit_by_value_ref.items())
+                }
+                sweep_setup_defaults = _normalize_sweep_setup_payload(
+                    None,
+                    available_target_units=sweep_target_unit_by_value_ref,
+                )
+                sweep_axis_defaults = sweep_setup_defaults["axes"][0]
+                default_sweep_target = str(sweep_axis_defaults.get("target_value_ref", "")).strip()
+                if default_sweep_target not in sweep_target_options:
+                    default_sweep_target = next(iter(sweep_target_options), "")
+                with _with_test_id(
+                    ui.card().classes(
+                        "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                    ),
+                    "simulation-sweep-setup-card",
+                ):
+                    ui.label("Parameter Sweep (MVP)").classes("text-sm font-bold text-fg mb-2")
+                    with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                        sweep_enabled_switch = ui.switch(
+                            "Enable Sweep",
+                            value=bool(sweep_setup_defaults["enabled"]),
+                        )
+                        sweep_target_select = (
+                            ui.select(
+                                label="Sweep Target (components[*].value_ref)",
+                                options=sweep_target_options,
+                                value=(default_sweep_target or None),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("min-w-[320px]")
+                        )
+                        sweep_start_input = ui.number(
+                            "Sweep Start",
+                            value=float(sweep_axis_defaults.get("start", 0.0)),
+                            format="%.6g",
+                        ).classes("w-40")
+                        sweep_stop_input = ui.number(
+                            "Sweep Stop",
+                            value=float(sweep_axis_defaults.get("stop", 0.0)),
+                            format="%.6g",
+                        ).classes("w-40")
+                        sweep_points_input = ui.number(
+                            "Sweep Points",
+                            value=int(sweep_axis_defaults.get("points", 11)),
+                            format="%.0f",
+                        ).classes("w-40")
+                    sweep_hint_label = ui.label("").classes("text-xs text-muted mt-2")
+
+                def refresh_sweep_controls() -> None:
+                    enabled = bool(sweep_enabled_switch.value)
+                    has_targets = bool(sweep_target_options)
+                    if not has_targets:
+                        sweep_enabled_switch.value = False
+                        sweep_enabled_switch.disable()
+                        sweep_target_select.value = None
+                    else:
+                        sweep_enabled_switch.enable()
+
+                    target = str(sweep_target_select.value or "")
+                    if has_targets and target not in sweep_target_options:
+                        target = next(iter(sweep_target_options), "")
+                        sweep_target_select.value = target
+                    target_unit = str(sweep_target_unit_by_value_ref.get(target, "")).strip()
+                    if has_targets and target and target_unit:
+                        sweep_hint_label.text = (
+                            f"Target: {target} | Unit: {target_unit} | "
+                            "trace-first source = components[*].value_ref"
+                        )
+                    elif has_targets and target:
+                        sweep_hint_label.text = (
+                            f"Target: {target} | trace-first source = components[*].value_ref"
+                        )
+                    else:
+                        sweep_hint_label.text = (
+                            "No sweepable components[*].value_ref in current schema."
+                        )
+
+                    if not enabled or not has_targets:
+                        sweep_target_select.disable()
+                        sweep_start_input.disable()
+                        sweep_stop_input.disable()
+                        sweep_points_input.disable()
+                    else:
+                        sweep_target_select.enable()
+                        sweep_start_input.enable()
+                        sweep_stop_input.enable()
+                        sweep_points_input.enable()
+
+                sweep_enabled_switch.on_value_change(lambda _e: refresh_sweep_controls())
+                sweep_target_select.on_value_change(lambda _e: refresh_sweep_controls())
+                refresh_sweep_controls()
 
                 ui.separator().classes("my-3 w-full")
 
@@ -4239,6 +4559,46 @@ def _render_simulation_environment():
                             )
                         )
 
+                    sweep_target = str(sweep_target_select.value or "").strip()
+                    sweep_start = sweep_start_input.value
+                    sweep_stop = sweep_stop_input.value
+                    sweep_points_value = sweep_points_input.value
+                    sweep_enabled = bool(sweep_enabled_switch.value)
+                    if sweep_enabled:
+                        if not sweep_target_options:
+                            ui.notify(
+                                "Current schema has no sweepable value_ref targets.",
+                                type="warning",
+                            )
+                            return None
+                        if sweep_target not in sweep_target_options:
+                            ui.notify("Please choose a valid sweep target.", type="warning")
+                            return None
+                        if sweep_start is None or sweep_stop is None or sweep_points_value is None:
+                            ui.notify("Please fill sweep start/stop/points.", type="warning")
+                            return None
+                        if int(sweep_points_value) < 1:
+                            ui.notify("Sweep points must be >= 1.", type="warning")
+                            return None
+
+                    sweep_payload = _normalize_sweep_setup_payload(
+                        {
+                            "enabled": sweep_enabled,
+                            "axes": [
+                                {
+                                    "target_value_ref": sweep_target,
+                                    "start": float(sweep_start or 0.0),
+                                    "stop": float(sweep_stop or 0.0),
+                                    "points": int(sweep_points_value or 11),
+                                    "unit": str(
+                                        sweep_target_unit_by_value_ref.get(sweep_target, "")
+                                    ),
+                                }
+                            ],
+                        },
+                        available_target_units=sweep_target_unit_by_value_ref,
+                    )
+
                     return {
                         "freq_range": {
                             "start_ghz": float(start_input.value),
@@ -4276,6 +4636,7 @@ def _render_simulation_environment():
                                 ).items()
                             },
                         },
+                        "sweep": sweep_payload,
                     }
 
                 def apply_saved_setup(setup_record: dict[str, Any]) -> None:
@@ -4290,6 +4651,10 @@ def _render_simulation_environment():
                     sources_payload = payload.get("sources", [])
                     advanced_payload = payload.get("advanced", {})
                     termination_payload = payload.get("termination_compensation", {})
+                    sweep_payload = _normalize_sweep_setup_payload(
+                        payload.get("sweep") if isinstance(payload.get("sweep"), Mapping) else None,
+                        available_target_units=sweep_target_unit_by_value_ref,
+                    )
 
                     applying_saved_setup = True
                     try:
@@ -4316,6 +4681,15 @@ def _render_simulation_environment():
                             advanced_payload.get("line_search_switch_tol", 1e-5)
                         )
                         alpha_min_input.value = float(advanced_payload.get("alpha_min", 1e-4))
+                        sweep_enabled_switch.value = bool(sweep_payload.get("enabled", False))
+                        sweep_axis_payload = sweep_payload.get("axes", [{}])[0]
+                        sweep_target_select.value = str(
+                            sweep_axis_payload.get("target_value_ref", "")
+                        )
+                        sweep_start_input.value = float(sweep_axis_payload.get("start", 0.0))
+                        sweep_stop_input.value = float(sweep_axis_payload.get("stop", 0.0))
+                        sweep_points_input.value = int(sweep_axis_payload.get("points", 11))
+                        refresh_sweep_controls()
                         termination_enabled = bool(
                             termination_payload.get("enabled", False)
                             if isinstance(termination_payload, dict)
@@ -4832,6 +5206,56 @@ def _render_simulation_environment():
                                 )
                                 return
 
+                        sweep_target_units_latest = _extract_sweep_target_units(latest_circuit_def)
+                        sweep_enabled = bool(sweep_enabled_switch.value)
+                        sweep_plan: SimulationSweepPlan | None = None
+                        sweep_snapshot: dict[str, Any] | None = None
+                        sweep_setup_hash: str | None = None
+                        sweep_result_payload: dict[str, Any] | None = None
+                        if sweep_enabled:
+                            sweep_target = str(sweep_target_select.value or "").strip()
+                            if sweep_target not in sweep_target_units_latest:
+                                reset_status()
+                                append_status(
+                                    "warning",
+                                    "Sweep target is invalid for the latest schema.",
+                                )
+                                ui.notify(
+                                    "Sweep target is invalid for the latest schema.",
+                                    type="warning",
+                                )
+                                return
+                            if (
+                                sweep_start_input.value is None
+                                or sweep_stop_input.value is None
+                                or sweep_points_input.value is None
+                            ):
+                                reset_status()
+                                append_status(
+                                    "warning",
+                                    "Sweep start/stop/points are required when sweep is enabled.",
+                                )
+                                ui.notify(
+                                    "Sweep start/stop/points are required when sweep is enabled.",
+                                    type="warning",
+                                )
+                                return
+                            sweep_axis = SimulationSweepAxis(
+                                target_value_ref=sweep_target,
+                                values=build_linear_sweep_values(
+                                    start=float(sweep_start_input.value),
+                                    stop=float(sweep_stop_input.value),
+                                    points=max(1, int(sweep_points_input.value)),
+                                ),
+                                unit=str(sweep_target_units_latest.get(sweep_target, "")),
+                            )
+                            sweep_plan = build_simulation_sweep_plan(
+                                circuit=latest_circuit_def,
+                                axes=[sweep_axis],
+                            )
+                            sweep_snapshot = simulation_sweep_setup_snapshot(sweep_plan)
+                            sweep_setup_hash = _hash_stable_json(sweep_snapshot)
+
                         max_intermod_order = (
                             None
                             if int(max_intermod_input.value) < 0
@@ -4871,6 +5295,8 @@ def _render_simulation_environment():
                         runtime_state.latest_source_simulation_bundle_id = None
                         runtime_state.latest_schema_source_hash = None
                         runtime_state.latest_simulation_setup_hash = None
+                        runtime_state.latest_sweep_setup_hash = None
+                        runtime_state.latest_simulation_sweep_payload = None
                         handle_post_processing_result(None, None)
                         simulation_results_container.clear()
                         post_processing_container.clear()
@@ -4899,6 +5325,18 @@ def _render_simulation_environment():
                                 f"{freq_range.stop_ghz:.3f} GHz, {freq_range.points} points."
                             ),
                         )
+                        if sweep_plan is not None:
+                            sweep_axis = sweep_plan.axes[0]
+                            append_status(
+                                "info",
+                                (
+                                    "Parameter sweep enabled: "
+                                    f"dim={sweep_plan.dimension}, "
+                                    f"target={sweep_axis.target_value_ref}, "
+                                    f"points={sweep_plan.point_count}, "
+                                    f"unit={sweep_axis.unit or '-'}."
+                                ),
+                            )
                         append_status(
                             "info",
                             (
@@ -4959,9 +5397,19 @@ def _render_simulation_environment():
                         for warning in list(termination_plan.get("warnings", [])):
                             append_status("warning", str(warning))
                         setup_snapshot = _normalized_simulation_setup_snapshot(freq_range, config)
+                        if sweep_plan is not None and sweep_snapshot is not None:
+                            setup_snapshot["sweep"] = {
+                                **sweep_snapshot,
+                                "setup_hash": sweep_setup_hash,
+                            }
                         schema_source_hash = _hash_schema_source(latest_record.definition_json)
                         simulation_setup_hash = _hash_stable_json(setup_snapshot)
                         append_status("info", "Normalized simulation setup snapshot prepared.")
+                        if sweep_plan is not None and sweep_setup_hash is not None:
+                            append_status(
+                                "info",
+                                f"Sweep setup hash: {sweep_setup_hash}",
+                            )
                         append_status("info", "Checking result cache...")
 
                         cache_bundle_id: int | None = None
@@ -4974,7 +5422,12 @@ def _render_simulation_environment():
                             )
 
                         if cache_result is not None:
-                            cache_bundle_id, cache_dataset_id, result = cache_result
+                            (
+                                cache_bundle_id,
+                                cache_dataset_id,
+                                result,
+                                sweep_result_payload,
+                            ) = cache_result
                             runtime_state.set_log_context(
                                 run_id=simulation_run_id,
                                 circuit_id=latest_record.id,
@@ -4989,6 +5442,14 @@ def _render_simulation_environment():
                                     f"Loaded #{cache_bundle_id} without rerunning Julia."
                                 ),
                             )
+                            if sweep_result_payload is not None:
+                                append_status(
+                                    "info",
+                                    (
+                                        "Loaded cached parameter sweep payload "
+                                        f"({sweep_result_payload.get('point_count', 0)} points)."
+                                    ),
+                                )
                         else:
                             runtime_state.set_log_context(
                                 run_id=simulation_run_id,
@@ -5012,22 +5473,24 @@ def _render_simulation_environment():
                                     "text-sm text-muted"
                                 )
 
-                            try:
-                                # Run Julia simulation in a process to prevent GIL blocking
+                            async def _run_solver_with_heartbeat(
+                                circuit_for_run: CircuitDefinition,
+                                *,
+                                stage_label: str,
+                            ) -> SimulationResult:
                                 job_started_at = datetime.now()
                                 heartbeat_warned = False
                                 result_task = asyncio.create_task(
                                     run.cpu_bound(
                                         run_simulation,
-                                        latest_circuit_def,
+                                        circuit_for_run,
                                         freq_range,
                                         config,
                                     )
                                 )
-                                result = None
-                                while result is None:
+                                while True:
                                     try:
-                                        result = await asyncio.wait_for(
+                                        return await asyncio.wait_for(
                                             asyncio.shield(result_task),
                                             timeout=_SIMULATION_HEARTBEAT_SECONDS,
                                         )
@@ -5039,7 +5502,7 @@ def _render_simulation_environment():
                                         append_status(
                                             "info",
                                             (
-                                                "Julia worker still running... "
+                                                f"{stage_label} still running... "
                                                 f"{elapsed_seconds}s elapsed."
                                             ),
                                         )
@@ -5056,31 +5519,64 @@ def _render_simulation_environment():
                                                     "worker heartbeat continues every 5s."
                                                 ),
                                             )
-                            except ImportError as e:
-                                summary, detail = _summarize_simulation_error(e)
-                                append_status("negative", summary)
-                                runtime_state.latest_simulation_result = None
-                                simulation_results_container.clear()
-                                with simulation_results_container:
-                                    ui.icon("error", size="lg").classes("text-danger mb-2")
-                                    ui.label(summary).classes("text-danger text-sm")
-                                    with ui.expansion("Technical Details").classes("w-full mt-3"):
-                                        ui.label(detail).classes(
-                                            "text-xs text-muted whitespace-pre-wrap break-all"
+
+                            if sweep_plan is None:
+                                result = await _run_solver_with_heartbeat(
+                                    latest_circuit_def,
+                                    stage_label="Julia worker",
+                                )
+                            else:
+                                point_results = []
+                                for point in sweep_plan.points:
+                                    point_no = int(point.point_index) + 1
+                                    point_tokens = ", ".join(
+                                        (
+                                            f"{target}={_format_sweep_value_token(value)}"
+                                            for target, value in sorted(
+                                                point.value_ref_overrides.items()
+                                            )
                                         )
-                                post_processing_container.clear()
-                                with post_processing_container:
-                                    ui.label(
-                                        "Post Processing is unavailable because simulation failed."
-                                    ).classes("text-sm text-muted")
-                                post_processing_results_container.clear()
-                                with post_processing_results_container:
-                                    ui.label(
-                                        "Post Processing Result View is unavailable "
-                                        "because simulation failed."
-                                    ).classes("text-sm text-muted")
-                                sim_button.props(remove="loading")
-                                return
+                                    )
+                                    append_status(
+                                        "info",
+                                        (
+                                            f"Sweep point {point_no}/{sweep_plan.point_count}: "
+                                            f"{point_tokens}."
+                                        ),
+                                    )
+                                    swept_circuit = apply_simulation_sweep_overrides(
+                                        circuit=latest_circuit_def,
+                                        value_ref_overrides=point.value_ref_overrides,
+                                    )
+                                    point_result = await _run_solver_with_heartbeat(
+                                        swept_circuit,
+                                        stage_label=(
+                                            f"Sweep point {point_no}/{sweep_plan.point_count}"
+                                        ),
+                                    )
+                                    point_results.append(
+                                        {
+                                            "point_index": int(point.point_index),
+                                            "axis_indices": tuple(point.axis_indices),
+                                            "axis_values": dict(point.value_ref_overrides),
+                                            "result": point_result,
+                                        }
+                                    )
+                                sweep_run = SimulationSweepRun(
+                                    axes=tuple(sweep_plan.axes),
+                                    points=tuple(
+                                        SimulationSweepPointResult(
+                                            point_index=entry["point_index"],
+                                            axis_indices=entry["axis_indices"],
+                                            axis_values=entry["axis_values"],
+                                            result=entry["result"],
+                                        )
+                                        for entry in point_results
+                                    ),
+                                    representative_point_index=0,
+                                )
+                                result = sweep_run.representative_result
+                                sweep_result_payload = simulation_sweep_run_to_payload(sweep_run)
 
                             try:
                                 with get_unit_of_work() as uow:
@@ -5098,11 +5594,13 @@ def _render_simulation_environment():
                                             "run_id": simulation_run_id,
                                             "circuit_id": latest_record.id,
                                             "circuit_name": latest_record.name,
+                                            "sweep_setup_hash": sweep_setup_hash,
                                         },
                                         config_snapshot=setup_snapshot,
                                         schema_source_hash=schema_source_hash,
                                         simulation_setup_hash=simulation_setup_hash,
                                         include_data_records=False,
+                                        result_payload=sweep_result_payload,
                                     )
                                     uow.commit()
                                 runtime_state.set_log_context(
@@ -5123,17 +5621,30 @@ def _render_simulation_environment():
 
                         # Save state for persistence
                         last_sim_result = result
+                        last_sweep_result_payload = sweep_result_payload
+                        last_sweep_setup_hash = sweep_setup_hash
                         last_freq_range = freq_range
                         last_setup_snapshot = setup_snapshot
                         last_schema_source_hash = schema_source_hash
                         last_simulation_setup_hash = simulation_setup_hash
-                        append_status(
-                            "positive",
-                            (
-                                "Simulation completed successfully "
-                                f"({len(result.frequencies_ghz)} points)."
-                            ),
-                        )
+                        if last_sweep_result_payload is None:
+                            append_status(
+                                "positive",
+                                (
+                                    "Simulation completed successfully "
+                                    f"({len(result.frequencies_ghz)} points)."
+                                ),
+                            )
+                        else:
+                            append_status(
+                                "positive",
+                                (
+                                    "Parameter sweep completed successfully "
+                                    f"({int(last_sweep_result_payload.get('point_count', 0))} "
+                                    "points, "
+                                    f"{len(result.frequencies_ghz)} freq points each)."
+                                ),
+                            )
 
                         def on_save_click():
                             _save_simulation_results_dialog(
@@ -5143,15 +5654,19 @@ def _render_simulation_environment():
                                 setup_snapshot=last_setup_snapshot,
                                 schema_source_hash=last_schema_source_hash,
                                 simulation_setup_hash=last_simulation_setup_hash,
+                                sweep_setup_hash=last_sweep_setup_hash,
+                                sweep_result_payload=last_sweep_result_payload,
                             )
 
                         runtime_state.latest_raw_save_callback = on_save_click
                         runtime_state.latest_simulation_result = last_sim_result
+                        runtime_state.latest_simulation_sweep_payload = last_sweep_result_payload
                         _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
                         runtime_state.latest_circuit_record = latest_record
                         runtime_state.latest_source_simulation_bundle_id = cache_bundle_id
                         runtime_state.latest_schema_source_hash = last_schema_source_hash
                         runtime_state.latest_simulation_setup_hash = last_simulation_setup_hash
+                        runtime_state.latest_sweep_setup_hash = last_sweep_setup_hash
                         render_simulation_result_view()
                         handle_post_processing_result(None, None)
                         _render_post_processing_input_panel()
@@ -5174,6 +5689,8 @@ def _render_simulation_environment():
                         runtime_state.latest_source_simulation_bundle_id = None
                         runtime_state.latest_schema_source_hash = None
                         runtime_state.latest_simulation_setup_hash = None
+                        runtime_state.latest_sweep_setup_hash = None
+                        runtime_state.latest_simulation_sweep_payload = None
                         handle_post_processing_result(None, None)
                         simulation_results_container.clear()
                         post_processing_container.clear()
@@ -5269,9 +5786,17 @@ def _save_simulation_results_dialog(
     setup_snapshot: dict[str, Any] | None = None,
     schema_source_hash: str | None = None,
     simulation_setup_hash: str | None = None,
+    sweep_setup_hash: str | None = None,
+    sweep_result_payload: dict[str, Any] | None = None,
 ):
     """Dialog for saving SimulationResult into DataRecords."""
-    bundle_records = _build_result_bundle_data_records(dataset_id=0, result=result)
+    if sweep_result_payload is not None:
+        bundle_records = _build_sweep_result_bundle_data_records(
+            dataset_id=0,
+            sweep_payload=sweep_result_payload,
+        )
+    else:
+        bundle_records = _build_result_bundle_data_records(dataset_id=0, result=result)
     bundle_trace_count = len(
         {
             (
@@ -5284,10 +5809,17 @@ def _save_simulation_results_dialog(
 
     with ui.dialog() as dialog, ui.card().classes("w-full max-w-lg bg-surface"):
         ui.label("Save Simulation Results").classes("text-xl font-bold mb-4")
-        ui.label(
-            "This saves the cached result bundle "
-            f"({bundle_trace_count} trace(s), including sidebands / QE / CM when available)."
-        ).classes("text-sm text-muted mb-3")
+        if sweep_result_payload is None:
+            ui.label(
+                "This saves the cached result bundle "
+                f"({bundle_trace_count} trace(s), including sidebands / QE / CM when available)."
+            ).classes("text-sm text-muted mb-3")
+        else:
+            ui.label(
+                "This saves the cached parameter-sweep bundle "
+                f"({bundle_trace_count} trace(s), "
+                f"{int(sweep_result_payload.get('point_count', 0))} sweep points)."
+            ).classes("text-sm text-muted mb-3")
 
         try:
             with get_unit_of_work() as uow:
@@ -5368,10 +5900,12 @@ def _save_simulation_results_dialog(
                         "export_kind": "manual",
                         "circuit_id": circuit_record.id,
                         "circuit_name": circuit_record.name,
+                        "sweep_setup_hash": sweep_setup_hash,
                     },
                     config_snapshot=export_setup_snapshot,
                     schema_source_hash=schema_source_hash,
                     simulation_setup_hash=simulation_setup_hash,
+                    result_payload=sweep_result_payload,
                 )
                 uow.commit()
                 return ds_name
