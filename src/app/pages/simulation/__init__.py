@@ -16,6 +16,7 @@ from nicegui import app, run, ui
 
 from app.layout import app_shell
 from app.pages.simulation.state import (
+    SimulationRuntimeState,
     default_post_processing_input_state,
     default_result_view_state,
 )
@@ -3643,21 +3644,11 @@ def _render_simulation_environment():
             "definition": active_circuit_def
         }
 
-        status_history: list[dict[str, str]] = []
+        runtime_state = SimulationRuntimeState()
         status_container: Any | None = None
         simulation_results_container: Any | None = None
         post_processing_container: Any | None = None
         post_processing_results_container: Any | None = None
-        latest_pipeline_result: dict[str, Any] = {
-            "sweep": None,
-            "flow_spec": None,
-            "circuit_record": None,
-            "source_simulation_bundle_id": None,
-            "schema_source_hash": None,
-            "simulation_setup_hash": None,
-        }
-        latest_simulation_result: dict[str, SimulationResult | None] = {"result": None}
-        latest_raw_save_action: dict[str, Callable[[], None] | None] = {"callback": None}
         raw_view_state = default_result_view_state(
             family_sources={
                 family: _first_option_key(options)
@@ -3710,23 +3701,17 @@ def _render_simulation_environment():
             "summary_label": None,
             "details_container": None,
         }
-        termination_last_warning: dict[str, str] = {"message": ""}
-        termination_last_summary: dict[str, str] = {"message": ""}
 
         def append_status(level: str, message: str) -> None:
-            status_history.append(
-                {
-                    "level": level,
-                    "message": message,
-                    "time": datetime.now().strftime("%H:%M:%S"),
-                }
+            runtime_state.append_status(
+                level=level,
+                message=message,
+                time_label=datetime.now().strftime("%H:%M:%S"),
             )
-            if len(status_history) > 30:
-                status_history.pop(0)
             render_status()
 
         def reset_status(message: str | None = None) -> None:
-            status_history.clear()
+            runtime_state.status_history.clear()
             if message:
                 append_status("info", message)
             else:
@@ -3751,13 +3736,13 @@ def _render_simulation_environment():
 
             status_container.clear()
             with status_container:
-                if not status_history:
+                if not runtime_state.status_history:
                     ui.label("No logs yet. Run a simulation to see process messages.").classes(
                         "text-sm text-muted"
                     )
                     return
 
-                for item in status_history:
+                for item in runtime_state.status_history:
                     with ui.row().classes("w-full items-start gap-2"):
                         ui.icon(icon_map.get(item["level"], "info"), size="xs").classes(
                             color_map.get(item["level"], "text-primary mt-1")
@@ -3818,7 +3803,7 @@ def _render_simulation_environment():
             )
 
         def _raw_simulation_result() -> SimulationResult | None:
-            result = latest_simulation_result.get("result")
+            result = runtime_state.latest_simulation_result
             if not isinstance(result, SimulationResult):
                 return None
             return result
@@ -3841,8 +3826,8 @@ def _render_simulation_environment():
                 )
             except Exception as exc:
                 message = f"Termination compensation skipped: {exc}"
-                if termination_last_warning["message"] != message:
-                    termination_last_warning["message"] = message
+                if runtime_state.termination_last_warning != message:
+                    runtime_state.termination_last_warning = message
                     append_status("warning", message)
                 return raw_result
 
@@ -3907,7 +3892,7 @@ def _render_simulation_environment():
             _view_family: str,
             _source_token: str,
         ) -> tuple[SimulationResult, dict[int, str]] | None:
-            sweep = latest_pipeline_result.get("sweep")
+            sweep = runtime_state.latest_sweep
             if not isinstance(sweep, PortMatrixSweep):
                 return None
             return _build_post_processed_result_payload(
@@ -3919,7 +3904,7 @@ def _render_simulation_environment():
             if simulation_results_container is None:
                 return
 
-            raw_save_callback = latest_raw_save_action["callback"]
+            raw_save_callback = runtime_state.latest_raw_save_callback
             _render_result_family_explorer(
                 container=simulation_results_container,
                 view_state=raw_view_state,
@@ -3935,28 +3920,26 @@ def _render_simulation_environment():
             )
 
         def _save_post_processed_results_from_view() -> None:
-            sweep = latest_pipeline_result.get("sweep")
-            flow_spec = latest_pipeline_result.get("flow_spec")
+            sweep = runtime_state.latest_sweep
+            flow_spec = runtime_state.latest_flow_spec
             if not _can_save_post_processed_results(sweep, flow_spec):
                 ui.notify("Run Post Processing first.", type="warning")
                 return
             _save_post_processed_results_dialog(
                 sweep=sweep,
                 flow_spec=dict(flow_spec),
-                circuit_record=latest_pipeline_result.get("circuit_record"),
-                source_simulation_bundle_id=latest_pipeline_result.get(
-                    "source_simulation_bundle_id"
-                ),
-                schema_source_hash=latest_pipeline_result.get("schema_source_hash"),
-                simulation_setup_hash=latest_pipeline_result.get("simulation_setup_hash"),
+                circuit_record=runtime_state.latest_circuit_record,
+                source_simulation_bundle_id=runtime_state.latest_source_simulation_bundle_id,
+                schema_source_hash=runtime_state.latest_schema_source_hash,
+                simulation_setup_hash=runtime_state.latest_simulation_setup_hash,
             )
 
         def render_post_processed_result_view() -> None:
             if post_processing_results_container is None:
                 return
 
-            sweep = latest_pipeline_result.get("sweep")
-            flow_spec = latest_pipeline_result.get("flow_spec")
+            sweep = runtime_state.latest_sweep
+            flow_spec = runtime_state.latest_flow_spec
             save_enabled = _can_save_post_processed_results(sweep, flow_spec)
             context_line = None
             if save_enabled:
@@ -4000,8 +3983,8 @@ def _render_simulation_environment():
             sweep: PortMatrixSweep | None,
             flow_spec: dict[str, Any] | None,
         ) -> None:
-            latest_pipeline_result["sweep"] = sweep
-            latest_pipeline_result["flow_spec"] = flow_spec
+            runtime_state.latest_sweep = sweep
+            runtime_state.latest_flow_spec = flow_spec
             _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
             render_post_processed_result_view()
 
@@ -4367,15 +4350,15 @@ def _render_simulation_environment():
                     refresh_termination_controls()
                     if applying_saved_setup:
                         return
-                    if not isinstance(latest_simulation_result.get("result"), SimulationResult):
+                    if not isinstance(runtime_state.latest_simulation_result, SimulationResult):
                         return
                     handle_post_processing_result(None, None)
                     render_simulation_result_view()
                     _render_post_processing_input_panel()
                     render_post_processed_result_view()
                     summary_text = _termination_plan_summary(_resolved_termination_plan())
-                    if termination_last_summary["message"] != summary_text:
-                        termination_last_summary["message"] = summary_text
+                    if runtime_state.termination_last_summary != summary_text:
+                        runtime_state.termination_last_summary = summary_text
                         append_status(
                             "info",
                             (
@@ -4900,11 +4883,11 @@ def _render_simulation_environment():
 
                         # Show loading state
                         sim_button.props("loading")
-                        latest_simulation_result["result"] = None
-                        latest_pipeline_result["circuit_record"] = None
-                        latest_pipeline_result["source_simulation_bundle_id"] = None
-                        latest_pipeline_result["schema_source_hash"] = None
-                        latest_pipeline_result["simulation_setup_hash"] = None
+                        runtime_state.latest_simulation_result = None
+                        runtime_state.latest_circuit_record = None
+                        runtime_state.latest_source_simulation_bundle_id = None
+                        runtime_state.latest_schema_source_hash = None
+                        runtime_state.latest_simulation_setup_hash = None
                         handle_post_processing_result(None, None)
                         simulation_results_container.clear()
                         post_processing_container.clear()
@@ -5058,7 +5041,7 @@ def _render_simulation_environment():
                             except ImportError as e:
                                 summary, detail = _summarize_simulation_error(e)
                                 append_status("negative", summary)
-                                latest_simulation_result["result"] = None
+                                runtime_state.latest_simulation_result = None
                                 simulation_results_container.clear()
                                 with simulation_results_container:
                                     ui.icon("error", size="lg").classes("text-danger mb-2")
@@ -5137,13 +5120,15 @@ def _render_simulation_environment():
                                 simulation_setup_hash=last_simulation_setup_hash,
                             )
 
-                        latest_raw_save_action["callback"] = on_save_click
-                        latest_simulation_result["result"] = last_sim_result
+                        runtime_state.latest_raw_save_callback = on_save_click
+                        runtime_state.latest_simulation_result = last_sim_result
                         _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
-                        latest_pipeline_result["circuit_record"] = latest_record
-                        latest_pipeline_result["source_simulation_bundle_id"] = cache_bundle_id
-                        latest_pipeline_result["schema_source_hash"] = last_schema_source_hash
-                        latest_pipeline_result["simulation_setup_hash"] = last_simulation_setup_hash
+                        runtime_state.latest_circuit_record = latest_record
+                        runtime_state.latest_source_simulation_bundle_id = cache_bundle_id
+                        runtime_state.latest_schema_source_hash = last_schema_source_hash
+                        runtime_state.latest_simulation_setup_hash = (
+                            last_simulation_setup_hash
+                        )
                         render_simulation_result_view()
                         handle_post_processing_result(None, None)
                         _render_post_processing_input_panel()
@@ -5160,12 +5145,12 @@ def _render_simulation_environment():
                             append_status("warning", hint)
                             detail = f"{detail}\n\nLikely cause from current configuration:\n{hint}"
                         append_status("negative", summary)
-                        latest_raw_save_action["callback"] = None
-                        latest_simulation_result["result"] = None
-                        latest_pipeline_result["circuit_record"] = None
-                        latest_pipeline_result["source_simulation_bundle_id"] = None
-                        latest_pipeline_result["schema_source_hash"] = None
-                        latest_pipeline_result["simulation_setup_hash"] = None
+                        runtime_state.latest_raw_save_callback = None
+                        runtime_state.latest_simulation_result = None
+                        runtime_state.latest_circuit_record = None
+                        runtime_state.latest_source_simulation_bundle_id = None
+                        runtime_state.latest_schema_source_hash = None
+                        runtime_state.latest_simulation_setup_hash = None
                         handle_post_processing_result(None, None)
                         simulation_results_container.clear()
                         post_processing_container.clear()

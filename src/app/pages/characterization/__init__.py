@@ -15,6 +15,7 @@ from app.pages.characterization.state import (
     AnalysisRunAvailability,
     AnalysisRunUiState,
     AnalysisScopeCompatibility,
+    CharacterizationRuntimeState,
     ResultArtifact,
 )
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
@@ -1355,26 +1356,18 @@ def characterization_page():
         ui.label("Characterization").classes("text-2xl font-bold text-fg mb-6")
 
         selected_dataset_ids = app.storage.user.get("selected_datasets", [])
-        analysis_status_history: list[dict[str, str]] = []
-        analysis_log_container: Any | None = None
-        selected_trace_ids_by_scope: dict[str, set[int]] = {}
-        trace_table_state_by_scope: dict[str, dict[str, object]] = {}
-        analysis_scope_compatibility_cache: dict[str, AnalysisScopeCompatibility] = {}
+        runtime_state = CharacterizationRuntimeState.create()
 
         def append_analysis_status(level: str, message: str) -> None:
-            analysis_status_history.append(
-                {
-                    "level": level,
-                    "message": message,
-                    "time": pd.Timestamp.now().strftime("%H:%M:%S"),
-                }
+            runtime_state.append_status(
+                level=level,
+                message=message,
+                time_label=pd.Timestamp.now().strftime("%H:%M:%S"),
             )
-            if len(analysis_status_history) > 50:
-                analysis_status_history.pop(0)
             render_analysis_status()
 
         def render_analysis_status() -> None:
-            if analysis_log_container is None:
+            if runtime_state.analysis_log_container is None:
                 return
 
             icon_map = {
@@ -1390,15 +1383,15 @@ def characterization_page():
                 "positive": "text-positive",
             }
 
-            analysis_log_container.clear()
-            with analysis_log_container:
-                if not analysis_status_history:
+            runtime_state.analysis_log_container.clear()
+            with runtime_state.analysis_log_container:
+                if not runtime_state.analysis_status_history:
                     ui.label("No analysis logs yet. Run one analysis to see status.").classes(
                         "text-sm text-muted"
                     )
                     return
 
-                for item in analysis_status_history:
+                for item in runtime_state.analysis_status_history:
                     with ui.row().classes("w-full items-start gap-2"):
                         ui.icon(icon_map.get(item["level"], "info"), size="xs").classes(
                             color_map.get(item["level"], "text-primary mt-1")
@@ -1438,7 +1431,7 @@ def characterization_page():
 
                 @ui.refreshable
                 def render_dataset_view():
-                    nonlocal analysis_log_container
+                    nonlocal runtime_state
                     active_id = app.storage.user.get("analysis_current_dataset")
                     if not active_id or active_id not in ds_options:
                         return
@@ -1485,7 +1478,7 @@ def characterization_page():
                             compatibility_cache_key = (
                                 f"{active_id}:{selected_scope_token}:{scope_revision}:{analysis_id}"
                             )
-                            compatibility = analysis_scope_compatibility_cache.get(
+                            compatibility = runtime_state.analysis_scope_compatibility_cache.get(
                                 compatibility_cache_key
                             )
                             if compatibility is None:
@@ -1511,9 +1504,9 @@ def characterization_page():
                                         else "Unavailable for current scope"
                                     ),
                                 )
-                                analysis_scope_compatibility_cache[compatibility_cache_key] = (
-                                    compatibility
-                                )
+                                runtime_state.analysis_scope_compatibility_cache[
+                                    compatibility_cache_key
+                                ] = compatibility
                             analysis_scope_compatibility[analysis_id] = compatibility
                             capability_decision = evaluate_analysis_capability_gating(
                                 analysis,
@@ -1587,40 +1580,38 @@ def characterization_page():
                         trace_scope_key = (
                             f"{active_id}:{selected_scope_token}:{selected_run_analysis_id}"
                         )
-                        if trace_scope_key not in selected_trace_ids_by_scope:
+                        if trace_scope_key not in runtime_state.selected_trace_ids_by_scope:
                             base_rows, _ = _compatible_trace_page(
                                 mode_filter="base",
                                 limit=1,
                                 offset=0,
                             )
                             if base_rows:
-                                selected_trace_ids_by_scope[trace_scope_key] = {
-                                    int(base_rows[0]["id"])
-                                }
+                                runtime_state.set_selected_trace_ids(
+                                    trace_scope_key,
+                                    {int(base_rows[0]["id"])},
+                                )
                             else:
                                 first_rows, _ = _compatible_trace_page(limit=1, offset=0)
-                                selected_trace_ids_by_scope[trace_scope_key] = (
-                                    {int(first_rows[0]["id"])} if first_rows else set()
+                                runtime_state.set_selected_trace_ids(
+                                    trace_scope_key,
+                                    {int(first_rows[0]["id"])} if first_rows else set(),
                                 )
-                        if trace_scope_key not in trace_table_state_by_scope:
+                        if trace_scope_key not in runtime_state.trace_table_state_by_scope:
                             _, base_trace_count = _compatible_trace_page(
                                 mode_filter="base",
                                 limit=1,
                                 offset=0,
                             )
-                            trace_table_state_by_scope[trace_scope_key] = {
-                                "search": "",
-                                "trace_mode_filter": (
+                            runtime_state.ensure_trace_table_state(
+                                trace_scope_key,
+                                default_mode_filter=(
                                     "base" if base_trace_count > 0 else _TRACE_MODE_ALL
                                 ),
-                                "sort_by": "id",
-                                "descending": False,
-                                "page": 1,
-                                "page_size": 20,
-                            }
+                            )
 
                         def _current_mode_filter() -> str:
-                            table_state = trace_table_state_by_scope[trace_scope_key]
+                            table_state = runtime_state.trace_table_state_by_scope[trace_scope_key]
                             return str(table_state.get("trace_mode_filter", _TRACE_MODE_ALL))
 
                         def current_mode_trace_total() -> int:
@@ -1632,7 +1623,7 @@ def characterization_page():
                             return total
 
                         def current_selected_trace_ids() -> set[int]:
-                            scope_selected_ids = selected_trace_ids_by_scope.get(
+                            scope_selected_ids = runtime_state.selected_trace_ids_by_scope.get(
                                 trace_scope_key,
                                 set(),
                             )
@@ -1649,7 +1640,7 @@ def characterization_page():
                                 for row in validated_rows
                                 if isinstance(row.get("id"), int)
                             }
-                            selected_trace_ids_by_scope[trace_scope_key] = validated_ids
+                            runtime_state.set_selected_trace_ids(trace_scope_key, validated_ids)
                             return validated_ids
 
                         def current_selected_trace_rows() -> list[dict[str, str | int]]:
@@ -1665,9 +1656,7 @@ def characterization_page():
                             return rows
 
                         def set_selected_trace_ids(updated_ids: set[int]) -> None:
-                            selected_trace_ids_by_scope[trace_scope_key] = {
-                                int(trace_id) for trace_id in updated_ids
-                            }
+                            runtime_state.set_selected_trace_ids(trace_scope_key, updated_ids)
 
                         def bulk_select_for_mode(mode_filter: str) -> None:
                             rows, total = _compatible_trace_page(
@@ -1967,7 +1956,9 @@ def characterization_page():
 
                                 @ui.refreshable
                                 def render_trace_selection() -> None:
-                                    table_state = trace_table_state_by_scope[trace_scope_key]
+                                    table_state = runtime_state.trace_table_state_by_scope[
+                                        trace_scope_key
+                                    ]
                                     mode_filter = str(
                                         table_state.get("trace_mode_filter", _TRACE_MODE_ALL)
                                     )
@@ -2289,7 +2280,9 @@ def characterization_page():
                                     ui.label("Analysis Log").classes(
                                         "text-sm font-bold text-fg uppercase tracking-wider"
                                     )
-                                analysis_log_container = ui.column().classes("w-full gap-2")
+                                runtime_state.analysis_log_container = ui.column().classes(
+                                    "w-full gap-2"
+                                )
                                 render_analysis_status()
 
                             with ui.card().classes("w-full bg-surface rounded-xl p-6"):

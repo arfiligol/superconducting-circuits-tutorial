@@ -52,3 +52,76 @@ class ResultArtifact:
     query_spec: dict[str, Any]
     meta: dict[str, Any]
 
+
+@dataclass
+class CharacterizationRuntimeState:
+    """Single mutable state source for Characterization page runtime."""
+
+    analysis_status_history: list[dict[str, str]]
+    analysis_log_container: Any | None
+    selected_trace_ids_by_scope: dict[str, set[int]]
+    trace_table_state_by_scope: dict[str, dict[str, object]]
+    analysis_scope_compatibility_cache: dict[str, AnalysisScopeCompatibility]
+
+    @classmethod
+    def create(cls) -> CharacterizationRuntimeState:
+        """Build default page runtime state."""
+        return cls(
+            analysis_status_history=[],
+            analysis_log_container=None,
+            selected_trace_ids_by_scope={},
+            trace_table_state_by_scope={},
+            analysis_scope_compatibility_cache={},
+        )
+
+    def append_status(
+        self,
+        level: str,
+        message: str,
+        *,
+        time_label: str,
+        limit: int = 50,
+    ) -> None:
+        """Append one analysis log row with bounded history."""
+        self.analysis_status_history.append(
+            {
+                "level": level,
+                "message": message,
+                "time": time_label,
+            }
+        )
+        if len(self.analysis_status_history) > limit:
+            self.analysis_status_history.pop(0)
+
+    def ensure_trace_table_state(
+        self,
+        scope_key: str,
+        *,
+        default_mode_filter: str,
+    ) -> dict[str, object]:
+        """Ensure one scoped trace table state payload exists."""
+        if scope_key not in self.trace_table_state_by_scope:
+            self.trace_table_state_by_scope[scope_key] = {
+                "search": "",
+                "trace_mode_filter": default_mode_filter,
+                "sort_by": "id",
+                "descending": False,
+                "page": 1,
+                "page_size": 20,
+            }
+        return self.trace_table_state_by_scope[scope_key]
+
+    def ensure_selected_trace_ids(
+        self,
+        scope_key: str,
+        *,
+        default_ids: set[int] | None = None,
+    ) -> set[int]:
+        """Ensure one scoped selected-trace set exists."""
+        if scope_key not in self.selected_trace_ids_by_scope:
+            self.selected_trace_ids_by_scope[scope_key] = set(default_ids or set())
+        return self.selected_trace_ids_by_scope[scope_key]
+
+    def set_selected_trace_ids(self, scope_key: str, trace_ids: set[int]) -> None:
+        """Replace one scoped selected-trace set."""
+        self.selected_trace_ids_by_scope[scope_key] = set(int(trace_id) for trace_id in trace_ids)
