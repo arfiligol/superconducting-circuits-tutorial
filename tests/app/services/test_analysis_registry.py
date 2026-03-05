@@ -1,6 +1,7 @@
 """Tests for capability gating in analysis registry."""
 
-from app.services.analysis_registry import ANALYSIS_REGISTRY, evaluate_analysis_capability_gating
+from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
+from app.services.analysis_registry import ANALYSIS_REGISTRY
 
 
 def _analysis_by_id(analysis_id: str) -> dict:

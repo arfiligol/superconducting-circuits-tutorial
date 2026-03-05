@@ -13,6 +13,7 @@ from core.shared.persistence.repositories.data_record_repository import (
     DataRecordRepository,
 )
 from core.shared.persistence.repositories.dataset_repository import DatasetRepository
+from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 from core.shared.persistence.repositories.result_bundle_repository import (
     ResultBundleRepository,
 )
@@ -295,6 +296,22 @@ def test_data_record_repository_characterization_contract_methods() -> None:
         assert sideband_total == 1
         assert [int(row["id"]) for row in sideband_rows] == [int(sideband.id or 0)]
 
+        query_rows, query_total = data_repo.list_index_page_by_dataset(
+            dataset.id,
+            query=TraceIndexPageQuery(
+                data_types=("y_parameters",),
+                parameters=("Y11",),
+                representation="imaginary",
+                mode_filter="sideband",
+                ids=(int(base.id or 0), int(sideband.id or 0)),
+                sort_by="mode",
+                limit=20,
+                offset=0,
+            ),
+        )
+        assert query_total == 1
+        assert [int(row["id"]) for row in query_rows] == [int(sideband.id or 0)]
+
 
 def test_result_bundle_repository_characterization_contract_methods() -> None:
     with _memory_session() as session:
@@ -358,6 +375,21 @@ def test_result_bundle_repository_characterization_contract_methods() -> None:
         )
         assert total == 1
         assert [int(row["id"]) for row in rows] == [int(sideband.id or 0)]
+
+        query_rows, query_total = bundle_repo.list_data_record_index_page(
+            bundle.id,
+            query=TraceIndexPageQuery(
+                data_types=("y_parameters",),
+                parameters=("Y11",),
+                representation="imaginary",
+                mode_filter="sideband",
+                sort_by="mode",
+                limit=20,
+                offset=0,
+            ),
+        )
+        assert query_total == 1
+        assert [int(row["id"]) for row in query_rows] == [int(sideband.id or 0)]
 
 
 def test_circuit_repository_summary_page_supports_search_and_sort() -> None:

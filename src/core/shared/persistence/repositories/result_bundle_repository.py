@@ -13,6 +13,7 @@ from core.shared.persistence.models import (
     ResultBundleDataLink,
     ResultBundleRecord,
 )
+from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
 class ResultBundleRepository:
@@ -120,6 +121,7 @@ class ResultBundleRepository:
         self,
         bundle_id: int,
         *,
+        query: TraceIndexPageQuery | None = None,
         search: str = "",
         sort_by: str = "id",
         descending: bool = False,
@@ -133,6 +135,19 @@ class ResultBundleRepository:
         offset: int = 0,
     ) -> tuple[list[dict[str, str | int]], int]:
         """List one page of bundle-linked trace metadata rows."""
+        if query is not None:
+            search = query.search
+            sort_by = query.sort_by
+            descending = query.descending
+            data_type = query.data_type
+            data_types = query.data_types
+            parameters = query.parameters
+            representation = query.representation
+            mode_filter = query.mode_filter
+            ids = query.ids
+            limit = query.limit
+            offset = query.offset
+
         id_col = cast(Any, DataRecord.id)
         data_type_col = cast(Any, DataRecord.data_type)
         parameter_col = cast(Any, DataRecord.parameter)

@@ -1,24 +1,18 @@
-"""Analysis Registry for the SC Data Browser UI."""
+"""Static analysis metadata registry.
 
-from dataclasses import dataclass
-from typing import Any
+Runtime evaluators live in dedicated service modules:
+- `analysis_scope_evaluator.py`
+- `analysis_capability_evaluator.py`
+"""
 
-from app.services.dataset_profile import (
-    capability_label,
-    normalize_capabilities,
-    normalize_device_type,
+from app.services.analysis_capability_evaluator import (
+    AnalysisCapabilityDecision,
+    evaluate_analysis_capability_gating,
 )
-
-
-@dataclass(frozen=True)
-class AnalysisCapabilityDecision:
-    """Capability-gating decision for one analysis on one dataset profile."""
-
-    allowed: bool
-    recommended: bool
-    status: str
-    reasons: list[str]
-
+from app.services.analysis_scope_evaluator import (
+    get_available_analyses,
+    is_analysis_completed,
+)
 
 ANALYSIS_REGISTRY = [
     {
@@ -169,76 +163,10 @@ ANALYSIS_REGISTRY = [
     },
 ]
 
-
-def get_available_analyses(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Determine which analyses can be run on a given dataset's records."""
-    available = []
-
-    for analysis in ANALYSIS_REGISTRY:
-        if analysis["scope"] != "per_dataset":
-            continue
-
-        reqs = analysis["requires"]
-
-        found_match = False
-        for r in records:
-            match = True
-            for k, v in reqs.items():
-                if k == "parameter" and isinstance(v, list):
-                    if r.get(k) not in v:
-                        match = False
-                elif r.get(k) != v:
-                    match = False
-
-            if match:
-                found_match = True
-                break
-
-        if found_match:
-            available.append(analysis)
-
-    return available
-
-
-def is_analysis_completed(analysis: dict[str, Any], params: list[Any]) -> bool:
-    """Check if the dataset already contains derived parameters from this analysis."""
-    completed_methods = analysis.get("completed_methods", [])
-    if not completed_methods:
-        return False
-
-    return any(param.method in completed_methods for param in params)
-
-
-def evaluate_analysis_capability_gating(
-    analysis: dict[str, Any],
-    *,
-    dataset_profile: dict[str, Any],
-) -> AnalysisCapabilityDecision:
-    """Evaluate capability-based gating for one analysis."""
-    capabilities = set(normalize_capabilities(dataset_profile.get("capabilities", [])))
-    device_type = normalize_device_type(dataset_profile.get("device_type"))
-
-    required = set(normalize_capabilities(analysis.get("required_capabilities", [])))
-    excluded = set(normalize_capabilities(analysis.get("excluded_capabilities", [])))
-    recommended_for = {
-        normalize_device_type(raw_device_type)
-        for raw_device_type in analysis.get("recommended_for", [])
-    }
-
-    missing = sorted(required - capabilities)
-    blocked = sorted(excluded & capabilities)
-    reasons: list[str] = []
-    reasons.extend(f"Missing capability: {capability_label(capability)}" for capability in missing)
-    reasons.extend(
-        f"Excluded by capability: {capability_label(capability)}" for capability in blocked
-    )
-
-    allowed = not reasons
-    recommended = allowed and device_type in recommended_for
-    status = "recommended" if recommended else ("available" if allowed else "unavailable")
-    return AnalysisCapabilityDecision(
-        allowed=allowed,
-        recommended=recommended,
-        status=status,
-        reasons=reasons,
-    )
+__all__ = [
+    "ANALYSIS_REGISTRY",
+    "AnalysisCapabilityDecision",
+    "evaluate_analysis_capability_gating",
+    "get_available_analyses",
+    "is_analysis_completed",
+]

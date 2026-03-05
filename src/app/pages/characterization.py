@@ -23,6 +23,7 @@ from core.analysis.application.services.resonance_extract_service import Resonan
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
+from core.shared.persistence.repositories import TraceIndexPageQuery
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -412,26 +413,30 @@ def _list_scope_compatible_trace_index_page(
 ) -> tuple[list[dict[str, str | int]], int]:
     """List one page of compatible trace metadata under current scope."""
     filters = _analysis_query_filters(analysis_requires)
-    query_kwargs = {
-        "search": search,
-        "sort_by": sort_by,
-        "descending": descending,
-        "data_types": filters["data_types"],
-        "parameters": filters["parameters"],
-        "representation": filters["representation"],
-        "mode_filter": mode_filter,
-        "ids": ids,
-        "limit": limit,
-        "offset": offset,
-    }
+    raw_data_types = filters.get("data_types")
+    raw_parameters = filters.get("parameters")
+    data_types = raw_data_types if isinstance(raw_data_types, list) else []
+    parameters = raw_parameters if isinstance(raw_parameters, list) else []
+    query = TraceIndexPageQuery(
+        search=search,
+        sort_by=sort_by,
+        descending=descending,
+        data_types=tuple(str(item) for item in data_types),
+        parameters=tuple(str(item) for item in parameters),
+        representation=str(filters["representation"]),
+        mode_filter=mode_filter if mode_filter in ("all", "base", "sideband") else "all",
+        ids=tuple(int(record_id) for record_id in ids) if ids is not None else None,
+        limit=limit,
+        offset=offset,
+    )
     if selected_bundle_id is not None:
         return uow.result_bundles.list_data_record_index_page(
             selected_bundle_id,
-            **query_kwargs,
+            query=query,
         )
     return uow.data_records.list_index_page_by_dataset(
         dataset_id,
-        **query_kwargs,
+        query=query,
     )
 
 
@@ -488,9 +493,7 @@ def _build_analysis_run_availability(
             profile_hints=list(profile_hints),
         )
     reason = (
-        "; ".join(profile_hints)
-        if profile_hints
-        else "Compatible traces found in current scope."
+        "; ".join(profile_hints) if profile_hints else "Compatible traces found in current scope."
     )
     return AnalysisRunAvailability(
         status="Available",
@@ -1521,8 +1524,7 @@ def characterization_page():
                                 analysis_requires=dict(analysis.get("requires", {})),
                             )
                             compatibility_cache_key = (
-                                f"{active_id}:{selected_scope_token}:"
-                                f"{scope_revision}:{analysis_id}"
+                                f"{active_id}:{selected_scope_token}:{scope_revision}:{analysis_id}"
                             )
                             compatibility = analysis_scope_compatibility_cache.get(
                                 compatibility_cache_key
@@ -1638,9 +1640,9 @@ def characterization_page():
                                 }
                             else:
                                 first_rows, _ = _compatible_trace_page(limit=1, offset=0)
-                                selected_trace_ids_by_scope[trace_scope_key] = {
-                                    int(first_rows[0]["id"])
-                                } if first_rows else set()
+                                selected_trace_ids_by_scope[trace_scope_key] = (
+                                    {int(first_rows[0]["id"])} if first_rows else set()
+                                )
                         if trace_scope_key not in trace_table_state_by_scope:
                             _, base_trace_count = _compatible_trace_page(
                                 mode_filter="base",
@@ -1787,9 +1789,7 @@ def characterization_page():
                                         ui.label("Trace Records").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
-                                        ui.label(str(scoped_trace_count)).classes(
-                                            "text-sm text-fg"
-                                        )
+                                        ui.label(str(scoped_trace_count)).classes("text-sm text-fg")
                                     with ui.column().classes(
                                         "bg-bg rounded-lg border border-border p-3 min-w-[160px]"
                                     ):

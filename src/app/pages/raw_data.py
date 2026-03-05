@@ -13,6 +13,7 @@ from app.services.dataset_profile import (
     profile_summary_text,
 )
 from core.shared.persistence import get_unit_of_work
+from core.shared.persistence.repositories import TraceIndexPageQuery
 from core.shared.visualization.figure_builders import (
     build_heatmap,
     build_line_chart,
@@ -81,6 +82,7 @@ def raw_data_page() -> None:
     record_search_input: ui.input | None = None
     record_type_select: ui.select | None = None
     record_repr_select: ui.select | None = None
+
     def _load_dataset_page() -> list[dict[str, Any]]:
         with get_unit_of_work() as uow:
             rows, total = uow.datasets.list_summary_page(
@@ -107,9 +109,26 @@ def raw_data_page() -> None:
         return rows
 
     def _load_record_page(dataset_id: int) -> list[dict[str, Any]]:
+        query = TraceIndexPageQuery(
+            search=str(record_state["search"]),
+            sort_by=str(record_state["sort_by"]),
+            descending=bool(record_state["descending"]),
+            data_type=str(record_state["data_type"]),
+            representation=str(record_state["representation"]),
+            limit=int(record_state["page_size"]),
+            offset=(int(record_state["page"]) - 1) * int(record_state["page_size"]),
+        )
         with get_unit_of_work() as uow:
             rows, total = uow.data_records.list_index_page_by_dataset(
                 dataset_id,
+                query=query,
+            )
+
+        record_state["total"] = total
+        total_pages = _total_pages(total, int(record_state["page_size"]))
+        if int(record_state["page"]) > total_pages:
+            record_state["page"] = total_pages
+            query = TraceIndexPageQuery(
                 search=str(record_state["search"]),
                 sort_by=str(record_state["sort_by"]),
                 descending=bool(record_state["descending"]),
@@ -118,21 +137,10 @@ def raw_data_page() -> None:
                 limit=int(record_state["page_size"]),
                 offset=(int(record_state["page"]) - 1) * int(record_state["page_size"]),
             )
-
-        record_state["total"] = total
-        total_pages = _total_pages(total, int(record_state["page_size"]))
-        if int(record_state["page"]) > total_pages:
-            record_state["page"] = total_pages
             with get_unit_of_work() as uow:
                 rows, total = uow.data_records.list_index_page_by_dataset(
                     dataset_id,
-                    search=str(record_state["search"]),
-                    sort_by=str(record_state["sort_by"]),
-                    descending=bool(record_state["descending"]),
-                    data_type=str(record_state["data_type"]),
-                    representation=str(record_state["representation"]),
-                    limit=int(record_state["page_size"]),
-                    offset=(int(record_state["page"]) - 1) * int(record_state["page_size"]),
+                    query=query,
                 )
             record_state["total"] = total
         return rows
