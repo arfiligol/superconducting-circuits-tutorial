@@ -168,6 +168,17 @@ class _ResultTraceSelection(TypedDict):
     input_port: int
 
 
+def _with_test_id(element: Any, test_id: str) -> Any:
+    """Attach one stable test id to a NiceGUI element."""
+    try:
+        element.props(f"data-testid={test_id}")
+    except Exception:
+        props = getattr(element, "_props", None)
+        if isinstance(props, dict):
+            props["data-testid"] = test_id
+    return element
+
+
 def _user_storage_get(key: str, default: Any = None) -> Any:
     """Safely read one value from user storage with non-UI-context fallback."""
     try:
@@ -1117,6 +1128,7 @@ def _render_result_family_explorer(
     context_line: str | None = None,
     family_source_options: dict[str, dict[str, str]] | None = None,
     family_source_labels: dict[str, str] | None = None,
+    testid_prefix: str | None = None,
 ) -> None:
     """Render one family/metric/trace-card result explorer into a container."""
 
@@ -1131,6 +1143,8 @@ def _render_result_family_explorer(
                         icon="save",
                         on_click=on_save_click,
                     ).props("outline color=primary size=sm")
+                    if testid_prefix:
+                        _with_test_id(save_button, f"{testid_prefix}-save-button")
                     if not save_enabled:
                         save_button.disable()
 
@@ -1244,6 +1258,8 @@ def _render_result_family_explorer(
                 with ui.tabs(value=view_family).classes("mb-1") as family_switch:
                     for family_key, family_label in family_tabs:
                         ui.tab(family_key, label=family_label)
+                if testid_prefix:
+                    _with_test_id(family_switch, f"{testid_prefix}-family-tabs")
                 source_select = None
                 if source_options:
                     source_select = (
@@ -1255,11 +1271,15 @@ def _render_result_family_explorer(
                         .props("dense outlined options-dense")
                         .classes("w-52")
                     )
+                    if testid_prefix:
+                        _with_test_id(source_select, f"{testid_prefix}-matrix-source-select")
                 metric_select = (
                     ui.select(label="Metric", options=metric_options, value=metric_key)
                     .props("dense outlined options-dense")
                     .classes("w-64")
                 )
+                if testid_prefix:
+                    _with_test_id(metric_select, f"{testid_prefix}-metric-select")
                 z0_input = (
                     ui.number(
                         "Z0 (Ohm)",
@@ -1269,6 +1289,8 @@ def _render_result_family_explorer(
                     .props(_Z0_CONTROL_PROPS)
                     .classes(_Z0_CONTROL_CLASSES)
                 )
+                if testid_prefix:
+                    _with_test_id(z0_input, f"{testid_prefix}-z0-input")
 
             def _on_family_change(e: Any) -> None:
                 selected_family = str(e.value or fallback_family).strip()
@@ -1325,7 +1347,7 @@ def _render_result_family_explorer(
             z0_input.on("blur", lambda _e: _commit_z0(z0_input.value))
 
             with ui.row().classes("w-full items-center gap-3 mt-1"):
-                ui.button(
+                add_trace_button = ui.button(
                     "Add Trace",
                     icon="add",
                     on_click=lambda: (
@@ -1339,11 +1361,16 @@ def _render_result_family_explorer(
                         render(),
                     ),
                 ).props("outline color=primary")
+                if testid_prefix:
+                    _with_test_id(add_trace_button, f"{testid_prefix}-add-trace-button")
 
             trace_cards = list(view_state["traces"])
             for idx, selection in enumerate(trace_cards, start=1):
-                with ui.card().classes(
+                with _with_test_id(
+                    ui.card().classes(
                     "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                    ),
+                    f"{testid_prefix}-trace-card-{idx}" if testid_prefix else f"trace-card-{idx}",
                 ):
                     with ui.row().classes("w-full items-center gap-3 mb-2"):
                         ui.label(f"Trace {idx}").classes("text-sm font-bold text-fg")
@@ -1465,7 +1492,9 @@ def _render_result_family_explorer(
                 trace_selections=selections,
                 port_label_by_index=port_options,
             )
-            ui.plotly(figure).classes("w-full min-h-[420px] mt-3")
+            plot = ui.plotly(figure).classes("w-full min-h-[420px] mt-3")
+            if testid_prefix:
+                _with_test_id(plot, f"{testid_prefix}-plot")
 
     render()
 
@@ -1594,7 +1623,10 @@ def _render_post_processing_panel(
     ).classes("text-xs text-muted mb-3")
 
     with ui.column().classes("w-full gap-3"):
-        with ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"):
+        with _with_test_id(
+            ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"),
+            "post-processing-input-card",
+        ):
             ui.label("Input Node").classes("text-sm font-bold text-fg mb-2")
             with ui.row().classes("w-full items-end gap-3 mb-3 flex-wrap"):
                 post_setup_options = {"": "Current (Unsaved)"}
@@ -1613,16 +1645,19 @@ def _render_post_processing_panel(
                     .props("dense outlined options-dense")
                     .classes("w-80")
                 )
+                _with_test_id(post_setup_select, "post-processing-setup-select")
                 save_post_setup_button = (
                     ui.button("Save Setup", icon="bookmark_add")
                     .props("outline color=primary")
                     .classes("shrink-0")
                 )
+                _with_test_id(save_post_setup_button, "post-processing-save-setup-button")
                 delete_post_setup_button = (
                     ui.button("", icon="delete")
                     .props("outline color=negative round")
                     .classes("shrink-0")
                 )
+                _with_test_id(delete_post_setup_button, "post-processing-delete-setup-button")
                 if not selected_post_setup_id:
                     delete_post_setup_button.disable()
             with ui.row().classes("w-full items-end gap-3 flex-wrap"):
@@ -1635,6 +1670,7 @@ def _render_post_processing_panel(
                     .props("dense outlined options-dense")
                     .classes("w-44")
                 )
+                _with_test_id(input_y_source_select, "post-processing-input-y-source-select")
                 mode_filter_select = (
                     ui.select(
                         label="Mode Filter",
@@ -1644,6 +1680,7 @@ def _render_post_processing_panel(
                     .props("dense outlined options-dense")
                     .classes("w-40")
                 )
+                _with_test_id(mode_filter_select, "post-processing-mode-filter-select")
                 mode_select = (
                     ui.select(
                         label="Mode",
@@ -1660,11 +1697,13 @@ def _render_post_processing_panel(
                     .props("dense outlined options-dense")
                     .classes("w-52")
                 )
+                _with_test_id(mode_select, "post-processing-mode-select")
                 z0_input = (
                     ui.number("Z0 (Ohm)", value=50.0, format="%.6g")
                     .props(_Z0_CONTROL_PROPS)
                     .classes(_Z0_CONTROL_CLASSES)
                 )
+                _with_test_id(z0_input, "post-processing-z0-input")
                 step_type_select = (
                     ui.select(
                         label="Step Type",
@@ -1677,12 +1716,15 @@ def _render_post_processing_panel(
                     .props("dense outlined options-dense")
                     .classes("w-64")
                 )
+                _with_test_id(step_type_select, "post-processing-step-type-select")
                 add_step_button = (
                     ui.button("Add Step", icon="add").props("outline color=primary")
                 ).classes("shrink-0")
+                _with_test_id(add_step_button, "post-processing-add-step-button")
                 run_button = (
                     ui.button("Run Post Processing", icon="tune").props("color=primary")
                 ).classes("ml-auto")
+                _with_test_id(run_button, "post-processing-run-button")
             mode_hint = ui.label("").classes("text-xs text-muted mt-2")
 
         steps_container = ui.column().classes("w-full gap-3")
@@ -1968,7 +2010,10 @@ def _render_post_processing_panel(
                 if step_type == "coordinate_transform"
                 else "Kron Reduction"
             )
-            with ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"):
+            with _with_test_id(
+                ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"),
+                f"post-processing-step-card-{index}",
+            ):
                 with ui.row().classes("w-full items-center gap-3 mb-2"):
                     ui.label(f"Step {index} · {step_label}").classes("text-sm font-bold text-fg")
                     step_type_select_local = (
@@ -3908,6 +3953,7 @@ def _render_simulation_environment():
                 save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
                 on_save_click=raw_save_callback,
                 save_enabled=raw_save_callback is not None,
+                testid_prefix="raw-result-view",
             )
 
         def _save_post_processed_results_from_view() -> None:
@@ -3968,6 +4014,7 @@ def _render_simulation_environment():
                 on_save_click=_save_post_processed_results_from_view,
                 save_enabled=save_enabled,
                 context_line=context_line,
+                testid_prefix="post-result-view",
             )
 
         def handle_post_processing_result(
@@ -4173,8 +4220,11 @@ def _render_simulation_environment():
                     int(port): _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
                 }
 
-                with ui.card().classes(
-                    "w-full bg-elevated border border-border rounded-lg p-4 mt-4"
+                with _with_test_id(
+                    ui.card().classes(
+                        "w-full bg-elevated border border-border rounded-lg p-4 mt-4"
+                    ),
+                    "termination-compensation-card",
                 ):
                     ui.label("Port Termination Compensation (Optional)").classes(
                         "text-sm font-bold text-fg mb-2"
@@ -4184,6 +4234,7 @@ def _render_simulation_environment():
                             "Enable",
                             value=bool(termination_state.enabled),
                         )
+                        _with_test_id(termination_enabled_switch, "termination-enabled-switch")
                         termination_mode_select = (
                             ui.select(
                                 label="Mode",
@@ -4193,6 +4244,7 @@ def _render_simulation_environment():
                             .props("dense outlined options-dense")
                             .classes("w-56")
                         )
+                        _with_test_id(termination_mode_select, "termination-mode-select")
                         termination_ports_select = (
                             ui.select(
                                 label="Compensate Ports",
@@ -4203,6 +4255,7 @@ def _render_simulation_environment():
                             .props("dense outlined options-dense use-chips")
                             .classes("w-64")
                         )
+                        _with_test_id(termination_ports_select, "termination-ports-select")
                         termination_reset_button = (
                             ui.button(
                                 "Reset Manual to 50 Ohm",
@@ -4211,6 +4264,7 @@ def _render_simulation_environment():
                             .props("outline color=primary size=sm")
                             .classes("shrink-0")
                         )
+                        _with_test_id(termination_reset_button, "termination-reset-button")
                     termination_summary_label = ui.label("").classes("text-xs text-muted mt-2")
                     termination_details_container = ui.column().classes("w-full gap-1 mt-2")
 
@@ -5165,6 +5219,7 @@ def _render_simulation_environment():
                     .props("color=primary")
                     .classes("w-full mt-4")
                 )
+                _with_test_id(sim_button, "simulation-run-button")
 
             with ui.card().classes("w-full bg-surface rounded-xl p-6"):
                 with ui.row().classes("items-center gap-2 mb-3"):
@@ -5173,7 +5228,10 @@ def _render_simulation_environment():
                 status_container = ui.column().classes("w-full gap-2")
                 render_status()
 
-            with ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[360px]"):
+            with _with_test_id(
+                ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[360px]"),
+                "simulation-results-card",
+            ):
                 with ui.row().classes("items-center gap-2 mb-4"):
                     ui.icon("bar_chart", size="sm").classes("text-primary")
                     ui.label("Simulation Results").classes("text-lg font-bold text-fg")
@@ -5187,7 +5245,10 @@ def _render_simulation_environment():
                         "text-sm text-muted mt-2"
                     )
 
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with _with_test_id(
+                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                "post-processing-card",
+            ):
                 with ui.row().classes("items-center gap-2 mb-3"):
                     ui.icon("tune", size="sm").classes("text-primary")
                     ui.label("Post Processing").classes("text-lg font-bold text-fg")
@@ -5198,7 +5259,10 @@ def _render_simulation_environment():
                         "and Kron reduction here."
                     ).classes("text-sm text-muted")
 
-            with ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[320px]"):
+            with _with_test_id(
+                ui.card().classes("w-full bg-surface rounded-xl p-6 min-h-[320px]"),
+                "post-processing-results-card",
+            ):
                 with ui.row().classes("items-center gap-2 mb-4"):
                     ui.icon("tune", size="sm").classes("text-primary")
                     ui.label("Post Processing Results").classes("text-lg font-bold text-fg")

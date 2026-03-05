@@ -343,10 +343,26 @@ def _run_and_expect_success(page: Page, *, allow_long_running: bool = False) -> 
 
 def _run_post_processing_and_expect_output(page: Page) -> None:
     ready_text = "Pipeline output ready. Post Processing Result View is updated."
-    run_button = page.get_by_role("button", name="Run Post Processing")
-    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
-    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
-    save_button = page.get_by_role("button", name="Save Post-Processed Results")
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
+    post_input_card = _card_by_testid(
+        page,
+        "post-processing-input-card",
+        fallback_text="Run Post Processing",
+    )
+    run_button = _locator_by_testid(
+        page,
+        "post-processing-run-button",
+        fallback=page.get_by_role("button", name="Run Post Processing"),
+    )
+    save_button = _locator_by_testid(
+        page,
+        "post-result-view-save-button",
+        fallback=page.get_by_role("button", name="Save Post-Processed Results"),
+    )
     post_setup_name = f"E2E Post Setup {uuid.uuid4().hex[:6]}"
 
     expect(run_button).to_be_visible(timeout=30000)
@@ -432,6 +448,21 @@ def _select_card_option(
     options.filter(has_text=option_pattern).first.click()
 
 
+def _locator_by_testid(page: Page, testid: str, *, fallback):  # type: ignore[no-untyped-def]
+    candidate = page.locator(f"[data-testid='{testid}']")
+    if candidate.count() > 0:
+        return candidate.first
+    return fallback
+
+
+def _card_by_testid(page: Page, testid: str, *, fallback_text: str):  # type: ignore[no-untyped-def]
+    return _locator_by_testid(
+        page,
+        testid,
+        fallback=page.locator(".q-card").filter(has_text=fallback_text).first,
+    )
+
+
 def _post_plot_title_and_legend(post_results_card) -> tuple[str, list[str]]:  # type: ignore[no-untyped-def]
     plot = post_results_card.locator(".js-plotly-plot").first
     expect(plot).to_be_visible(timeout=30000)
@@ -481,7 +512,11 @@ def _nudge_combobox_option(
 
 
 def _configure_raw_result_to_y22_real(page: Page) -> None:
-    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    raw_results_card = _card_by_testid(
+        page,
+        "simulation-results-card",
+        fallback_text="Raw Simulation Results",
+    )
     raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
     output_port_select = raw_results_card.get_by_role("combobox", name="Output Port")
     output_port_select.click()
@@ -495,7 +530,11 @@ def _configure_raw_result_to_y22_real(page: Page) -> None:
 
 
 def _read_first_plot_y_value(page: Page) -> float:
-    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    raw_results_card = _card_by_testid(
+        page,
+        "simulation-results-card",
+        fallback_text="Raw Simulation Results",
+    )
     plot = raw_results_card.locator(".js-plotly-plot").first
     expect(plot).to_be_visible(timeout=30000)
     value = plot.evaluate("el => el.data[0].y[0]")
@@ -503,8 +542,10 @@ def _read_first_plot_y_value(page: Page) -> float:
 
 
 def _configure_termination_mode_auto(page: Page) -> None:
-    term_card = (
-        page.locator(".q-card").filter(has_text="Port Termination Compensation (Optional)").first
+    term_card = _card_by_testid(
+        page,
+        "termination-compensation-card",
+        fallback_text="Port Termination Compensation (Optional)",
     )
     expect(term_card).to_be_visible(timeout=30000)
     enable_switch = term_card.get_by_role("switch", name="Enable")
@@ -527,8 +568,10 @@ def _configure_termination_mode_auto(page: Page) -> None:
 
 
 def _configure_termination_mode_manual_custom(page: Page) -> None:
-    term_card = (
-        page.locator(".q-card").filter(has_text="Port Termination Compensation (Optional)").first
+    term_card = _card_by_testid(
+        page,
+        "termination-compensation-card",
+        fallback_text="Port Termination Compensation (Optional)",
     )
     mode_select = term_card.get_by_role("combobox", name="Mode")
     mode_select.click()
@@ -589,7 +632,11 @@ def test_port_termination_compensation_modes_in_ui(
     _configure_sources(page, case.sources)
 
     assert _run_and_expect_success(page) is True
-    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    raw_results_card = _card_by_testid(
+        page,
+        "simulation-results-card",
+        fallback_text="Raw Simulation Results",
+    )
     expect(raw_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
     baseline_raw_s = _read_first_plot_y_value(page)
     baseline_log_count = page.get_by_text(
@@ -641,7 +688,11 @@ def test_port_termination_compensation_modes_in_ui(
     page.screenshot(path=str(tmp_path / "termination_case_manual.png"), full_page=True)
 
     _run_post_processing_and_expect_output(page)
-    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
     page.screenshot(path=str(tmp_path / "termination_case_post_processing.png"), full_page=True)
 
@@ -662,9 +713,17 @@ def test_post_processing_hfss_comparable_status(
     assert _run_and_expect_success(page) is True
     _configure_termination_mode_auto(page)
 
-    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    post_input_card = _card_by_testid(
+        page,
+        "post-processing-input-card",
+        fallback_text="Run Post Processing",
+    )
     _select_card_option(page, post_input_card, "Input Y Source", "Raw Y")
-    post_input_card.get_by_role("button", name="Run Post Processing").click()
+    _locator_by_testid(
+        page,
+        "post-processing-run-button",
+        fallback=post_input_card.get_by_role("button", name="Run Post Processing"),
+    ).click()
     expect(page.get_by_text("HFSS Comparable: No", exact=False)).to_be_visible(timeout=30000)
     expect(
         page.get_by_text("Coordinate Transformation step is missing", exact=False).first
@@ -698,12 +757,24 @@ def test_post_processed_result_view_uses_trace_card_port_labels_for_matrix_names
     _configure_sources(page, case.sources)
     assert _run_and_expect_success(page) is True
 
-    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    post_input_card = _card_by_testid(
+        page,
+        "post-processing-input-card",
+        fallback_text="Run Post Processing",
+    )
     _select_card_option(page, post_input_card, "Step Type", "Coordinate Transformation")
     post_input_card.get_by_role("button", name="Add Step").click()
 
-    post_input_card.get_by_role("button", name="Run Post Processing").click()
-    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    _locator_by_testid(
+        page,
+        "post-processing-run-button",
+        fallback=post_input_card.get_by_role("button", name="Run Post Processing"),
+    ).click()
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=60000)
     post_results_card.get_by_role("tab", name="Impedance (Z)").click()
 
@@ -773,7 +844,11 @@ def test_result_view_axis_titles_follow_y_z_family_switches(
     _configure_sources(page, case.sources)
     assert _run_and_expect_success(page) is True
 
-    raw_results_card = page.locator(".q-card").filter(has_text="Raw Simulation Results").first
+    raw_results_card = _card_by_testid(
+        page,
+        "simulation-results-card",
+        fallback_text="Raw Simulation Results",
+    )
     raw_results_card.get_by_role("tab", name="Admittance (Y)").click()
     _select_card_option(page, raw_results_card, "Metric", "Real")
     _expect_plot_y_axis_title(raw_results_card, "Real (S)")
@@ -784,12 +859,24 @@ def test_result_view_axis_titles_follow_y_z_family_switches(
     _select_card_option(page, raw_results_card, "Metric", "Real")
     _expect_plot_y_axis_title(raw_results_card, "Real (S)")
 
-    post_input_card = page.locator(".q-card").filter(has_text="Run Post Processing").first
+    post_input_card = _card_by_testid(
+        page,
+        "post-processing-input-card",
+        fallback_text="Run Post Processing",
+    )
     _select_card_option(page, post_input_card, "Step Type", "Coordinate Transformation")
     post_input_card.get_by_role("button", name="Add Step").click()
-    post_input_card.get_by_role("button", name="Run Post Processing").click()
+    _locator_by_testid(
+        page,
+        "post-processing-run-button",
+        fallback=post_input_card.get_by_role("button", name="Run Post Processing"),
+    ).click()
 
-    post_results_card = page.locator(".q-card").filter(has_text="Post Processing Results").first
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=60000)
     post_results_card.get_by_role("tab", name="Admittance (Y)").click()
     _select_card_option(page, post_results_card, "Metric", "Real")

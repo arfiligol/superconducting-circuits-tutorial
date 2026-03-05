@@ -87,6 +87,17 @@ _ANALYSIS_CATEGORY_DEFAULTS: dict[str, str] = {
 }
 
 
+def _with_test_id(element: Any, test_id: str) -> Any:
+    """Attach one stable test id to a NiceGUI element."""
+    try:
+        element.props(f"data-testid={test_id}")
+    except Exception:
+        props = getattr(element, "_props", None)
+        if isinstance(props, dict):
+            props["data-testid"] = test_id
+    return element
+
+
 def _result_view_controls_row_classes() -> str:
     """Shared responsive row classes for Result View controls."""
     return "w-full items-end gap-3 mt-3 mb-3 flex-wrap lg:flex-nowrap"
@@ -1489,7 +1500,10 @@ def characterization_page():
                         )
 
                         with ui.column().classes("w-full gap-4"):
-                            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                            with _with_test_id(
+                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                "characterization-source-scope-card",
+                            ):
                                 with ui.row().classes(
                                     "w-full items-center justify-between gap-4 flex-wrap"
                                 ):
@@ -1523,7 +1537,10 @@ def characterization_page():
                                         )
                                         ui.label(str(len(bundles))).classes("text-sm text-fg")
 
-                            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                            with _with_test_id(
+                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                "characterization-run-analysis-card",
+                            ):
                                 run_config_selects: dict[str, Any] = {}
                                 run_config_numbers: dict[str, Any] = {}
                                 run_button: Any | None = None
@@ -1697,6 +1714,10 @@ def characterization_page():
                                         .props("unelevated color=primary")
                                         .classes("font-bold")
                                     )
+                                    _with_test_id(
+                                        run_button,
+                                        "characterization-run-analysis-button",
+                                    )
 
                                 ui.label(
                                     "Run control is centralized here. Choose one analysis, set "
@@ -1707,7 +1728,7 @@ def characterization_page():
                                 )
 
                                 with ui.row().classes("w-full items-end gap-4 flex-wrap"):
-                                    ui.select(
+                                    analysis_select = ui.select(
                                         options=analysis_options,
                                         value=selected_run_analysis_id,
                                         label="Analysis",
@@ -1720,12 +1741,24 @@ def characterization_page():
                                             render_dataset_view.refresh(),
                                         ),
                                     ).props("dense outlined options-dense").classes("w-72")
+                                    _with_test_id(
+                                        analysis_select,
+                                        "characterization-analysis-select",
+                                    )
 
                                     availability_label = ui.label("").classes(
                                         "text-sm font-semibold"
                                     )
+                                    _with_test_id(
+                                        availability_label,
+                                        "characterization-availability-label",
+                                    )
                                 analysis_reason_label = ui.label("").classes(
                                     "text-sm text-muted mb-2"
+                                )
+                                _with_test_id(
+                                    analysis_reason_label,
+                                    "characterization-availability-reason",
                                 )
                                 refresh_run_controls()
 
@@ -1827,7 +1860,7 @@ def characterization_page():
                                     )
 
                                     with ui.row().classes("w-full gap-3 items-end flex-wrap mb-2"):
-                                        ui.input(
+                                        filter_input = ui.input(
                                             label="Filter Traces",
                                             value=str(table_state.get("search", "")),
                                             on_change=lambda e: (
@@ -1840,7 +1873,11 @@ def characterization_page():
                                         ).props("dense outlined clearable").classes(
                                             "min-w-[220px] flex-1"
                                         )
-                                        ui.select(
+                                        _with_test_id(
+                                            filter_input,
+                                            "characterization-trace-filter-input",
+                                        )
+                                        run_trace_mode_filter = ui.select(
                                             _TRACE_MODE_FILTER_OPTIONS,
                                             value=str(
                                                 table_state.get(
@@ -1860,6 +1897,10 @@ def characterization_page():
                                                 render_trace_selection.refresh(),
                                             ),
                                         ).props("dense outlined options-dense").classes("w-40")
+                                        _with_test_id(
+                                            run_trace_mode_filter,
+                                            "characterization-run-trace-mode-filter-select",
+                                        )
                                         ui.select(
                                             {
                                                 "id": "ID",
@@ -2062,7 +2103,10 @@ def characterization_page():
                                 )
                                 render_analysis_status()
 
-                            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+                            with _with_test_id(
+                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                "characterization-result-view-card",
+                            ):
                                 with ui.row().classes(
                                     "w-full items-center justify-between gap-3 flex-wrap mb-3"
                                 ):
@@ -2158,7 +2202,7 @@ def characterization_page():
                                         )
 
                                     with ui.row().classes(_result_view_controls_row_classes()):
-                                        ui.select(
+                                        result_trace_mode_filter = ui.select(
                                             options=trace_mode_options,
                                             value=selected_trace_mode_filter,
                                             label="Trace Mode Filter",
@@ -2171,8 +2215,12 @@ def characterization_page():
                                                 render_dataset_view.refresh(),
                                             ),
                                         ).props("dense outlined options-dense").classes("w-64")
+                                        _with_test_id(
+                                            result_trace_mode_filter,
+                                            "characterization-result-trace-mode-filter-select",
+                                        )
                                         if category_options:
-                                            ui.select(
+                                            result_category_select = ui.select(
                                                 options=category_options,
                                                 value=selected_category,
                                                 label="Category",
@@ -2185,6 +2233,10 @@ def characterization_page():
                                                     render_dataset_view.refresh(),
                                                 ),
                                             ).props("dense outlined options-dense").classes("w-64")
+                                            _with_test_id(
+                                                result_category_select,
+                                                "characterization-result-category-select",
+                                            )
                                         else:
                                             category_placeholder = ui.select(
                                                 options={"": "Category (N/A)"},
@@ -2231,6 +2283,10 @@ def characterization_page():
                                         )
 
                                         artifact_tabs = ui.tabs().classes("w-full")
+                                        _with_test_id(
+                                            artifact_tabs,
+                                            "characterization-result-artifact-tabs",
+                                        )
                                         artifact_tabs.set_value(selected_artifact_id)
                                         for artifact in artifacts_for_category:
                                             ui.tab(artifact.artifact_id, label=artifact.tab_label)
@@ -2267,9 +2323,12 @@ def characterization_page():
                         app.storage.user["analysis_current_dataset"] = e.value
                         render_dataset_view.refresh()
 
-                    ui.select(options=ds_options, value=current_ds_id, on_change=on_change).props(
-                        "dense outlined options-dense"
-                    ).classes("w-64")
+                    dataset_select = ui.select(
+                        options=ds_options,
+                        value=current_ds_id,
+                        on_change=on_change,
+                    ).props("dense outlined options-dense").classes("w-64")
+                    _with_test_id(dataset_select, "characterization-dataset-select")
 
                 render_dataset_view()
 
