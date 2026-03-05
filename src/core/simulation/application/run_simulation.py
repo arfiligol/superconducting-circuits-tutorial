@@ -6,6 +6,7 @@ This module orchestrates the simulation workflow.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import product
@@ -14,6 +15,7 @@ from typing import Any
 from core.simulation.domain.circuit import (
     CircuitDefinition,
     ComponentSpec,
+    DriveSourceConfig,
     ExpandedCircuitDefinition,
     FrequencyRange,
     SimulationConfig,
@@ -24,7 +26,7 @@ from core.simulation.infrastructure.julia_adapter import JuliaSimulator
 
 @dataclass(frozen=True)
 class SimulationSweepTarget:
-    """Sweepable `value_ref` discovered from expanded `components[*].value_ref`."""
+    """Sweepable target key discovered from netlist parameters and source setup."""
 
     value_ref: str
     unit: str
@@ -32,7 +34,7 @@ class SimulationSweepTarget:
 
 @dataclass(frozen=True)
 class SimulationSweepAxis:
-    """One sweep axis bound to one `value_ref` target."""
+    """One sweep axis bound to one target key."""
 
     target_value_ref: str
     values: tuple[float, ...]
@@ -79,6 +81,40 @@ class SimulationSweepPointResult:
     axis_indices: tuple[int, ...]
     axis_values: dict[str, float]
     result: SimulationResult
+
+
+_SOURCE_SWEEP_TARGET_PATTERN = re.compile(
+    r"^sources\[(?P<index>[1-9]\d*)\]\.(?P<field>current_amp|pump_freq_ghz)$"
+)
+
+
+def _parse_source_sweep_target(target_key: str) -> tuple[int, str] | None:
+    """Parse one source-target key into zero-based source index + field."""
+    matched = _SOURCE_SWEEP_TARGET_PATTERN.fullmatch(str(target_key).strip())
+    if matched is None:
+        return None
+    return (int(matched.group("index")) - 1, str(matched.group("field")))
+
+
+def _materialize_config_sources(config: SimulationConfig) -> list[DriveSourceConfig]:
+    """Return concrete source list regardless of legacy/sources configuration path."""
+    if config.sources:
+        return [
+            (
+                source.model_copy(deep=True)
+                if isinstance(source, DriveSourceConfig)
+                else DriveSourceConfig.model_validate(source)
+            )
+            for source in config.sources
+        ]
+    return [
+        DriveSourceConfig(
+            pump_freq_ghz=float(config.pump_freq_ghz),
+            port=int(config.pump_port),
+            current_amp=float(config.pump_current_amp),
+            mode_components=(int(config.pump_mode_index),),
+        )
+    ]
 
 
 @dataclass(frozen=True)
@@ -136,8 +172,12 @@ def run_simulation(
     return simulator.run_hbsolve(circuit, freq_range, config)
 
 
-def list_simulation_sweep_targets(circuit: CircuitDefinition) -> list[SimulationSweepTarget]:
-    """List unique sweepable `value_ref` targets from `components[*].value_ref`."""
+def list_simulation_sweep_targets(
+    circuit: CircuitDefinition,
+    *,
+    config: SimulationConfig | None = None,
+) -> list[SimulationSweepTarget]:
+    """List sweepable targets from netlist `value_ref` and source setup fields."""
     targets: dict[str, str] = {}
     parameter_specs = circuit.parameter_specs
     for component in circuit.expanded_definition.components:
@@ -147,6 +187,12 @@ def list_simulation_sweep_targets(circuit: CircuitDefinition) -> list[Simulation
         unit = parameter.unit if parameter is not None else component.unit
         if component.value_ref not in targets:
             targets[component.value_ref] = str(unit)
+
+    if isinstance(config, SimulationConfig):
+        for source_index, _source in enumerate(_materialize_config_sources(config), start=1):
+            targets[f"sources[{source_index}].current_amp"] = "A"
+            targets[f"sources[{source_index}].pump_freq_ghz"] = "GHz"
+
     return [
         SimulationSweepTarget(value_ref=value_ref, unit=targets[value_ref])
         for value_ref in sorted(targets)
@@ -167,13 +213,14 @@ def build_simulation_sweep_plan(
     *,
     circuit: CircuitDefinition,
     axes: Sequence[SimulationSweepAxis],
+    config: SimulationConfig | None = None,
 ) -> SimulationSweepPlan:
     """Expand one normalized sweep setup into Cartesian execution points."""
     if not axes:
         raise ValueError("At least one sweep axis is required.")
 
     available_targets = {
-        target.value_ref: target for target in list_simulation_sweep_targets(circuit)
+        target.value_ref: target for target in list_simulation_sweep_targets(circuit, config=config)
     }
     normalized_axes: list[SimulationSweepAxis] = []
     seen_targets: set[str] = set()
@@ -184,9 +231,7 @@ def build_simulation_sweep_plan(
         if target_value_ref in seen_targets:
             raise ValueError(f"Duplicate sweep target '{target_value_ref}' is not allowed.")
         if target_value_ref not in available_targets:
-            raise ValueError(
-                f"Sweep target '{target_value_ref}' is not available in components[*].value_ref."
-            )
+            raise ValueError(f"Sweep target '{target_value_ref}' is not available.")
         values = tuple(float(value) for value in raw_axis.values)
         if not values:
             raise ValueError(f"Sweep axis '{target_value_ref}' has no values.")
@@ -240,30 +285,82 @@ def apply_simulation_sweep_overrides(
     circuit: CircuitDefinition,
     value_ref_overrides: Mapping[str, float],
 ) -> CircuitDefinition:
-    """Build one concrete circuit by overriding selected `components[*].value_ref` defaults."""
+    """Build one concrete circuit by overriding selected netlist `value_ref` defaults."""
     if not value_ref_overrides:
         return circuit
 
     available_targets = {target.value_ref for target in list_simulation_sweep_targets(circuit)}
-    unknown_targets = sorted(set(value_ref_overrides) - available_targets)
+    netlist_overrides = {
+        str(target): float(value)
+        for target, value in value_ref_overrides.items()
+        if _parse_source_sweep_target(str(target)) is None
+    }
+    unknown_targets = sorted(set(netlist_overrides) - available_targets)
     if unknown_targets:
         raise ValueError(f"Unknown sweep target(s): {', '.join(unknown_targets)}.")
+    if not netlist_overrides:
+        return circuit
 
     expanded = circuit.expanded_definition
-    normalized_overrides = {str(key): float(value) for key, value in value_ref_overrides.items()}
     source_payload = {
         "name": expanded.name,
         "components": [
             _resolved_component_payload(
                 component=component,
                 expanded=expanded,
-                value_ref_overrides=normalized_overrides,
+                value_ref_overrides=netlist_overrides,
             )
             for component in expanded.components
         ],
         "topology": [row.as_tuple() for row in expanded.topology],
     }
     return CircuitDefinition.model_validate(source_payload)
+
+
+def apply_simulation_sweep_config_overrides(
+    *,
+    config: SimulationConfig,
+    target_overrides: Mapping[str, float],
+) -> SimulationConfig:
+    """Build one concrete simulation config by overriding selected source targets."""
+    if not target_overrides:
+        return config
+
+    sources = _materialize_config_sources(config)
+    has_source_override = False
+    for target, value in target_overrides.items():
+        parsed = _parse_source_sweep_target(str(target))
+        if parsed is None:
+            continue
+        source_index, field_name = parsed
+        if source_index < 0 or source_index >= len(sources):
+            raise ValueError(
+                f"Sweep target '{target}' is out of source range (configured={len(sources)})."
+            )
+        has_source_override = True
+        if field_name == "current_amp":
+            sources[source_index] = sources[source_index].model_copy(
+                update={"current_amp": float(value)}
+            )
+        elif field_name == "pump_freq_ghz":
+            sources[source_index] = sources[source_index].model_copy(
+                update={"pump_freq_ghz": float(value)}
+            )
+        else:
+            raise ValueError(f"Sweep target '{target}' has unsupported source field.")
+
+    if not has_source_override:
+        return config
+
+    first_source = sources[0]
+    return config.model_copy(
+        update={
+            "sources": sources,
+            "pump_freq_ghz": float(first_source.pump_freq_ghz),
+            "pump_current_amp": float(first_source.current_amp),
+            "pump_port": int(first_source.port),
+        }
+    )
 
 
 def run_parameter_sweep(
@@ -286,7 +383,11 @@ def run_parameter_sweep(
             circuit=circuit,
             value_ref_overrides=point.value_ref_overrides,
         )
-        result = simulator.run_hbsolve(swept_circuit, freq_range, config)
+        swept_config = apply_simulation_sweep_config_overrides(
+            config=config,
+            target_overrides=point.value_ref_overrides,
+        )
+        result = simulator.run_hbsolve(swept_circuit, freq_range, swept_config)
         point_results.append(
             SimulationSweepPointResult(
                 point_index=int(point.point_index),

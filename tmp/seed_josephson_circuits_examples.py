@@ -58,6 +58,55 @@ def make_definition(name: str, parameters: dict[str, dict], topology: list[tuple
     return pformat(payload, width=100, sort_dicts=False)
 
 
+def make_parameterized_source_definition(
+    name: str,
+    parameters: dict[str, dict],
+    topology: list[tuple],
+) -> str:
+    """Build source-form definition that preserves parameters + component value_ref bindings."""
+    parameter_rows = [
+        {
+            "name": str(parameter_name),
+            "default": float(spec["default"]),
+            "unit": str(spec["unit"]),
+        }
+        for parameter_name, spec in parameters.items()
+    ]
+    component_rows: list[dict[str, object]] = []
+    normalized_topology: list[tuple[str, str, str, str | int]] = []
+    seen_component_names: set[str] = set()
+
+    for elem_name, node1, node2, value_ref in topology:
+        elem_name_text = str(elem_name)
+        if elem_name_text.lower().startswith("p"):
+            normalized_topology.append((elem_name_text, str(node1), str(node2), int(value_ref)))
+            continue
+        parameter_key = str(value_ref)
+        if parameter_key not in parameters:
+            raise KeyError(
+                "Topology element "
+                f"'{elem_name_text}' references undefined parameter '{parameter_key}'."
+            )
+        if elem_name_text not in seen_component_names:
+            component_rows.append(
+                {
+                    "name": elem_name_text,
+                    "value_ref": parameter_key,
+                    "unit": str(parameters[parameter_key]["unit"]),
+                }
+            )
+            seen_component_names.add(elem_name_text)
+        normalized_topology.append((elem_name_text, str(node1), str(node2), elem_name_text))
+
+    payload = {
+        "name": name,
+        "parameters": parameter_rows,
+        "components": component_rows,
+        "topology": normalized_topology,
+    }
+    return pformat(payload, width=100, sort_dicts=False)
+
+
 def _format_payload(payload: dict[str, object]) -> str:
     return pformat(payload, width=100, sort_dicts=False)
 
@@ -112,7 +161,7 @@ def flux_pumped_jpa_schema() -> tuple[str, str]:
         ("R2", "5", "0", "R_bias"),
     ]
     name = schema_name("Flux-pumped Josephson Parametric Amplifier (JPA)")
-    return name, make_definition(name, parameters, topology)
+    return name, make_parameterized_source_definition(name, parameters, topology)
 
 
 def snail_schema() -> tuple[str, str]:

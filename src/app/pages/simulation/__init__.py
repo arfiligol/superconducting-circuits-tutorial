@@ -61,6 +61,7 @@ from core.simulation.application.run_simulation import (
     SimulationSweepPlan,
     SimulationSweepPointResult,
     SimulationSweepRun,
+    apply_simulation_sweep_config_overrides,
     apply_simulation_sweep_overrides,
     build_linear_sweep_values,
     build_simulation_sweep_plan,
@@ -3609,9 +3610,16 @@ def _extract_available_port_indices(circuit: CircuitDefinition) -> set[int]:
     return set(circuit.available_port_indices)
 
 
-def _extract_sweep_target_units(circuit: CircuitDefinition) -> dict[str, str]:
-    """Collect sweep target unit hints keyed by `components[*].value_ref`."""
-    return {target.value_ref: target.unit for target in list_simulation_sweep_targets(circuit)}
+def _extract_sweep_target_units(
+    circuit: CircuitDefinition,
+    *,
+    config: SimulationConfig | None = None,
+) -> dict[str, str]:
+    """Collect sweep target unit hints keyed by target key."""
+    return {
+        target.value_ref: target.unit
+        for target in list_simulation_sweep_targets(circuit, config=config)
+    }
 
 
 def _detect_harmonic_grid_coincidences(
@@ -4605,13 +4613,14 @@ def _render_simulation_environment():
                         )
                         sweep_target_select = (
                             ui.select(
-                                label="Sweep Target (components[*].value_ref)",
+                                label="Sweep Target",
                                 options=sweep_target_options,
                                 value=(default_sweep_target or None),
                             )
                             .props("dense outlined options-dense")
                             .classes("min-w-[320px]")
                         )
+                        _with_test_id(sweep_target_select, "simulation-sweep-target-select")
                         sweep_start_input = ui.number(
                             "Sweep Start",
                             value=float(sweep_axis_defaults.get("start", 0.0)),
@@ -4647,16 +4656,15 @@ def _render_simulation_environment():
                     if has_targets and target and target_unit:
                         sweep_hint_label.text = (
                             f"Target: {target} | Unit: {target_unit} | "
-                            "trace-first source = components[*].value_ref"
+                            "trace-first source = netlist value_ref or source setup field"
                         )
                     elif has_targets and target:
                         sweep_hint_label.text = (
-                            f"Target: {target} | trace-first source = components[*].value_ref"
+                            f"Target: {target} | "
+                            "trace-first source = netlist value_ref or source setup field"
                         )
                     else:
-                        sweep_hint_label.text = (
-                            "No sweepable components[*].value_ref in current schema."
-                        )
+                        sweep_hint_label.text = "No sweepable targets in current schema/setup."
 
                     if not enabled or not has_targets:
                         sweep_target_select.disable()
@@ -4693,6 +4701,68 @@ def _render_simulation_environment():
                 applying_saved_setup = False
                 suppress_saved_setup_select_callback = False
 
+                def _collect_sources_for_sweep_targets() -> list[DriveSourceConfig]:
+                    """Collect source snapshots used for sweep-target discovery."""
+                    resolved_sources: list[DriveSourceConfig] = []
+                    for source_index, source_form in enumerate(source_forms, start=1):
+                        source_pump_freq_input = source_form["source_pump_freq_input"]
+                        port_input = source_form["port_input"]
+                        current_input = source_form["current_input"]
+                        mode_input = source_form["mode_input"]
+                        if (
+                            source_pump_freq_input.value is None
+                            or port_input.value is None
+                            or current_input.value is None
+                        ):
+                            continue
+                        try:
+                            parsed_mode = _parse_source_mode_text(mode_input.value)
+                        except ValueError:
+                            parsed_mode = None
+                        normalized_mode = _normalize_source_mode_components(
+                            parsed_mode,
+                            source_index=source_index - 1,
+                            source_count=max(len(source_forms), 1),
+                        )
+                        resolved_sources.append(
+                            DriveSourceConfig(
+                                pump_freq_ghz=float(source_pump_freq_input.value),
+                                port=int(port_input.value),
+                                current_amp=float(current_input.value),
+                                mode_components=normalized_mode,
+                            )
+                        )
+                    return resolved_sources
+
+                def refresh_sweep_target_options() -> None:
+                    """Refresh sweep target options from current schema + source setup."""
+                    source_snapshots = _collect_sources_for_sweep_targets()
+                    config_hint: SimulationConfig | None = None
+                    if source_snapshots:
+                        first_source = source_snapshots[0]
+                        config_hint = SimulationConfig(
+                            pump_freq_ghz=float(first_source.pump_freq_ghz),
+                            pump_current_amp=float(first_source.current_amp),
+                            pump_port=int(first_source.port),
+                            pump_mode_index=1,
+                            sources=source_snapshots,
+                        )
+                    latest_units = _extract_sweep_target_units(
+                        active_circuit_def,
+                        config=config_hint,
+                    )
+                    sweep_target_unit_by_value_ref.clear()
+                    sweep_target_unit_by_value_ref.update(latest_units)
+                    sweep_target_options.clear()
+                    sweep_target_options.update(
+                        {
+                            value_ref: (f"{value_ref} ({unit})" if str(unit).strip() else value_ref)
+                            for value_ref, unit in sorted(latest_units.items())
+                        }
+                    )
+                    sweep_target_select.options = dict(sweep_target_options)
+                    refresh_sweep_controls()
+
                 def normalize_source_mode_inputs() -> None:
                     for source_form in source_forms:
                         mode_input = source_form["mode_input"]
@@ -4712,6 +4782,7 @@ def _render_simulation_environment():
                         title.text = f"Source {idx}"
                         remove_button.enabled = has_multiple_sources
                     normalize_source_mode_inputs()
+                    refresh_sweep_target_options()
 
                 def remove_source_form(source_card: Any) -> None:
                     if len(source_forms) <= 1:
@@ -5078,7 +5149,7 @@ def _render_simulation_environment():
                     if sweep_enabled:
                         if not sweep_target_options:
                             ui.notify(
-                                "Current schema has no sweepable value_ref targets.",
+                                "Current schema/setup has no sweepable targets.",
                                 type="warning",
                             )
                             return None
@@ -5717,7 +5788,32 @@ def _render_simulation_environment():
                                 )
                                 return
 
-                        sweep_target_units_latest = _extract_sweep_target_units(latest_circuit_def)
+                        max_intermod_order = (
+                            None
+                            if int(max_intermod_input.value) < 0
+                            else int(max_intermod_input.value)
+                        )
+                        config = SimulationConfig(
+                            pump_freq_ghz=float(sources[0].pump_freq_ghz),
+                            sources=sources,
+                            pump_current_amp=float(sources[0].current_amp),
+                            pump_port=int(sources[0].port),
+                            pump_mode_index=1,
+                            n_modulation_harmonics=int(n_mod_input.value),
+                            n_pump_harmonics=int(n_pump_input.value),
+                            include_dc=bool(include_dc_switch.value),
+                            enable_three_wave_mixing=bool(three_wave_switch.value),
+                            enable_four_wave_mixing=bool(four_wave_switch.value),
+                            max_intermod_order=max_intermod_order,
+                            max_iterations=int(max_iterations_input.value),
+                            f_tol=float(ftol_input.value),
+                            line_search_switch_tol=float(linesearch_tol_input.value),
+                            alpha_min=float(alpha_min_input.value),
+                        )
+                        sweep_target_units_latest = _extract_sweep_target_units(
+                            latest_circuit_def,
+                            config=config,
+                        )
                         sweep_enabled = bool(sweep_enabled_switch.value)
                         sweep_plan: SimulationSweepPlan | None = None
                         sweep_snapshot: dict[str, Any] | None = None
@@ -5729,10 +5825,10 @@ def _render_simulation_environment():
                                 reset_status()
                                 append_status(
                                     "warning",
-                                    "Sweep target is invalid for the latest schema.",
+                                    "Sweep target is invalid for the latest schema/setup.",
                                 )
                                 ui.notify(
-                                    "Sweep target is invalid for the latest schema.",
+                                    "Sweep target is invalid for the latest schema/setup.",
                                     type="warning",
                                 )
                                 return
@@ -5763,32 +5859,10 @@ def _render_simulation_environment():
                             sweep_plan = build_simulation_sweep_plan(
                                 circuit=latest_circuit_def,
                                 axes=[sweep_axis],
+                                config=config,
                             )
                             sweep_snapshot = simulation_sweep_setup_snapshot(sweep_plan)
                             sweep_setup_hash = _hash_stable_json(sweep_snapshot)
-
-                        max_intermod_order = (
-                            None
-                            if int(max_intermod_input.value) < 0
-                            else int(max_intermod_input.value)
-                        )
-                        config = SimulationConfig(
-                            pump_freq_ghz=float(sources[0].pump_freq_ghz),
-                            sources=sources,
-                            pump_current_amp=float(sources[0].current_amp),
-                            pump_port=int(sources[0].port),
-                            pump_mode_index=1,
-                            n_modulation_harmonics=int(n_mod_input.value),
-                            n_pump_harmonics=int(n_pump_input.value),
-                            include_dc=bool(include_dc_switch.value),
-                            enable_three_wave_mixing=bool(three_wave_switch.value),
-                            enable_four_wave_mixing=bool(four_wave_switch.value),
-                            max_intermod_order=max_intermod_order,
-                            max_iterations=int(max_iterations_input.value),
-                            f_tol=float(ftol_input.value),
-                            line_search_switch_tol=float(linesearch_tol_input.value),
-                            alpha_min=float(alpha_min_input.value),
-                        )
                         harmonic_grid_hits = _detect_harmonic_grid_coincidences(
                             freq_range=freq_range,
                             sources=sources,
@@ -6002,6 +6076,7 @@ def _render_simulation_environment():
                                 circuit_for_run: CircuitDefinition,
                                 *,
                                 stage_label: str,
+                                config_for_run: SimulationConfig,
                             ) -> SimulationResult:
                                 job_started_at = datetime.now()
                                 heartbeat_warned = False
@@ -6010,7 +6085,7 @@ def _render_simulation_environment():
                                         run_simulation,
                                         circuit_for_run,
                                         freq_range,
-                                        config,
+                                        config_for_run,
                                     )
                                 )
                                 while True:
@@ -6049,6 +6124,7 @@ def _render_simulation_environment():
                                 result = await _run_solver_with_heartbeat(
                                     latest_circuit_def,
                                     stage_label="Julia worker",
+                                    config_for_run=config,
                                 )
                             else:
                                 point_results = []
@@ -6073,11 +6149,16 @@ def _render_simulation_environment():
                                         circuit=latest_circuit_def,
                                         value_ref_overrides=point.value_ref_overrides,
                                     )
+                                    swept_config = apply_simulation_sweep_config_overrides(
+                                        config=config,
+                                        target_overrides=point.value_ref_overrides,
+                                    )
                                     point_result = await _run_solver_with_heartbeat(
                                         swept_circuit,
                                         stage_label=(
                                             f"Sweep point {point_no}/{sweep_plan.point_count}"
                                         ),
+                                        config_for_run=swept_config,
                                     )
                                     point_results.append(
                                         {
