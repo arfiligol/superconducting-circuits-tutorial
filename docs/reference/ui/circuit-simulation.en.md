@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.11.0
+version: v0.12.0
 last_updated: 2026-03-05
 updated_by: codex
 ---
@@ -142,19 +142,29 @@ The `Manage Setups` dialog must support at least:
 
 ### Parameter Sweep (MVP)
 
-Sweep axis targets must come only from expanded netlist `components[*].value_ref` (deduplicated).
+Sweep axis targets must cover at least:
 
-- only components with `value_ref` are sweep-selectable
-- components with inline `default` only are not sweep targets
+- expanded netlist `components[*].value_ref` (deduplicated)
+- bias/pump-related continuous source fields already configured in Simulation Setup
+  (for example `sources[1].current_amp`, `sources[1].pump_freq_ghz`)
+
+!!! note "Target key namespace"
+    Sweep target keys can mix netlist and source namespaces.
+    Recommended key format:
+    - netlist: `<value_ref>` (for example `Lj`)
+    - source: `sources[<1-based index>].<field>` (for example `sources[1].current_amp`)
+
+- only components with `value_ref` are selectable as netlist sweep targets
+- components with inline `default` only are not netlist sweep targets
 - MVP supports single-axis sweep first
 - when sweep is disabled, `Run Simulation` behavior must remain identical to single-run
 
 Minimum sweep setup fields:
 
 - `enabled: bool`
-- `axis_1.target_value_ref: str` (from `components[*].value_ref`)
+- `axis_1.target_value_ref: str` (target key; may be a value_ref or a source target)
 - `axis_1.start / stop / points`
-- `axis_1.unit` (parameter-spec hint is allowed)
+- `axis_1.unit` (from parameter-spec hints or source-field semantics)
 
 ### Sweep Cache / Provenance Contract
 
@@ -164,6 +174,7 @@ When sweep is enabled:
 2. `sweep_setup_hash` must be computed from that normalized sweep block
 3. result-cache identity remains `schema_source_hash + simulation_setup_hash`, and `simulation_setup_hash` must include the sweep block
 4. `source_meta` and `config_snapshot` must persist `sweep_setup_hash` and sweep-axis summary
+   (including target key)
 
 ### Sweep Logs Contract
 
@@ -215,11 +226,12 @@ When the latest successful run is `run_kind=parameter_sweep`, `Simulation Result
 
 ### Flux-Pumped JPA Bias Sweep (reproducible flow)
 
-Use this flow to reproduce a `bias-like axis` sweep plot (expressed through a `value_ref` axis):
+Use this flow to reproduce official `Flux-pumped JPA` bias-sweep semantics (bias axis):
 
 1. choose `Flux-pumped Josephson Parametric Amplifier (JPA)` (or equivalent schema)
 2. enable `Enable Sweep` in `Simulation Setup`
-3. set `Sweep Target` to the bias-correlated `components[*].value_ref` (for example `Lj` or `Ibias`)
+3. set `Sweep Target` to a bias-correlated source parameter
+   (recommended `sources[1].current_amp`; if represented as equivalent netlist parameter, `Lj` is acceptable)
 4. set `Sweep Start / Stop / Points`
 5. run `Run Simulation`
 6. in `Simulation Results` -> `Sweep Result View`, pick trace/metric/frequency selectors

@@ -110,6 +110,10 @@ updated_by: codex
 - 多參數 Sweep：對多個 `value_ref` 建立 Cartesian product 或成對掃描。
 - 未被 Sweep 覆寫的變數，使用 `parameters[*].default`。
 
+!!! note "Bias/source sweep boundary"
+    Source/bias（例如 `sources[1].current_amp`）屬於 `Simulation Setup` 契約，
+    不屬於 netlist data format。本文件只規範 netlist 參數層的 sweep 語義。
+
 ---
 
 ## Live Preview Binding Rule

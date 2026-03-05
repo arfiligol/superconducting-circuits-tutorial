@@ -110,6 +110,11 @@ updated_by: codex
 - Multi-parameter sweep: Cartesian product (or paired scan) over multiple `value_ref` keys.
 - Parameters without sweep override use `parameters[*].default`.
 
+!!! note "Bias/source sweep boundary"
+    Source-side bias sweep targets (for example `sources[1].current_amp`) belong to
+    the `Simulation Setup` contract, not to the netlist format itself.
+    This page specifies only netlist-parameter sweep semantics.
+
 ---
 
 ## Live Preview Binding Rule

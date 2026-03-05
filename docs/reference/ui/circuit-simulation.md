@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.11.0
+version: v0.12.0
 last_updated: 2026-03-05
 updated_by: codex
 ---
@@ -139,18 +139,27 @@ updated_by: codex
 
 ### Parameter Sweep（MVP）
 
-Sweep 軸的 target 來源必須固定為 expanded netlist 的 `components[*].value_ref`（去重後）。
+Sweep 軸 target 來源至少需同時涵蓋：
 
-- 只有有 `value_ref` 的 component 可被 sweep 選取；`default`-only component 不可作為 sweep target
+- expanded netlist 的 `components[*].value_ref`（去重後）
+- Simulation Setup 已配置 source 的 bias/pump 相關連續參數（例如 `sources[1].current_amp`、`sources[1].pump_freq_ghz`）
+
+!!! note "Target key namespace"
+    Sweep target key 允許混合 netlist 與 source namespace。
+    建議格式：
+    - netlist：`<value_ref>`（例如 `Lj`）
+    - source：`sources[<1-based index>].<field>`（例如 `sources[1].current_amp`）
+
+- 只有有 `value_ref` 的 component 可被 netlist sweep 選取；`default`-only component 不可作為 netlist sweep target
 - MVP 先支援單軸（Single Axis）
 - `Sweep disabled` 時，`Run Simulation` 必須與既有 single-run 路徑完全一致
 
 Sweep Setup 最小欄位：
 
 - `enabled: bool`
-- `axis_1.target_value_ref: str`（來自 `components[*].value_ref`）
+- `axis_1.target_value_ref: str`（target key，可為 value_ref 或 source target）
 - `axis_1.start / stop / points`
-- `axis_1.unit`（可由 parameter spec 提示）
+- `axis_1.unit`（可由 parameter spec 或 source 欄位語義提示）
 
 ### Sweep Cache / Provenance 契約
 
@@ -159,7 +168,7 @@ Sweep Setup 最小欄位：
 1. normalized simulation setup 必須包含 `sweep` 區塊
 2. 必須從該 `sweep` 區塊計算 `sweep_setup_hash`
 3. result cache identity 仍走 `schema_source_hash + simulation_setup_hash`，其中 `simulation_setup_hash` 已含 sweep 設定
-4. `source_meta` 與 `config_snapshot` 必須保存 `sweep_setup_hash` 與 sweep 軸摘要
+4. `source_meta` 與 `config_snapshot` 必須保存 `sweep_setup_hash` 與 sweep 軸摘要（含 target key）
 
 ### Sweep Logs 契約
 
@@ -211,11 +220,11 @@ sweep run 成功後，bundle `result_payload` 需包含：
 
 ### Flux-Pumped JPA Bias Sweep（可重現步驟）
 
-以下流程用於重現 `bias-like axis` 的 sweep 圖（以 `value_ref` 軸表示）：
+以下流程用於重現官方 `Flux-pumped JPA` bias sweep 語義（bias 軸）：
 
 1. 選擇 `Flux-pumped Josephson Parametric Amplifier (JPA)`（或等價 schema）
 2. 在 `Simulation Setup` 開啟 `Enable Sweep`
-3. `Sweep Target` 選擇 bias 對應的 `components[*].value_ref`（例如 `Lj` 或 `Ibias`）
+3. `Sweep Target` 選擇 bias 對應 source 參數（建議 `sources[1].current_amp`；若 schema 以等效參數表示也可用 `Lj`）
 4. 設定 `Sweep Start / Stop / Points`
 5. 執行 `Run Simulation`
 6. 在 `Simulation Results` 的 `Sweep Result View` 選擇 trace/metric/frequency
