@@ -40,7 +40,8 @@ def test_squid_fitting_unavailable_when_squid_capability_missing() -> None:
     assert decision.recommended is False
     assert decision.status == "unavailable"
     assert any(
-        "Missing capability: SQUID Characterization" in reason for reason in decision.reasons
+        "Profile hint: missing capability SQUID Characterization" in reason
+        for reason in decision.reasons
     )
 
 
@@ -60,6 +61,6 @@ def test_y11_fit_unavailable_when_excluded_capability_present() -> None:
     assert decision.allowed is False
     assert decision.status == "unavailable"
     assert any(
-        "Excluded by capability: Traveling-wave Gain Characterization" in reason
+        "Profile hint: excluded by capability Traveling-wave Gain Characterization" in reason
         for reason in decision.reasons
     )
