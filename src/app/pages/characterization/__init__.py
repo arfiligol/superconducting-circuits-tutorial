@@ -23,18 +23,12 @@ from app.pages.characterization.state import (
 )
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
 from app.services.analysis_registry import list_dataset_analyses
+from app.services.characterization_runner import execute_analysis_run
 from app.services.characterization_trace_scope import (
     count_scope_trace_records,
     list_scope_compatible_trace_index_page,
 )
 from app.services.dataset_profile import normalize_dataset_profile, profile_summary_text
-from core.analysis.application.services.characterization_fitting_service import (
-    CharacterizationFittingService,
-    SquidFittingConfig,
-    Y11FittingConfig,
-)
-from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
-from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.analysis.domain import ModeGroup, ParameterKey
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
@@ -1058,99 +1052,6 @@ def _render_result_artifact(
     ui.label(f"Unsupported artifact view kind: {artifact.view_kind}").classes("text-warning")
 
 
-# ---------------------------------------------------------------------------
-# Analysis execution
-# ---------------------------------------------------------------------------
-
-
-def _execute_analysis_run(
-    *,
-    analysis_id: str,
-    dataset_id: int,
-    config_state: dict[str, str | float | int | None],
-    trace_record_ids: list[int] | None = None,
-    trace_mode_group: str | None = None,
-) -> None:
-    """Execute one analysis run using dataset-scoped records."""
-
-    def _config_int(name: str, default: int) -> int:
-        value = config_state.get(name)
-        if value is None:
-            return default
-        return int(value)
-
-    def _config_float(name: str) -> float | None:
-        value = config_state.get(name)
-        if value is None:
-            return None
-        return float(value)
-
-    def _config_str(name: str, default: str) -> str:
-        value = config_state.get(name)
-        if value is None:
-            return default
-        return str(value)
-
-    if analysis_id == "admittance_extraction":
-        ResonanceExtractService().extract_admittance(
-            str(dataset_id),
-            record_ids=trace_record_ids,
-            trace_mode_group=trace_mode_group,
-        )
-        return
-
-    if analysis_id == "s21_resonance_fit":
-        ResonanceFitService().perform_fit(
-            dataset_identifier=str(dataset_id),
-            parameter="S21",
-            model=_config_str("model", "notch"),
-            resonators=_config_int("resonators", 1),
-            f_min=_config_float("f_min"),
-            f_max=_config_float("f_max"),
-            record_ids=trace_record_ids,
-        )
-        return
-
-    if analysis_id == "squid_fitting":
-        CharacterizationFittingService().run_squid_fitting(
-            dataset_id=dataset_id,
-            config=SquidFittingConfig(
-                fit_model=_config_str("fit_model", "WITH_LS"),
-                ls_min_nh=_config_float("ls_min_nh"),
-                ls_max_nh=_config_float("ls_max_nh"),
-                c_min_pf=_config_float("c_min_pf"),
-                c_max_pf=_config_float("c_max_pf"),
-                fixed_c_pf=_config_float("fixed_c_pf"),
-                fit_min_nh=_config_float("fit_min_nh"),
-                fit_max_nh=_config_float("fit_max_nh"),
-            ),
-            record_ids=trace_record_ids,
-            trace_mode_group=trace_mode_group,
-        )
-        return
-
-    if analysis_id == "y11_fit":
-        CharacterizationFittingService().run_y11_fitting(
-            dataset_id=dataset_id,
-            config=Y11FittingConfig(
-                ls1_init_nh=float(_config_float("ls1_init_nh") or 0.01),
-                ls2_init_nh=float(_config_float("ls2_init_nh") or 0.01),
-                c_init_pf=float(_config_float("c_init_pf") or 0.885),
-                c_max_pf=float(_config_float("c_max_pf") or 3.0),
-            ),
-            record_ids=trace_record_ids,
-            trace_mode_group=trace_mode_group,
-        )
-        return
-
-    raise ValueError(f"Unsupported analysis id: {analysis_id}")
-
-
-# ---------------------------------------------------------------------------
-# Page
-# ---------------------------------------------------------------------------
-
-
 @ui.page("/characterization")
 def characterization_page():
     def content():
@@ -1684,7 +1585,7 @@ def characterization_page():
                                             heartbeat_warned = False
                                             run_task = asyncio.create_task(
                                                 run.cpu_bound(
-                                                    _execute_analysis_run,
+                                                    execute_analysis_run,
                                                     analysis_id=analysis_id,
                                                     dataset_id=ds.id,
                                                     config_state=config_state,
