@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: Raw ingest, SQLite persistence, and analysis-output format contracts
-version: v1.5.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v1.6.0
+last_updated: 2026-03-05
+updated_by: codex
 ---
 
 # Data Formats
@@ -37,6 +37,7 @@ This section is the reference SoT for data contracts across:
 | [Dataset Record](dataset-record.en.md) | SQLite core model, `dataset_profile`, and Trace Index contract |
 | [Circuit Netlist](circuit-netlist.en.md) | Circuit Netlist source/expanded contract and repeat expansion |
 | [Analysis Result](analysis-result.en.md) | `ResultBundleRecord`, `analysis_result` DataRecord, and DerivedParameter contracts |
+| [Query Indexing Strategy](query-indexing-strategy.en.md) | High-frequency query paths, index candidates, and monitoring guidance |
 
 ## Implementation Alignment (2026-03-04)
 

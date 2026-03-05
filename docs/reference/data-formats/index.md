@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: Raw ingest、SQLite persistence、analysis output 的資料格式契約
-version: v1.5.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v1.6.0
+last_updated: 2026-03-05
+updated_by: codex
 ---
 
 # Data Formats
@@ -37,6 +37,7 @@ updated_by: docs-team
 | [Dataset Record](dataset-record.md) | SQLite 主模型、`dataset_profile`、Trace Index 契約 |
 | [Circuit Netlist](circuit-netlist.md) | Circuit Netlist Source/Expanded 契約與 repeat 展開 |
 | [Analysis Result](analysis-result.md) | `ResultBundleRecord`、`analysis_result` DataRecord、DerivedParameter 契約 |
+| [Query Indexing Strategy](query-indexing-strategy.md) | 高頻查詢路徑、索引候選與效能監控建議 |
 
 ## 實作對齊狀態（2026-03-04）
 
