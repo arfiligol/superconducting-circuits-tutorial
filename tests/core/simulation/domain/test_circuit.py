@@ -10,6 +10,7 @@ from core.simulation.domain.circuit import (
     parse_circuit_definition_source,
 )
 from core.simulation.domain.compiler import compile_simulation_topology
+from core.simulation.domain.validators import CircuitValidationCode, CircuitValidationError
 
 
 def _repeat_enabled_circuit():
@@ -209,3 +210,33 @@ def test_simulation_result_impedance_uses_selected_reflection_port() -> None:
     )
 
     assert impedance_port_2 == [complex(120.0, 1.0)]
+
+
+def test_parse_circuit_rejects_gnd_alias_with_error_code() -> None:
+    with pytest.raises(CircuitValidationError) as exc_info:
+        parse_circuit_definition_source(
+            {
+                "name": "Invalid Ground",
+                "components": [{"name": "R1", "default": 50.0, "unit": "Ohm"}],
+                "topology": [("R1", "1", "gnd", "R1")],
+            }
+        )
+
+    assert exc_info.value.code is CircuitValidationCode.UNSUPPORTED_GROUND_ALIAS
+
+
+def test_parse_circuit_rejects_duplicate_port_index_with_error_code() -> None:
+    with pytest.raises(CircuitValidationError) as exc_info:
+        parse_circuit_definition_source(
+            {
+                "name": "Duplicate Port",
+                "components": [{"name": "R1", "default": 50.0, "unit": "Ohm"}],
+                "topology": [
+                    ("P1", "1", "0", 1),
+                    ("P2", "2", "0", 1),
+                    ("R1", "1", "0", "R1"),
+                ],
+            }
+        )
+
+    assert exc_info.value.code is CircuitValidationCode.DUPLICATE_PORT_INDEX

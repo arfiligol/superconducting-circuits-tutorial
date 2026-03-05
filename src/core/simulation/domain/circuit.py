@@ -15,6 +15,13 @@ from pydantic import BaseModel, Field
 
 from core.simulation.domain.compiler import compile_simulation_topology
 from core.simulation.domain.ir import CircuitElement, CircuitIR
+from core.simulation.domain.validators import (
+    validate_mutual_coupling_component_reference,
+    validate_mutual_coupling_inductive_references,
+    validate_port_row_contract,
+    validate_public_node_token,
+    validate_topology_component_reference,
+)
 
 DEFAULT_LAYOUT_DIRECTION = "lr"
 GROUND_TOKEN = "0"
@@ -440,19 +447,7 @@ def _infer_element_kind(element_name: str) -> str:
 
 def _normalize_node_token(raw_value: object) -> str:
     """Validate public node tokens: decimal strings only, with '0' as the only ground."""
-    if not isinstance(raw_value, str):
-        raise ValueError(
-            "Topology nodes must be numeric strings. Use '0' as the only ground token."
-        )
-
-    node_text = raw_value.strip()
-    if node_text.lower() == "gnd":
-        raise ValueError("Ground must be the string '0'. The 'gnd' alias is not supported.")
-    if not node_text.isdigit():
-        raise ValueError(
-            "Topology nodes must be numeric strings. Use '0' as the only ground token."
-        )
-    return str(int(node_text))
+    return validate_public_node_token(raw_value)
 
 
 def _resolve_template_value(raw_value: object, context: RepeatContext | None) -> object:
@@ -756,51 +751,40 @@ def _validate_expanded_circuit(expanded: ExpandedCircuitDefinition) -> None:
         element_kind_by_name[row.name] = row_kind
 
         if row_kind == "port":
-            if not isinstance(row.value_ref, int):
-                raise ValueError(f"Port '{row.name}' must use an integer port index.")
-            if int(row.value_ref) in seen_port_indices:
-                raise ValueError(f"Duplicate port index '{row.value_ref}'.")
-            if CircuitDefinition.is_ground_node(row.node1) == CircuitDefinition.is_ground_node(
-                row.node2
-            ):
-                raise ValueError(
-                    f"Port '{row.name}' must connect exactly one side to ground ('0')."
-                )
-            seen_port_indices.add(int(row.value_ref))
+            port_index = validate_port_row_contract(
+                row_name=row.name,
+                node1=row.node1,
+                node2=row.node2,
+                value_ref=row.value_ref,
+                seen_port_indices=seen_port_indices,
+                is_ground_node=CircuitDefinition.is_ground_node,
+            )
+            seen_port_indices.add(port_index)
             continue
 
         if row_kind == "mutual_coupling":
-            if not isinstance(row.value_ref, str):
-                raise ValueError(f"Mutual coupling '{row.name}' must reference a component name.")
-            if row.value_ref not in component_specs:
-                raise ValueError(
-                    "Mutual coupling "
-                    f"'{row.name}' references undefined component '{row.value_ref}'."
-                )
+            validate_mutual_coupling_component_reference(
+                row_name=row.name,
+                value_ref=row.value_ref,
+                component_specs=component_specs,
+            )
             continue
 
-        if not isinstance(row.value_ref, str):
-            raise ValueError(f"Topology row '{row.name}' must reference a component name.")
-        if row.value_ref not in component_specs:
-            raise ValueError(
-                f"Topology row '{row.name}' references undefined component '{row.value_ref}'."
-            )
+        validate_topology_component_reference(
+            row_name=row.name,
+            value_ref=row.value_ref,
+            component_specs=component_specs,
+        )
 
     for row in expanded.topology:
         if not row.is_mutual_coupling:
             continue
-        first_kind = element_kind_by_name.get(row.node1)
-        second_kind = element_kind_by_name.get(row.node2)
-        if first_kind not in {"inductor", "josephson_junction"}:
-            raise ValueError(
-                "Mutual coupling "
-                f"'{row.name}' references unknown or non-inductive element '{row.node1}'."
-            )
-        if second_kind not in {"inductor", "josephson_junction"}:
-            raise ValueError(
-                "Mutual coupling "
-                f"'{row.name}' references unknown or non-inductive element '{row.node2}'."
-            )
+        validate_mutual_coupling_inductive_references(
+            row_name=row.name,
+            first_ref=row.node1,
+            second_ref=row.node2,
+            element_kind_by_name=element_kind_by_name,
+        )
 
 
 def _expand_circuit_definition(
