@@ -15,6 +15,10 @@ import plotly.graph_objects as go
 from nicegui import app, run, ui
 
 from app.layout import app_shell
+from app.pages.simulation.state import (
+    default_post_processing_input_state,
+    default_result_view_state,
+)
 from app.services.dataset_profile import (
     normalize_dataset_profile,
     profile_summary_text,
@@ -3654,23 +3658,14 @@ def _render_simulation_environment():
         }
         latest_simulation_result: dict[str, SimulationResult | None] = {"result": None}
         latest_raw_save_action: dict[str, Callable[[], None] | None] = {"callback": None}
-        raw_view_state: dict[str, Any] = {
-            "family": "s",
-            "metric": "magnitude_linear",
-            "z0": 50.0,
-            "traces": [],
-            "family_sources": {
+        raw_view_state = default_result_view_state(
+            family_sources={
                 family: _first_option_key(options)
                 for family, options in _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY.items()
-            },
-        }
-        post_view_state: dict[str, Any] = {
-            "family": "s",
-            "metric": "magnitude_linear",
-            "z0": 50.0,
-            "traces": [],
-        }
-        post_processing_input_state: dict[str, str] = {"input_y_source": "raw_y"}
+            }
+        )
+        post_view_state = default_result_view_state()
+        post_processing_input_state = default_post_processing_input_state()
         available_setup_ports = sorted(active_circuit_def.available_port_indices)
         termination_inferred_resistance_ohm_by_port: dict[int, float] = {
             port: _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports

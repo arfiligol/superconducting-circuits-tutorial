@@ -162,9 +162,7 @@ def dashboard_page():
                                         "found": False,
                                         "designated_name": str(desig.designated_name),
                                         "source_analysis_type": str(desig.source_analysis_type),
-                                        "expected_parameter_name": str(
-                                            desig.source_parameter_name
-                                        ),
+                                        "expected_parameter_name": str(desig.source_parameter_name),
                                     }
                                 )
 

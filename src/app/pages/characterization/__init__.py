@@ -5,14 +5,20 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
 from nicegui import app, ui
 
 from app.layout import app_shell
-from app.services.analysis_registry import ANALYSIS_REGISTRY, evaluate_analysis_capability_gating
+from app.pages.characterization.state import (
+    AnalysisRunAvailability,
+    AnalysisRunUiState,
+    AnalysisScopeCompatibility,
+    ResultArtifact,
+)
+from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
+from app.services.analysis_registry import ANALYSIS_REGISTRY
 from app.services.dataset_profile import normalize_dataset_profile, profile_summary_text
 from core.analysis.application.services.characterization_fitting_service import (
     CharacterizationFittingService,
@@ -75,53 +81,6 @@ _ANALYSIS_CATEGORY_DEFAULTS: dict[str, str] = {
     "squid_fitting": "fit",
     "y11_fit": "fit",
 }
-
-
-@dataclass(frozen=True)
-class AnalysisScopeCompatibility:
-    """Compatibility summary for one analysis under current record scope."""
-
-    compatible_trace_rows: list[dict[str, str | int]]
-    compatible_trace_count: int
-    has_compatible_traces: bool
-    status: str
-    message: str
-
-
-@dataclass(frozen=True)
-class AnalysisRunUiState:
-    """UI contract for availability label and run-button enabled state."""
-
-    has_compatible_traces: bool
-    availability_text: str
-    availability_class: str
-    run_disabled: bool
-    run_hint: str
-
-
-@dataclass(frozen=True)
-class AnalysisRunAvailability:
-    """Profile recommendation + scope compatibility for one analysis."""
-
-    status: str
-    reason: str
-    has_compatible_traces: bool
-    profile_hints: list[str]
-
-
-@dataclass(frozen=True)
-class ResultArtifact:
-    """Declarative contract for one result-view unit."""
-
-    artifact_id: str
-    analysis_id: str
-    category: str
-    view_kind: str
-    tab_label: str
-    title: str
-    subtitle: str | None
-    query_spec: dict[str, Any]
-    meta: dict[str, Any]
 
 
 def _result_view_controls_row_classes() -> str:
