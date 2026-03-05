@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.12.0
-last_updated: 2026-03-05
+version: v0.13.0
+last_updated: 2026-03-06
 updated_by: codex
 ---
 
@@ -121,6 +121,22 @@ Minimum requirement for `Impedance (Z)` and `Admittance (Y)`:
     Source Port, Source Mode, pump frequency, harmonics, and hbsolve options are Simulation Setup,
     not Circuit Netlist syntax.
 
+### Three-layer card structure contract
+
+`Simulation Setup` must use three levels:
+
+1. Level 1: root `Simulation Setup` container card
+2. Level 2: fixed sections (order is normative)
+   - `Signal Frequency Sweep Range`
+   - `Parameter Sweeps`
+   - `HB Solve Setting`
+   - `Sources`
+   - `Port Termination Compensation`
+   - `Advanced hbsolve Options`
+3. Level 3: add/remove child cards
+   - `Parameter Sweeps`: add/remove axis cards
+   - `Sources`: add/remove source cards
+
 ### Setup Persistence Contract (Dialog-based Manager)
 
 `Simulation Setup` must keep the existing `Saved Setup` dropdown and add a `Manage Setups` entry (dialog).
@@ -140,7 +156,7 @@ The `Manage Setups` dialog must support at least:
     Existing `Saved Setup` dropdown load behavior must stay unchanged.
     `Manage Setups` is an additional entry point only and must not alter schema+setup execution semantics.
 
-### Parameter Sweep (MVP)
+### Parameter Sweep (Multi-Axis MVP)
 
 Sweep axis targets must cover at least:
 
@@ -156,15 +172,21 @@ Sweep axis targets must cover at least:
 
 - only components with `value_ref` are selectable as netlist sweep targets
 - components with inline `default` only are not netlist sweep targets
-- MVP supports single-axis sweep first
+- Supports multi-axis sweep
+- Execution mode must support `cartesian` first (`paired` field may exist as reserved)
 - when sweep is disabled, `Run Simulation` behavior must remain identical to single-run
 
 Minimum sweep setup fields:
 
 - `enabled: bool`
-- `axis_1.target_value_ref: str` (target key; may be a value_ref or a source target)
-- `axis_1.start / stop / points`
-- `axis_1.unit` (from parameter-spec hints or source-field semantics)
+- `mode: "cartesian"` (default)
+- `axes[]`
+  - `target_value_ref: str` (target key; may be a value_ref or a source target)
+  - `start / stop / points`
+  - `unit` (from parameter-spec hints or source-field semantics)
+
+!!! note "Legacy payload compatibility"
+    Legacy single-axis setup payloads (for example `axis_1`) must still decode and normalize into `axes[]`.
 
 ### Sweep Cache / Provenance Contract
 
@@ -190,6 +212,7 @@ After a successful sweep run, bundle `result_payload` must include:
 
 - `run_kind = "parameter_sweep"`
 - `sweep_axes` metadata (target, unit, values, point_count)
+- `sweep_mode` (at least `cartesian` for now)
 - `points[]` (each point includes at least `axis_indices`, `axis_values`, and point-level simulation result)
 - `representative_point_index` (for Result View quick inspect)
 
@@ -199,16 +222,22 @@ When exporting to `DataRecord`, sweep-axis metadata must be explicit in `axes` s
 
 When the latest successful run is `run_kind=parameter_sweep`, `Simulation Results` must render an additional `Sweep Result View`:
 
+- section header must show:
+  - sweep dimension count
+  - total point count
+  - current view-axis and fixed-axis slice summary
 - minimum `selectors`:
+  - `View Axis` selector (x-axis)
+  - `Fixed Axis` selectors for N-1 axes
   - `family`
   - `metric`
-  - `trace`
+  - `Add Trace` and multiple trace cards
   - `Output Port` / `Input Port`
   - `Output Mode` / `Input Mode`
   - `Frequency`
 - minimum `outputs`:
-  - `Table`: per-point `axis value` + `metric value` + `point index`
-  - `Plot`: `metric vs sweep axis`
+  - `Table`: per-point `axis value` + `point index` + per-trace metric columns for the active slice
+  - `Plot`: `metric vs view axis` for the active slice, with multi-trace overlay
 
 !!! important "Trace-first"
     Sweep selectors must follow the existing trace-first design.
@@ -223,6 +252,8 @@ When the latest successful run is `run_kind=parameter_sweep`, `Simulation Result
 - missing sweep payload: show empty state, no crash
 - selector incompatible with current payload: auto-fallback to valid defaults and keep warning logs
 - partial point data missing (trace or representation): render `NaN`/`N/A` for that point while keeping the view usable
+- cartesian point count over threshold: show explicit warning and block `Run Simulation`
+- invalid target after schema/setup change: fallback to a valid target or block run with a clear warning
 
 ### Flux-Pumped JPA Bias Sweep (reproducible flow)
 
@@ -232,10 +263,11 @@ Use this flow to reproduce official `Flux-pumped JPA` bias-sweep semantics (bias
 2. enable `Enable Sweep` in `Simulation Setup`
 3. set `Sweep Target` to a bias-correlated source parameter
    (recommended `sources[1].current_amp`; if represented as equivalent netlist parameter, `Lj` is acceptable)
-4. set `Sweep Start / Stop / Points`
+4. add at least one sweep axis in `Parameter Sweeps` and set `Sweep Start / Stop / Points`
+   (optionally add a second axis for slice analysis)
 5. run `Run Simulation`
-6. in `Simulation Results` -> `Sweep Result View`, pick trace/metric/frequency selectors
-7. verify `Table` and `Plot` stay synchronized as `metric vs sweep axis`
+6. in `Simulation Results` -> `Sweep Result View`, pick `View Axis`, fix the remaining axes, then pick trace/metric/frequency selectors
+7. verify `Table` and `Plot` stay synchronized as `metric vs view axis` for the active slice
 
 ### Port Termination Compensation (optional)
 

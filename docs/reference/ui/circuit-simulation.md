@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.12.0
-last_updated: 2026-03-05
+version: v0.13.0
+last_updated: 2026-03-06
 updated_by: codex
 ---
 
@@ -118,6 +118,22 @@ updated_by: codex
     Source Port、Source Mode、pump frequency、harmonics、hbsolve 選項屬於 Simulation Setup，
     不屬於 Circuit Netlist 語法。
 
+### 三層卡片結構契約
+
+`Simulation Setup` 必須採用三層結構：
+
+1. 第一層：`Simulation Setup` 主卡片
+2. 第二層：固定區塊（順序不可更動）
+   - `Signal Frequency Sweep Range`
+   - `Parameter Sweeps`
+   - `HB Solve Setting`
+   - `Sources`
+   - `Port Termination Compensation`
+   - `Advanced hbsolve Options`
+3. 第三層：可增減子卡
+   - `Parameter Sweeps` 下可 `Add Axis` / `Remove Axis`
+   - `Sources` 下可 `Add Source` / `Remove Source`
+
 ### Setup Persistence Contract（Dialog-based Manager）
 
 `Simulation Setup` 必須保留既有 `Saved Setup` 下拉，並新增 `Manage Setups` 入口（Dialog）。
@@ -137,7 +153,7 @@ updated_by: codex
     `Saved Setup` 下拉的既有載入行為必須維持不變；
     `Manage Setups` 只是擴充入口，不可改變原有 schema+setup 契約與求解流程。
 
-### Parameter Sweep（MVP）
+### Parameter Sweep（Multi-Axis MVP）
 
 Sweep 軸 target 來源至少需同時涵蓋：
 
@@ -151,15 +167,21 @@ Sweep 軸 target 來源至少需同時涵蓋：
     - source：`sources[<1-based index>].<field>`（例如 `sources[1].current_amp`）
 
 - 只有有 `value_ref` 的 component 可被 netlist sweep 選取；`default`-only component 不可作為 netlist sweep target
-- MVP 先支援單軸（Single Axis）
+- 支援多軸（Multi-Axis）
+- 執行模式先支援 `cartesian`（可保留 `paired` 欄位但可不實作）
 - `Sweep disabled` 時，`Run Simulation` 必須與既有 single-run 路徑完全一致
 
 Sweep Setup 最小欄位：
 
 - `enabled: bool`
-- `axis_1.target_value_ref: str`（target key，可為 value_ref 或 source target）
-- `axis_1.start / stop / points`
-- `axis_1.unit`（可由 parameter spec 或 source 欄位語義提示）
+- `mode: "cartesian"`（預設）
+- `axes[]`
+  - `target_value_ref: str`（target key，可為 value_ref 或 source target）
+  - `start / stop / points`
+  - `unit`（可由 parameter spec 或 source 欄位語義提示）
+
+!!! note "舊 payload 相容"
+    仍需可讀舊單軸 payload（例如 `axis_1` 或單一 axis 寫法）並 normalize 成 `axes[]`。
 
 ### Sweep Cache / Provenance 契約
 
@@ -174,7 +196,7 @@ Sweep Setup 最小欄位：
 
 `Logs` 必須額外可追蹤：
 
-- sweep 維度（MVP=1）
+- sweep 維度（N 軸）
 - 總點數
 - 每個 sweep 點的進度（例如 `point 3/11`）
 
@@ -184,6 +206,7 @@ sweep run 成功後，bundle `result_payload` 需包含：
 
 - `run_kind = "parameter_sweep"`
 - `sweep_axes` metadata（target、unit、values、point_count）
+- `sweep_mode`（目前至少 `cartesian`）
 - `points[]`（每點至少含 `axis_indices`、`axis_values`、該點 simulation result）
 - `representative_point_index`（供 Result View quick-inspect）
 
@@ -193,16 +216,22 @@ sweep run 成功後，bundle `result_payload` 需包含：
 
 當最近一次成功 run 為 `run_kind=parameter_sweep` 時，`Simulation Results` 必須額外顯示 `Sweep Result View`：
 
+- 區塊抬頭需顯示：
+  - sweep 維度（N）
+  - 總點數
+  - 目前 view axis 與固定切片摘要
 - `Selectors`（最少）：
+  - `view axis`（選擇哪一軸作為 x 軸）
+  - `fixed axis selectors`（其餘 N-1 軸固定 index/value）
   - `family`
   - `metric`
-  - `trace`
+  - `Add Trace` + 多個 trace card
   - `Output Port` / `Input Port`
   - `Output Mode` / `Input Mode`
   - `Frequency`
 - `Outputs`（最少）：
-  - `Table`：每個 sweep point 的 `axis value` + `metric value` + `point index`
-  - `Plot`：`metric vs sweep axis`
+  - `Table`：目前切片下每個 point 的 `axis value` + `point index` + 各 trace 的 metric 欄位
+  - `Plot`：目前切片下 `metric vs view axis`（支援多 trace overlay）
 
 !!! important "trace-first"
     Sweep 視圖的 selector 必須沿用現有 trace-first 設計。
@@ -217,6 +246,8 @@ sweep run 成功後，bundle `result_payload` 需包含：
 - 無 sweep payload：顯示 empty state，不得崩潰
 - selector 與當前 payload 不相容：自動回退到可用預設值，並保留 warning log
 - 單點結果缺資料（缺某 trace 或某 representation）：該點顯示 `NaN`/`N/A`，整體視圖仍可用
+- Cartesian 點數超門檻：顯示明確 warning，並阻止 `Run Simulation`
+- 無效 target（schema/setup 變更後失效）：自動 fallback 到可用 target 或阻止執行並通知
 
 ### Flux-Pumped JPA Bias Sweep（可重現步驟）
 
@@ -225,10 +256,10 @@ sweep run 成功後，bundle `result_payload` 需包含：
 1. 選擇 `Flux-pumped Josephson Parametric Amplifier (JPA)`（或等價 schema）
 2. 在 `Simulation Setup` 開啟 `Enable Sweep`
 3. `Sweep Target` 選擇 bias 對應 source 參數（建議 `sources[1].current_amp`；若 schema 以等效參數表示也可用 `Lj`）
-4. 設定 `Sweep Start / Stop / Points`
+4. 在 `Parameter Sweeps` 新增至少一個 axis，設定 `Sweep Start / Stop / Points`（可再新增第二軸做切片分析）
 5. 執行 `Run Simulation`
-6. 在 `Simulation Results` 的 `Sweep Result View` 選擇 trace/metric/frequency
-7. 驗證 `Table` 與 `Plot` 同步呈現 `metric vs sweep axis`
+6. 在 `Simulation Results` 的 `Sweep Result View` 選擇 `View Axis`、固定其餘軸，再選 trace/metric/frequency
+7. 驗證 `Table` 與 `Plot` 同步呈現目前切片的 `metric vs view axis`
 
 ## Run Simulation 契約（Load-or-Run）
 
