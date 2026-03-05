@@ -11,14 +11,18 @@ status: stable
 owner: docs-team
 audience: team
 scope: Why WebUI uses constrained repeat-based generation instead of arbitrary scripting
-version: v0.1.0
-last_updated: 2026-03-05
+version: v0.1.1
+last_updated: 2026-03-06
 updated_by: codex
 ---
 
 # Restricted Netlist Generators
 
 This page explains why Circuit Netlist uses constrained generation (`repeat`, etc.) instead of arbitrary script execution.
+
+!!! note "Boundary"
+    This page explains why the Web UI uses constrained generators.
+    Syntax and editor/save contracts live in Reference.
 
 ## Rationale
 
@@ -42,4 +46,5 @@ This page explains why Circuit Netlist uses constrained generation (`repeat`, et
 ## Related
 
 - [Circuit Netlist Format](../../../reference/data-formats/circuit-netlist.en.md)
+- [Schema Editor UI Reference](../../../reference/ui/schema-editor.en.md)
 - [Circuit Simulation UI](../../../reference/ui/circuit-simulation.en.md)

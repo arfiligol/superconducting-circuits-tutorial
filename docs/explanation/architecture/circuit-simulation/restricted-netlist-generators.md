@@ -11,14 +11,18 @@ status: stable
 owner: docs-team
 audience: team
 scope: 說明為何 WebUI 採受限 repeat 生成，而不允許任意腳本
-version: v0.1.0
-last_updated: 2026-03-05
+version: v0.1.1
+last_updated: 2026-03-06
 updated_by: codex
 ---
 
 # Restricted Netlist Generators
 
 本頁說明 Circuit Netlist 為何採用受限生成模型（`repeat` 等），而不採任意程式碼執行。
+
+!!! note "Boundary"
+    本頁只解釋為什麼 Web UI 採限制式生成。
+    語法與 editor/save 契約請看 Reference。
 
 ## 設計理由
 
@@ -42,4 +46,5 @@ updated_by: codex
 ## Related
 
 - [Circuit Netlist Format](../../../reference/data-formats/circuit-netlist.md)
+- [Schema Editor UI Reference](../../../reference/ui/schema-editor.md)
 - [Circuit Simulation UI](../../../reference/ui/circuit-simulation.md)
