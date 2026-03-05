@@ -62,6 +62,7 @@ class CharacterizationRuntimeState:
     selected_trace_ids_by_scope: dict[str, set[int]]
     trace_table_state_by_scope: dict[str, dict[str, object]]
     analysis_scope_compatibility_cache: dict[str, AnalysisScopeCompatibility]
+    active_log_context: dict[str, str]
 
     @classmethod
     def create(cls) -> CharacterizationRuntimeState:
@@ -72,7 +73,18 @@ class CharacterizationRuntimeState:
             selected_trace_ids_by_scope={},
             trace_table_state_by_scope={},
             analysis_scope_compatibility_cache={},
+            active_log_context={},
         )
+
+    def set_log_context(self, **tokens: object) -> None:
+        """Replace active log context tokens for subsequent status lines."""
+        self.active_log_context = {
+            str(key): str(value) for key, value in tokens.items() if value not in (None, "")
+        }
+
+    def clear_log_context(self) -> None:
+        """Clear active log context tokens."""
+        self.active_log_context = {}
 
     def append_status(
         self,
@@ -83,10 +95,16 @@ class CharacterizationRuntimeState:
         limit: int = 50,
     ) -> None:
         """Append one analysis log row with bounded history."""
+        context_prefix = ""
+        if self.active_log_context:
+            token_text = " ".join(
+                f"{key}={value}" for key, value in sorted(self.active_log_context.items())
+            )
+            context_prefix = f"[{token_text}] "
         self.analysis_status_history.append(
             {
                 "level": level,
-                "message": message,
+                "message": f"{context_prefix}{message}",
                 "time": time_label,
             }
         )

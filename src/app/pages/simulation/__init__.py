@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, TypedDict
+from uuid import uuid4
 
 import numpy as np
 import plotly.graph_objects as go
@@ -305,7 +306,7 @@ def _load_cached_simulation_result(
     *,
     schema_source_hash: str,
     simulation_setup_hash: str,
-) -> tuple[int, SimulationResult] | None:
+) -> tuple[int, int, SimulationResult] | None:
     """Load one cached simulation result from the hidden system dataset."""
     cache_dataset = _ensure_simulation_cache_dataset(uow)
     if cache_dataset.id is None:
@@ -327,7 +328,7 @@ def _load_cached_simulation_result(
     if bundle.id is None:
         return None
 
-    return (bundle.id, result)
+    return (bundle.id, cache_dataset.id, result)
 
 
 def _persist_simulation_result_bundle(
@@ -1368,7 +1369,7 @@ def _render_result_family_explorer(
             for idx, selection in enumerate(trace_cards, start=1):
                 with _with_test_id(
                     ui.card().classes(
-                    "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                        "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
                     ),
                     f"{testid_prefix}-trace-card-{idx}" if testid_prefix else f"trace-card-{idx}",
                 ):
@@ -4943,6 +4944,11 @@ def _render_simulation_environment():
                             ui.label(
                                 "Run Post Processing to populate post-processed output traces."
                             ).classes("text-sm text-muted")
+                        simulation_run_id = f"sim-{uuid4().hex[:10]}"
+                        runtime_state.set_log_context(
+                            run_id=simulation_run_id,
+                            circuit_id=latest_record.id,
+                        )
                         reset_status("Simulation started.")
                         append_status(
                             "info",
@@ -5026,17 +5032,33 @@ def _render_simulation_environment():
                             )
 
                         if cache_result is not None:
-                            cache_bundle_id, result = cache_result
+                            cache_bundle_id, cache_dataset_id, result = cache_result
+                            runtime_state.set_log_context(
+                                run_id=simulation_run_id,
+                                circuit_id=latest_record.id,
+                                dataset_id=cache_dataset_id,
+                                bundle_id=cache_bundle_id,
+                            )
                             append_status(
                                 "positive",
                                 (
-                                    "Cache hit. "
-                                    "Loaded result bundle "
-                                    f"#{cache_bundle_id} without rerunning Julia."
+                                    "Cache hit: matched completed bundle by "
+                                    "schema_source_hash + simulation_setup_hash. "
+                                    f"Loaded #{cache_bundle_id} without rerunning Julia."
                                 ),
                             )
                         else:
-                            append_status("info", "Cache miss.")
+                            runtime_state.set_log_context(
+                                run_id=simulation_run_id,
+                                circuit_id=latest_record.id,
+                            )
+                            append_status(
+                                "info",
+                                (
+                                    "Cache miss: no completed bundle matched "
+                                    "schema_source_hash + simulation_setup_hash."
+                                ),
+                            )
                             append_status("info", "Submitting job to Julia worker...")
                             simulation_results_container.clear()
                             post_processing_container.clear()
@@ -5117,6 +5139,7 @@ def _render_simulation_environment():
                                         source_meta={
                                             "origin": "circuit_simulation",
                                             "storage": "system_cache",
+                                            "run_id": simulation_run_id,
                                             "circuit_id": latest_record.id,
                                             "circuit_name": latest_record.name,
                                         },
@@ -5126,6 +5149,12 @@ def _render_simulation_environment():
                                         include_data_records=False,
                                     )
                                     uow.commit()
+                                runtime_state.set_log_context(
+                                    run_id=simulation_run_id,
+                                    circuit_id=latest_record.id,
+                                    dataset_id=cache_dataset.id,
+                                    bundle_id=cache_bundle_id,
+                                )
                                 append_status(
                                     "info",
                                     f"Cached result bundle #{cache_bundle_id} stored for reuse.",
@@ -5166,9 +5195,7 @@ def _render_simulation_environment():
                         runtime_state.latest_circuit_record = latest_record
                         runtime_state.latest_source_simulation_bundle_id = cache_bundle_id
                         runtime_state.latest_schema_source_hash = last_schema_source_hash
-                        runtime_state.latest_simulation_setup_hash = (
-                            last_simulation_setup_hash
-                        )
+                        runtime_state.latest_simulation_setup_hash = last_simulation_setup_hash
                         render_simulation_result_view()
                         handle_post_processing_result(None, None)
                         _render_post_processing_input_panel()

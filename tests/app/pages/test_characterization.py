@@ -23,6 +23,7 @@ def test_build_analysis_run_bundle_record_captures_dataset_scope_input() -> None
         dataset_id=9,
         analysis_id="s21_resonance_fit",
         analysis_label="S21 Resonance Fit",
+        run_id="char-test-run",
         selected_bundle_id=None,
         selected_scope_token="all_dataset_records",
         config_snapshot={"model": "notch", "f_min": 4.5},
@@ -33,6 +34,7 @@ def test_build_analysis_run_bundle_record_captures_dataset_scope_input() -> None
     assert bundle.role == "analysis_run"
     assert bundle.status == "completed"
     assert bundle.source_meta["analysis_id"] == "s21_resonance_fit"
+    assert bundle.source_meta["run_id"] == "char-test-run"
     assert bundle.source_meta["input_bundle_id"] is None
     assert bundle.source_meta["input_scope"] == "all_dataset_records"
     assert bundle.config_snapshot == {"model": "notch", "f_min": 4.5}
@@ -87,6 +89,7 @@ def test_build_analysis_run_availability_marks_recommended_when_all_checks_pass(
     )
     assert availability.status == "Recommended"
     assert availability.has_compatible_traces is True
+
 
 def test_build_mode_vs_ljun_dataframe_supports_single_column_non_sweep() -> None:
     params = [

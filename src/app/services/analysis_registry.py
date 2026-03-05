@@ -213,6 +213,7 @@ def get_analysis_descriptor(analysis_id: str) -> AnalysisDescriptor | None:
             return analysis
     return None
 
+
 __all__ = [
     "ANALYSIS_REGISTRY",
     "AnalysisCapabilityDecision",

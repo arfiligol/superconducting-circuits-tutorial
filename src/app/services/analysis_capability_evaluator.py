@@ -42,8 +42,7 @@ def evaluate_analysis_capability_gating(
     blocked = sorted(excluded & capabilities)
     reasons: list[str] = []
     reasons.extend(
-        f"Profile hint: missing capability {capability_label(capability)}"
-        for capability in missing
+        f"Profile hint: missing capability {capability_label(capability)}" for capability in missing
     )
     reasons.extend(
         f"Profile hint: excluded by capability {capability_label(capability)}"

@@ -6,6 +6,7 @@ import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 from nicegui import app, ui
@@ -393,6 +394,7 @@ def _build_analysis_run_bundle_record(
     dataset_id: int,
     analysis_id: str,
     analysis_label: str,
+    run_id: str,
     selected_bundle_id: int | None,
     selected_scope_token: str,
     config_snapshot: dict[str, object],
@@ -407,6 +409,7 @@ def _build_analysis_run_bundle_record(
             "origin": "characterization",
             "analysis_id": analysis_id,
             "analysis_label": analysis_label,
+            "run_id": run_id,
             "input_bundle_id": selected_bundle_id,
             "input_scope": selected_scope_token,
         },
@@ -1268,15 +1271,13 @@ def characterization_page():
                                 compatibility_cache_key
                             )
                             if compatibility is None:
-                                _, compatible_trace_count = (
-                                    list_scope_compatible_trace_index_page(
+                                _, compatible_trace_count = list_scope_compatible_trace_index_page(
                                     uow=refresh_uow,
                                     dataset_id=active_id,
                                     selected_bundle_id=selected_bundle_id,
                                     analysis_requires=effective_requires,
                                     limit=1,
                                     offset=0,
-                                    )
                                 )
                                 has_compatible_traces = compatible_trace_count > 0
                                 compatibility = AnalysisScopeCompatibility(
@@ -1605,6 +1606,12 @@ def characterization_page():
 
                                     def run_selected_analysis() -> None:
                                         analysis_id = str(selected_run_analysis["id"])
+                                        run_id = f"char-{uuid4().hex[:10]}"
+                                        runtime_state.set_log_context(
+                                            run_id=run_id,
+                                            dataset_id=ds.id,
+                                            analysis_id=analysis_id,
+                                        )
                                         run_trace_ids = sorted(current_selected_trace_ids())
                                         config_fields = selected_run_analysis.get(
                                             "config_fields",
@@ -1663,28 +1670,38 @@ def characterization_page():
                                                 trace_mode_group=selected_mode_group,
                                             )
                                             with get_unit_of_work() as write_uow:
-                                                write_uow.result_bundles.add(
-                                                    _build_analysis_run_bundle_record(
+                                                bundle = _build_analysis_run_bundle_record(
+                                                    dataset_id=ds.id,
+                                                    analysis_id=analysis_id,
+                                                    analysis_label=str(
+                                                        selected_run_analysis["label"]
+                                                    ),
+                                                    run_id=run_id,
+                                                    selected_bundle_id=None,
+                                                    selected_scope_token=selected_scope_token,
+                                                    config_snapshot={
+                                                        **dict(config_state),
+                                                        "run_id": run_id,
+                                                        "selected_trace_ids": run_trace_ids,
+                                                        "selected_trace_mode_group": (
+                                                            selected_mode_group
+                                                        ),
+                                                        "selected_trace_count": len(run_trace_ids),
+                                                    },
+                                                )
+                                                write_uow.result_bundles.add(bundle)
+                                                write_uow.commit()
+                                                if bundle.id is not None:
+                                                    runtime_state.set_log_context(
+                                                        run_id=run_id,
                                                         dataset_id=ds.id,
                                                         analysis_id=analysis_id,
-                                                        analysis_label=str(
-                                                            selected_run_analysis["label"]
-                                                        ),
-                                                        selected_bundle_id=None,
-                                                        selected_scope_token=selected_scope_token,
-                                                        config_snapshot={
-                                                            **dict(config_state),
-                                                            "selected_trace_ids": run_trace_ids,
-                                                            "selected_trace_mode_group": (
-                                                                selected_mode_group
-                                                            ),
-                                                            "selected_trace_count": len(
-                                                                run_trace_ids
-                                                            ),
-                                                        },
+                                                        bundle_id=bundle.id,
                                                     )
-                                                )
-                                                write_uow.commit()
+                                                    append_analysis_status(
+                                                        "info",
+                                                        f"Recorded analysis bundle #{bundle.id}.",
+                                                    )
 
                                             append_analysis_status(
                                                 "positive",
@@ -1728,19 +1745,23 @@ def characterization_page():
                                 )
 
                                 with ui.row().classes("w-full items-end gap-4 flex-wrap"):
-                                    analysis_select = ui.select(
-                                        options=analysis_options,
-                                        value=selected_run_analysis_id,
-                                        label="Analysis",
-                                        on_change=lambda e: (
-                                            _save_dataset_text_selection(
-                                                _ANALYSIS_RUN_SELECTED_KEY,
-                                                active_id,
-                                                str(e.value),
+                                    analysis_select = (
+                                        ui.select(
+                                            options=analysis_options,
+                                            value=selected_run_analysis_id,
+                                            label="Analysis",
+                                            on_change=lambda e: (
+                                                _save_dataset_text_selection(
+                                                    _ANALYSIS_RUN_SELECTED_KEY,
+                                                    active_id,
+                                                    str(e.value),
+                                                ),
+                                                render_dataset_view.refresh(),
                                             ),
-                                            render_dataset_view.refresh(),
-                                        ),
-                                    ).props("dense outlined options-dense").classes("w-72")
+                                        )
+                                        .props("dense outlined options-dense")
+                                        .classes("w-72")
+                                    )
                                     _with_test_id(
                                         analysis_select,
                                         "characterization-analysis-select",
@@ -1860,43 +1881,49 @@ def characterization_page():
                                     )
 
                                     with ui.row().classes("w-full gap-3 items-end flex-wrap mb-2"):
-                                        filter_input = ui.input(
-                                            label="Filter Traces",
-                                            value=str(table_state.get("search", "")),
-                                            on_change=lambda e: (
-                                                table_state.__setitem__(
-                                                    "search", str(e.value or "")
+                                        filter_input = (
+                                            ui.input(
+                                                label="Filter Traces",
+                                                value=str(table_state.get("search", "")),
+                                                on_change=lambda e: (
+                                                    table_state.__setitem__(
+                                                        "search", str(e.value or "")
+                                                    ),
+                                                    table_state.__setitem__("page", 1),
+                                                    render_trace_selection.refresh(),
                                                 ),
-                                                table_state.__setitem__("page", 1),
-                                                render_trace_selection.refresh(),
-                                            ),
-                                        ).props("dense outlined clearable").classes(
-                                            "min-w-[220px] flex-1"
+                                            )
+                                            .props("dense outlined clearable")
+                                            .classes("min-w-[220px] flex-1")
                                         )
                                         _with_test_id(
                                             filter_input,
                                             "characterization-trace-filter-input",
                                         )
-                                        run_trace_mode_filter = ui.select(
-                                            _TRACE_MODE_FILTER_OPTIONS,
-                                            value=str(
-                                                table_state.get(
-                                                    "trace_mode_filter",
-                                                    _TRACE_MODE_ALL,
-                                                )
-                                            ),
-                                            label="Trace Mode Filter",
-                                            on_change=lambda e: (
-                                                table_state.__setitem__(
-                                                    "trace_mode_filter",
-                                                    str(e.value or _TRACE_MODE_ALL),
+                                        run_trace_mode_filter = (
+                                            ui.select(
+                                                _TRACE_MODE_FILTER_OPTIONS,
+                                                value=str(
+                                                    table_state.get(
+                                                        "trace_mode_filter",
+                                                        _TRACE_MODE_ALL,
+                                                    )
                                                 ),
-                                                table_state.__setitem__("page", 1),
-                                                set_selected_trace_ids(set()),
-                                                refresh_run_controls(),
-                                                render_trace_selection.refresh(),
-                                            ),
-                                        ).props("dense outlined options-dense").classes("w-40")
+                                                label="Trace Mode Filter",
+                                                on_change=lambda e: (
+                                                    table_state.__setitem__(
+                                                        "trace_mode_filter",
+                                                        str(e.value or _TRACE_MODE_ALL),
+                                                    ),
+                                                    table_state.__setitem__("page", 1),
+                                                    set_selected_trace_ids(set()),
+                                                    refresh_run_controls(),
+                                                    render_trace_selection.refresh(),
+                                                ),
+                                            )
+                                            .props("dense outlined options-dense")
+                                            .classes("w-40")
+                                        )
                                         _with_test_id(
                                             run_trace_mode_filter,
                                             "characterization-run-trace-mode-filter-select",
@@ -2202,37 +2229,45 @@ def characterization_page():
                                         )
 
                                     with ui.row().classes(_result_view_controls_row_classes()):
-                                        result_trace_mode_filter = ui.select(
-                                            options=trace_mode_options,
-                                            value=selected_trace_mode_filter,
-                                            label="Trace Mode Filter",
-                                            on_change=lambda e: (
-                                                _save_scope_text_selection(
-                                                    _ANALYSIS_RESULT_TRACE_MODE_SELECTED_KEY,
-                                                    analysis_scope_key,
-                                                    str(e.value),
-                                                ),
-                                                render_dataset_view.refresh(),
-                                            ),
-                                        ).props("dense outlined options-dense").classes("w-64")
-                                        _with_test_id(
-                                            result_trace_mode_filter,
-                                            "characterization-result-trace-mode-filter-select",
-                                        )
-                                        if category_options:
-                                            result_category_select = ui.select(
-                                                options=category_options,
-                                                value=selected_category,
-                                                label="Category",
+                                        result_trace_mode_filter = (
+                                            ui.select(
+                                                options=trace_mode_options,
+                                                value=selected_trace_mode_filter,
+                                                label="Trace Mode Filter",
                                                 on_change=lambda e: (
                                                     _save_scope_text_selection(
-                                                        _ANALYSIS_RESULT_CATEGORY_SELECTED_KEY,
+                                                        _ANALYSIS_RESULT_TRACE_MODE_SELECTED_KEY,
                                                         analysis_scope_key,
                                                         str(e.value),
                                                     ),
                                                     render_dataset_view.refresh(),
                                                 ),
-                                            ).props("dense outlined options-dense").classes("w-64")
+                                            )
+                                            .props("dense outlined options-dense")
+                                            .classes("w-64")
+                                        )
+                                        _with_test_id(
+                                            result_trace_mode_filter,
+                                            "characterization-result-trace-mode-filter-select",
+                                        )
+                                        if category_options:
+                                            result_category_select = (
+                                                ui.select(
+                                                    options=category_options,
+                                                    value=selected_category,
+                                                    label="Category",
+                                                    on_change=lambda e: (
+                                                        _save_scope_text_selection(
+                                                            _ANALYSIS_RESULT_CATEGORY_SELECTED_KEY,
+                                                            analysis_scope_key,
+                                                            str(e.value),
+                                                        ),
+                                                        render_dataset_view.refresh(),
+                                                    ),
+                                                )
+                                                .props("dense outlined options-dense")
+                                                .classes("w-64")
+                                            )
                                             _with_test_id(
                                                 result_category_select,
                                                 "characterization-result-category-select",
@@ -2323,11 +2358,15 @@ def characterization_page():
                         app.storage.user["analysis_current_dataset"] = e.value
                         render_dataset_view.refresh()
 
-                    dataset_select = ui.select(
-                        options=ds_options,
-                        value=current_ds_id,
-                        on_change=on_change,
-                    ).props("dense outlined options-dense").classes("w-64")
+                    dataset_select = (
+                        ui.select(
+                            options=ds_options,
+                            value=current_ds_id,
+                            on_change=on_change,
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-64")
+                    )
                     _with_test_id(dataset_select, "characterization-dataset-select")
 
                 render_dataset_view()

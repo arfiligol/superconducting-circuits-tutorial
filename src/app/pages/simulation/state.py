@@ -46,13 +46,30 @@ class SimulationRuntimeState:
     latest_raw_save_callback: Callable[[], None] | None = None
     termination_last_warning: str = ""
     termination_last_summary: str = ""
+    active_log_context: dict[str, str] = field(default_factory=dict)
+
+    def set_log_context(self, **tokens: object) -> None:
+        """Replace active log context tokens for subsequent status lines."""
+        self.active_log_context = {
+            str(key): str(value) for key, value in tokens.items() if value not in (None, "")
+        }
+
+    def clear_log_context(self) -> None:
+        """Clear active log context tokens."""
+        self.active_log_context = {}
 
     def append_status(self, level: str, message: str, *, time_label: str, limit: int = 30) -> None:
         """Append one simulation log row with bounded history."""
+        context_prefix = ""
+        if self.active_log_context:
+            token_text = " ".join(
+                f"{key}={value}" for key, value in sorted(self.active_log_context.items())
+            )
+            context_prefix = f"[{token_text}] "
         self.status_history.append(
             {
                 "level": level,
-                "message": message,
+                "message": f"{context_prefix}{message}",
                 "time": time_label,
             }
         )
