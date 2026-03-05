@@ -27,12 +27,15 @@ from app.services.dataset_profile import (
     normalize_dataset_profile,
     profile_summary_text,
 )
+from app.services.post_processing_runner import (
+    PostProcessingRunRequest,
+    execute_post_processing_pipeline,
+)
 from app.services.post_processing_step_registry import (
     POST_PROCESS_STEP_OPTIONS,
     build_default_step_config,
     normalize_saved_step_config,
     preview_pipeline_labels,
-    run_post_processing_step,
     serialize_post_processing_step,
 )
 from core.shared.persistence import SqliteUnitOfWork, get_unit_of_work
@@ -45,7 +48,6 @@ from core.shared.persistence.models import (
 from core.shared.visualization import get_plotly_layout
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
-    build_port_y_sweep,
     compensate_simulation_result_port_terminations,
     filtered_modes,
     infer_port_termination_resistance_ohm,
@@ -2251,67 +2253,32 @@ def _render_post_processing_panel(
         try:
             input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
             input_y_source_select.value = input_source
-            active_result = _active_input_result(input_source)
-            mode_token = str(mode_select.value or "").strip()
-            if not mode_token:
-                raise ValueError("Please select one mode before running post-processing.")
-            mode = SimulationResult.parse_mode_token(mode_token)
-            z0 = float(z0_input.value or 50.0)
-            if z0 <= 0:
-                raise ValueError("Z0 must be positive.")
-
-            sweep = build_port_y_sweep(
-                result=active_result,
-                mode=mode,
-                reference_impedance_ohm=z0,
-            )
-            flow_steps: list[dict[str, Any]] = []
-
-            for index, step in enumerate(step_sequence):
-                if not bool(step.get("enabled", True)):
-                    continue
-                execution = run_post_processing_step(
-                    sweep=sweep,
-                    step=step,
+            run_result = execute_post_processing_pipeline(
+                PostProcessingRunRequest(
+                    result=_active_input_result(input_source),
+                    input_source=input_source,
+                    mode_filter=str(mode_filter_select.value or "base"),
+                    mode_token=str(mode_select.value or ""),
+                    reference_impedance_ohm=float(z0_input.value or 50.0),
+                    step_sequence=step_sequence,
                     circuit_definition=circuit_definition,
-                    estimate_auto_weights=lambda definition, port_a, port_b: (
-                        _estimate_port_ground_cap_weights(
-                            definition,
-                            port_a=port_a,
-                            port_b=port_b,
-                        )
-                    ),
-                )
-                sweep = execution.sweep
-                flow_steps.append(execution.flow_step)
-                step_sequence[index].update(execution.normalized_step)
-
-            has_enabled_coordinate_transform = any(
-                bool(step.get("enabled", True))
-                and str(step.get("type", "coordinate_transform")) == "coordinate_transform"
-                for step in step_sequence
+                    has_ptc_result=isinstance(ptc_result, SimulationResult),
+                ),
+                estimate_auto_weights=lambda definition, port_a, port_b: (
+                    _estimate_port_ground_cap_weights(
+                        definition,
+                        port_a=port_a,
+                        port_b=port_b,
+                    )
+                ),
             )
-            hfss_not_comparable_reasons: list[str] = []
-            if not isinstance(ptc_result, SimulationResult):
-                hfss_not_comparable_reasons.append("Port Termination Compensation is disabled.")
-            if input_source != "ptc_y":
-                hfss_not_comparable_reasons.append("Input Y Source is not PTC Y.")
-            if not has_enabled_coordinate_transform:
-                hfss_not_comparable_reasons.append("Coordinate Transformation step is missing.")
-            hfss_comparable = not hfss_not_comparable_reasons
-            hfss_not_comparable_reason = (
-                "; ".join(hfss_not_comparable_reasons) if hfss_not_comparable_reasons else ""
-            )
+            sweep = run_result.sweep
+            flow_spec = run_result.flow_spec
+            for index, normalized in enumerate(run_result.normalized_steps):
+                step_sequence[index].update(normalized)
 
-            flow_spec: dict[str, Any] = {
-                "input_y_source": input_source,
-                "mode_filter": str(mode_filter_select.value or "base"),
-                "mode_token": SimulationResult.mode_token(mode),
-                "reference_impedance_ohm": z0,
-                "steps": flow_steps,
-                "hfss_comparable": hfss_comparable,
-                "hfss_not_comparable_reason": hfss_not_comparable_reason,
-            }
+            hfss_comparable = bool(flow_spec.get("hfss_comparable"))
+            hfss_not_comparable_reason = str(flow_spec.get("hfss_not_comparable_reason", ""))
             emit_result(sweep, flow_spec)
             render_step_cards.refresh()
 
@@ -2335,7 +2302,7 @@ def _render_post_processing_panel(
                     f"Basis labels: {', '.join(sweep.labels)} | "
                     f"dim={sweep.dimension} | "
                     f"mode={SimulationResult.mode_token(sweep.mode)} | "
-                    f"input={input_source}"
+                    f"input={flow_spec.get('input_y_source', input_source)}"
                 ).classes("text-xs text-muted")
         except Exception as exc:
             invalidate_processed_state()

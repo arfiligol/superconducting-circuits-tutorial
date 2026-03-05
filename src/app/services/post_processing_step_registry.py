@@ -170,9 +170,7 @@ def run_post_processing_step(
     if selected_port_a == selected_port_b:
         raise ValueError("Port A and Port B must be different.")
 
-    label_to_index = {
-        int(label): idx for idx, label in enumerate(sweep.labels) if label.isdigit()
-    }
+    label_to_index = {int(label): idx for idx, label in enumerate(sweep.labels) if label.isdigit()}
     if selected_port_a not in label_to_index or selected_port_b not in label_to_index:
         raise ValueError("Selected ports are not available in current sweep basis.")
 
