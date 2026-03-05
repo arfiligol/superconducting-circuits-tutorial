@@ -344,20 +344,18 @@ def _configure_sources(page: Page, sources: tuple[tuple[float, int, float], ...]
         _set_spinbutton_value(page, "Source Current Ip (A)", current_amp, index=idx)
 
 
-def _configure_single_axis_sweep(
+def _configure_multi_axis_sweep(
     page: Page,
     *,
-    target: str,
-    start: float,
-    stop: float,
-    points: int,
+    axes: tuple[dict[str, float | int | str], ...],
 ) -> None:
     sweep_card = _card_by_testid(
         page,
         "simulation-sweep-setup-card",
-        fallback_text="Parameter Sweep (MVP)",
+        fallback_text="Parameter Sweeps",
     )
     expect(sweep_card).to_be_visible(timeout=30000)
+    assert len(axes) >= 1
     enable_switch = sweep_card.get_by_role("switch", name="Enable Sweep")
     if enable_switch.count() == 0:
         enable_switch = sweep_card.get_by_role("checkbox", name="Enable Sweep")
@@ -371,21 +369,45 @@ def _configure_single_axis_sweep(
         if "q-toggle--truthy" not in classes:
             toggle.click()
 
-    target_select = _locator_by_testid(
+    add_axis_button = _locator_by_testid(
         page,
-        "simulation-sweep-target-select",
-        fallback=sweep_card.get_by_role("combobox", name="Sweep Target"),
+        "simulation-sweep-add-axis-button",
+        fallback=sweep_card.get_by_role("button", name="Add Axis"),
     )
-    if target_select.count() == 0:
-        target_select = sweep_card.get_by_role(
-            "combobox",
-            name="Sweep Target (components[*].value_ref)",
-        )
-    target_select.click()
-    page.get_by_role("option", name=re.compile(rf"^{re.escape(target)}(\s|\(|$)")).first.click()
-    _set_spinbutton_value(page, "Sweep Start", start)
-    _set_spinbutton_value(page, "Sweep Stop", stop)
-    _set_spinbutton_value(page, "Sweep Points", points)
+    while sweep_card.locator("[data-testid='simulation-sweep-target-select']").count() < len(axes):
+        add_axis_button.click()
+
+    target_selects = sweep_card.locator("[data-testid='simulation-sweep-target-select']")
+    expect(target_selects).to_have_count(len(axes), timeout=30000)
+    for axis_index, axis in enumerate(axes):
+        target = str(axis["target"])
+        target_select = target_selects.nth(axis_index)
+        target_select.click()
+        page.get_by_role("option", name=re.compile(rf"^{re.escape(target)}(\s|\(|$)")).first.click()
+        _set_spinbutton_value(page, "Sweep Start", axis["start"], index=axis_index)
+        _set_spinbutton_value(page, "Sweep Stop", axis["stop"], index=axis_index)
+        _set_spinbutton_value(page, "Sweep Points", axis["points"], index=axis_index)
+
+
+def _configure_single_axis_sweep(
+    page: Page,
+    *,
+    target: str,
+    start: float,
+    stop: float,
+    points: int,
+) -> None:
+    _configure_multi_axis_sweep(
+        page,
+        axes=(
+            {
+                "target": target,
+                "start": start,
+                "stop": stop,
+                "points": points,
+            },
+        ),
+    )
 
 
 def _run_and_expect_success(page: Page, *, allow_long_running: bool = False) -> bool:
@@ -760,16 +782,26 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     _choose_schema(page, case.schema_name)
     _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
     _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
-    _set_spinbutton_value(page, "Points", case.points)
-    _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
-    _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+    _set_spinbutton_value(page, "Points", 21)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", 2)
+    _set_spinbutton_value(page, "Npump Harmonics", 4)
     _configure_sources(page, case.sources)
-    _configure_single_axis_sweep(
+    _configure_multi_axis_sweep(
         page,
-        target="sources[1].current_amp",
-        start=120e-6,
-        stop=160e-6,
-        points=5,
+        axes=(
+            {
+                "target": "sources[1].current_amp",
+                "start": 140.2e-6,
+                "stop": 140.4e-6,
+                "points": 3,
+            },
+            {
+                "target": "sources[2].current_amp",
+                "start": 0.69e-6,
+                "stop": 0.71e-6,
+                "points": 3,
+            },
+        ),
     )
 
     page.get_by_role("button", name="Run Simulation").click()
@@ -812,13 +844,40 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
         "simulation-sweep-table",
         fallback=raw_results_card.locator("table").last,
     )
-    expect(sweep_table.locator("tbody tr")).to_have_count(5, timeout=30000)
+    expect(sweep_table.locator("tbody tr")).to_have_count(3, timeout=30000)
     sweep_plot = _locator_by_testid(
         page,
         "simulation-sweep-plot",
         fallback=raw_results_card.locator(".js-plotly-plot").last,
     )
     expect(sweep_plot).to_be_visible(timeout=30000)
+
+    _select_card_option(page, sweep_view, "View Axis", "sources[2].current_amp")
+    expect(sweep_table.locator("tbody tr")).to_have_count(3, timeout=30000)
+
+    fixed_axis_select = _locator_by_testid(
+        page,
+        "simulation-sweep-fixed-axis-select-1",
+        fallback=sweep_view.get_by_role("combobox", name=re.compile(r"^Fixed: ")).first,
+    )
+    fixed_axis_select.click()
+    fixed_axis_select.press("ArrowDown")
+    fixed_axis_select.press("Enter")
+    expect(sweep_table.locator("tbody tr")).to_have_count(3, timeout=30000)
+
+    add_trace_button = _locator_by_testid(
+        page,
+        "simulation-sweep-add-trace-button",
+        fallback=sweep_view.get_by_role("button", name="Add Trace"),
+    )
+    add_trace_button.click()
+    trace_cards = sweep_view.locator("[data-testid^='simulation-sweep-trace-card-']")
+    expect(trace_cards).to_have_count(2, timeout=30000)
+
+    page.get_by_role("button", name="Run Simulation").click()
+    expect(page.get_by_text("Loaded cached parameter sweep payload", exact=False)).to_be_visible(
+        timeout=60000
+    )
     page.screenshot(path=str(tmp_path / "flux_pumped_jpa_bias_sweep_view.png"), full_page=True)
 
 

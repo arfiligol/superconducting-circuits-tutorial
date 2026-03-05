@@ -846,8 +846,61 @@ def test_normalize_sweep_setup_payload_resolves_unknown_target_to_available_opti
     )
 
     assert normalized["enabled"] is True
+    assert normalized["mode"] == "cartesian"
     assert normalized["axes"][0]["target_value_ref"] == "Lj"
     assert normalized["axes"][0]["unit"] == "pH"
+
+
+def test_normalize_sweep_setup_payload_supports_legacy_axis_1_shape() -> None:
+    normalized = _normalize_sweep_setup_payload(
+        {
+            "enabled": True,
+            "mode": "paired",
+            "axis_1": {
+                "target_value_ref": "sources[1].current_amp",
+                "start": 100e-6,
+                "stop": 200e-6,
+                "points": 3,
+            },
+        },
+        available_target_units={"Lj": "pH", "sources[1].current_amp": "A"},
+    )
+
+    assert normalized["enabled"] is True
+    assert normalized["mode"] == "paired"
+    assert len(normalized["axes"]) == 1
+    assert normalized["axes"][0]["target_value_ref"] == "sources[1].current_amp"
+    assert normalized["axes"][0]["unit"] == "A"
+
+
+def test_normalize_sweep_setup_payload_keeps_multi_axes() -> None:
+    normalized = _normalize_sweep_setup_payload(
+        {
+            "enabled": True,
+            "mode": "cartesian",
+            "axes": [
+                {
+                    "target_value_ref": "Lj",
+                    "start": 900.0,
+                    "stop": 1100.0,
+                    "points": 3,
+                },
+                {
+                    "target_value_ref": "sources[1].current_amp",
+                    "start": 120e-6,
+                    "stop": 160e-6,
+                    "points": 5,
+                },
+            ],
+        },
+        available_target_units={"Lj": "pH", "sources[1].current_amp": "A"},
+    )
+
+    assert normalized["enabled"] is True
+    assert normalized["mode"] == "cartesian"
+    assert len(normalized["axes"]) == 2
+    assert normalized["axes"][0]["target_value_ref"] == "Lj"
+    assert normalized["axes"][1]["target_value_ref"] == "sources[1].current_amp"
 
 
 def test_normalize_sweep_setup_payload_keeps_source_target_axis() -> None:
@@ -1004,6 +1057,8 @@ def test_normalize_sweep_result_view_state_clamps_invalid_selector_state() -> No
             "input_mode": (999,),
             "input_port": 999,
         },
+        "view_axis_target_value_ref": "unknown",
+        "fixed_axis_indices": {"Lj": 123},
     }
     normalized = _normalize_sweep_result_view_state(
         view_state=view_state,
@@ -1016,6 +1071,9 @@ def test_normalize_sweep_result_view_state_clamps_invalid_selector_state() -> No
     assert normalized["trace_selection"]["trace"] == "s_param"
     assert normalized["trace_selection"]["output_port"] == 1
     assert normalized["trace_selection"]["input_port"] == 1
+    assert normalized["view_axis_target_value_ref"] == "Lj"
+    assert normalized["fixed_axis_indices"] == {}
+    assert len(normalized["traces"]) == 1
 
 
 def test_build_sweep_metric_rows_maps_metric_vs_axis_with_frequency_selector() -> None:
@@ -1063,10 +1121,13 @@ def test_build_sweep_metric_rows_maps_metric_vs_axis_with_frequency_selector() -
     assert len(rows) == 2
     assert rows[0]["axis_value"] == pytest.approx(900.0)
     assert rows[1]["axis_value"] == pytest.approx(1100.0)
-    assert rows[0]["metric_value"] == pytest.approx(0.2)
-    assert rows[1]["metric_value"] == pytest.approx(0.4)
+    assert rows[0]["metric_values"]["trace_1"] == pytest.approx(0.2)
+    assert rows[1]["metric_values"]["trace_1"] == pytest.approx(0.4)
     assert payload["axis_label"] == "Lj (pH)"
     assert payload["metric_label"] == "Magnitude (linear)"
+    assert len(payload["trace_labels"]) == 1
+    assert isinstance(payload["trace_labels"][0], str)
+    assert payload["trace_labels"][0]
     assert len(payload["figure"].data) == 1
 
 
@@ -1115,4 +1176,89 @@ def test_build_sweep_metric_rows_updates_when_frequency_selector_changes() -> No
         frequency_index=1,
         dark_mode=True,
     )
-    assert first["rows"][0]["metric_value"] != second["rows"][0]["metric_value"]
+    assert (
+        first["rows"][0]["metric_values"]["trace_1"]
+        != second["rows"][0]["metric_values"]["trace_1"]
+    )
+
+
+def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:
+    result_a = _sample_result()
+    result_b = _sample_result().model_copy(deep=True)
+    result_b.s11_real = [0.45, 0.2, -0.35]
+    result_b.s_parameter_real["S11"] = [0.45, 0.2, -0.35]
+    result_b.s_parameter_mode_real["om=0|op=1|im=0|ip=1"] = [0.45, 0.2, -0.35]
+
+    sweep_run = SimulationSweepRun(
+        axes=(
+            SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),
+            SimulationSweepAxis(
+                target_value_ref="sources[1].current_amp",
+                values=(120e-6, 160e-6),
+                unit="A",
+            ),
+        ),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0, 0),
+                axis_values={"Lj": 900.0, "sources[1].current_amp": 120e-6},
+                result=result_a,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(0, 1),
+                axis_values={"Lj": 900.0, "sources[1].current_amp": 160e-6},
+                result=result_b,
+            ),
+            SimulationSweepPointResult(
+                point_index=2,
+                axis_indices=(1, 0),
+                axis_values={"Lj": 1100.0, "sources[1].current_amp": 120e-6},
+                result=result_b,
+            ),
+            SimulationSweepPointResult(
+                point_index=3,
+                axis_indices=(1, 1),
+                axis_values={"Lj": 1100.0, "sources[1].current_amp": 160e-6},
+                result=result_a,
+            ),
+        ),
+        representative_point_index=0,
+    )
+    payload = _build_sweep_metric_rows(
+        sweep_payload=simulation_sweep_run_to_payload(sweep_run),
+        family="s",
+        metric="magnitude_linear",
+        trace_selections=[
+            {
+                "trace": "s_param",
+                "output_mode": (0,),
+                "output_port": 1,
+                "input_mode": (0,),
+                "input_port": 1,
+            },
+            {
+                "trace": "s_param",
+                "output_mode": (0,),
+                "output_port": 2,
+                "input_mode": (0,),
+                "input_port": 1,
+            },
+        ],
+        view_axis_target_value_ref="Lj",
+        fixed_axis_indices={"sources[1].current_amp": 1},
+        z0=50.0,
+        frequency_index=0,
+        dark_mode=True,
+    )
+
+    assert payload["dimension"] == 2
+    assert payload["point_count"] == 4
+    assert payload["slice_point_count"] == 2
+    assert payload["view_axis_target_value_ref"] == "Lj"
+    assert payload["fixed_axis_indices"]["sources[1].current_amp"] == 1
+    assert len(payload["rows"]) == 2
+    assert payload["rows"][0]["axis_value"] == pytest.approx(900.0)
+    assert payload["rows"][1]["axis_value"] == pytest.approx(1100.0)
+    assert len(payload["figure"].data) == 2

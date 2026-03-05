@@ -82,6 +82,43 @@ def test_build_simulation_sweep_plan_single_axis() -> None:
     assert plan.points[2].value_ref_overrides == {"Lj": 1100.0}
 
 
+def test_build_simulation_sweep_plan_multi_axis_cartesian() -> None:
+    circuit = _sample_circuit()
+    config = SimulationConfig(
+        pump_freq_ghz=4.75,
+        pump_current_amp=1e-6,
+        pump_port=1,
+        sources=[
+            {"pump_freq_ghz": 4.75, "port": 1, "current_amp": 1e-6, "mode_components": (1,)},
+        ],
+    )
+    plan = run_sim_app.build_simulation_sweep_plan(
+        circuit=circuit,
+        config=config,
+        axes=[
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="Lj",
+                values=(900.0, 1100.0),
+                unit="pH",
+            ),
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="sources[1].current_amp",
+                values=(1.0e-6, 1.2e-6, 1.4e-6),
+                unit="A",
+            ),
+        ],
+    )
+
+    assert plan.dimension == 2
+    assert plan.point_count == 6
+    assert plan.points[0].axis_indices == (0, 0)
+    assert plan.points[-1].axis_indices == (1, 2)
+    assert plan.points[-1].value_ref_overrides == {
+        "Lj": pytest.approx(1100.0),
+        "sources[1].current_amp": pytest.approx(1.4e-6),
+    }
+
+
 def test_apply_simulation_sweep_overrides_updates_resolved_values() -> None:
     circuit = _sample_circuit()
 
@@ -152,6 +189,99 @@ def test_simulation_sweep_payload_roundtrip_preserves_points() -> None:
     assert restored.point_count == 2
     assert restored.points[1].axis_values == {"Lj": 1000.0}
     assert restored.representative_result.frequencies_ghz == [4.0, 5.0]
+
+
+def test_simulation_sweep_payload_roundtrip_preserves_multi_axis_payload() -> None:
+    sample_result = SimulationResult(
+        frequencies_ghz=[4.0, 5.0],
+        s11_real=[0.0, 0.1],
+        s11_imag=[0.0, -0.1],
+    )
+    run_payload = run_sim_app.SimulationSweepRun(
+        axes=(
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="Lj",
+                values=(900.0, 1100.0),
+                unit="pH",
+            ),
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="sources[1].current_amp",
+                values=(1.0e-6, 1.4e-6),
+                unit="A",
+            ),
+        ),
+        points=(
+            run_sim_app.SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0, 0),
+                axis_values={"Lj": 900.0, "sources[1].current_amp": 1.0e-6},
+                result=sample_result,
+            ),
+            run_sim_app.SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(0, 1),
+                axis_values={"Lj": 900.0, "sources[1].current_amp": 1.4e-6},
+                result=sample_result,
+            ),
+            run_sim_app.SimulationSweepPointResult(
+                point_index=2,
+                axis_indices=(1, 0),
+                axis_values={"Lj": 1100.0, "sources[1].current_amp": 1.0e-6},
+                result=sample_result,
+            ),
+            run_sim_app.SimulationSweepPointResult(
+                point_index=3,
+                axis_indices=(1, 1),
+                axis_values={"Lj": 1100.0, "sources[1].current_amp": 1.4e-6},
+                result=sample_result,
+            ),
+        ),
+    )
+
+    payload = run_sim_app.simulation_sweep_run_to_payload(run_payload)
+    restored = run_sim_app.simulation_sweep_run_from_payload(payload)
+
+    assert restored.dimension == 2
+    assert restored.point_count == 4
+    assert restored.points[3].axis_indices == (1, 1)
+    assert restored.points[3].axis_values["Lj"] == pytest.approx(1100.0)
+    assert restored.points[3].axis_values["sources[1].current_amp"] == pytest.approx(1.4e-6)
+
+
+def test_simulation_sweep_payload_legacy_single_axis_shape_decodes() -> None:
+    sample_result = SimulationResult(
+        frequencies_ghz=[4.0, 5.0],
+        s11_real=[0.0, 0.1],
+        s11_imag=[0.0, -0.1],
+    )
+    payload = {
+        "run_kind": "parameter_sweep",
+        "target_value_ref": "Lj",
+        "unit": "pH",
+        "values": [900.0, 1100.0],
+        "point_results": [
+            {
+                "point_index": 0,
+                "axis_index": 0,
+                "axis_value": 900.0,
+                "payload": sample_result.model_dump(mode="json"),
+            },
+            {
+                "point_index": 1,
+                "axis_index": 1,
+                "axis_value": 1100.0,
+                "payload": sample_result.model_dump(mode="json"),
+            },
+        ],
+    }
+
+    restored = run_sim_app.simulation_sweep_run_from_payload(payload)
+
+    assert restored.dimension == 1
+    assert restored.point_count == 2
+    assert restored.axes[0].target_value_ref == "Lj"
+    assert restored.points[1].axis_indices == (1,)
+    assert restored.points[1].axis_values["Lj"] == pytest.approx(1100.0)
 
 
 def test_run_parameter_sweep_executes_each_point(monkeypatch) -> None:
