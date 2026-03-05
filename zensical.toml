@@ -89,6 +89,7 @@ nav = [
     { "Architecture" = [
       { "Overview" = "explanation/architecture/index.md" },
       { "Clean Architecture" = "explanation/architecture/design-decisions/clean-architecture.md" },
+      { "Data Storage" = "explanation/architecture/data-storage.md" },
       { "Pipeline" = [
         { "Overview" = "explanation/architecture/pipeline/index.md" },
         { "Data Flow" = "explanation/architecture/pipeline/data-flow.md" },

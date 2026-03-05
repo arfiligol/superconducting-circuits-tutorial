@@ -10,9 +10,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: Architecture 說明索引，涵蓋 Clean Architecture、Pipeline、Circuit Simulation、Visualization Backend
-version: v0.1.0
-last_updated: 2026-02-27
-updated_by: docs-team
+version: v0.2.0
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Architecture
@@ -23,6 +23,8 @@ updated_by: docs-team
 
 - [Clean Architecture](design-decisions/clean-architecture.md)
   分層邊界、依賴方向、組合位置。
+- [Data Storage](data-storage.md)
+  Dataset-centric 資料拓撲與 trace/bundle/derived 的責任分層。
 - [Pipeline](pipeline/index.md)
   分析與可視化一體化的資料與執行流程。
 - [Circuit Simulation](circuit-simulation/index.md)
