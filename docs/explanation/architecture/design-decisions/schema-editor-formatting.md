@@ -7,67 +7,52 @@ tags:
   - audience/team
   - topic/architecture
   - topic/visualization
-status: draft
+  - topic/ui
+status: stable
 owner: docs-team
 audience: team
-scope: CodeMirror 編輯器的格式化機制選型、Ruff WASM 整合契約與 fallback 策略
-version: v0.1.0
-last_updated: 2026-02-27
-updated_by: docs-team
+scope: Schema Editor 格式化能力的設計決策與邊界（Explanation）
+version: v0.2.0
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Schema Editor Formatting
 
-本頁定義 Schema Editor 的程式碼格式化策略，目標是提供「接近 IDE」的使用體驗，同時維持低延遲與可維護性。
+本頁只回答「為什麼要有格式化能力、為何定義成這樣」。
+具體欄位、按鈕行為與錯誤契約已移到 Reference。
 
-## Decision Summary
+## Decision Context
 
-| 項目 | 決策 |
-|---|---|
-| Primary Path | `Ruff WebAssembly`（`@astral-sh/ruff-wasm`）在瀏覽器端格式化 |
-| Editor | `nicegui.ui.codemirror`（CodeMirror） |
-| Trigger | 快捷鍵 + UI Button（例如 `Format`） |
-| State Model | 單一 editor 狀態來源，不維護重複字串快取 |
-| Failure Behavior | 格式化失敗時保留原文，回報錯誤訊息 |
+Schema Editor 採 source-form 作為唯一 SoT，使用者會頻繁編修 netlist。
+如果沒有可重複、可預測的格式化能力，後續 review/除錯成本會快速上升。
 
-!!! info "為何選 Ruff WASM"
-    可直接在瀏覽器端執行，避免後端 round-trip，對互動式 editor 的體感延遲最低。
+## Why This Is an Architecture Decision
 
-## Integration Contract
+- 這不是單純 UI 細節，會影響 source-form 可讀性與錯誤定位效率
+- 會影響 Schema Editor 與 Simulation 的 pipeline 心智一致性
+- 會影響多人協作時對 netlist 變更的 diff 品質
 
-!!! success "必須滿足的整合契約"
-    1. `Format` Button 與快捷鍵必須走同一個 formatter pipeline。
-    2. 成功格式化後用同一個 CodeMirror transaction 回寫。
-    3. 失敗時不得覆蓋原始內容。
-    4. 格式化不應阻塞一般輸入互動。
-    5. 格式化結果需可被既有 schema 驗證流程接續使用。
+## Design Boundaries
 
-```mermaid
-flowchart LR
-    A["User action (hotkey/button)"] --> B["Read editor text"]
-    B --> C["Ruff WASM format()"]
-    C --> D["Apply CodeMirror transaction"]
-    C --> E["Format error"]
-    E --> F["Show UI message (no text overwrite)"]
-```
-
-## Fallback Strategy
-
-| 層級 | 觸發條件 | 行為 |
-|---|---|---|
-| Fallback A | 瀏覽器端 WASM 初始化失敗 | 顯示提示，改走「不自動格式化」模式 |
-| Fallback B | 單次 format error | 保留原文 + 顯示錯誤，不中斷編輯 |
-| Fallback C (可選) | 專案明確開啟後端格式化 | 呼叫 backend API 執行 `ruff format` |
-
-!!! warning "狀態聲明（截至 2026-02-27）"
-    本專案目前尚未在程式碼中完成 Ruff WASM 實裝；本頁記錄的是已確認的目標方案與契約。
+1. `Format` 只能改 source text 排版，不改展開語意
+2. 失敗時保留原文，不能破壞編輯中的 source
+3. 格式化流程必須和 editor state 模型一致，避免雙狀態分歧
+4. `/schemas/{id}` 與 `/simulation` 看到的 expanded netlist 必須來自同一條 parse/validate/expand pipeline
 
 ## Non-Goals
 
-- 不在 Schema Editor 內實作完整 LSP 功能集（診斷、自動補全、跳轉）。
-- 不在此階段引入多種 formatter 並行（避免規則互相覆蓋）。
+- 不在 Schema Editor 內做完整 IDE/LSP 功能
+- 不把格式化器設計成語意 migration 工具（不做舊格式自動升級）
+
+## Where the Formal Contract Lives
+
+!!! important "Reference SoT"
+    欄位與行為契約請看：
+    [Schema Editor UI Reference](../../../reference/ui/schema-editor.md)
 
 ## Related
 
-- [Tech Stack](../../../reference/guardrails/project-basics/tech-stack.md)
-- [Circuit Schema Live Preview](circuit-schema-live-preview.md)
+- [Schema Editor UI Reference](../../../reference/ui/schema-editor.md)
+- [Circuit Netlist Schema](../../../reference/data-formats/circuit-netlist.md)
+- [Circuit Simulation UI Reference](../../../reference/ui/circuit-simulation.md)

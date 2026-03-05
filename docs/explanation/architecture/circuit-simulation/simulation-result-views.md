@@ -7,137 +7,89 @@ tags:
 - audience/team
 - topic/architecture
 - topic/simulation
-status: draft
+status: stable
 owner: docs-team
 audience: team
-scope: Circuit Simulation Result 的多視圖契約、控制項與單埠 S11 衍生路徑
-version: v0.1.0
-last_updated: 2026-03-01
-updated_by: docs-team
+scope: Simulation / Post-Processed / Sweep Result 三類視圖的架構心智模型
+version: v0.2.0
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Simulation Result Views
 
-Circuit Simulation Result 不應只顯示單一圖表。即使目前 Julia bridge 仍以單埠 `S11` 為主，UI 仍需要提供一個可擴充的多視圖框架，讓使用者可以切換觀察角度，而不是被綁死在單一 `|S11|` 圖。
+目前實作不是單一視圖，而是三種結果節點共存：
 
-!!! info "設計來源"
-    [JosephsonCircuits.jl README](https://github.com/kpobrien/JosephsonCircuits.jl) 的 examples 不只展示單條曲線。實務上會反覆查看 gain、phase、idler 相關 trace、quantum efficiency 與 commutation-relation error。這代表 Result UI 必須先有「view family + selector」的骨架，後續才能自然擴充。
+1. `Simulation Results`（Raw run）
+2. `Post Processing Results`（CT/Kron 後）
+3. `Sweep Result View`（當 run_kind=parameter_sweep 時）
 
-## Current Contract
+這頁描述的是架構心智模型；欄位與 UI 契約以 Reference 為準。
 
-目前 Python ↔ Julia bridge 只回傳：
+## Why Three Result Views
 
-- `S11` 的 `real`
-- `S11` 的 `imag`
+```mermaid
+flowchart LR
+    Raw["Run Simulation"] --> RawView["Simulation Results"]
+    Raw --> Ptc["(optional) PTC Y source"]
+    Ptc --> Post["Run Post Processing (CT/Kron steps)"]
+    Post --> PostView["Post Processing Results"]
+    Raw --> Sweep["run_kind=parameter_sweep"]
+    Sweep --> SweepView["Sweep Result View"]
+```
 
-因此目前所有多視圖都以這條單一複數 trace 為基礎展開。
+- Raw view 保留 solver 原始語意（尤其 `S`）
+- Post-processed view 呈現基底轉換與降維後的結果
+- Sweep view 聚焦「某個 selector 在掃描軸上的變化」
 
-!!! note "這不是最終矩陣能力"
-    目前還不是完整的 `S/Y/Z` matrix viewer。現在的目標是先把 **single-trace result exploration** 做正確，並把控制項定義成未來可直接升級到矩陣模型。
+## Shared Interaction Pattern
 
-## View Families
+Raw 與 Post-Processed 統一採用：
 
-目前 UI 定義五個 view families：
+- family tabs
+- metric selector
+- `Add Trace` card（多 trace 疊圖）
+- 單一 shared plot
 
-| Family | 目前資料來源 | 用途 |
-|---|---|---|
-| `S` | 原始 `S11` | 直接看 scattering 響應 |
-| `Gain` | 由 `S11` 導出 | 反射型放大器的 return gain 檢查 |
-| `Impedance (Z)` | `S11` + `Z0` | 看輸入阻抗、匹配、共振附近的虛實部 |
-| `Admittance (Y)` | `S11` + `Z0` | 看導納、與既有 Y-parameter 分析鏈接軌 |
-| `Complex Plane` | `S11` / `Z11` / `Y11` | 直接看複數軌跡 |
+這讓使用者在不同資料節點維持一致操作，不需要重新學一套 UI。
 
-## Per-Family Selectors
+## Critical Semantics (Current)
 
-### S
+1. `S` family 在 Raw view 必須維持 solver-native raw `S`
+2. PTC 主要作用在 `Y/Z` 路徑，不應把 Raw `S` 靜默改寫成另一語意
+3. Post-processed naming 要對齊 trace card 的輸入/輸出標籤（例如 `Z_dm_cm`）
+4. family/metric/trace 切換後，title 與 y-axis label 必須同步，不可 stale
 
-- `Trace`: 目前固定 `S11`
-- `Output Port`: 目前固定 `1`
-- `Input Port`: 目前固定 `1`
-- `Metric`:
-  - `Magnitude (linear)`
-  - `Magnitude (dB)`
-  - `Phase (deg)`
-  - `Real`
-  - `Imaginary`
+## HFSS Comparison Position
 
-### Gain
+HFSS 可比對語意主要出現在 Post Processing 路徑：
 
-- `Trace`: 目前固定 `Return Gain from S11`
-- `Output Port`: 目前固定 `1`
-- `Input Port`: 目前固定 `1`
-- `Metric`:
-  - `Gain (dB)`
-  - `Gain (linear)`
+- 使用者可透過 CT/Kron 定義等效 port basis（例如 dm/cm）
+- 以該 basis 的輸出判斷 `HFSS comparable` 與原因
 
-!!! tip "目前定義"
-    目前的 Gain 是 single-port reflection case，直接由 `S11` 導出：`|S11|^2` 與其 dB 表示。未來若 bridge 回傳多埠 `Sij`，再擴充 forward / reverse gain 與指定 port pair。
+Raw 視圖仍保留原始模擬語意，兩者不能混為一談。
 
-### Impedance (Z)
+## Sweep Position
 
-- `Trace`: 目前固定 `Z11`
-- `Metric`:
-  - `Real(Z)`
-  - `Imag(Z)`
-  - `|Z|`
-- `Z0 (Ohm)`:
-  - 使用者可指定 reference impedance
-  - 由 `Zin = Z0 * (1 + S11) / (1 - S11)` 導出
+Sweep 是 run-level 結果，不是額外類型的 trace hack。
 
-### Admittance (Y)
+- canonical authority 在 run payload（bundle）
+- Result View 可用代表點快速瀏覽
+- 如需完整掃描曲線，使用 Sweep Result View 針對 selector 投影
 
-- `Trace`: 目前固定 `Y11`
-- `Metric`:
-  - `Real(Y)`
-  - `Imag(Y)`
-  - `|Y|`
-- `Z0 (Ohm)`:
-  - 與 Z family 共用
-  - 由 `Yin = 1 / Zin` 導出
+!!! note "Data contract anchor"
+    sweep / raw / post-processed 的 payload authority 仍在 `ResultBundleRecord`。
+    Explanation 只幫助理解三種節點為何分開存在，不重述 JSON 欄位表。
 
-### Complex Plane
+## 這頁與 Reference 的邊界
 
-- `Metric`: 目前固定 `Trajectory`
-- `Trace`:
-  - `S11`
-  - `Z11`
-  - `Y11`
-
-!!! note "用途"
-    Complex Plane 不是要取代 Smith Chart，而是先提供一個低成本、可立即驗證複數軌跡是否合理的檢查面。
-
-## Why This Shape
-
-這個 UI 形狀刻意把控制項拆成：
-
-1. `View Family`
-2. `Metric`
-3. `Trace`
-4. `Port selectors`
-5. `Z0`
-
-原因是未來若 bridge 升級到完整矩陣或更多 diagnostics，只需要：
-
-- 擴增可用 trace 清單（例如 `S21`, `S12`, `Z21`, `Y21`）
-- 解鎖 port selectors
-- 新增新的 family（例如 `QE`, `CM Error`, `All Idlers`）
-
-而不需要重做整個 Result Card 的互動模式。
-
-## Deferred Scope
-
-下列項目在 README examples 中確實常見，但目前 Julia bridge 尚未回傳，因此 **不在本輪 UI 內**：
-
-- multi-port `Sij` / `Zij` / `Yij`
-- all idlers / sideband families
-- quantum efficiency (`QE`)
-- commutation relation diagnostics (`CM`)
-
-!!! warning "延後不是忽略"
-    這些功能已被納入 selector contract 的預留空間；等 bridge 能回傳更多資料，優先順序會是：
-    `multi-port S` → `derived Z/Y matrix views` → `QE / CM / idler diagnostics`
+!!! important "Read together"
+    - 本頁：為什麼需要三種視圖與語意分層（Explanation）
+    - Reference：每個欄位、selector、儲存 payload 的正式契約（Reference）
 
 ## Related
 
 - [Circuit Simulation](index.md)
-- [Circuit Schema Live Preview](../design-decisions/circuit-schema-live-preview.md)
+- [Circuit Simulation UI Reference](../../../reference/ui/circuit-simulation.md)
+- [Dataset Record Schema](../../../reference/data-formats/dataset-record.md)
+- [Analysis Result Schema](../../../reference/data-formats/analysis-result.md)
