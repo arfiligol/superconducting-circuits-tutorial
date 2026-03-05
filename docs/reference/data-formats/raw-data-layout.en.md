@@ -18,7 +18,7 @@ updated_by: docs-team
 
 # Raw Data Layout
 
-`data/raw/` stores externally produced source files (measurement exports and simulation exports).  
+`data/raw/` stores externally produced source files (measurement exports and simulation exports).
 The raw-layout contract is **project-folder-first**, not phase/admittance subfolder-first.
 
 ## Directory structure (project-first)
@@ -52,11 +52,11 @@ CLI/UI ingest can classify and route files based on filename and column signals:
 | Skip policy | files not matching the selected processor can be skipped instead of hard-failing |
 
 !!! important "No manual phase/admittance folder split required"
-    The data-format contract does not require folders such as `admittance/` or `phase/`.  
+    The data-format contract does not require folders such as `admittance/` or `phase/`.
     Type decisions are made during ingest.
 
 !!! note "Raw vs Trace responsibilities"
-    `data/raw/` stores source files only.  
+    `data/raw/` stores source files only.
     Analysis reads ingested `DataRecord` traces from SQLite.
 
 ## Rules

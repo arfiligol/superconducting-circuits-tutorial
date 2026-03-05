@@ -42,9 +42,9 @@ This section is the reference SoT for data contracts across:
 
 !!! note "Current state"
     Characterization Run Analysis currently uses a mixed gating path:
-    1. dataset-profile capability gating  
-    2. trace compatibility checks (`data_type` / `parameter` / `representation`)  
-    3. explicit trace-id selection  
+    1. dataset-profile capability gating
+    2. trace compatibility checks (`data_type` / `parameter` / `representation`)
+    3. explicit trace-id selection
     Execution still requires compatible and selected traces.
 
 !!! warning "Sync requirement"

@@ -70,7 +70,7 @@ updated_by: docs-team
     `Auto Suggest`、`Save Metadata`）。
 
 !!! important "Contract（Dashboard-only edit entry）"
-    `/raw-data` 不可再提供任何 metadata 寫入入口。  
+    `/raw-data` 不可再提供任何 metadata 寫入入口。
     本頁僅可顯示 `source_meta.dataset_profile` 的 read-only summary。
 
 !!! warning "禁止互動寫入"

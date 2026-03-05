@@ -19,8 +19,8 @@ updated_by: docs-team
 
 # Schur Complement 與 Kron Reduction
 
-你如果正在做超導電路的多埠矩陣分析，幾乎一定會遇到這個問題：  
-「我只關心某些 port/mode，要怎麼把其他自由度消掉，同時保留正確的等效 I-V 關係？」  
+你如果正在做超導電路的多埠矩陣分析，幾乎一定會遇到這個問題：
+「我只關心某些 port/mode，要怎麼把其他自由度消掉，同時保留正確的等效 I-V 關係？」
 Kron Reduction 的核心就是 Schur Complement。
 
 ## 先講結論
@@ -43,7 +43,7 @@ Y_eff = Y_kk - Y_kd * (Y_dd)^(-1) * Y_dk
 - 這些節點/模態沒有外部注入電流
 - 但它們仍可被動響應，並回饋到保留自由度
 
-所以「消除」不是把它們硬刪掉，而是把它們的被動回應吸收到等效矩陣裡。  
+所以「消除」不是把它們硬刪掉，而是把它們的被動回應吸收到等效矩陣裡。
 這也是為什麼結果不是單純子矩陣 `Y_kk`，而要再減掉耦合項。
 
 ## 推導（最小必要版）
@@ -104,7 +104,7 @@ PTC 與 Kron Reduction 是兩個不同操作：
 ## 使用邊界（目前專案）
 
 !!! warning "目前是 Port-Level，不是 Nodal-Level"
-    目前 WebUI 的 post-processing 作用在模擬回傳的 port-space `Y(ω)`。  
+    目前 WebUI 的 post-processing 作用在模擬回傳的 port-space `Y(ω)`。
     不是完整內部節點（nodal）矩陣，因此無法直接做 arbitrary internal-node elimination。
 
 !!! note "可比對 HFSS 的脈絡"
@@ -115,11 +115,11 @@ PTC 與 Kron Reduction 是兩個不同操作：
 
 ## 常見誤解
 
-1. **誤解：Kron reduction 就是刪掉列/行**  
+1. **誤解：Kron reduction 就是刪掉列/行**
    錯。那會丟掉耦合回饋，通常不對。
-2. **誤解：只要做一次就萬用**  
+2. **誤解：只要做一次就萬用**
    錯。port-space 與 mode-space 常常需要分兩次做。
-3. **誤解：S-domain 也能直接用同樣變換**  
+3. **誤解：S-domain 也能直接用同樣變換**
    需要小心。wave normalization/reference 設定會影響結果，通常先在 Y/Z 域處理更穩定。
 
 ## 相關連結

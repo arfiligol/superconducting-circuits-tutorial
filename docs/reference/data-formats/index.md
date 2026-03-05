@@ -42,9 +42,9 @@ updated_by: docs-team
 
 !!! note "目前狀態"
     Characterization Run Analysis 目前採「混合 gating」：
-    1. Dataset profile capability gating  
-    2. Trace compatibility 檢查（data_type / parameter / representation）  
-    3. 使用者選取 trace IDs  
+    1. Dataset profile capability gating
+    2. Trace compatibility 檢查（data_type / parameter / representation）
+    3. 使用者選取 trace IDs
     實際執行仍需有相容且被選取的 traces。
 
 !!! warning "文件與程式碼同步策略"

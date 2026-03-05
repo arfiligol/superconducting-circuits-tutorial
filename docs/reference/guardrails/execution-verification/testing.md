@@ -18,7 +18,7 @@ updated_by: docs-team
 
 # 測試規範 (Testing)
 
-本文件定義程式測試與文件更新驗證流程。  
+本文件定義程式測試與文件更新驗證流程。
 重點：**任何文件異動都必須驗證不會產生 404。**
 
 ## Python 測試
@@ -116,7 +116,7 @@ rg -n "href=\"[^\"]+\\.md\"" docs/site
 ```
 
 !!! warning "路由格式規則"
-    UI/Browser 驗證時，頁面路徑必須用目錄路由（例如 `/notebooks/foo/`），  
+    UI/Browser 驗證時，頁面路徑必須用目錄路由（例如 `/notebooks/foo/`），
     不可拿來源檔路徑（`.../foo.md`）當最終站點 URL。
 
 ## Julia 測試（需要時）

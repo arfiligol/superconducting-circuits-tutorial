@@ -70,7 +70,7 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
     (`Device Type`, `Capabilities`, `Auto Suggest`, `Save Metadata`).
 
 !!! important "Contract (Dashboard-only edit entry)"
-    `/raw-data` must not expose any metadata write path.  
+    `/raw-data` must not expose any metadata write path.
     This page may only display a read-only summary of `source_meta.dataset_profile`.
 
 !!! warning "No write interactions"

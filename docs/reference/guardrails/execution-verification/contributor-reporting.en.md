@@ -20,7 +20,7 @@ Defines a standard contributor report structure that is both human-readable and 
 
 !!! important "Goal"
     Reports must satisfy both:
-    1) Human stakeholders can quickly understand outcomes and risks  
+    1) Human stakeholders can quickly understand outcomes and risks
     2) Integrator Agent can directly extract commits/files/tests/risks
 
 ## Required Template

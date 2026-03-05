@@ -18,7 +18,7 @@ updated_by: docs-team
 
 # Raw Data Layout
 
-`data/raw/` 用於存放外部來源的原始檔案（量測與外部模擬輸出）。  
+`data/raw/` 用於存放外部來源的原始檔案（量測與外部模擬輸出）。
 Raw layout 以 **Project Folder** 為主，不要求使用者先按 phase/admittance 拆子資料夾。
 
 ## 目錄結構（Project-first）
@@ -52,11 +52,11 @@ CLI / UI ingest 可依檔名與欄位內容進行分類與路徑決策：
 | 跳過策略 | 對不匹配目標處理器的檔案可跳過，不強制失敗 |
 
 !!! important "不再要求 phase/admittance 目錄分拆"
-    文件契約不再要求 `admittance/`、`phase/` 這類手動分類資料夾。  
+    文件契約不再要求 `admittance/`、`phase/` 這類手動分類資料夾。
     類型判斷由 ingest 階段自動完成。
 
 !!! note "Raw 與 Trace 的分工"
-    `data/raw/` 只保存來源檔。  
+    `data/raw/` 只保存來源檔。
     Analysis 讀取的是 ingest 後的 `DataRecord` traces（SQLite）。
 
 ## 規則

@@ -19,8 +19,8 @@ updated_by: docs-team
 
 # Schur Complement and Kron Reduction
 
-If you are doing multi-port matrix analysis for superconducting circuits, this question appears quickly:  
-"How do I eliminate ports/modes I do not care about while preserving the correct equivalent I-V relation?"  
+If you are doing multi-port matrix analysis for superconducting circuits, this question appears quickly:
+"How do I eliminate ports/modes I do not care about while preserving the correct equivalent I-V relation?"
 The core of Kron reduction is the Schur complement.
 
 ## Bottom line first
@@ -43,8 +43,8 @@ Setting `I_drop = 0` means:
 - no external current injection on dropped degrees of freedom
 - those degrees of freedom still respond passively and feed back to kept variables
 
-So elimination is not hard deletion.  
-It is passive-response absorption into an equivalent matrix.  
+So elimination is not hard deletion.
+It is passive-response absorption into an equivalent matrix.
 That is why the result is not just `Y_kk`, but `Y_kk` minus a coupling-feedback term.
 
 ## Minimal derivation
@@ -105,7 +105,7 @@ You can apply PTC before Kron, or intentionally keep some port terminations befo
 ## Scope boundary (current project)
 
 !!! warning "Current implementation is port-level, not nodal-level"
-    Current WebUI post-processing works on simulator-returned port-space `Y(ω)`,  
+    Current WebUI post-processing works on simulator-returned port-space `Y(ω)`,
     not a full internal-node (nodal) matrix. Arbitrary internal-node elimination is therefore out of scope.
 
 !!! note "HFSS comparison context"
@@ -116,11 +116,11 @@ You can apply PTC before Kron, or intentionally keep some port terminations befo
 
 ## Common misconceptions
 
-1. **Misconception: Kron reduction is row/column deletion**  
+1. **Misconception: Kron reduction is row/column deletion**
    Incorrect. That drops coupling feedback.
-2. **Misconception: one reduction pass is always enough**  
+2. **Misconception: one reduction pass is always enough**
    Not always. Port-space and mode-space reductions are often separate stages.
-3. **Misconception: same transform applies directly in S-domain**  
+3. **Misconception: same transform applies directly in S-domain**
    Be careful. Wave normalization/reference settings matter; Y/Z-domain operations are usually more stable.
 
 ## Related

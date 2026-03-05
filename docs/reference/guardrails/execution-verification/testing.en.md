@@ -18,7 +18,7 @@ updated_by: docs-team
 
 # Testing Standards
 
-This document defines code-test and documentation-update verification flow.  
+This document defines code-test and documentation-update verification flow.
 Core rule: **every docs change must verify no 404 regression**.
 
 ## Python Testing
@@ -116,7 +116,7 @@ rg -n "href=\"[^\"]+\\.md\"" docs/site
 ```
 
 !!! warning "Route format rule"
-    Browser verification must use directory routes (for example `/notebooks/foo/`),  
+    Browser verification must use directory routes (for example `/notebooks/foo/`),
     never source-file URLs like `.../foo.md`.
 
 ## Julia tests (when applicable)

@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CircuitDefinition Netlist 規格：value_ref、parameters、Sweep 覆寫規則"
-version: v1.1.0
-last_updated: 2026-02-27
+version: v1.1.1
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -43,6 +43,8 @@ updated_by: docs-team
 3. 每個非 Port `value_ref` 必須存在於 `parameters`。
 4. 每個 `parameters[value_ref]` 必須包含 `default` 與 `unit`。
 5. Sweep 只覆寫 `parameters[*].default` 的執行值，不改 topology 結構。
+6. `K*` mutual coupling row 的第 2/3 欄必須是 inductor element name（不是 node）。
+7. `K*` mutual coupling row 的第 4 欄必須引用一個已存在的 coupling component 名稱。
 
 ---
 
@@ -68,12 +70,13 @@ updated_by: docs-team
 | Inductor | `L*` | `H`, `mH`, `uH`, `nH`, `pH` | `("L1", "1", "2", "Lj")` | `Lj*` 另作 Josephson Junction |
 | Capacitor | `C*` | `F`, `mF`, `uF`, `nF`, `pF`, `fF` | `("C1", "1", "2", "Cc")` | 可多元件共用同一 `value_ref` |
 | Josephson Junction | `Lj*` | `H`, `mH`, `uH`, `nH`, `pH` | `("Lj1", "2", "0", "Lj")` | Preview 會以 junction symbol 顯示 |
+| Mutual Coupling | `K*` | `-`（建議無因次） | `("K1", "L1", "L2", "Kc")` | 第 2/3 欄是 inductor element name；第 4 欄是 coupling component 參照 |
 
 !!! note "大小寫規則"
     Unit 解析目前支援大小寫不敏感（例如 `ohm` / `Ohm` 皆可），但文件與範例建議使用表格中的 canonical 寫法。
 
 !!! note "Ground node"
-    `0`、`gnd`、`GND` 都會視為 ground node。
+    ground token 只有字串 `0`。`gnd` / `GND` 皆不支援。
 
 ---
 

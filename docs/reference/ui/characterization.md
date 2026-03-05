@@ -59,7 +59,7 @@ updated_by: docs-team
     舊版 UI 曾提供 `Result Bundle` 下拉，允許使用者直接切換 Characterization bundle scope。
 
 !!! important "Contract（Dataset-centric）"
-    使用者應只對 `Dataset` 操作。`Source Scope` 不再暴露「選 bundle 再分析」入口。  
+    使用者應只對 `Dataset` 操作。`Source Scope` 不再暴露「選 bundle 再分析」入口。
     Run Analysis 的 trace 候選來源預設為 dataset-level trace index，並採 trace-first 相容性判定。
 
 !!! note "Internal provenance"
@@ -81,7 +81,7 @@ updated_by: docs-team
     並保留 `required_capabilities` / `excluded_capabilities` 作為建議訊息來源。
 
 !!! important "Contract（Trace-first authority）"
-    是否可執行 analysis 必須由 trace compatibility 決定，且 run 時必須提供 selected trace ids。  
+    是否可執行 analysis 必須由 trace compatibility 決定，且 run 時必須提供 selected trace ids。
     `dataset_profile.capabilities` 不可作為唯一 hard-block 條件。
 
 !!! warning "backward compatibility"
@@ -102,7 +102,7 @@ updated_by: docs-team
 
 !!! important "Contract（Single availability render）"
     可用性只允許一個主要呈現元件（例如 chip/label + reason line），
-    由單一 `availability state` 驅動：`state` + `reason` + `severity`。  
+    由單一 `availability state` 驅動：`state` + `reason` + `severity`。
     除錯資訊可保留，但不得把同一資訊重複顯示多次。
 
 ## Analysis Gating Contract（by capabilities）

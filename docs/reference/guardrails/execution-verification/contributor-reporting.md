@@ -19,8 +19,8 @@ updated_by: docs-team
 規範 Contributor Agent 的回報結構，讓使用者可直接閱讀，且可直接複製貼上給 Integrator Agent 進行整合判斷。
 
 !!! important "目標"
-    回報必須同時滿足兩件事：  
-    1) 人類可快速看懂成果與風險  
+    回報必須同時滿足兩件事：
+    1) 人類可快速看懂成果與風險
     2) Integrator Agent 可直接機器化提取 commit / 檔案 / 測試 / 風險
 
 ## 標準回報模板（必須使用）

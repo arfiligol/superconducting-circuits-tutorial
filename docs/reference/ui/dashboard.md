@@ -32,7 +32,7 @@ updated_by: docs-team
     先前 metadata 編輯入口散落於 `/raw-data` 與 `/simulation`。
 
 !!! important "Contract（Single editable entry）"
-    `Dataset Metadata` 的唯一可編輯入口在 `/dashboard`。  
+    `Dataset Metadata` 的唯一可編輯入口在 `/dashboard`。
     編輯欄位至少包含：
     - `Target Dataset`（或等價 dataset selector）
     - `Device Type`

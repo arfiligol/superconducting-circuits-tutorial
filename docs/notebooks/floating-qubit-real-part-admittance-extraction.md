@@ -142,7 +142,7 @@ Y_red = Y_bb - Y_bi * Y_ii^{-1} * Y_ib
 3. 同樣做 CT + Kron，再取 `Re(Y_dm_dm)`
 
 !!! warning "Raw S / PTC 邊界（Reference 契約）"
-    `Simulation Results` 的 `S` 仍是 solver-native raw `S`。  
+    `Simulation Results` 的 `S` 仍是 solver-native raw `S`。
     PTC 在 Raw View 只作用於 `Y/Z` family（見 Reference 契約）。
 
 ---

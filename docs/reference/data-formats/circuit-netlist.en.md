@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CircuitDefinition netlist format: value_ref, parameters, and sweep override rules"
-version: v1.1.0
-last_updated: 2026-02-27
+version: v1.1.1
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -43,6 +43,8 @@ updated_by: docs-team
 3. Every non-port `value_ref` must exist in `parameters`.
 4. Every `parameters[value_ref]` must include `default` and `unit`.
 5. Sweep only overrides execution values in `parameters[*].default`; topology connectivity must not change.
+6. `K*` mutual coupling rows must use inductor element names (not nodes) in positions 2/3.
+7. `K*` mutual coupling rows must use an existing coupling component reference in position 4.
 
 ---
 
@@ -68,12 +70,13 @@ updated_by: docs-team
 | Inductor | `L*` | `H`, `mH`, `uH`, `nH`, `pH` | `("L1", "1", "2", "Lj")` | `Lj*` is treated as Josephson Junction |
 | Capacitor | `C*` | `F`, `mF`, `uF`, `nF`, `pF`, `fF` | `("C1", "1", "2", "Cc")` | Multiple elements can share one `value_ref` |
 | Josephson Junction | `Lj*` | `H`, `mH`, `uH`, `nH`, `pH` | `("Lj1", "2", "0", "Lj")` | Rendered as junction symbol in preview |
+| Mutual Coupling | `K*` | `-` (recommended dimensionless) | `("K1", "L1", "L2", "Kc")` | Positions 2/3 are inductor element names; position 4 references a coupling component |
 
 !!! note "Case handling"
     Unit parsing is currently case-insensitive (for example `ohm` and `Ohm` both work), but examples should use canonical forms from this table.
 
 !!! note "Ground node"
-    `0`, `gnd`, and `GND` are all treated as ground nodes.
+    The only supported ground token is string `0`. `gnd` / `GND` are not supported.
 
 ---
 

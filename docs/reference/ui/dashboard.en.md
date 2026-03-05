@@ -32,7 +32,7 @@ This page defines the formal `/dashboard` UI contract.
     Metadata editing entry points previously existed in both `/raw-data` and `/simulation`.
 
 !!! important "Contract (Single editable entry)"
-    `/dashboard` is the only editable entry for `Dataset Metadata`.  
+    `/dashboard` is the only editable entry for `Dataset Metadata`.
     Minimum editable fields:
     - `Target Dataset` (or equivalent dataset selector)
     - `Device Type`

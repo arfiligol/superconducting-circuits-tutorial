@@ -61,7 +61,7 @@ Minimum `ResultArtifact` fields:
 
 !!! important "Contract (Dataset-centric)"
     Users should operate on `Dataset` only. The `Source Scope` surface must not expose
-    "choose a characterization bundle then rerun" as a primary interaction.  
+    "choose a characterization bundle then rerun" as a primary interaction.
     Run Analysis trace candidates default to dataset-level trace index, with trace-first compatibility.
 
 !!! note "Internal provenance"
@@ -106,7 +106,7 @@ Minimum `ResultArtifact` fields:
 
 !!! important "Contract (Single availability render)"
     Availability must have one primary UI surface (for example chip/label + reason line),
-    driven by a single `availability state`: `state` + `reason` + `severity`.  
+    driven by a single `availability state`: `state` + `reason` + `severity`.
     Debug reasons may remain available, but duplicate rendering of the same information is not allowed.
 
 ## Analysis Gating Contract (by capabilities)
