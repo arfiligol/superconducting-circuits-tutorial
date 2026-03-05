@@ -31,6 +31,17 @@ def default_post_processing_input_state() -> dict[str, str]:
     return {"input_y_source": "raw_y"}
 
 
+def default_sweep_result_view_state() -> dict[str, Any]:
+    """Build one canonical sweep-result view state payload."""
+    return {
+        "family": "s",
+        "metric": "magnitude_db",
+        "z0": 50.0,
+        "frequency_index": 0,
+        "trace_selection": {},
+    }
+
+
 @dataclass
 class SimulationRuntimeState:
     """Single mutable state source for Simulation page runtime."""
