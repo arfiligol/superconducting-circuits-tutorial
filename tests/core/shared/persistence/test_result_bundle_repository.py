@@ -223,6 +223,143 @@ def test_data_record_repository_index_page_filters_and_sorts() -> None:
         assert page_rows_2[0]["parameter"] == "S21"
 
 
+def test_data_record_repository_characterization_contract_methods() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Char Source", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        data_repo = DataRecordRepository(session)
+        base = data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="y_parameters",
+                parameter="Y11",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
+        sideband = data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="y_parameters",
+                parameter="Y11 [om=(1,), im=(0,)]",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
+        data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="s_parameters",
+                parameter="S21",
+                representation="real",
+                axes=[],
+                values=[],
+            )
+        )
+        session.commit()
+
+        assert data_repo.count_by_dataset(dataset.id) == 3
+        distinct = data_repo.list_distinct_index_for_profile(dataset.id)
+        assert {"data_type": "y_parameters", "parameter": "Y11"} in distinct
+
+        base_rows, base_total = data_repo.list_index_page_by_dataset(
+            dataset.id,
+            data_types=["y_parameters"],
+            parameters=["Y11"],
+            representation="imaginary",
+            mode_filter="base",
+            sort_by="mode",
+            limit=20,
+            offset=0,
+        )
+        assert base_total == 1
+        assert [int(row["id"]) for row in base_rows] == [int(base.id or 0)]
+
+        sideband_rows, sideband_total = data_repo.list_index_page_by_dataset(
+            dataset.id,
+            data_types=["y_parameters"],
+            parameters=["Y11"],
+            representation="imaginary",
+            mode_filter="sideband",
+            ids=[int(base.id or 0), int(sideband.id or 0)],
+            sort_by="mode",
+            limit=20,
+            offset=0,
+        )
+        assert sideband_total == 1
+        assert [int(row["id"]) for row in sideband_rows] == [int(sideband.id or 0)]
+
+
+def test_result_bundle_repository_characterization_contract_methods() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Bundle Source", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        data_repo = DataRecordRepository(session)
+        bundle_repo = ResultBundleRepository(session)
+        base = data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="y_parameters",
+                parameter="Y11",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
+        sideband = data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="y_parameters",
+                parameter="Y11 [om=(1,), im=(0,)]",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
+        bundle = bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+                status="completed",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        session.flush()
+        assert bundle.id is not None
+        bundle_repo.attach_data_records(
+            bundle_id=bundle.id,
+            data_record_ids=[int(base.id or 0), int(sideband.id or 0)],
+        )
+        session.commit()
+
+        assert bundle_repo.count_data_records(bundle.id) == 2
+        rows, total = bundle_repo.list_data_record_index_page(
+            bundle.id,
+            data_types=["y_parameters"],
+            parameters=["Y11"],
+            representation="imaginary",
+            mode_filter="sideband",
+            sort_by="mode",
+            limit=20,
+            offset=0,
+        )
+        assert total == 1
+        assert [int(row["id"]) for row in rows] == [int(sideband.id or 0)]
+
+
 def test_circuit_repository_summary_page_supports_search_and_sort() -> None:
     with _memory_session() as session:
         circuit_repo = CircuitRepository(session)
