@@ -55,4 +55,3 @@ def evaluate_analysis_capability_gating(
         status=status,
         reasons=reasons,
     )
-

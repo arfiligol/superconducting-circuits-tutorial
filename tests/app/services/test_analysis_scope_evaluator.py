@@ -16,4 +16,3 @@ def test_get_available_analyses_filters_per_dataset_and_matches_requires() -> No
     assert "admittance_extraction" in available_ids
     assert "s21_resonance_fit" in available_ids
     assert "parameter_comparison" not in available_ids  # cross-dataset only
-

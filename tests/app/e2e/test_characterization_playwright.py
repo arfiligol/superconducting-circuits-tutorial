@@ -401,9 +401,7 @@ def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
     _expect_analysis_status(page, "SQUID Fitting", "Available")
     expect(
         page.get_by_text("Profile hint: missing capability SQUID Characterization").first
-    ).to_be_visible(
-        timeout=30000
-    )
+    ).to_be_visible(timeout=30000)
 
     _select_active_dataset(page, seeded_dataset_names["traveling_wave"])
     expect(page.get_by_text("Source Scope")).to_be_visible(timeout=30000)

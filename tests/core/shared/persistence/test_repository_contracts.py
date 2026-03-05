@@ -45,4 +45,3 @@ def test_result_bundle_repository_satisfies_characterization_contract() -> None:
         rows, total = repo.list_data_record_index_page(1)
         assert rows == []
         assert total == 0
-

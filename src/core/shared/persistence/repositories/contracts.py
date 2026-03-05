@@ -39,4 +39,3 @@ class ResultBundleCharacterizationContract(Protocol):
         query: TraceIndexPageQuery | None = None,
         **kwargs: object,
     ) -> tuple[list[TraceIndexRow], int]: ...
-

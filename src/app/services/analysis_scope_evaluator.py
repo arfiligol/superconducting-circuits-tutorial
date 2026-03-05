@@ -44,4 +44,3 @@ def is_analysis_completed(analysis: dict[str, Any], params: list[Any]) -> bool:
     if not completed_methods:
         return False
     return any(param.method in completed_methods for param in params)
-

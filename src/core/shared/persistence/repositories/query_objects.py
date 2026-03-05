@@ -23,4 +23,3 @@ class TraceIndexPageQuery:
     ids: tuple[int, ...] | None = None
     limit: int = 20
     offset: int = 0
-
