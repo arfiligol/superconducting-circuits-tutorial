@@ -140,6 +140,50 @@ The `Manage Setups` dialog must support at least:
     Existing `Saved Setup` dropdown load behavior must stay unchanged.
     `Manage Setups` is an additional entry point only and must not alter schema+setup execution semantics.
 
+### Parameter Sweep (MVP)
+
+Sweep axis targets must come only from expanded netlist `components[*].value_ref` (deduplicated).
+
+- only components with `value_ref` are sweep-selectable
+- components with inline `default` only are not sweep targets
+- MVP supports single-axis sweep first
+- when sweep is disabled, `Run Simulation` behavior must remain identical to single-run
+
+Minimum sweep setup fields:
+
+- `enabled: bool`
+- `axis_1.target_value_ref: str` (from `components[*].value_ref`)
+- `axis_1.start / stop / points`
+- `axis_1.unit` (parameter-spec hint is allowed)
+
+### Sweep Cache / Provenance Contract
+
+When sweep is enabled:
+
+1. normalized simulation setup must include a `sweep` block
+2. `sweep_setup_hash` must be computed from that normalized sweep block
+3. result-cache identity remains `schema_source_hash + simulation_setup_hash`, and `simulation_setup_hash` must include the sweep block
+4. `source_meta` and `config_snapshot` must persist `sweep_setup_hash` and sweep-axis summary
+
+### Sweep Logs Contract
+
+`Logs` must additionally show:
+
+- sweep dimensions (MVP = 1)
+- total sweep points
+- per-point progress (for example `point 3/11`)
+
+### Sweep Result Structure Contract (for downstream pipeline/analysis)
+
+After a successful sweep run, bundle `result_payload` must include:
+
+- `run_kind = "parameter_sweep"`
+- `sweep_axes` metadata (target, unit, values, point_count)
+- `points[]` (each point includes at least `axis_indices`, `axis_values`, and point-level simulation result)
+- `representative_point_index` (for Result View quick inspect)
+
+When exporting to `DataRecord`, sweep-axis metadata must be explicit in `axes` so sweep traces remain distinguishable from single-run traces.
+
 ### Port Termination Compensation (optional)
 
 `Simulation Setup` must expose a `Port Termination Compensation` section that is separate from hbsolve options.

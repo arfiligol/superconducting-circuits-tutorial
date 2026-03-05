@@ -137,6 +137,49 @@ updated_by: codex
     `Saved Setup` 下拉的既有載入行為必須維持不變；
     `Manage Setups` 只是擴充入口，不可改變原有 schema+setup 契約與求解流程。
 
+### Parameter Sweep（MVP）
+
+Sweep 軸的 target 來源必須固定為 expanded netlist 的 `components[*].value_ref`（去重後）。
+
+- 只有有 `value_ref` 的 component 可被 sweep 選取；`default`-only component 不可作為 sweep target
+- MVP 先支援單軸（Single Axis）
+- `Sweep disabled` 時，`Run Simulation` 必須與既有 single-run 路徑完全一致
+
+Sweep Setup 最小欄位：
+
+- `enabled: bool`
+- `axis_1.target_value_ref: str`（來自 `components[*].value_ref`）
+- `axis_1.start / stop / points`
+- `axis_1.unit`（可由 parameter spec 提示）
+
+### Sweep Cache / Provenance 契約
+
+當 sweep 啟用時：
+
+1. normalized simulation setup 必須包含 `sweep` 區塊
+2. 必須從該 `sweep` 區塊計算 `sweep_setup_hash`
+3. result cache identity 仍走 `schema_source_hash + simulation_setup_hash`，其中 `simulation_setup_hash` 已含 sweep 設定
+4. `source_meta` 與 `config_snapshot` 必須保存 `sweep_setup_hash` 與 sweep 軸摘要
+
+### Sweep Logs 契約
+
+`Logs` 必須額外可追蹤：
+
+- sweep 維度（MVP=1）
+- 總點數
+- 每個 sweep 點的進度（例如 `point 3/11`）
+
+### Sweep 結果結構契約（供後續 pipeline/analysis）
+
+sweep run 成功後，bundle `result_payload` 需包含：
+
+- `run_kind = "parameter_sweep"`
+- `sweep_axes` metadata（target、unit、values、point_count）
+- `points[]`（每點至少含 `axis_indices`、`axis_values`、該點 simulation result）
+- `representative_point_index`（供 Result View quick-inspect）
+
+匯出為 `DataRecord` 時，應在 `axes` 中明確附帶 sweep 軸 metadata，避免與 single-run traces 混淆。
+
 ## Run Simulation 契約（Load-or-Run）
 
 `Run Simulation` 的正式語義是：
