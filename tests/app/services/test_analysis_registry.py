@@ -1,11 +1,40 @@
 """Tests for capability gating in analysis registry."""
 
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
-from app.services.analysis_registry import ANALYSIS_REGISTRY
+from app.services.analysis_registry import (
+    ANALYSIS_REGISTRY,
+    get_analysis_descriptor,
+    list_cross_dataset_analyses,
+    list_dataset_analyses,
+)
 
 
 def _analysis_by_id(analysis_id: str) -> dict:
     return next(analysis for analysis in ANALYSIS_REGISTRY if analysis["id"] == analysis_id)
+
+
+def test_dataset_analysis_listing_excludes_cross_dataset_entries() -> None:
+    dataset_analyses = list_dataset_analyses()
+    assert dataset_analyses
+    assert all(analysis["scope"] == "per_dataset" for analysis in dataset_analyses)
+    assert all(analysis["id"] != "parameter_comparison" for analysis in dataset_analyses)
+
+
+def test_cross_dataset_analysis_listing_only_returns_cross_dataset_entries() -> None:
+    cross_dataset_analyses = list_cross_dataset_analyses()
+    assert cross_dataset_analyses
+    assert all(analysis["scope"] == "cross_dataset" for analysis in cross_dataset_analyses)
+    assert any(analysis["id"] == "parameter_comparison" for analysis in cross_dataset_analyses)
+
+
+def test_get_analysis_descriptor_returns_none_for_unknown_id() -> None:
+    assert get_analysis_descriptor("missing-analysis-id") is None
+
+
+def test_get_analysis_descriptor_returns_expected_entry() -> None:
+    descriptor = get_analysis_descriptor("squid_fitting")
+    assert descriptor is not None
+    assert descriptor["label"] == "SQUID Fitting"
 
 
 def test_squid_fitting_recommended_for_squid_profile() -> None:

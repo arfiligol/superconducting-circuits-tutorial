@@ -19,7 +19,7 @@ from app.pages.characterization.state import (
     ResultArtifact,
 )
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
-from app.services.analysis_registry import ANALYSIS_REGISTRY
+from app.services.analysis_registry import list_dataset_analyses
 from app.services.characterization_trace_scope import (
     count_scope_trace_records,
     list_scope_compatible_trace_index_page,
@@ -1241,7 +1241,7 @@ def characterization_page():
 
                         ds_params = refresh_uow.derived_params.list_by_dataset(active_id)
                         method_params = _group_by_method(ds_params)
-                        analyses = [a for a in ANALYSIS_REGISTRY if a["scope"] == "per_dataset"]
+                        analyses = list_dataset_analyses()
                         if not analyses:
                             ui.label("No per-dataset analyses are registered.").classes(
                                 "text-danger"

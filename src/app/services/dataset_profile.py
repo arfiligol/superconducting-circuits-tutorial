@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, TypedDict
 
 DATASET_PROFILE_SCHEMA_VERSION = "1.0"
 
@@ -64,6 +64,15 @@ DEVICE_TYPE_CAPABILITY_TEMPLATES: dict[str, tuple[str, ...]] = {
 }
 
 PROFILE_SOURCES: tuple[str, ...] = ("inferred", "template", "manual_override")
+
+
+class DatasetProfile(TypedDict):
+    """Canonical dataset profile payload (hint-only for analysis availability)."""
+
+    schema_version: str
+    device_type: str
+    capabilities: list[str]
+    source: str
 
 
 def normalize_device_type(raw_value: object) -> str:
@@ -160,7 +169,7 @@ def normalize_dataset_profile(
     source_meta: Mapping[str, object] | None,
     *,
     record_index: Sequence[Mapping[str, object]] | None = None,
-) -> dict[str, Any]:
+) -> DatasetProfile:
     """Return one canonical dataset profile with backward-compatible fallback."""
     profile_payload = {}
     if isinstance(source_meta, Mapping):
@@ -200,7 +209,7 @@ def build_dataset_profile_payload(
     device_type: object,
     capabilities: object,
     source: object = "manual_override",
-) -> dict[str, Any]:
+) -> DatasetProfile:
     """Build a canonical profile payload for persistence in source_meta."""
     return {
         "schema_version": DATASET_PROFILE_SCHEMA_VERSION,

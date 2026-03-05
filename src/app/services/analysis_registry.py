@@ -5,6 +5,10 @@ Runtime evaluators live in dedicated service modules:
 - `analysis_capability_evaluator.py`
 """
 
+from __future__ import annotations
+
+from typing import Literal, NotRequired, TypedDict
+
 from app.services.analysis_capability_evaluator import (
     AnalysisCapabilityDecision,
     evaluate_analysis_capability_gating,
@@ -14,7 +18,35 @@ from app.services.analysis_scope_evaluator import (
     is_analysis_completed,
 )
 
-ANALYSIS_REGISTRY = [
+
+class AnalysisConfigField(TypedDict):
+    """One typed analysis configuration field declaration."""
+
+    name: str
+    label: str
+    type: Literal["select", "number"]
+    default: str | float | int | None
+    options: NotRequired[list[str]]
+
+
+class AnalysisDescriptor(TypedDict):
+    """Typed descriptor for one analysis entry in the registry."""
+
+    id: str
+    label: str
+    icon: str
+    requires: dict[str, object]
+    auto_run: bool
+    config_fields: list[AnalysisConfigField]
+    scope: Literal["per_dataset", "cross_dataset"]
+    description: str
+    completed_methods: list[str]
+    required_capabilities: list[str]
+    excluded_capabilities: list[str]
+    recommended_for: list[str]
+
+
+ANALYSIS_REGISTRY: list[AnalysisDescriptor] = [
     {
         "id": "admittance_extraction",
         "label": "Admittance Extraction",
@@ -163,10 +195,33 @@ ANALYSIS_REGISTRY = [
     },
 ]
 
+
+def list_dataset_analyses() -> list[AnalysisDescriptor]:
+    """Return only per-dataset analyses from the static registry."""
+    return [analysis for analysis in ANALYSIS_REGISTRY if analysis["scope"] == "per_dataset"]
+
+
+def list_cross_dataset_analyses() -> list[AnalysisDescriptor]:
+    """Return only cross-dataset analyses from the static registry."""
+    return [analysis for analysis in ANALYSIS_REGISTRY if analysis["scope"] == "cross_dataset"]
+
+
+def get_analysis_descriptor(analysis_id: str) -> AnalysisDescriptor | None:
+    """Lookup one analysis descriptor by id."""
+    for analysis in ANALYSIS_REGISTRY:
+        if analysis["id"] == analysis_id:
+            return analysis
+    return None
+
 __all__ = [
     "ANALYSIS_REGISTRY",
     "AnalysisCapabilityDecision",
+    "AnalysisConfigField",
+    "AnalysisDescriptor",
     "evaluate_analysis_capability_gating",
+    "get_analysis_descriptor",
     "get_available_analyses",
     "is_analysis_completed",
+    "list_cross_dataset_analyses",
+    "list_dataset_analyses",
 ]
