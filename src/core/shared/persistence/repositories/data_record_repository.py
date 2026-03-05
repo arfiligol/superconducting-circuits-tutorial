@@ -1,8 +1,9 @@
 """Repository for DataRecord operations."""
 
+from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import String, asc, desc, func, or_
+from sqlalchemy import String, asc, case, desc, func, not_, or_
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
@@ -49,6 +50,32 @@ class DataRecordRepository:
             if record_id is not None
         ]
 
+    def count_by_dataset(self, dataset_id: int) -> int:
+        """Count all records under one dataset."""
+        dataset_id_col = cast(Any, DataRecord.dataset_id)
+        statement = sa_select(func.count()).where(dataset_id_col == dataset_id)
+        return int(self._session.execute(statement).scalar_one())
+
+    def list_distinct_index_for_profile(self, dataset_id: int) -> list[dict[str, str]]:
+        """List distinct (data_type, parameter) pairs for profile inference."""
+        dataset_id_col = cast(Any, DataRecord.dataset_id)
+        data_type_col = cast(Any, DataRecord.data_type)
+        parameter_col = cast(Any, DataRecord.parameter)
+        statement = (
+            sa_select(data_type_col, parameter_col)
+            .where(dataset_id_col == dataset_id)
+            .distinct()
+            .order_by(data_type_col, parameter_col)
+        )
+        rows = self._session.execute(statement).all()
+        return [
+            {
+                "data_type": str(data_type),
+                "parameter": str(parameter),
+            }
+            for data_type, parameter in rows
+        ]
+
     def list_index_page_by_dataset(
         self,
         dataset_id: int,
@@ -57,7 +84,11 @@ class DataRecordRepository:
         sort_by: str = "id",
         descending: bool = False,
         data_type: str = "",
+        data_types: Sequence[str] | None = None,
+        parameters: Sequence[str] | None = None,
         representation: str = "",
+        mode_filter: str = "all",
+        ids: Sequence[int] | None = None,
         limit: int = 20,
         offset: int = 0,
     ) -> tuple[list[dict[str, str | int]], int]:
@@ -75,6 +106,17 @@ class DataRecordRepository:
             representation_col,
         ).where(dataset_id_col == dataset_id)
 
+        sideband_predicate = or_(
+            sa_cast(parameter_col, String).ilike("% [om=%"),
+            sa_cast(parameter_col, String).ilike("% [im=%"),
+        )
+
+        if ids is not None:
+            normalized_ids = [int(record_id) for record_id in ids]
+            if not normalized_ids:
+                return ([], 0)
+            statement = statement.where(id_col.in_(normalized_ids))
+
         search_text = search.strip()
         if search_text:
             like_value = f"%{search_text}%"
@@ -87,15 +129,43 @@ class DataRecordRepository:
                 )
             )
 
-        if data_type:
+        normalized_data_types = [
+            str(item).strip() for item in data_types or [] if str(item).strip()
+        ]
+        if normalized_data_types:
+            statement = statement.where(
+                or_(*[data_type_col == item for item in normalized_data_types])
+            )
+        elif data_type:
             statement = statement.where(data_type_col == data_type)
+        normalized_parameters = [
+            str(item).strip() for item in parameters or [] if str(item).strip()
+        ]
+        if normalized_parameters:
+            statement = statement.where(
+                or_(
+                    *[
+                        or_(
+                            parameter_col == parameter_name,
+                            parameter_col.ilike(f"{parameter_name} [%"),
+                        )
+                        for parameter_name in normalized_parameters
+                    ]
+                )
+            )
         if representation:
             statement = statement.where(representation_col == representation)
+        normalized_mode_filter = str(mode_filter or "").strip().lower()
+        if normalized_mode_filter == "base":
+            statement = statement.where(not_(sideband_predicate))
+        elif normalized_mode_filter == "sideband":
+            statement = statement.where(sideband_predicate)
 
         count_statement = sa_select(func.count()).select_from(statement.subquery())
 
         sort_columns = {
             "id": id_col,
+            "mode": case((sideband_predicate, 1), else_=0),
             "data_type": data_type_col,
             "parameter": parameter_col,
             "representation": representation_col,

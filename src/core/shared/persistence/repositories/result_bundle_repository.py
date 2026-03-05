@@ -1,5 +1,11 @@
 """Repository for ResultBundleRecord operations."""
 
+from collections.abc import Sequence
+from typing import Any, cast
+
+from sqlalchemy import String, asc, case, desc, func, not_, or_
+from sqlalchemy import cast as sa_cast
+from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
 from core.shared.persistence.models import (
@@ -103,3 +109,130 @@ class ResultBundleRepository:
             for record_id, data_type, parameter, representation in rows
             if record_id is not None
         ]
+
+    def count_data_records(self, bundle_id: int) -> int:
+        """Count trace membership rows for one bundle."""
+        bundle_col = cast(Any, ResultBundleDataLink.result_bundle_id)
+        statement = sa_select(func.count()).where(bundle_col == bundle_id)
+        return int(self._session.execute(statement).scalar_one())
+
+    def list_data_record_index_page(
+        self,
+        bundle_id: int,
+        *,
+        search: str = "",
+        sort_by: str = "id",
+        descending: bool = False,
+        data_type: str = "",
+        data_types: Sequence[str] | None = None,
+        parameters: Sequence[str] | None = None,
+        representation: str = "",
+        mode_filter: str = "all",
+        ids: Sequence[int] | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, str | int]], int]:
+        """List one page of bundle-linked trace metadata rows."""
+        id_col = cast(Any, DataRecord.id)
+        data_type_col = cast(Any, DataRecord.data_type)
+        parameter_col = cast(Any, DataRecord.parameter)
+        representation_col = cast(Any, DataRecord.representation)
+        bundle_col = cast(Any, ResultBundleDataLink.result_bundle_id)
+        link_record_col = cast(Any, ResultBundleDataLink.data_record_id)
+
+        statement = (
+            sa_select(
+                id_col,
+                data_type_col,
+                parameter_col,
+                representation_col,
+            )
+            .join(
+                ResultBundleDataLink,
+                id_col == link_record_col,
+            )
+            .where(bundle_col == bundle_id)
+        )
+
+        sideband_predicate = or_(
+            sa_cast(parameter_col, String).ilike("% [om=%"),
+            sa_cast(parameter_col, String).ilike("% [im=%"),
+        )
+
+        if ids is not None:
+            normalized_ids = [int(record_id) for record_id in ids]
+            if not normalized_ids:
+                return ([], 0)
+            statement = statement.where(id_col.in_(normalized_ids))
+
+        search_text = search.strip()
+        if search_text:
+            like_value = f"%{search_text}%"
+            statement = statement.where(
+                or_(
+                    sa_cast(id_col, String).ilike(like_value),
+                    sa_cast(data_type_col, String).ilike(like_value),
+                    sa_cast(parameter_col, String).ilike(like_value),
+                    sa_cast(representation_col, String).ilike(like_value),
+                )
+            )
+
+        normalized_data_types = [
+            str(item).strip() for item in data_types or [] if str(item).strip()
+        ]
+        if normalized_data_types:
+            statement = statement.where(
+                or_(*[data_type_col == item for item in normalized_data_types])
+            )
+        elif data_type:
+            statement = statement.where(data_type_col == data_type)
+        normalized_parameters = [
+            str(item).strip() for item in parameters or [] if str(item).strip()
+        ]
+        if normalized_parameters:
+            statement = statement.where(
+                or_(
+                    *[
+                        or_(
+                            parameter_col == parameter_name,
+                            parameter_col.ilike(f"{parameter_name} [%"),
+                        )
+                        for parameter_name in normalized_parameters
+                    ]
+                )
+            )
+        if representation:
+            statement = statement.where(representation_col == representation)
+        normalized_mode_filter = str(mode_filter or "").strip().lower()
+        if normalized_mode_filter == "base":
+            statement = statement.where(not_(sideband_predicate))
+        elif normalized_mode_filter == "sideband":
+            statement = statement.where(sideband_predicate)
+
+        count_statement = sa_select(func.count()).select_from(statement.subquery())
+        sort_columns = {
+            "id": id_col,
+            "mode": case((sideband_predicate, 1), else_=0),
+            "data_type": data_type_col,
+            "parameter": parameter_col,
+            "representation": representation_col,
+        }
+        sort_column = sort_columns.get(sort_by, id_col)
+        order_expression = desc(sort_column) if descending else asc(sort_column)
+        statement = statement.order_by(order_expression).offset(max(0, offset)).limit(max(1, limit))
+
+        rows = self._session.execute(statement).all()
+        total_rows = int(self._session.execute(count_statement).scalar_one())
+        return (
+            [
+                {
+                    "id": int(record_id),
+                    "data_type": str(row_data_type),
+                    "parameter": str(row_parameter),
+                    "representation": str(row_representation),
+                }
+                for record_id, row_data_type, row_parameter, row_representation in rows
+                if record_id is not None
+            ],
+            total_rows,
+        )
