@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
+from core.analysis.domain import ModeGroup, ParameterKey, TraceKind
 from core.shared.persistence.repositories import (
     DataRecordCharacterizationContract,
     ResultBundleCharacterizationContract,
@@ -22,18 +23,13 @@ class CharacterizationTraceScopeUnitOfWork(Protocol):
 
 def _normalize_analysis_data_type(data_type: str) -> str:
     """Normalize analysis data_type keys to canonical repository tokens."""
-    raw = data_type.strip().lower()
-    aliases = {
-        "s_params": "s_parameters",
-        "y_params": "y_parameters",
-        "z_params": "z_parameters",
-    }
-    return aliases.get(raw, raw)
+    kind = TraceKind.from_token(data_type)
+    return data_type.strip().lower() if kind is TraceKind.UNKNOWN else kind.value
 
 
 def _normalize_analysis_parameter_name(parameter: str) -> str:
     """Normalize analysis parameter names by stripping sideband suffix tokens."""
-    return str(parameter).split(" [", 1)[0].strip()
+    return ParameterKey.from_raw(parameter).canonical
 
 
 def _normalize_analysis_representation(representation: str) -> str:
@@ -64,13 +60,11 @@ def _normalize_analysis_requirements(requirements: dict[str, object]) -> dict[st
 
 def _analysis_data_type_candidates(data_type: str) -> list[str]:
     """Resolve canonical + alias data_type keys accepted by persistence rows."""
-    normalized = _normalize_analysis_data_type(data_type)
-    aliases = {
-        "s_parameters": ["s_parameters", "s_params"],
-        "y_parameters": ["y_parameters", "y_params"],
-        "z_parameters": ["z_parameters", "z_params"],
-    }
-    return aliases.get(normalized, [normalized])
+    kind = TraceKind.from_token(data_type)
+    if kind is TraceKind.UNKNOWN:
+        normalized = _normalize_analysis_data_type(data_type)
+        return [normalized] if normalized else []
+    return list(kind.accepted_tokens)
 
 
 def _analysis_query_filters(analysis_requires: dict[str, object]) -> dict[str, object]:
@@ -128,6 +122,11 @@ def list_scope_compatible_trace_index_page(
     raw_parameters = filters.get("parameters")
     data_types = raw_data_types if isinstance(raw_data_types, list) else []
     parameters = raw_parameters if isinstance(raw_parameters, list) else []
+    normalized_mode = ModeGroup.normalize(
+        mode_filter,
+        allow_all=True,
+        default=ModeGroup.ALL,
+    )
     query = TraceIndexPageQuery(
         search=search,
         sort_by=sort_by,
@@ -135,7 +134,7 @@ def list_scope_compatible_trace_index_page(
         data_types=tuple(str(item) for item in data_types),
         parameters=tuple(str(item) for item in parameters),
         representation=str(filters["representation"]),
-        mode_filter=mode_filter if mode_filter in ("all", "base", "sideband") else "all",
+        mode_filter=normalized_mode.value,
         ids=tuple(int(record_id) for record_id in ids) if ids is not None else None,
         limit=limit,
         offset=offset,

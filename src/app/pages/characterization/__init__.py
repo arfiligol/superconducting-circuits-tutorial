@@ -35,6 +35,7 @@ from core.analysis.application.services.characterization_fitting_service import 
 )
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
+from core.analysis.domain import ModeGroup, ParameterKey
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
 
@@ -70,16 +71,16 @@ _CATEGORY_LABELS: dict[str, str] = {
     "qa": "QA",
 }
 _CATEGORY_ORDER: dict[str, int] = {name: idx for idx, name in enumerate(_CATEGORY_LABELS)}
-_TRACE_MODE_ALL = "all"
+_TRACE_MODE_ALL = ModeGroup.ALL.value
 _TRACE_MODE_LABELS: dict[str, str] = {
     _TRACE_MODE_ALL: "All",
-    "base": "Base",
-    "sideband": "Sideband",
+    ModeGroup.BASE.value: "Base",
+    ModeGroup.SIDEBAND.value: "Sideband",
 }
 _TRACE_MODE_FILTER_OPTIONS: dict[str, str] = {
     _TRACE_MODE_ALL: "All Modes",
-    "base": "Base",
-    "sideband": "Sideband",
+    ModeGroup.BASE.value: "Base",
+    ModeGroup.SIDEBAND.value: "Sideband",
 }
 _MAX_BULK_TRACE_SELECTION = 2000
 _ANALYSIS_HEARTBEAT_SECONDS = 5.0
@@ -256,23 +257,25 @@ def _build_analysis_run_availability(
 
 def _is_sideband_trace_parameter(parameter: str) -> bool:
     """Return True when parameter name contains mode suffix metadata."""
-    return " [om=" in parameter or " [im=" in parameter
+    return ParameterKey.from_raw(parameter).has_sideband_suffix
 
 
 def _normalize_trace_mode_group(raw_value: object) -> str:
     """Normalize trace mode provenance token used by filters and persistence."""
-    normalized = str(raw_value or "").strip().lower()
-    if normalized in ("base", "signal"):
-        return "base"
-    if normalized == "sideband":
-        return "sideband"
-    return ""
+    normalized = ModeGroup.normalize(raw_value, allow_all=False, default=ModeGroup.UNKNOWN)
+    if normalized is ModeGroup.UNKNOWN:
+        return ""
+    return normalized.value
 
 
 def _trace_mode_group_for_selected_rows(rows: Sequence[dict[str, str | int]]) -> str:
     """Resolve one aggregate mode group for currently selected trace rows."""
-    has_sideband = any(str(row.get("mode", "")) == "Sideband" for row in rows)
-    return "sideband" if has_sideband else "base"
+    has_sideband = any(
+        ModeGroup.from_trace_label(row.get("mode", ""), default=ModeGroup.BASE)
+        is ModeGroup.SIDEBAND
+        for row in rows
+    )
+    return ModeGroup.SIDEBAND.value if has_sideband else ModeGroup.BASE.value
 
 
 def _param_trace_mode_group(param: object) -> str:
@@ -289,7 +292,7 @@ def _trace_mode_filter_options(method_groups: dict[str, list]) -> dict[str, str]
         _param_trace_mode_group(param) for params in method_groups.values() for param in params
     }
     available_keys = [_TRACE_MODE_ALL]
-    for mode_key in ("base", "sideband"):
+    for mode_key in (ModeGroup.BASE.value, ModeGroup.SIDEBAND.value):
         if mode_key in present_modes:
             available_keys.append(mode_key)
     return {key: _TRACE_MODE_LABELS[key] for key in available_keys}
@@ -315,7 +318,8 @@ def _filter_method_groups_by_trace_mode(
 
 def _trace_row_mode_key(row: Mapping[str, str | int]) -> str:
     """Resolve canonical mode key for one trace row."""
-    return "sideband" if str(row.get("mode", "")) == "Sideband" else "base"
+    mode_group = ModeGroup.from_trace_label(row.get("mode", ""), default=ModeGroup.BASE)
+    return mode_group.value
 
 
 def _filter_trace_rows_by_mode(
@@ -324,12 +328,16 @@ def _filter_trace_rows_by_mode(
     mode_filter: str,
 ) -> list[dict[str, str | int]]:
     """Filter trace rows by canonical mode filter (`all`/`base`/`sideband`)."""
-    if mode_filter == _TRACE_MODE_ALL:
+    normalized_mode = ModeGroup.normalize(
+        mode_filter,
+        allow_all=True,
+        default=ModeGroup.ALL,
+    )
+    if normalized_mode is ModeGroup.ALL:
         return list(rows)
-    normalized = _normalize_trace_mode_group(mode_filter)
-    if not normalized:
+    if normalized_mode is ModeGroup.UNKNOWN:
         return list(rows)
-    return [row for row in rows if _trace_row_mode_key(row) == normalized]
+    return [row for row in rows if _trace_row_mode_key(row) == normalized_mode.value]
 
 
 def _trace_rows_for_view(
