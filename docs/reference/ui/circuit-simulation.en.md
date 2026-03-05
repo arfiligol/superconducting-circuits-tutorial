@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.10.0
+version: v0.11.0
 last_updated: 2026-03-05
 updated_by: codex
 ---
@@ -183,6 +183,47 @@ After a successful sweep run, bundle `result_payload` must include:
 - `representative_point_index` (for Result View quick inspect)
 
 When exporting to `DataRecord`, sweep-axis metadata must be explicit in `axes` so sweep traces remain distinguishable from single-run traces.
+
+### Sweep Result View Contract (inside Simulation Results)
+
+When the latest successful run is `run_kind=parameter_sweep`, `Simulation Results` must render an additional `Sweep Result View`:
+
+- minimum `selectors`:
+  - `family`
+  - `metric`
+  - `trace`
+  - `Output Port` / `Input Port`
+  - `Output Mode` / `Input Mode`
+  - `Frequency`
+- minimum `outputs`:
+  - `Table`: per-point `axis value` + `metric value` + `point index`
+  - `Plot`: `metric vs sweep axis`
+
+!!! important "Trace-first"
+    Sweep selectors must follow the existing trace-first design.
+    Do not hardcode one trace path (for example `S11` only).
+
+!!! note "Save consistency"
+    For sweep runs, `Save Raw Simulation Results` must persist full sweep payload and provenance
+    (including `sweep_setup_hash` and `sweep_axes`) so the run is replayable.
+
+### Sweep Result View Failure Modes (minimum)
+
+- missing sweep payload: show empty state, no crash
+- selector incompatible with current payload: auto-fallback to valid defaults and keep warning logs
+- partial point data missing (trace or representation): render `NaN`/`N/A` for that point while keeping the view usable
+
+### Flux-Pumped JPA Bias Sweep (reproducible flow)
+
+Use this flow to reproduce a `bias-like axis` sweep plot (expressed through a `value_ref` axis):
+
+1. choose `Flux-pumped Josephson Parametric Amplifier (JPA)` (or equivalent schema)
+2. enable `Enable Sweep` in `Simulation Setup`
+3. set `Sweep Target` to the bias-correlated `components[*].value_ref` (for example `Lj` or `Ibias`)
+4. set `Sweep Start / Stop / Points`
+5. run `Run Simulation`
+6. in `Simulation Results` -> `Sweep Result View`, pick trace/metric/frequency selectors
+7. verify `Table` and `Plot` stay synchronized as `metric vs sweep axis`
 
 ### Port Termination Compensation (optional)
 

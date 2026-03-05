@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.10.0
+version: v0.11.0
 last_updated: 2026-03-05
 updated_by: codex
 ---
@@ -179,6 +179,47 @@ sweep run 成功後，bundle `result_payload` 需包含：
 - `representative_point_index`（供 Result View quick-inspect）
 
 匯出為 `DataRecord` 時，應在 `axes` 中明確附帶 sweep 軸 metadata，避免與 single-run traces 混淆。
+
+### Sweep Result View 契約（Simulation Results 區內）
+
+當最近一次成功 run 為 `run_kind=parameter_sweep` 時，`Simulation Results` 必須額外顯示 `Sweep Result View`：
+
+- `Selectors`（最少）：
+  - `family`
+  - `metric`
+  - `trace`
+  - `Output Port` / `Input Port`
+  - `Output Mode` / `Input Mode`
+  - `Frequency`
+- `Outputs`（最少）：
+  - `Table`：每個 sweep point 的 `axis value` + `metric value` + `point index`
+  - `Plot`：`metric vs sweep axis`
+
+!!! important "trace-first"
+    Sweep 視圖的 selector 必須沿用現有 trace-first 設計。
+    不可硬編碼成單一 trace（例如只支援 `S11`）。
+
+!!! note "保存一致性"
+    `Save Raw Simulation Results` 對 sweep run 必須保存完整 sweep payload 與 provenance
+    （含 `sweep_setup_hash` 與 `sweep_axes`），確保可回放。
+
+### Sweep Result View 失敗模式（最低要求）
+
+- 無 sweep payload：顯示 empty state，不得崩潰
+- selector 與當前 payload 不相容：自動回退到可用預設值，並保留 warning log
+- 單點結果缺資料（缺某 trace 或某 representation）：該點顯示 `NaN`/`N/A`，整體視圖仍可用
+
+### Flux-Pumped JPA Bias Sweep（可重現步驟）
+
+以下流程用於重現 `bias-like axis` 的 sweep 圖（以 `value_ref` 軸表示）：
+
+1. 選擇 `Flux-pumped Josephson Parametric Amplifier (JPA)`（或等價 schema）
+2. 在 `Simulation Setup` 開啟 `Enable Sweep`
+3. `Sweep Target` 選擇 bias 對應的 `components[*].value_ref`（例如 `Lj` 或 `Ibias`）
+4. 設定 `Sweep Start / Stop / Points`
+5. 執行 `Run Simulation`
+6. 在 `Simulation Results` 的 `Sweep Result View` 選擇 trace/metric/frequency
+7. 驗證 `Table` 與 `Plot` 同步呈現 `metric vs sweep axis`
 
 ## Run Simulation 契約（Load-or-Run）
 
