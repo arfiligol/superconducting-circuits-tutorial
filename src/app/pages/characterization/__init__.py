@@ -29,6 +29,12 @@ from app.services.characterization_trace_scope import (
     list_scope_compatible_trace_index_page,
 )
 from app.services.dataset_profile import normalize_dataset_profile, profile_summary_text
+from app.services.result_artifact_registry import (
+    RESULT_CATEGORY_LABELS,
+    artifact_categories,
+    artifacts_in_category,
+    build_result_artifacts_for_analysis,
+)
 from core.analysis.domain import ModeGroup, ParameterKey
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
@@ -36,18 +42,6 @@ from core.shared.persistence.models import ParameterDesignation, ResultBundleRec
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-METHOD_LABELS: dict[str, str] = {
-    "admittance_zero_crossing": "Admittance Zero-Crossing",
-    "lc_squid_fit": "SQUID Fitting",
-    "y11_fit": "Y11 Response Fit",
-    "complex_notch_fit_S21": "Complex Notch Fit (S21)",
-    "complex_notch_fit_S11": "Complex Notch Fit (S11)",
-    "transmission_fit_S21": "Transmission Fit (S21)",
-    "transmission_fit_S11": "Transmission Fit (S11)",
-    "vector_fit_S21": "Vector Fit (S21)",
-    "vector_fit_S11": "Vector Fit (S11)",
-}
-
 _BIAS_RE = re.compile(r"^(.+?)_b(\d+)$")
 _IDX_RE = re.compile(r"^(.+?)_(\d+)$")
 _MODE_CANONICAL_RE = re.compile(r"^mode_(\d+)_ghz$")
@@ -58,13 +52,7 @@ _ANALYSIS_RESULT_SELECTED_KEY = "analysis_selected_result_by_dataset"
 _ANALYSIS_RESULT_CATEGORY_SELECTED_KEY = "analysis_selected_result_category_by_scope"
 _ANALYSIS_RESULT_ARTIFACT_SELECTED_KEY = "analysis_selected_result_artifact_by_scope"
 _ANALYSIS_RESULT_TRACE_MODE_SELECTED_KEY = "analysis_selected_result_trace_mode_by_scope"
-_CATEGORY_LABELS: dict[str, str] = {
-    "resonance": "Resonance",
-    "fit": "Fitting",
-    "summary": "Summary",
-    "qa": "QA",
-}
-_CATEGORY_ORDER: dict[str, int] = {name: idx for idx, name in enumerate(_CATEGORY_LABELS)}
+_CATEGORY_LABELS: dict[str, str] = dict(RESULT_CATEGORY_LABELS)
 _TRACE_MODE_ALL = ModeGroup.ALL.value
 _TRACE_MODE_LABELS: dict[str, str] = {
     _TRACE_MODE_ALL: "All",
@@ -79,12 +67,6 @@ _TRACE_MODE_FILTER_OPTIONS: dict[str, str] = {
 _MAX_BULK_TRACE_SELECTION = 2000
 _ANALYSIS_HEARTBEAT_SECONDS = 5.0
 _ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS = 60
-_ANALYSIS_CATEGORY_DEFAULTS: dict[str, str] = {
-    "admittance_extraction": "resonance",
-    "s21_resonance_fit": "fit",
-    "squid_fitting": "fit",
-    "y11_fit": "fit",
-}
 
 
 def _with_test_id(element: Any, test_id: str) -> Any:
@@ -572,159 +554,10 @@ def _build_mode_vs_ljun_dataframe(params: list) -> pd.DataFrame | None:
     return df
 
 
-def _default_analysis_category(analysis_id: str) -> str:
-    """Resolve default category for one analysis id."""
-    return _ANALYSIS_CATEGORY_DEFAULTS.get(analysis_id, "summary")
-
-
-def _build_result_artifacts_for_analysis(
-    *,
-    analysis_id: str,
-    method_groups: dict[str, list],
-) -> list[ResultArtifact]:
-    """Build declarative artifact manifest for one analysis."""
-    method_keys = sorted(method_groups)
-    if not method_keys:
-        return []
-
-    artifacts: list[ResultArtifact] = []
-    default_category = _default_analysis_category(analysis_id)
-    method_count = len(method_keys)
-
-    for method_key in method_keys:
-        method_params = list(method_groups[method_key])
-        method_label = METHOD_LABELS.get(method_key, method_key)
-
-        mode_vs_ljun_df = _build_mode_vs_ljun_dataframe(method_params)
-        if mode_vs_ljun_df is not None and not mode_vs_ljun_df.empty:
-            artifacts.append(
-                ResultArtifact(
-                    artifact_id=f"{analysis_id}.{method_key}.mode_vs_ljun",
-                    analysis_id=analysis_id,
-                    category=default_category,
-                    view_kind="matrix_table_plot",
-                    tab_label=(
-                        "Mode vs L_jun" if method_count == 1 else f"Mode vs L_jun ({method_label})"
-                    ),
-                    title="Mode vs L_jun",
-                    subtitle=method_label if method_count > 1 else None,
-                    query_spec={
-                        "method_key": method_key,
-                        "dataset": "derived_parameters",
-                        "shape": "mode_vs_ljun",
-                    },
-                    meta={
-                        "row_count": int(mode_vs_ljun_df.shape[0]),
-                        "col_count": int(mode_vs_ljun_df.shape[1]),
-                        "is_sweep": int(mode_vs_ljun_df.shape[1]) > 1,
-                    },
-                )
-            )
-
-        resonator_df = _build_resonator_table(method_params)
-        if resonator_df is not None and not resonator_df.empty:
-            artifacts.append(
-                ResultArtifact(
-                    artifact_id=f"{analysis_id}.{method_key}.resonator_summary",
-                    analysis_id=analysis_id,
-                    category=default_category,
-                    view_kind="record_table",
-                    tab_label=(
-                        "Resonator Summary"
-                        if method_count == 1
-                        else f"Resonator Summary ({method_label})"
-                    ),
-                    title="Per-Resonator Summary",
-                    subtitle=method_label if method_count > 1 else None,
-                    query_spec={
-                        "method_key": method_key,
-                        "dataset": "derived_parameters",
-                        "shape": "resonator_summary",
-                    },
-                    meta={
-                        "row_count": int(resonator_df.shape[0]),
-                        "col_count": int(resonator_df.shape[1]),
-                    },
-                )
-            )
-
-        fit_df = _build_fit_parameter_table(method_params)
-        if fit_df is not None and not fit_df.empty:
-            artifacts.append(
-                ResultArtifact(
-                    artifact_id=f"{analysis_id}.{method_key}.fit_parameters",
-                    analysis_id=analysis_id,
-                    category=default_category,
-                    view_kind="record_table",
-                    tab_label=(
-                        "Fit Parameters"
-                        if method_count == 1
-                        else f"Fit Parameters ({method_label})"
-                    ),
-                    title="Fit Parameters",
-                    subtitle=method_label if method_count > 1 else None,
-                    query_spec={
-                        "method_key": method_key,
-                        "dataset": "derived_parameters",
-                        "shape": "fit_parameters",
-                    },
-                    meta={
-                        "row_count": int(fit_df.shape[0]),
-                        "col_count": int(fit_df.shape[1]),
-                    },
-                )
-            )
-
-        scalars = [
-            param
-            for param in method_params
-            if not _BIAS_RE.match(str(param.name)) and not _IDX_RE.match(str(param.name))
-        ]
-        if scalars:
-            artifacts.append(
-                ResultArtifact(
-                    artifact_id=f"{analysis_id}.{method_key}.summary_metrics",
-                    analysis_id=analysis_id,
-                    category="summary",
-                    view_kind="scalar_cards",
-                    tab_label=(
-                        "Summary Metrics"
-                        if method_count == 1
-                        else f"Summary Metrics ({method_label})"
-                    ),
-                    title="Summary Metrics",
-                    subtitle=method_label if method_count > 1 else None,
-                    query_spec={
-                        "method_key": method_key,
-                        "dataset": "derived_parameters",
-                        "shape": "summary_metrics",
-                    },
-                    meta={"count": len(scalars)},
-                )
-            )
-
-    artifacts.sort(
-        key=lambda artifact: (
-            _CATEGORY_ORDER.get(artifact.category, len(_CATEGORY_ORDER)),
-            artifact.tab_label.lower(),
-        )
-    )
-    return artifacts
-
-
-def _artifact_categories(artifacts: list[ResultArtifact]) -> list[str]:
-    """Return sorted category keys from artifact manifest."""
-    unique = {artifact.category for artifact in artifacts}
-    return sorted(unique, key=lambda category: _CATEGORY_ORDER.get(category, len(_CATEGORY_ORDER)))
-
-
-def _artifacts_in_category(
-    artifacts: list[ResultArtifact],
-    *,
-    category: str,
-) -> list[ResultArtifact]:
-    """Return artifacts belonging to one category."""
-    return [artifact for artifact in artifacts if artifact.category == category]
+def _is_summary_scalar_parameter(param: object) -> bool:
+    """Return whether one derived parameter belongs to summary scalar cards."""
+    name = str(getattr(param, "name", ""))
+    return not _BIAS_RE.match(name) and not _IDX_RE.match(name)
 
 
 def _result_view_empty_state_message(
@@ -2165,11 +1998,15 @@ def characterization_page():
                                         selected_analysis_groups_raw,
                                         trace_mode_filter=selected_trace_mode_filter,
                                     )
-                                    artifacts = _build_result_artifacts_for_analysis(
+                                    artifacts = build_result_artifacts_for_analysis(
                                         analysis_id=selected_result_analysis_id,
                                         method_groups=selected_analysis_groups,
+                                        build_mode_vs_ljun_dataframe=_build_mode_vs_ljun_dataframe,
+                                        build_resonator_table=_build_resonator_table,
+                                        build_fit_parameter_table=_build_fit_parameter_table,
+                                        is_summary_scalar=_is_summary_scalar_parameter,
                                     )
-                                    categories = _artifact_categories(artifacts)
+                                    categories = artifact_categories(artifacts)
                                     category_options = {
                                         category: _CATEGORY_LABELS.get(
                                             category,
@@ -2259,7 +2096,7 @@ def characterization_page():
                                             )
                                         ).classes("text-sm text-muted mt-3")
                                     else:
-                                        artifacts_for_category = _artifacts_in_category(
+                                        artifacts_for_category = artifacts_in_category(
                                             artifacts,
                                             category=selected_category,
                                         )

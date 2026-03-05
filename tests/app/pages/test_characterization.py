@@ -4,14 +4,17 @@ from app.pages.characterization import (
     _build_analysis_run_availability,
     _build_analysis_run_bundle_record,
     _build_analysis_run_ui_state,
+    _build_fit_parameter_table,
     _build_mode_vs_ljun_dataframe,
-    _build_result_artifacts_for_analysis,
+    _build_resonator_table,
     _filter_method_groups_by_trace_mode,
+    _is_summary_scalar_parameter,
     _result_view_controls_row_classes,
     _result_view_empty_state_message,
     _trace_mode_filter_options,
     _trace_mode_group_for_selected_rows,
 )
+from app.services.result_artifact_registry import build_result_artifacts_for_analysis
 from core.shared.persistence.models import (
     DerivedParameter,
     DeviceType,
@@ -152,9 +155,13 @@ def test_build_result_artifacts_for_analysis_emits_mode_vs_ljun_manifest() -> No
         ),
     ]
 
-    artifacts = _build_result_artifacts_for_analysis(
+    artifacts = build_result_artifacts_for_analysis(
         analysis_id="admittance_extraction",
         method_groups={"admittance_zero_crossing": params},
+        build_mode_vs_ljun_dataframe=_build_mode_vs_ljun_dataframe,
+        build_resonator_table=_build_resonator_table,
+        build_fit_parameter_table=_build_fit_parameter_table,
+        is_summary_scalar=_is_summary_scalar_parameter,
     )
 
     mode_artifacts = [
@@ -187,9 +194,13 @@ def test_build_result_artifacts_for_squid_emits_fit_parameters_manifest() -> Non
         ),
     ]
 
-    artifacts = _build_result_artifacts_for_analysis(
+    artifacts = build_result_artifacts_for_analysis(
         analysis_id="squid_fitting",
         method_groups={"lc_squid_fit": params},
+        build_mode_vs_ljun_dataframe=_build_mode_vs_ljun_dataframe,
+        build_resonator_table=_build_resonator_table,
+        build_fit_parameter_table=_build_fit_parameter_table,
+        is_summary_scalar=_is_summary_scalar_parameter,
     )
 
     fit_artifacts = [a for a in artifacts if str(a.query_spec.get("shape")) == "fit_parameters"]
