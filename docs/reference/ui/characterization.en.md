@@ -11,9 +11,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization contract for Source Scope, Run Analysis, trace selection, and unified Result View
-version: v0.8.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v0.9.0
+last_updated: 2026-03-05
+updated_by: codex
 ---
 
 # Characterization
@@ -321,3 +321,50 @@ Each completed run must create a new `ResultBundleRecord`:
 ## Admittance Output Replacement Rule
 
 Each `admittance_zero_crossing` run must delete prior outputs of the same method in the same dataset before writing new derived parameters, to prevent stale sideband/sweep rows from inflating mode tables.
+
+## Runtime Contract Snapshot
+
+### Input
+
+- active `DatasetRecord` (dataset-centric)
+- trace metadata index (scope-filtered)
+- analysis config + selected trace ids
+
+### Output
+
+- new `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
+- corresponding `DerivedParameter` / artifact payload (by analysis type)
+- traceable status log (start / heartbeat / success / failure)
+
+### Invariants
+
+1. trace-first authority: `compatible traces + selected trace ids` is the only run gate
+2. `dataset_profile` is recommendation only and must never hard-block execution
+3. Result View renders from artifact contracts, not from derived-parameter naming strings
+
+### Failure Modes
+
+- `compatible traces = 0` -> `Unavailable for current scope`
+- `selected trace ids = 0` -> Run disabled + `Select at least one trace to run.`
+- persistence method key and registry `completed_methods` mismatch -> result tab/artifact invisible
+
+## Code Reference Map
+
+- page orchestration:
+  - [`characterization/__init__.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/characterization/__init__.py)
+- runtime state:
+  - [`characterization/state.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/characterization/state.py)
+- trace-scope query service:
+  - [`characterization_trace_scope.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/services/characterization_trace_scope.py)
+- analysis metadata/hints:
+  - [`analysis_registry.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/services/analysis_registry.py)
+  - [`analysis_capability_evaluator.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/services/analysis_capability_evaluator.py)
+
+## Runtime Parity Checklist
+
+Before release, verify:
+
+1. availability label, run-enable state, and pre-run guard all use one shared evaluator
+2. trace mode filter (`All/Base/Sideband`) semantics match between Run Analysis and Result View
+3. `ResultBundleRecord.config_snapshot` includes selected trace ids and selected trace mode group
+4. artifact manifest and payload queries are both driven by the same trace-scope filter result

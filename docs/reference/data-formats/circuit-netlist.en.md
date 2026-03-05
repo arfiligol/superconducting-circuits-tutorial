@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CircuitDefinition netlist format: value_ref, parameters, and sweep override rules"
-version: v1.1.1
+version: v1.2.0
 last_updated: 2026-03-05
-updated_by: docs-team
+updated_by: codex
 ---
 
 # Circuit Netlist Schema
@@ -132,6 +132,50 @@ Example:
 | `parameter default missing` | `parameters[*].default` is missing | Add a default value |
 | `Ports without resistors detected` | Port impedance is not defined | Add matching `R*` branch (commonly `R50`) |
 | `SingularException` | Topology/value combination creates singular matrix | Check connectivity, values, and units |
+
+## Runtime Contract Snapshot
+
+### Input
+
+- source-form netlist (saved from Schema Editor)
+- optional Simulation Setup overrides (for example, sweep values)
+
+### Output
+
+- expanded/validated netlist (runtime-only view, never persisted back to DB)
+- explicit validation failures mapped to concrete fields/rules
+
+### Invariants
+
+1. ground token must be string `0`
+2. `P*` rows must use integer port index at position 4
+3. non-`P*` rows must use parameter reference (`value_ref`) at position 4
+4. `K*` rows must use inductor names at positions 2/3 and coupling component at position 4
+
+### Failure Modes
+
+- undefined parameter reference
+- invalid node token / invalid ground token
+- `K*` references unknown inductor/component names
+- singular matrix after topology lowering (numerical layer)
+
+## Code Reference Map
+
+- parser / validator:
+  - [`circuit.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/simulation/domain/circuit.py)
+- simulation page expanded preview:
+  - [`simulation/__init__.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/simulation/__init__.py)
+- schema editor source/preview binding:
+  - [`schema_editor.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/schema_editor.py)
+
+## Runtime Parity Checklist
+
+Before release, verify:
+
+1. Data format spec and parser rules are aligned (`P*` / `K*` / ground token)
+2. Schema Editor Expanded Preview and Simulation Netlist Configuration share one expansion pipeline
+3. DB stores source-form only, never expanded-form
+4. runtime error messages map to this spec instead of hidden legacy compatibility paths
 
 ## Related
 

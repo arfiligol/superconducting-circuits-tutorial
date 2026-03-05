@@ -11,9 +11,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization 的 Source Scope、Run Analysis、Trace Selection 與 Result View 契約
-version: v0.8.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v0.9.0
+last_updated: 2026-03-05
+updated_by: codex
 ---
 
 # Characterization
@@ -317,3 +317,50 @@ analysis 可用性必須以「當前 scope 的 compatible traces」為準。
 ## Admittance Output Replacement Rule
 
 `admittance_zero_crossing` 每次執行時，必須先清掉同 dataset 舊的同 method 輸出，再寫入新結果，避免舊 sideband / 舊 sweep 殘留造成 mode rows 無限膨脹。
+
+## Runtime Contract Snapshot
+
+### Input
+
+- active `DatasetRecord`（dataset-centric）
+- trace metadata index（scope-filtered）
+- analysis config + selected trace ids
+
+### Output
+
+- 新的 `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
+- 對應 `DerivedParameter` / artifact payload（依 analysis type）
+- 可追蹤 status log（start / heartbeat / success / failure）
+
+### Invariants
+
+1. trace-first authority：`compatible traces + selected trace ids` 是唯一 run gate
+2. `dataset_profile` 僅提供 hint/recommendation，不可 hard-block
+3. Result View 只讀 artifact contract，不直接依賴派生參數命名字串
+
+### Failure Modes
+
+- `compatible traces = 0` -> `Unavailable for current scope`
+- `selected trace ids = 0` -> Run disabled + `Select at least one trace to run.`
+- persistence method 與 registry `completed_methods` 不一致 -> 結果 tab/artifact 不可見
+
+## Code Reference Map
+
+- Page orchestration:
+  - [`characterization/__init__.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/characterization/__init__.py)
+- Runtime state:
+  - [`characterization/state.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/characterization/state.py)
+- Trace-scope query service:
+  - [`characterization_trace_scope.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/services/characterization_trace_scope.py)
+- Analysis metadata/hints:
+  - [`analysis_registry.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/services/analysis_registry.py)
+  - [`analysis_capability_evaluator.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/services/analysis_capability_evaluator.py)
+
+## Runtime Parity Checklist
+
+release 前至少確認：
+
+1. availability label / run enable / pre-run guard 共用同一 evaluator
+2. trace mode filter（All/Base/Sideband）在 Run Analysis 與 Result View 語義一致
+3. `ResultBundleRecord.config_snapshot` 含 selected trace ids + mode group
+4. artifact manifest 與 payload query 由同一 trace scope 過濾結果驅動

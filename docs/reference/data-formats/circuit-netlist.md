@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CircuitDefinition Netlist 規格：value_ref、parameters、Sweep 覆寫規則"
-version: v1.1.1
+version: v1.2.0
 last_updated: 2026-03-05
-updated_by: docs-team
+updated_by: codex
 ---
 
 # Circuit Netlist Schema
@@ -132,6 +132,50 @@ Live Preview 顯示值時，必須用 topology 的第 4 欄 `value_ref` 查 `par
 | `parameter default missing` | `parameters[*].default` 遺漏 | 為該參數補預設值 |
 | `Ports without resistors detected` | Port 沒有阻抗定義 | 加入對應 `R*` 元件（常見 `R50`） |
 | `SingularException` | 拓樸連接或參數組合導致矩陣奇異 | 檢查節點連通性、元件數值與單位 |
+
+## Runtime Contract Snapshot
+
+### Input
+
+- Source-form netlist（Schema Editor 儲存內容）
+- 可選 Simulation Setup 覆寫（例如 sweep）
+
+### Output
+
+- Expanded/validated netlist（僅執行期視圖，不回寫 DB）
+- 明確 validation failure（可對應到欄位與規則）
+
+### Invariants
+
+1. ground token 只允許字串 `0`
+2. `P*` 第 4 欄必須是整數 port index
+3. 非 `P*` 第 4 欄必須是參數引用（`value_ref`）
+4. `K*` 第 2/3 欄必須是 inductor element 名稱，第 4 欄是 coupling component 引用
+
+### Failure Modes
+
+- undefined parameter reference
+- invalid node token / invalid ground token
+- `K*` row 參照不存在 inductor/component
+- 拓樸造成奇異矩陣（數值層）
+
+## Code Reference Map
+
+- Parser / validator:
+  - [`circuit.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/simulation/domain/circuit.py)
+- Simulation page expanded preview:
+  - [`simulation/__init__.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/simulation/__init__.py)
+- Schema editor source/preview binding:
+  - [`schema_editor.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/schema_editor.py)
+
+## Runtime Parity Checklist
+
+release 前至少確認：
+
+1. Data Format 規格與 parser 規則一致（`P*` / `K*` / ground token）
+2. Schema Editor Expanded Preview 與 Simulation Netlist Configuration 使用同一 expansion pipeline
+3. DB 僅保存 source-form，不保存 expanded-form
+4. error message 可對應到本頁規範條目，不依賴隱式舊相容路徑
 
 ## Related
 

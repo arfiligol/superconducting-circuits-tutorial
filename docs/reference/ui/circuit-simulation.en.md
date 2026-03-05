@@ -11,9 +11,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.8.1
+version: v0.9.0
 last_updated: 2026-03-05
-updated_by: docs-team
+updated_by: codex
 ---
 
 # Circuit Simulation
@@ -461,3 +461,49 @@ Full nodal internal-node elimination (steps 1/2 UI flow) is explicitly out of M1
 !!! note "Processed S source"
     `Post Processing Results` `S` must be converted from post-processed `Y/Z`,
     not produced by direct S-domain transformation.
+
+## Runtime Contract Snapshot
+
+### Input
+
+- active schema source-form definition (DB persisted)
+- normalized simulation setup
+- optional post-processing flow spec (steps + input Y source)
+
+### Output
+
+- simulation raw result cache/bundle (with raw `S/Y/Z` families)
+- optional post-processed output node (readable by result-family explorer)
+- traceable logs (cache hit/miss, solver run, post-processing run)
+
+### Invariants
+
+1. `Simulation Results` and `Post Processing Results` keep separate state while sharing aligned interaction patterns
+2. raw `S` always remains solver-native and must not be rewritten by PTC
+3. PTC is allowed only in Y-domain first, then `Z` (and optionally post-processed `S`) is derived from that source
+4. coordinate transform and kron reduction run only in `Y/Z` domains
+
+### Failure Modes
+
+- schema parse/validation failure -> run rejected with field-level error
+- solver long-running/timeout -> heartbeat + warning must be visible in logs
+- invalid post-processing step chain (unavailable basis labels) -> run rejected
+- HFSS-comparable conditions not met -> must show `Not comparable` with explainable reason
+
+## Code Reference Map
+
+- page orchestration + sections:
+  - [`simulation/__init__.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/simulation/__init__.py)
+- simulation runtime state:
+  - [`simulation/state.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/simulation/state.py)
+- post-processing application:
+  - [`post_processing.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/simulation/application/post_processing.py)
+
+## Runtime Parity Checklist
+
+Before release, verify:
+
+1. Schema Editor Expanded Preview and Simulation Netlist Configuration use the same expansion pipeline
+2. `Simulation Results` family-source contract stays consistent (`S=raw only`, `Y/Z=raw|PTC`)
+3. `Post Processing Results` naming, title, and y-axis labels match trace-card output/input labels
+4. save-raw and save-postprocessed both persist bundle provenance (`origin`, `source`, `config snapshot`)
