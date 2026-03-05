@@ -56,6 +56,9 @@ Whenever you change any `docs/` content, `zensical*.toml` navigation, or page pa
 ### Standard commands
 
 ```bash
+# One-shot full docs integrity check (recommended)
+./scripts/verify_docs_integrity.sh
+
 # 0) Validate nav routes against docs source files first
 uv run python scripts/check_docs_nav_routes.py --check-source
 

@@ -69,9 +69,7 @@ def _check_source(config_path: Path, *, locale: str, nav_paths: list[str]) -> li
     return missing
 
 
-def _check_built(
-    config_path: Path, *, nav_paths: list[str], site_dir: Path
-) -> list[str]:
+def _check_built(config_path: Path, *, nav_paths: list[str], site_dir: Path) -> list[str]:
     missing: list[str] = []
     for relative_md_path in nav_paths:
         expected = _expected_built_html_path(relative_md_path, site_dir=site_dir)
@@ -94,8 +92,7 @@ def main() -> int:
         action="append",
         dest="configs",
         help=(
-            "Config file to validate (repeatable). "
-            "Defaults to zensical.toml and zensical.en.toml."
+            "Config file to validate (repeatable). Defaults to zensical.toml and zensical.en.toml."
         ),
     )
     parser.add_argument(

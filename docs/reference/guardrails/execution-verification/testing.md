@@ -56,6 +56,9 @@ uv run pre-commit run --all-files
 ### 標準指令
 
 ```bash
+# 一鍵完整檢查（建議）
+./scripts/verify_docs_integrity.sh
+
 # 0) 先檢查 nav 路由是否對應 docs 來源檔
 uv run python scripts/check_docs_nav_routes.py --check-source
 

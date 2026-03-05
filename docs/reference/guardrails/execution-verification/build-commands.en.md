@@ -57,6 +57,9 @@ uv run sc plot admittance DatasetName
 ## Documentation
 
 ```bash
+# One-shot full docs integrity check (recommended)
+./scripts/verify_docs_integrity.sh
+
 # Validate nav against source docs files
 uv run python scripts/check_docs_nav_routes.py --check-source
 

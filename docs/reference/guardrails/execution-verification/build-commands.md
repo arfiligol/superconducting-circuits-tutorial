@@ -51,6 +51,9 @@ uv run sc plot admittance DatasetName
 ## 文件
 
 ```bash
+# 一鍵完整檢查（建議）
+./scripts/verify_docs_integrity.sh
+
 # 檢查 nav 是否有指向不存在的來源檔
 uv run python scripts/check_docs_nav_routes.py --check-source
 
