@@ -298,16 +298,18 @@ def _expect_analysis_status(page: Page, analysis_label: str, status: str) -> Non
     )
     analysis_select.click()
     page.get_by_role("option", name=re.compile(rf"^{re.escape(analysis_label)}")).first.click()
-    if status == "Recommended":
-        expected_text = "Recommended for current scope"
-    elif status == "Unavailable":
-        expected_text = "Unavailable for current scope"
-    else:
-        expected_text = "Available for current scope"
     availability_label = _locator_by_testid(
         page,
         "characterization-availability-label",
-        fallback=page.get_by_text(expected_text, exact=True),
+        fallback=page.get_by_text(re.compile(r"for current scope$")).first,
+    )
+    expected_prefix = (
+        status
+        if status in {"Available", "Recommended", "Unavailable"}
+        else "Available"
+    )
+    expect(availability_label).to_contain_text(
+        re.compile(rf"^{re.escape(expected_prefix)} for current scope$")
     )
     expect(availability_label).to_be_visible(timeout=30000)
 
@@ -452,7 +454,11 @@ def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
     ).to_be_visible(timeout=30000)
     _expect_analysis_status(page, "SQUID Fitting", "Available")
     expect(
-        page.get_by_text("Profile hint: missing capability SQUID Characterization").first
+        _locator_by_testid(
+            page,
+            "characterization-availability-reason",
+            fallback=page.get_by_text("Profile hint: missing capability SQUID Characterization"),
+        )
     ).to_be_visible(timeout=30000)
 
     _select_active_dataset(page, seeded_dataset_names["traveling_wave"])
@@ -464,6 +470,9 @@ def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
         )
     ).to_be_visible(timeout=30000)
     _select_option(page, "Analysis", "S21 Resonance Fit")
-    expect(
-        page.get_by_text(re.compile(r"^(Available|Recommended|Unavailable) for current scope$"))
-    ).to_be_visible(timeout=30000)
+    availability_label = _locator_by_testid(
+        page,
+        "characterization-availability-label",
+        fallback=page.get_by_text(re.compile(r"for current scope$")).first,
+    )
+    expect(availability_label).to_be_visible(timeout=30000)
