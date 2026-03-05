@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import signal
@@ -85,31 +86,17 @@ def _jpa_definition() -> str:
     )
 
 
-def _jpa_value_ref_definition() -> str:
-    return str(
-        {
-            "name": "E2E JPA Core (Sweepable)",
-            "parameters": [
-                {"name": "R1", "default": 50.0, "unit": "Ohm"},
-                {"name": "Cc", "default": 100.0, "unit": "fF"},
-                {"name": "Lj", "default": 1000.0, "unit": "pH"},
-                {"name": "Cj", "default": 1000.0, "unit": "fF"},
-            ],
-            "components": [
-                {"name": "R1", "value_ref": "R1", "unit": "Ohm"},
-                {"name": "Cc", "value_ref": "Cc", "unit": "fF"},
-                {"name": "Lj", "value_ref": "Lj", "unit": "pH"},
-                {"name": "Cj", "value_ref": "Cj", "unit": "fF"},
-            ],
-            "topology": [
-                ("P1", "1", "0", 1),
-                ("R1", "1", "0", "R1"),
-                ("C1", "1", "2", "Cc"),
-                ("Lj1", "2", "0", "Lj"),
-                ("C2", "2", "0", "Cj"),
-            ],
-        }
+def _official_seed_definitions() -> dict[str, str]:
+    """Load official JosephsonCircuits seeded definitions from local seed script."""
+    module_path = (
+        Path(__file__).resolve().parents[3] / "tmp" / "seed_josephson_circuits_examples.py"
     )
+    spec = importlib.util.spec_from_file_location("seed_josephson_circuits_examples", module_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return dict(module.build_all())
 
 
 def _two_port_compensation_definition() -> str:
@@ -163,6 +150,10 @@ def _three_port_basis_definition() -> str:
 def example_cases() -> tuple[ExampleCase, ...]:
     """Representative example categories from JosephsonCircuits README usage."""
     suffix = uuid.uuid4().hex[:8]
+    official_seed_definitions = _official_seed_definitions()
+    official_flux_name = (
+        "JosephsonCircuits Examples: Flux-pumped Josephson Parametric Amplifier (JPA)"
+    )
 
     single_ip = 0.00565e-6
     double_ip = single_ip * 1.7
@@ -225,14 +216,14 @@ def example_cases() -> tuple[ExampleCase, ...]:
         ),
         ExampleCase(
             slug="flux_pumped_jpa_bias_sweep",
-            schema_name=f"E2E-{suffix}-FluxPumpedJPABiasSweep",
-            definition=_jpa_value_ref_definition(),
-            start_ghz=4.5,
-            stop_ghz=5.0,
-            points=121,
-            n_mod=4,
-            n_pump=8,
-            sources=((4.75001, 1, single_ip),),
+            schema_name=official_flux_name,
+            definition=official_seed_definitions[official_flux_name],
+            start_ghz=9.7,
+            stop_ghz=9.8,
+            points=101,
+            n_mod=8,
+            n_pump=16,
+            sources=((19.50, 2, 140.3e-6), (19.50, 2, 0.7e-6)),
         ),
     )
 
@@ -380,10 +371,16 @@ def _configure_single_axis_sweep(
         if "q-toggle--truthy" not in classes:
             toggle.click()
 
-    target_select = sweep_card.get_by_role(
-        "combobox",
-        name="Sweep Target (components[*].value_ref)",
+    target_select = _locator_by_testid(
+        page,
+        "simulation-sweep-target-select",
+        fallback=sweep_card.get_by_role("combobox", name="Sweep Target"),
     )
+    if target_select.count() == 0:
+        target_select = sweep_card.get_by_role(
+            "combobox",
+            name="Sweep Target (components[*].value_ref)",
+        )
     target_select.click()
     page.get_by_role("option", name=re.compile(rf"^{re.escape(target)}(\s|\(|$)")).first.click()
     _set_spinbutton_value(page, "Sweep Start", start)
@@ -769,9 +766,9 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     _configure_sources(page, case.sources)
     _configure_single_axis_sweep(
         page,
-        target="Lj",
-        start=900.0,
-        stop=1100.0,
+        target="sources[1].current_amp",
+        start=120e-6,
+        stop=160e-6,
         points=5,
     )
 

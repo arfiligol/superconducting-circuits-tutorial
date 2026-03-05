@@ -125,6 +125,19 @@ def test_loop_generated_seeded_examples_use_repeat_source_form() -> None:
     )
 
 
+def test_flux_pumped_jpa_seed_uses_parameterized_source_form_for_sweep_targets() -> None:
+    seed_module = _load_seed_module()
+    definitions = dict(seed_module.build_all())
+    flux_definition = definitions[
+        "JosephsonCircuits Examples: Flux-pumped Josephson Parametric Amplifier (JPA)"
+    ]
+    flux_circuit = parse_circuit_definition_source(flux_definition)
+    expanded = flux_circuit.expanded_definition
+
+    assert any(component.value_ref == "Lj" for component in expanded.components)
+    assert expanded.parameter_spec("Lj") is not None
+
+
 def test_merge_saved_setups_with_builtin_keeps_user_setup() -> None:
     builtin = _builtin_saved_setups_for_schema(
         "JosephsonCircuits Examples: Josephson Parametric Amplifier (JPA)"

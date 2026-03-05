@@ -850,6 +850,32 @@ def test_normalize_sweep_setup_payload_resolves_unknown_target_to_available_opti
     assert normalized["axes"][0]["unit"] == "pH"
 
 
+def test_normalize_sweep_setup_payload_keeps_source_target_axis() -> None:
+    normalized = _normalize_sweep_setup_payload(
+        {
+            "enabled": True,
+            "axes": [
+                {
+                    "target_value_ref": "sources[1].current_amp",
+                    "start": 130e-6,
+                    "stop": 150e-6,
+                    "points": 5,
+                    "unit": "A",
+                }
+            ],
+        },
+        available_target_units={"Lj": "pH", "sources[1].current_amp": "A"},
+    )
+
+    axis = normalized["axes"][0]
+    assert normalized["enabled"] is True
+    assert axis["target_value_ref"] == "sources[1].current_amp"
+    assert axis["start"] == pytest.approx(130e-6)
+    assert axis["stop"] == pytest.approx(150e-6)
+    assert axis["points"] == 5
+    assert axis["unit"] == "A"
+
+
 def test_decode_simulation_result_payload_supports_parameter_sweep_payload() -> None:
     base = _sample_result()
     sweep_run = SimulationSweepRun(
@@ -877,6 +903,44 @@ def test_decode_simulation_result_payload_supports_parameter_sweep_payload() -> 
     assert sweep_payload is not None
     assert sweep_payload["run_kind"] == "parameter_sweep"
     assert sweep_payload["point_count"] == 2
+    assert result.frequencies_ghz == base.frequencies_ghz
+
+
+def test_decode_simulation_result_payload_supports_source_sweep_target_axis() -> None:
+    base = _sample_result()
+    sweep_run = SimulationSweepRun(
+        axes=(
+            SimulationSweepAxis(
+                target_value_ref="sources[1].current_amp",
+                values=(130e-6, 150e-6),
+                unit="A",
+            ),
+        ),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"sources[1].current_amp": 130e-6},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"sources[1].current_amp": 150e-6},
+                result=base,
+            ),
+        ),
+        representative_point_index=0,
+    )
+    payload = simulation_sweep_run_to_payload(sweep_run)
+
+    result, sweep_payload = _decode_simulation_result_payload(payload)
+
+    assert sweep_payload is not None
+    assert sweep_payload["sweep_axes"][0]["target_value_ref"] == "sources[1].current_amp"
+    assert sweep_payload["points"][1]["axis_values"]["sources[1].current_amp"] == pytest.approx(
+        150e-6
+    )
     assert result.frequencies_ghz == base.frequencies_ghz
 
 
