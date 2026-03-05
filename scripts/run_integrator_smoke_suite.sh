@@ -17,6 +17,6 @@ RUN_PLAYWRIGHT_CHARACTERIZATION_E2E=1 \
 echo "[smoke] playwright josephson e2e"
 RUN_PLAYWRIGHT_JOSEPHSON_E2E=1 \
   uv run pytest tests/app/e2e/test_josephson_examples_playwright.py \
-    -k "not post_processed_result_view_uses_trace_card_port_labels_for_matrix_names" -q
+    -k "linear_series_lc or port_termination_compensation_modes_in_ui" -q
 
 echo "[smoke] complete"
