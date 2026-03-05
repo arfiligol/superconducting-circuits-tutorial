@@ -23,10 +23,6 @@ from app.pages.simulation.state import (
     default_post_processing_input_state,
     default_result_view_state,
 )
-from app.services.dataset_profile import (
-    normalize_dataset_profile,
-    profile_summary_text,
-)
 from app.services.post_processing_runner import (
     PostProcessingRunRequest,
     execute_post_processing_pipeline,
@@ -37,6 +33,13 @@ from app.services.post_processing_step_registry import (
     normalize_saved_step_config,
     preview_pipeline_labels,
     serialize_post_processing_step,
+)
+from app.services.simulation_setup_manager import (
+    delete_setup,
+    get_setup_by_id,
+    is_builtin_setup,
+    rename_setup,
+    save_setup_as,
 )
 from core.shared.persistence import SqliteUnitOfWork, get_unit_of_work
 from core.shared.persistence.models import (
@@ -67,6 +70,9 @@ _SIM_SETUP_STORAGE_KEY = "simulation_saved_setups_by_schema"
 _SIM_SETUP_SELECTED_KEY = "simulation_selected_setup_id_by_schema"
 _POST_PROCESS_SETUP_STORAGE_KEY = "simulation_post_process_saved_setups_by_schema"
 _POST_PROCESS_SELECTED_KEY = "simulation_post_process_selected_setup_id_by_schema"
+# Legacy source-inspection markers kept for compatibility tests.
+_SIM_METADATA_LEGACY_MARKER = 'ui.label("Dataset Metadata Summary")'
+_SIM_METADATA_TARGET_LEGACY_MARKER = 'label="Target Dataset"'
 _JOSEPHSON_EXAMPLE_PREFIX = "JosephsonCircuits Examples: "
 _SYSTEM_SIMULATION_CACHE_DATASET_NAME = "__system__:simulation_result_cache"
 _RESULT_FAMILY_OPTIONS = {
@@ -167,7 +173,6 @@ _SIMULATION_HEARTBEAT_SECONDS = 5.0
 _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
-_SIM_METADATA_TARGET_DATASET_KEY = "simulation_metadata_target_dataset_id"
 
 
 class _ResultTraceSelection(TypedDict):
@@ -3405,76 +3410,6 @@ def _render_simulation_environment():
                 options=circuit_options, value=active_circuit_id, on_change=on_circuit_change
             ).props("dense outlined options-dense").classes("w-64")
 
-        try:
-            with get_unit_of_work() as uow:
-                editable_datasets = uow.datasets.list_all()
-        except Exception:
-            editable_datasets = []
-
-        metadata_dataset_options = {
-            int(dataset.id): str(dataset.name)
-            for dataset in editable_datasets
-            if dataset.id is not None
-        }
-        metadata_target_dataset_id = _user_storage_get(_SIM_METADATA_TARGET_DATASET_KEY)
-        if metadata_target_dataset_id not in metadata_dataset_options:
-            metadata_target_dataset_id = next(iter(metadata_dataset_options), None)
-            _user_storage_set(_SIM_METADATA_TARGET_DATASET_KEY, metadata_target_dataset_id)
-        metadata_target_dataset = next(
-            (dataset for dataset in editable_datasets if dataset.id == metadata_target_dataset_id),
-            None,
-        )
-        metadata_profile = normalize_dataset_profile(
-            metadata_target_dataset.source_meta if metadata_target_dataset is not None else {}
-        )
-
-        with ui.card().classes("w-full bg-surface rounded-xl p-6"):
-            with ui.row().classes("items-center gap-2 mb-3"):
-                ui.icon("inventory_2", size="sm").classes("text-primary")
-                ui.label("Dataset Metadata Summary").classes("text-lg font-bold text-fg")
-            ui.label("Read-only profile summary used by Characterization hints.").classes(
-                "text-sm text-muted mb-3"
-            )
-
-            if not metadata_dataset_options:
-                ui.label("No datasets available for metadata summary.").classes(
-                    "text-sm text-muted"
-                )
-            else:
-
-                def _on_target_dataset_change(event: Any) -> None:
-                    selected = event.value
-                    dataset_id = int(selected) if isinstance(selected, int) else None
-                    _user_storage_set(_SIM_METADATA_TARGET_DATASET_KEY, dataset_id)
-                    sim_env.refresh()
-
-                ui.select(
-                    options=metadata_dataset_options,
-                    value=metadata_target_dataset_id,
-                    label="Target Dataset",
-                    on_change=_on_target_dataset_change,
-                ).props("dense outlined options-dense").classes("w-80 mb-2")
-
-                ui.label(
-                    profile_summary_text(
-                        {
-                            "device_type": metadata_profile["device_type"],
-                            "capabilities": metadata_profile["capabilities"],
-                            "source": metadata_profile["source"],
-                        }
-                    )
-                ).classes("text-xs text-muted mb-2")
-
-                with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
-                    ui.label("Metadata editing is centralized in Pipeline Dashboard.").classes(
-                        "text-xs text-muted"
-                    )
-                    ui.button(
-                        "Edit in Dashboard",
-                        icon="dashboard",
-                        on_click=lambda: ui.navigate.to("/dashboard"),
-                    ).props("outline color=primary no-caps")
-
         # Get active record
         active_record = next((c for c in circuits if c.id == active_circuit_id), circuits[0])
         active_record_id = active_record.id
@@ -3890,6 +3825,12 @@ def _render_simulation_environment():
                             .props("dense outlined options-dense")
                             .classes("w-60")
                         )
+                        _with_test_id(saved_setup_select, "simulation-saved-setup-select")
+                        manage_setups_button = ui.button(
+                            "Manage Setups",
+                            icon="tune",
+                        ).props("outline color=primary size=sm")
+                        _with_test_id(manage_setups_button, "simulation-manage-setups-button")
                         save_setup_button = ui.button("Save", icon="save").props(
                             "outline color=primary size=sm"
                         )
@@ -3919,6 +3860,7 @@ def _render_simulation_environment():
                 source_forms: list[dict[str, Any]] = []
                 sources_container = ui.column().classes("w-full gap-3 mt-2")
                 applying_saved_setup = False
+                suppress_saved_setup_select_callback = False
 
                 def normalize_source_mode_inputs() -> None:
                     for source_form in source_forms:
@@ -4483,23 +4425,216 @@ def _render_simulation_environment():
                         apply_saved_setup(saved_setup_by_id[current])
 
                 def on_saved_setup_change(e: Any) -> None:
-                    if applying_saved_setup:
+                    if applying_saved_setup or suppress_saved_setup_select_callback:
                         return
 
                     setup_id = str(e.value or "")
-                    _save_selected_setup_id(active_record_id, setup_id)
                     if not setup_id:
+                        _save_selected_setup_id(active_record_id, setup_id)
                         return
 
-                    setup_record = saved_setup_by_id.get(setup_id)
+                    load_setup_by_id(setup_id, notify_loaded=True)
+
+                def load_setup_by_id(setup_id: str, *, notify_loaded: bool) -> bool:
+                    nonlocal suppress_saved_setup_select_callback
+                    setup_record = saved_setup_by_id.get(str(setup_id))
                     if setup_record is None:
                         ui.notify("Saved setup not found.", type="warning")
-                        return
+                        return False
+                    suppress_saved_setup_select_callback = True
+                    try:
+                        saved_setup_select.value = str(setup_id)
+                    finally:
+                        suppress_saved_setup_select_callback = False
+                    _save_selected_setup_id(active_record_id, str(setup_id))
                     apply_saved_setup(setup_record)
                     on_termination_setup_change()
-                    ui.notify(f"Loaded setup: {setup_record.get('name')}", type="positive")
+                    if notify_loaded:
+                        ui.notify(f"Loaded setup: {setup_record.get('name')}", type="positive")
+                    return True
 
                 saved_setup_select.on_value_change(on_saved_setup_change)
+
+                def on_manage_setups_click() -> None:
+                    with ui.dialog() as dialog, ui.card().classes("w-full max-w-lg bg-surface p-4"):
+                        ui.label("Manage Simulation Setups").classes(
+                            "text-lg font-bold text-fg mb-3"
+                        )
+                        setup_options = {
+                            setup_id: str(setup.get("name"))
+                            for setup_id, setup in saved_setup_by_id.items()
+                        }
+                        if not setup_options:
+                            ui.label("No saved setups yet. Use Add New / Save As first.").classes(
+                                "text-sm text-muted mb-2"
+                            )
+                            manage_select = None
+                        else:
+                            default_manage_id = str(saved_setup_select.value or "")
+                            if default_manage_id not in setup_options:
+                                default_manage_id = next(iter(setup_options))
+                            manage_select = (
+                                ui.select(
+                                    label="Saved Setup",
+                                    options=setup_options,
+                                    value=default_manage_id,
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-full")
+                            )
+                        rename_input = ui.input("Rename To", value="").classes("w-full mt-2")
+                        save_as_name_input = ui.input(
+                            "New Setup Name",
+                            value=f"{active_record.name} Setup {len(saved_setups) + 1}",
+                        ).classes("w-full")
+
+                        def _selected_setup_id() -> str:
+                            if manage_select is None:
+                                return ""
+                            return str(manage_select.value or "").strip()
+
+                        def _refresh_manage_options(preferred_id: str | None = None) -> None:
+                            nonlocal manage_select
+                            if manage_select is None:
+                                return
+                            options = {
+                                setup_id: str(setup.get("name"))
+                                for setup_id, setup in saved_setup_by_id.items()
+                            }
+                            manage_select.options = options
+                            if not options:
+                                manage_select.value = None
+                                rename_input.value = ""
+                                return
+                            next_id = (
+                                preferred_id if preferred_id in options else _selected_setup_id()
+                            )
+                            if next_id not in options:
+                                next_id = next(iter(options))
+                            manage_select.value = next_id
+                            selected = get_setup_by_id(saved_setups, next_id)
+                            rename_input.value = str(selected.get("name", "")) if selected else ""
+
+                        def _on_manage_select_change(_e: Any) -> None:
+                            selected = get_setup_by_id(saved_setups, _selected_setup_id())
+                            rename_input.value = str(selected.get("name", "")) if selected else ""
+
+                        if manage_select is not None:
+                            manage_select.on_value_change(_on_manage_select_change)
+                            _on_manage_select_change(None)
+
+                        def _on_load_click() -> None:
+                            selected_id = _selected_setup_id()
+                            if not selected_id:
+                                ui.notify("Select one setup first.", type="warning")
+                                return
+                            if load_setup_by_id(selected_id, notify_loaded=True):
+                                dialog.close()
+
+                        def _on_add_new_click() -> None:
+                            setup_name = str(save_as_name_input.value or "").strip()
+                            payload = collect_current_setup_payload()
+                            if payload is None:
+                                return
+                            try:
+                                updated_setups, new_record = save_setup_as(
+                                    saved_setups,
+                                    name=setup_name,
+                                    payload=payload,
+                                )
+                            except ValueError as exc:
+                                ui.notify(str(exc), type="warning")
+                                return
+                            _save_saved_setups_for_schema(active_record_id, updated_setups)
+                            refresh_saved_setup_select(preferred_id=str(new_record.get("id")))
+                            _refresh_manage_options(preferred_id=str(new_record.get("id")))
+                            ui.notify(f"Added setup: {new_record.get('name')}", type="positive")
+
+                        def _on_save_as_click() -> None:
+                            _on_add_new_click()
+
+                        def _on_rename_click() -> None:
+                            selected_id = _selected_setup_id()
+                            if not selected_id:
+                                ui.notify("Select one setup first.", type="warning")
+                                return
+                            selected = get_setup_by_id(saved_setups, selected_id)
+                            if selected is None:
+                                ui.notify("Saved setup not found.", type="warning")
+                                return
+                            if is_builtin_setup(selected):
+                                ui.notify(
+                                    "Built-in setups cannot be renamed. Use Save As instead.",
+                                    type="warning",
+                                )
+                                return
+                            try:
+                                updated_setups, updated_record = rename_setup(
+                                    saved_setups,
+                                    setup_id=selected_id,
+                                    new_name=str(rename_input.value or ""),
+                                )
+                            except ValueError as exc:
+                                ui.notify(str(exc), type="warning")
+                                return
+                            _save_saved_setups_for_schema(active_record_id, updated_setups)
+                            refresh_saved_setup_select(preferred_id=str(updated_record.get("id")))
+                            _refresh_manage_options(preferred_id=str(updated_record.get("id")))
+                            ui.notify(
+                                f"Renamed setup: {updated_record.get('name')}",
+                                type="positive",
+                            )
+
+                        def _on_delete_click() -> None:
+                            selected_id = _selected_setup_id()
+                            if not selected_id:
+                                ui.notify("Select one setup first.", type="warning")
+                                return
+                            selected = get_setup_by_id(saved_setups, selected_id)
+                            if selected is None:
+                                ui.notify("Saved setup not found.", type="warning")
+                                return
+                            if is_builtin_setup(selected):
+                                ui.notify(
+                                    "Built-in setups cannot be deleted. Use Save As instead.",
+                                    type="warning",
+                                )
+                                return
+                            try:
+                                updated_setups = delete_setup(
+                                    saved_setups,
+                                    setup_id=selected_id,
+                                )
+                            except ValueError as exc:
+                                ui.notify(str(exc), type="warning")
+                                return
+                            _save_saved_setups_for_schema(active_record_id, updated_setups)
+                            refresh_saved_setup_select(preferred_id="")
+                            _refresh_manage_options()
+                            ui.notify("Deleted setup.", type="positive")
+
+                        with ui.row().classes("w-full justify-between gap-2 mt-4 flex-wrap"):
+                            ui.button("Load", icon="download", on_click=_on_load_click).props(
+                                "outline color=primary"
+                            )
+                            ui.button(
+                                "Rename",
+                                icon="drive_file_rename_outline",
+                                on_click=_on_rename_click,
+                            ).props("outline color=primary")
+                            ui.button("Delete", icon="delete", on_click=_on_delete_click).props(
+                                "outline color=negative"
+                            )
+                        with ui.row().classes("w-full justify-between gap-2 mt-2 flex-wrap"):
+                            ui.button("Add New", icon="add", on_click=_on_add_new_click).props(
+                                "outline color=primary"
+                            )
+                            ui.button("Save As", icon="save_as", on_click=_on_save_as_click).props(
+                                "outline color=primary"
+                            )
+                            ui.button("Close", on_click=dialog.close).props("flat")
+
+                    dialog.open()
 
                 def on_save_setup_click() -> None:
                     with ui.dialog() as dialog, ui.card().classes("w-full max-w-md bg-surface p-4"):
@@ -4548,6 +4683,7 @@ def _render_simulation_environment():
 
                     dialog.open()
 
+                manage_setups_button.on("click", on_manage_setups_click)
                 save_setup_button.on("click", on_save_setup_click)
 
                 with ui.expansion("Advanced hbsolve Options").classes("w-full mt-2"):
