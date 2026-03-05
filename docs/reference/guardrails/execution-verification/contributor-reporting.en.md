@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Standard contributor handoff format that humans can read and integrators can parse quickly"
-version: v1.0.0
-last_updated: 2026-03-04
+version: v1.1.0
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -62,7 +62,14 @@ Defines a standard contributor report structure that is both human-readable and 
 - Results:
   - `<pass/fail + key output>`
 
-### 6) Playwright / E2E (if required)
+### 6) API Touched Matrix (Required)
+- Public APIs touched:
+  - `<module.path.symbol>`: `<added|changed|removed|none>`
+  - `<module.path.symbol>`: `<impact summary>`
+- Downstream callers checked:
+  - `<caller-path-or-n/a>`
+
+### 7) Playwright / E2E (if required)
 - Scenarios:
   - <scenario-1>
   - <scenario-2>
@@ -71,21 +78,21 @@ Defines a standard contributor report structure that is both human-readable and 
   - `<log-or-report-abs-path>`
 - Result: <pass/fail>
 
-### 7) Known Risks / Limitations
+### 8) Known Risks / Limitations
 - <risk-1>
 - <risk-2>
 
-### 8) Integrator Decisions Needed (if any)
+### 9) Integrator Decisions Needed (if any)
 - <decision-needed-1>
 - <decision-needed-2>
 
-### 9) Rollback Info
+### 10) Rollback Info
 - Recommended rollback commit: `<hash>` (if needed)
 ```
 
 ## Required Fields
 
-- Mandatory: `Commit(s)`, `Changed Files`, `Test Results`, `Known Risks`
+- Mandatory: `Commit(s)`, `Changed Files`, `Test Results`, `Known Risks`, `API Touched Matrix`
 - If Playwright is required: `Scenarios` + `Evidence` + `Result` are mandatory
 - `Changed Files` must include reason per file, not paths only
 
@@ -110,6 +117,7 @@ Defines a standard contributor report structure that is both human-readable and 
     - Commit hashes
     - Changed files with reason
     - Test commands and results
+    - API touched matrix
     - Known risks
 - If Playwright is required:
     - MUST include scenarios, evidence paths, and pass/fail result.

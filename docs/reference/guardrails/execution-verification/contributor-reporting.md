@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Contributor Agent 標準回報格式，供 Integrator 與 PM 直接複製貼上使用"
-version: v1.0.0
-last_updated: 2026-03-04
+version: v1.1.0
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -62,7 +62,14 @@ updated_by: docs-team
 - Results:
   - `<pass/fail + key output>`
 
-### 6) Playwright / E2E（若任務要求）
+### 6) API Touched Matrix（必填）
+- Public APIs touched:
+  - `<module.path.symbol>`: `<added|changed|removed|none>`
+  - `<module.path.symbol>`: `<impact summary>`
+- Downstream callers checked:
+  - `<caller-path-or-n/a>`
+
+### 7) Playwright / E2E（若任務要求）
 - Scenarios:
   - <scenario-1>
   - <scenario-2>
@@ -71,21 +78,21 @@ updated_by: docs-team
   - `<log-or-report-abs-path>`
 - 結果: <pass/fail>
 
-### 7) 已知風險與限制
+### 8) 已知風險與限制
 - <risk-1>
 - <risk-2>
 
-### 8) 需要 Integrator 決策的事項（若有）
+### 9) 需要 Integrator 決策的事項（若有）
 - <decision-needed-1>
 - <decision-needed-2>
 
-### 9) 回退資訊
+### 10) 回退資訊
 - 建議回退 commit: `<hash>`（若需要）
 ```
 
 ## 必填欄位
 
-- 必須包含：`Commit(s)`、`Changed Files`、`測試結果`、`已知風險`
+- 必須包含：`Commit(s)`、`Changed Files`、`測試結果`、`已知風險`、`API Touched Matrix`
 - 若任務要求 Playwright，必須包含：`Scenarios` + `Evidence` + `結果`
 - `Changed Files` 必須附上每檔案變更理由，不可只有路徑清單
 
@@ -110,6 +117,7 @@ updated_by: docs-team
     - Commit hashes
     - Changed files with reason
     - Test commands and results
+    - API touched matrix
     - Known risks
 - If Playwright is required:
     - MUST include scenarios, evidence paths, and pass/fail result.

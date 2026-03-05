@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "本地多 Agent 並行開發的隔離、整合與衝突避免規範"
-version: v1.0.0
-last_updated: 2026-03-04
+version: v1.1.0
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -38,7 +38,7 @@ updated_by: docs-team
    - 若工作樹存在非本人任務變更，必須停下並回報處理選項，不得直接覆蓋。
 
 2. **隔離工作區**
-   - 建議每位 Agent 使用獨立 `git worktree` + branch。
+   - 每位 Agent 必須使用獨立 `git worktree` + branch（Mandatory）。
    - 禁止多位 Agent 共用同一個髒工作樹同時編輯。
 
 3. **檔案所有權**
@@ -75,7 +75,7 @@ updated_by: docs-team
     - Before editing, run `git status --porcelain`.
     - If unrelated dirty changes exist, do not proceed blindly; report and wait.
 - **Isolation**:
-    - Prefer one `git worktree` + one branch per agent/task.
+    - MUST use one `git worktree` + one branch per agent/task.
     - Do not let multiple agents co-edit the same dirty worktree.
 - **Handoff Required**:
     - Provide commit hashes, changed files, test results, and known risks.

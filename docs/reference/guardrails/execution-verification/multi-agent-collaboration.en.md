@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Isolation, integration, and conflict-avoidance rules for local multi-agent collaboration"
-version: v1.0.0
-last_updated: 2026-03-04
+version: v1.1.0
+last_updated: 2026-03-05
 updated_by: docs-team
 ---
 
@@ -38,7 +38,7 @@ Rules for safe parallel work when multiple local agents contribute to the same d
    - If unrelated dirty changes exist, stop and report options instead of overwriting.
 
 2. **Workspace Isolation**
-   - Prefer one `git worktree` + one branch per agent/task.
+   - MUST use one `git worktree` + one branch per agent/task.
    - Do not have multiple agents editing the same dirty worktree.
 
 3. **File Ownership**
@@ -75,7 +75,7 @@ Rules for safe parallel work when multiple local agents contribute to the same d
     - Before editing, run `git status --porcelain`.
     - If unrelated dirty changes exist, do not proceed blindly; report and wait.
 - **Isolation**:
-    - Prefer one `git worktree` + one branch per agent/task.
+    - MUST use one `git worktree` + one branch per agent/task.
     - Do not let multiple agents co-edit the same dirty worktree.
 - **Handoff Required**:
     - Provide commit hashes, changed files, test results, and known risks.
