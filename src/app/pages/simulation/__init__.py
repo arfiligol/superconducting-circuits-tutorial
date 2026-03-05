@@ -156,6 +156,8 @@ _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS = {
     "ptc_y": "PTC Y",
 }
 _TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
+_SIMULATION_HEARTBEAT_SECONDS = 5.0
+_SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
 _SIM_METADATA_TARGET_DATASET_KEY = "simulation_metadata_target_dataset_id"
@@ -5073,6 +5075,7 @@ def _render_simulation_environment():
                             try:
                                 # Run Julia simulation in a process to prevent GIL blocking
                                 job_started_at = datetime.now()
+                                heartbeat_warned = False
                                 result_task = asyncio.create_task(
                                     run.cpu_bound(
                                         run_simulation,
@@ -5086,7 +5089,7 @@ def _render_simulation_environment():
                                     try:
                                         result = await asyncio.wait_for(
                                             asyncio.shield(result_task),
-                                            timeout=5.0,
+                                            timeout=_SIMULATION_HEARTBEAT_SECONDS,
                                         )
                                     except TimeoutError:
                                         elapsed_seconds = max(
@@ -5100,6 +5103,19 @@ def _render_simulation_environment():
                                                 f"{elapsed_seconds}s elapsed."
                                             ),
                                         )
+                                        if (
+                                            not heartbeat_warned
+                                            and elapsed_seconds
+                                            >= _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS
+                                        ):
+                                            heartbeat_warned = True
+                                            append_status(
+                                                "warning",
+                                                (
+                                                    "Long-running simulation detected; "
+                                                    "worker heartbeat continues every 5s."
+                                                ),
+                                            )
                             except ImportError as e:
                                 summary, detail = _summarize_simulation_error(e)
                                 append_status("negative", summary)

@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from nicegui import app, ui
+from nicegui import app, run, ui
 
 from app.layout import app_shell
 from app.pages.characterization.state import (
@@ -80,6 +82,8 @@ _TRACE_MODE_FILTER_OPTIONS: dict[str, str] = {
     "sideband": "Sideband",
 }
 _MAX_BULK_TRACE_SELECTION = 2000
+_ANALYSIS_HEARTBEAT_SECONDS = 5.0
+_ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS = 60
 _ANALYSIS_CATEGORY_DEFAULTS: dict[str, str] = {
     "admittance_extraction": "resonance",
     "s21_resonance_fit": "fit",
@@ -1604,7 +1608,7 @@ def characterization_page():
                                             "text-lg font-bold text-fg"
                                         )
 
-                                    def run_selected_analysis() -> None:
+                                    async def run_selected_analysis() -> None:
                                         analysis_id = str(selected_run_analysis["id"])
                                         run_id = f"char-{uuid4().hex[:10]}"
                                         runtime_state.set_log_context(
@@ -1645,6 +1649,7 @@ def characterization_page():
                                             )
                                             return
 
+                                        run_button.props("loading")
                                         append_analysis_status(
                                             "info",
                                             (
@@ -1662,13 +1667,55 @@ def characterization_page():
                                                     current_selected_trace_rows()
                                                 )
                                             )
-                                            _execute_analysis_run(
-                                                analysis_id=analysis_id,
-                                                dataset_id=ds.id,
-                                                config_state=config_state,
-                                                trace_record_ids=run_trace_ids,
-                                                trace_mode_group=selected_mode_group,
+                                            job_started_at = datetime.now()
+                                            heartbeat_warned = False
+                                            run_task = asyncio.create_task(
+                                                run.cpu_bound(
+                                                    _execute_analysis_run,
+                                                    analysis_id=analysis_id,
+                                                    dataset_id=ds.id,
+                                                    config_state=config_state,
+                                                    trace_record_ids=run_trace_ids,
+                                                    trace_mode_group=selected_mode_group,
+                                                )
                                             )
+                                            while True:
+                                                try:
+                                                    await asyncio.wait_for(
+                                                        asyncio.shield(run_task),
+                                                        timeout=_ANALYSIS_HEARTBEAT_SECONDS,
+                                                    )
+                                                    break
+                                                except TimeoutError:
+                                                    elapsed_seconds = max(
+                                                        1,
+                                                        int(
+                                                            (
+                                                                datetime.now() - job_started_at
+                                                            ).total_seconds()
+                                                        ),
+                                                    )
+                                                    append_analysis_status(
+                                                        "info",
+                                                        (
+                                                            "Analysis worker still running... "
+                                                            f"{elapsed_seconds}s elapsed."
+                                                        ),
+                                                    )
+                                                    if (
+                                                        not heartbeat_warned
+                                                        and elapsed_seconds
+                                                        >= _ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS
+                                                    ):
+                                                        heartbeat_warned = True
+                                                        append_analysis_status(
+                                                            "warning",
+                                                            (
+                                                                "Long-running analysis detected; "
+                                                                "worker heartbeat continues "
+                                                                "every 5s."
+                                                            ),
+                                                        )
                                             with get_unit_of_work() as write_uow:
                                                 bundle = _build_analysis_run_bundle_record(
                                                     dataset_id=ds.id,
@@ -1721,6 +1768,8 @@ def characterization_page():
                                                 "negative",
                                                 f"{selected_run_analysis['label']} failed: {exc}",
                                             )
+                                        finally:
+                                            run_button.props(remove="loading")
 
                                     run_button = (
                                         ui.button(
