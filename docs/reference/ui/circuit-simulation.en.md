@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.9.0
+version: v0.10.0
 last_updated: 2026-03-05
 updated_by: codex
 ---
@@ -23,13 +23,12 @@ This page defines the formal `/simulation` UI contract.
 ## Page Sections
 
 1. `Active Circuit`
-2. `Dataset Metadata Summary (Read-only)`
-3. `Netlist Configuration`
-4. `Simulation Setup`
-5. `Logs`
-6. `Simulation Results`
-7. `Post Processing`
-8. `Post Processing Results`
+2. `Netlist Configuration`
+3. `Simulation Setup`
+4. `Logs`
+5. `Simulation Results`
+6. `Post Processing`
+7. `Post Processing Results`
 
 ## Result View Interaction Contract (Raw vs Post-Processed)
 
@@ -122,6 +121,25 @@ Minimum requirement for `Impedance (Z)` and `Admittance (Y)`:
     Source Port, Source Mode, pump frequency, harmonics, and hbsolve options are Simulation Setup,
     not Circuit Netlist syntax.
 
+### Setup Persistence Contract (Dialog-based Manager)
+
+`Simulation Setup` must keep the existing `Saved Setup` dropdown and add a `Manage Setups` entry (dialog).
+
+The `Manage Setups` dialog must support at least:
+
+1. `Add New` (create from current form state)
+2. `Rename` (rename an existing setup)
+3. `Delete` (remove an existing setup)
+4. `Load` (load selected setup into the form)
+5. `Save As` (store current form state under a new name)
+
+!!! important "Visible feedback"
+    Every CRUD action must show user-visible success/failure feedback.
+
+!!! warning "Compatibility boundary"
+    Existing `Saved Setup` dropdown load behavior must stay unchanged.
+    `Manage Setups` is an additional entry point only and must not alter schema+setup execution semantics.
+
 ### Port Termination Compensation (optional)
 
 `Simulation Setup` must expose a `Port Termination Compensation` section that is separate from hbsolve options.
@@ -213,19 +231,15 @@ Expected model:
     Simulation-created bundles must keep enough provenance in `source_meta` + `config_snapshot`
     to reconstruct upstream input (at minimum: `origin`, source bundle when present, and flow/setup snapshot).
 
-## Dataset Metadata Summary Contract
+## Dataset Metadata Boundary
 
-!!! note "Current behavior (2026-03-04)"
-    Older `/simulation` builds included an editable metadata card
-    (`Auto Suggest` + `Save Metadata`).
-
-!!! important "Contract (Dashboard-only edit entry)"
-    `/simulation` must not expose dataset metadata write controls.
-    This page may only display a read-only profile summary; the only edit entry is Pipeline `Dashboard`.
+!!! important "Dashboard-only"
+    `/simulation` must not render a `Dataset Metadata Summary` card.
+    Dataset metadata visibility/edit entry stays in `Pipeline Dashboard` only.
 
 !!! warning "Boundary vs run behavior"
-    Metadata summary is informational and must not alter solver setup submission flow.
-    No metadata write button/form may exist on this page.
+    Dataset metadata must not alter solver setup submission on this page.
+    No metadata write button or form may exist in `/simulation`.
 
 ## Post Processing
 

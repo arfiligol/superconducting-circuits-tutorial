@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.9.0
+version: v0.10.0
 last_updated: 2026-03-05
 updated_by: codex
 ---
@@ -23,13 +23,12 @@ updated_by: codex
 ## Page Sections
 
 1. `Active Circuit`
-2. `Dataset Metadata Summary (Read-only)`
-3. `Netlist Configuration`
-4. `Simulation Setup`
-5. `Logs`
-6. `Simulation Results`
-7. `Post Processing`
-8. `Post Processing Results`
+2. `Netlist Configuration`
+3. `Simulation Setup`
+4. `Logs`
+5. `Simulation Results`
+6. `Post Processing`
+7. `Post Processing Results`
 
 ## Result View 互動契約（Raw vs Post-Processed）
 
@@ -119,6 +118,25 @@ updated_by: codex
     Source Port、Source Mode、pump frequency、harmonics、hbsolve 選項屬於 Simulation Setup，
     不屬於 Circuit Netlist 語法。
 
+### Setup Persistence Contract（Dialog-based Manager）
+
+`Simulation Setup` 必須保留既有 `Saved Setup` 下拉，並新增 `Manage Setups` 入口（Dialog）。
+
+`Manage Setups` Dialog 最少要支援：
+
+1. `Add New`（以目前表單建立新 setup）
+2. `Rename`（重新命名既有 setup）
+3. `Delete`（刪除既有 setup）
+4. `Load`（載入選取 setup 到表單）
+5. `Save As`（將目前表單另存為新名稱）
+
+!!! important "可見回饋"
+    所有 CRUD 動作都必須給使用者可見通知（success/failure）。
+
+!!! warning "相容性邊界"
+    `Saved Setup` 下拉的既有載入行為必須維持不變；
+    `Manage Setups` 只是擴充入口，不可改變原有 schema+setup 契約與求解流程。
+
 ## Run Simulation 契約（Load-or-Run）
 
 `Run Simulation` 的正式語義是：
@@ -167,18 +185,15 @@ updated_by: codex
     Simulation 端建立 bundle 時，`source_meta` + `config_snapshot` 必須足以回推上游輸入：
     至少包含 `origin`、來源 bundle（若有）、flow/setup snapshot。
 
-## Dataset Metadata Summary Contract
+## Dataset Metadata Boundary
 
-!!! note "Current behavior（2026-03-04）"
-    舊版 `/simulation` 提供 metadata 編輯卡片（含 `Auto Suggest` 與 `Save Metadata`）。
-
-!!! important "Contract（Dashboard-only edit entry）"
-    `/simulation` 不再提供 dataset metadata 寫入入口。
-    本頁僅可顯示 read-only profile summary；metadata 編輯唯一入口在 Pipeline `Dashboard`。
+!!! important "Dashboard-only"
+    `/simulation` 不得顯示 `Dataset Metadata Summary` 卡片。
+    dataset metadata 相關資訊與編輯入口只留在 `Pipeline Dashboard`。
 
 !!! warning "與 Run 行為邊界"
-    metadata summary 屬於提示資訊，不得影響 solver setup 提交流程；
-    也不可在本頁提供任何 metadata 寫入按鈕。
+    dataset metadata 不得影響本頁 solver setup 提交流程；
+    本頁不可提供任何 metadata 寫入按鈕或表單。
 
 ## Post Processing
 
