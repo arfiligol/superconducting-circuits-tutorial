@@ -10,9 +10,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Documentation maintenance: bilingual sync, source-vs-staging boundaries, version/frontmatter updates, and Zensical checks"
-version: v0.7.0
+version: v0.8.0
 last_updated: 2026-03-05
-updated_by: docs-team
+updated_by: codex
 ---
 
 # Documentation Maintenance
@@ -75,6 +75,7 @@ When adding/moving pages:
 1. Update navigation and site-level settings in both `zensical.toml` and `zensical.en.toml`
 2. Check all relative links (including `.en.md` counterparts)
 3. If the page is SoT, ensure `tags` includes `sot/true`
+4. Run `uv run python scripts/check_docs_nav_routes.py --check-source` before building
 
 ---
 
@@ -122,6 +123,9 @@ uv run --group dev zensical build -f zensical.en.toml
 
 # Or use the canonical static-build wrapper (if still kept in the repo)
 ./scripts/build_docs_sites.sh
+
+# Validate nav routes against built html files
+uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
 !!! tip "Common issues"

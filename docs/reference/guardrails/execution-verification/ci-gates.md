@@ -28,15 +28,17 @@ tags:
 uv run pre-commit run --all-files
 ```
 
-### 2. 文檔建置
+### 2. 文檔建置與路由檢查
 
 ```bash
+uv run python scripts/check_docs_nav_routes.py --check-source
 ./scripts/prepare_docs_locales.sh
 uv run --group dev zensical build
 uv run --group dev zensical build -f zensical.en.toml
 
 # 正式 CI 入口（產出 `docs/site/`）
 ./scripts/build_docs_sites.sh
+uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
 !!! note "允許的警告"
@@ -56,8 +58,10 @@ uv run pytest
 ## CI Gates
 - **Mandatory Checks**:
     1. **Pre-commit**: `ruff format` + `ruff check` + `basedpyright`.
-    2. **Build**: `./scripts/build_docs_sites.sh` must pass.
-    3. **Test**: `pytest` must pass.
+    2. **Docs Route Source Check**: `uv run python scripts/check_docs_nav_routes.py --check-source` must pass.
+    3. **Build**: `./scripts/build_docs_sites.sh` must pass.
+    4. **Docs Route Built Check**: `uv run python scripts/check_docs_nav_routes.py --check-built` must pass.
+    5. **Test**: `pytest` must pass.
 - **Tolerance**:
     - `zensical build` during docs preview: allow benign `404` warnings logic.
     - Code Coverage: Not strictly enforced yet.

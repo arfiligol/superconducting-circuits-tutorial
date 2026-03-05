@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "自動化測試與文件更新驗證流程（含 Zensical 路由防 404）"
-version: v1.2.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v1.3.0
+last_updated: 2026-03-05
+updated_by: codex
 ---
 
 # 測試規範 (Testing)
@@ -56,6 +56,9 @@ uv run pre-commit run --all-files
 ### 標準指令
 
 ```bash
+# 0) 先檢查 nav 路由是否對應 docs 來源檔
+uv run python scripts/check_docs_nav_routes.py --check-source
+
 # 1) 同步文件來源
 ./scripts/prepare_docs_locales.sh
 
@@ -65,6 +68,9 @@ uv run --group dev zensical build -f zensical.en.toml
 
 # 3) 靜態輸出（CI 對齊）
 ./scripts/build_docs_sites.sh
+
+# 4) 檢查 nav 路由是否對應到 built html
+uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
 ### 路由驗證（Playwright，推薦）
@@ -134,13 +140,15 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 - **Python tests**: `uv run pytest`
 - **Lint**: `uv run ruff check .`
 - **Docs-change required checks**:
-    1) `./scripts/prepare_docs_locales.sh`
-    2) `uv run --group dev zensical build -f zensical.toml`
-    3) `uv run --group dev zensical build -f zensical.en.toml`
-    4) `./scripts/build_docs_sites.sh`
-    5) Playwright route smoke (HTTP 200 + no "404 - Not found")
-    6) `.md` compatibility route check (legacy `.md` URL auto-normalizes to canonical route)
-    7) `rg -n "href=\"[^\"]+\\.md\"" docs/site` for warning/diff review (not hard-fail in current baseline)
+    1) `uv run python scripts/check_docs_nav_routes.py --check-source`
+    2) `./scripts/prepare_docs_locales.sh`
+    3) `uv run --group dev zensical build -f zensical.toml`
+    4) `uv run --group dev zensical build -f zensical.en.toml`
+    5) `./scripts/build_docs_sites.sh`
+    6) `uv run python scripts/check_docs_nav_routes.py --check-built`
+    7) Playwright route smoke (HTTP 200 + no "404 - Not found")
+    8) `.md` compatibility route check (legacy `.md` URL auto-normalizes to canonical route)
+    9) `rg -n "href=\"[^\"]+\\.md\"" docs/site` for warning/diff review (not hard-fail in current baseline)
 - **Route rule**: final docs URL uses directory routes (`/.../page/`), not source `.md` paths.
 - **Julia tests (if touched)**: `julia --project=. -e 'using Pkg; Pkg.test()'`
 ```

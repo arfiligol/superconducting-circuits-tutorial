@@ -51,6 +51,9 @@ uv run sc plot admittance DatasetName
 ## 文件
 
 ```bash
+# 檢查 nav 是否有指向不存在的來源檔
+uv run python scripts/check_docs_nav_routes.py --check-source
+
 # 先產生語言 staging tree
 ./scripts/prepare_docs_locales.sh
 
@@ -68,6 +71,9 @@ uv run --group dev zensical build -f zensical.en.toml
 
 # 正式靜態輸出（輸出到 `docs/site/`，含 /en 資產同步）
 ./scripts/build_docs_sites.sh
+
+# 檢查 nav 是否有指向不存在的 built html
+uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
 ### 文件路由驗證（防 404）
@@ -123,10 +129,12 @@ PY
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
+    - Route source check: `uv run python scripts/check_docs_nav_routes.py --check-source`
     - Prepare: `./scripts/prepare_docs_locales.sh`
     - Build (zh-TW): `uv run --group dev zensical build`
     - Build (en): `uv run --group dev zensical build -f zensical.en.toml`
     - Build (static artifact, outputs to `docs/site/`): `./scripts/build_docs_sites.sh`
+    - Route built-html check: `uv run python scripts/check_docs_nav_routes.py --check-built`
     - Serve (zh-TW): `uv run --group dev zensical serve`
     - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
     - Route smoke: Playwright check (HTTP 200 + no "404 - Not found")

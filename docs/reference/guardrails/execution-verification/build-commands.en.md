@@ -8,9 +8,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Common build and execution commands"
-version: v2.1.0
-last_updated: 2026-02-27
-updated_by: docs-team
+version: v2.2.0
+last_updated: 2026-03-05
+updated_by: codex
 ---
 
 # Build Commands
@@ -57,6 +57,9 @@ uv run sc plot admittance DatasetName
 ## Documentation
 
 ```bash
+# Validate nav against source docs files
+uv run python scripts/check_docs_nav_routes.py --check-source
+
 # Generate locale staging trees first
 ./scripts/prepare_docs_locales.sh
 
@@ -74,6 +77,9 @@ uv run --group dev zensical build -f zensical.en.toml
 
 # Canonical static output (emits to `docs/site/`, includes /en asset sync)
 ./scripts/build_docs_sites.sh
+
+# Validate nav against built html files
+uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
 ### Docs route verification (anti-404)
@@ -129,10 +135,12 @@ PY
     - `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
     - `julia --project=. -e 'using Pkg; Pkg.update()'`
 - **Docs**:
+    - Route source check: `uv run python scripts/check_docs_nav_routes.py --check-source`
     - Prepare: `./scripts/prepare_docs_locales.sh`
     - Build (zh-TW): `uv run --group dev zensical build`
     - Build (en): `uv run --group dev zensical build -f zensical.en.toml`
     - Build (static artifact, emits to `docs/site/`): `./scripts/build_docs_sites.sh`
+    - Route built-html check: `uv run python scripts/check_docs_nav_routes.py --check-built`
     - Serve (zh-TW): `uv run --group dev zensical serve`
     - Serve (en): `uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001`
     - Route smoke: Playwright check (HTTP 200 + no "404 - Not found")

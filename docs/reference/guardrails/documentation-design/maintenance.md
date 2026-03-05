@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "文件維護規範：雙語同步、來源樹/暫存樹邊界、版本與 Frontmatter 更新、Zensical 檢查"
-version: v0.7.0
+version: v0.8.0
 last_updated: 2026-03-05
-updated_by: docs-team
+updated_by: codex
 ---
 
 # Documentation Maintenance
@@ -76,6 +76,7 @@ updated_by: docs-team
 1. 同步更新 `zensical.toml` 與 `zensical.en.toml` 中的導覽與站點層設定
 2. 檢查所有相對連結（`.en.md` 仍需維持對應語言版本的正確連結）
 3. 若文件為 SoT，確認 `tags` 含 `sot/true`
+4. 先跑 `uv run python scripts/check_docs_nav_routes.py --check-source`，避免 nav 指向不存在檔案
 
 ---
 
@@ -123,6 +124,9 @@ uv run --group dev zensical build -f zensical.en.toml
 
 # 或使用正式靜態建置腳本（若腳本仍保留）
 ./scripts/build_docs_sites.sh
+
+# 檢查 nav 是否都能對應到 built html
+uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
 !!! tip "常見問題"
