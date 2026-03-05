@@ -432,13 +432,50 @@ def simulation_sweep_run_to_payload(run: SimulationSweepRun) -> dict[str, Any]:
     }
 
 
+def _legacy_sweep_axes_payload(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Decode legacy single-axis payload shape into `sweep_axes` list."""
+    axis_payload = payload.get("axis")
+    if isinstance(axis_payload, Mapping):
+        values = axis_payload.get("values")
+        if not isinstance(values, list):
+            values = payload.get("values", [])
+        if isinstance(values, list) and values:
+            return [
+                {
+                    "target_value_ref": axis_payload.get(
+                        "target_value_ref",
+                        payload.get("target_value_ref", ""),
+                    ),
+                    "unit": axis_payload.get("unit", payload.get("unit", "")),
+                    "values": values,
+                }
+            ]
+    target_value_ref = str(payload.get("target_value_ref", "")).strip()
+    values = payload.get("values")
+    if target_value_ref and isinstance(values, list) and values:
+        return [
+            {
+                "target_value_ref": target_value_ref,
+                "unit": payload.get("unit", ""),
+                "values": values,
+            }
+        ]
+    return []
+
+
 def simulation_sweep_run_from_payload(payload: Mapping[str, Any]) -> SimulationSweepRun:
     """Deserialize one cached/persisted sweep payload."""
     if str(payload.get("run_kind", "")) != "parameter_sweep":
         raise ValueError("Payload is not a parameter sweep result.")
 
     raw_axes = payload.get("sweep_axes")
+    if not isinstance(raw_axes, list) or not raw_axes:
+        raw_axes = _legacy_sweep_axes_payload(payload)
     raw_points = payload.get("points")
+    if not isinstance(raw_points, list) or not raw_points:
+        raw_points = payload.get("point_results")
+    if not isinstance(raw_points, list) or not raw_points:
+        raw_points = payload.get("results")
     if not isinstance(raw_axes, list) or not raw_axes:
         raise ValueError("Sweep payload must include non-empty sweep_axes.")
     if not isinstance(raw_points, list) or not raw_points:
@@ -468,21 +505,30 @@ def simulation_sweep_run_from_payload(payload: Mapping[str, Any]) -> SimulationS
             raise ValueError("Sweep point payload is invalid.")
         raw_result = raw_point.get("result")
         if not isinstance(raw_result, Mapping):
+            raw_result = raw_point.get("payload")
+        if not isinstance(raw_result, Mapping):
             raise ValueError("Sweep point result payload is invalid.")
         raw_axis_values = raw_point.get("axis_values", {})
         if not isinstance(raw_axis_values, Mapping):
+            raw_axis_values = {}
+        if not raw_axis_values and len(axes) == 1 and raw_point.get("axis_value") is not None:
+            raw_axis_values = {
+                axes[0].target_value_ref: float(raw_point.get("axis_value", axes[0].values[0]))
+            }
+        if not isinstance(raw_axis_values, Mapping):
             raise ValueError("Sweep point axis_values payload is invalid.")
+        raw_axis_indices = raw_point.get("axis_indices", [])
+        if not isinstance(raw_axis_indices, list):
+            raw_axis_index = raw_point.get("axis_index")
+            raw_axis_indices = [] if raw_axis_index is None else [int(raw_axis_index)]
+        if isinstance(raw_axis_indices, list) and not raw_axis_indices:
+            raw_axis_index = raw_point.get("axis_index")
+            if raw_axis_index is not None:
+                raw_axis_indices = [int(raw_axis_index)]
         points.append(
             SimulationSweepPointResult(
                 point_index=int(raw_point.get("point_index", len(points))),
-                axis_indices=tuple(
-                    int(value)
-                    for value in (
-                        raw_point.get("axis_indices", [])
-                        if isinstance(raw_point.get("axis_indices", []), list)
-                        else []
-                    )
-                ),
+                axis_indices=tuple(int(value) for value in raw_axis_indices),
                 axis_values={
                     str(target): float(value) for target, value in raw_axis_values.items()
                 },

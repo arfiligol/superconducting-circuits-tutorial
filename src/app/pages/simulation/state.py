@@ -38,6 +38,9 @@ def default_sweep_result_view_state() -> dict[str, Any]:
         "metric": "magnitude_db",
         "z0": 50.0,
         "frequency_index": 0,
+        "view_axis_target_value_ref": "",
+        "fixed_axis_indices": {},
+        "traces": [],
         "trace_selection": {},
     }
 

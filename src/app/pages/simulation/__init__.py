@@ -194,7 +194,12 @@ _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS = {
 _TERMINATION_DEFAULT_RESISTANCE_OHM = 50.0
 _SIMULATION_HEARTBEAT_SECONDS = 5.0
 _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
-_SWEEP_MAX_AXIS_COUNT = 2
+_SWEEP_MAX_AXIS_COUNT = 4
+_SWEEP_MAX_CARTESIAN_POINTS = 625
+_SWEEP_MODE_OPTIONS = {
+    "cartesian": "Cartesian",
+    "paired": "Paired (reserved)",
+}
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
 
@@ -488,20 +493,45 @@ def _build_setup_payload(
     return payload
 
 
+def _default_sweep_axis_payload() -> dict[str, Any]:
+    """Return one default sweep axis payload."""
+    return {
+        "target_value_ref": "",
+        "start": 0.0,
+        "stop": 0.0,
+        "points": 11,
+        "unit": "",
+    }
+
+
 def _default_sweep_setup_payload() -> dict[str, Any]:
-    """Return one default single-axis sweep setup payload."""
+    """Return one default multi-axis sweep setup payload."""
     return {
         "enabled": False,
-        "axes": [
-            {
-                "target_value_ref": "",
-                "start": 0.0,
-                "stop": 0.0,
-                "points": 11,
-                "unit": "",
-            }
-        ],
+        "mode": "cartesian",
+        "axes": [_default_sweep_axis_payload()],
     }
+
+
+def _legacy_sweep_axes_from_payload(payload: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Decode legacy single-axis setup payload shapes into one `axes[]` list."""
+    raw_axes = payload.get("axes")
+    if isinstance(raw_axes, list):
+        return [axis for axis in raw_axes if isinstance(axis, Mapping)]
+    axis_1 = payload.get("axis_1")
+    if isinstance(axis_1, Mapping):
+        return [axis_1]
+    if payload.get("target_value_ref") is not None:
+        return [
+            {
+                "target_value_ref": payload.get("target_value_ref", ""),
+                "start": payload.get("start", 0.0),
+                "stop": payload.get("stop", payload.get("start", 0.0)),
+                "points": payload.get("points", 11),
+                "unit": payload.get("unit", ""),
+            }
+        ]
+    return []
 
 
 def _normalize_sweep_setup_payload(
@@ -513,36 +543,58 @@ def _normalize_sweep_setup_payload(
     normalized = _default_sweep_setup_payload()
     if isinstance(payload, Mapping):
         normalized["enabled"] = bool(payload.get("enabled", False))
-        raw_axes = payload.get("axes", [])
-        if isinstance(raw_axes, list):
-            axes: list[dict[str, Any]] = []
-            for raw_axis in raw_axes[:_SWEEP_MAX_AXIS_COUNT]:
-                if not isinstance(raw_axis, Mapping):
-                    continue
-                target = str(raw_axis.get("target_value_ref", "")).strip()
-                start = float(raw_axis.get("start", 0.0) or 0.0)
-                stop = float(raw_axis.get("stop", start) or start)
-                points = max(1, int(raw_axis.get("points", 11) or 11))
-                unit_hint = str(raw_axis.get("unit", "")).strip()
-                if target in available_target_units:
-                    unit_hint = str(available_target_units[target])
-                axes.append(
-                    {
-                        "target_value_ref": target,
-                        "start": start,
-                        "stop": stop,
-                        "points": points,
-                        "unit": unit_hint,
-                    }
-                )
-            if axes:
-                normalized["axes"] = axes
-    axis_1 = normalized["axes"][0]
-    if str(axis_1.get("target_value_ref", "")).strip() not in available_target_units:
-        fallback_target = next(iter(available_target_units), "")
-        axis_1["target_value_ref"] = fallback_target
-        axis_1["unit"] = str(available_target_units.get(fallback_target, ""))
+        mode = str(payload.get("mode", "cartesian")).strip().lower()
+        normalized["mode"] = mode if mode in _SWEEP_MODE_OPTIONS else "cartesian"
+        raw_axes = _legacy_sweep_axes_from_payload(payload)
+        axes: list[dict[str, Any]] = []
+        for raw_axis in raw_axes[:_SWEEP_MAX_AXIS_COUNT]:
+            if not isinstance(raw_axis, Mapping):
+                continue
+            target = str(raw_axis.get("target_value_ref", "")).strip()
+            start = float(raw_axis.get("start", 0.0) or 0.0)
+            stop = float(raw_axis.get("stop", start) or start)
+            points = max(1, int(raw_axis.get("points", 11) or 11))
+            unit_hint = str(raw_axis.get("unit", "")).strip()
+            if target in available_target_units:
+                unit_hint = str(available_target_units[target])
+            axes.append(
+                {
+                    "target_value_ref": target,
+                    "start": start,
+                    "stop": stop,
+                    "points": points,
+                    "unit": unit_hint,
+                }
+            )
+        if axes:
+            normalized["axes"] = axes
+    if not normalized["axes"]:
+        normalized["axes"] = [_default_sweep_axis_payload()]
+
+    fallback_target = next(iter(available_target_units), "")
+    for axis in normalized["axes"]:
+        target = str(axis.get("target_value_ref", "")).strip()
+        if target not in available_target_units:
+            target = fallback_target
+            axis["target_value_ref"] = target
+        axis["unit"] = str(available_target_units.get(target, ""))
+
+    if not normalized["axes"]:
+        normalized["axes"] = [_default_sweep_axis_payload()]
+
     return normalized
+
+
+def _estimate_sweep_cartesian_point_count(axes_payload: list[Mapping[str, Any]]) -> int:
+    """Estimate total Cartesian point count from normalized axis payload entries."""
+    total = 1
+    for raw_axis in axes_payload:
+        try:
+            axis_points = max(1, int(raw_axis.get("points", 1) or 1))
+        except Exception:
+            axis_points = 1
+        total *= axis_points
+    return max(total, 0)
 
 
 def _build_source_payload(
@@ -3356,31 +3408,57 @@ def _normalize_sweep_result_view_state(
     port_options = _result_port_options(representative)
     mode_options = _result_mode_options(representative)
     trace_options = _result_trace_options_for_family(family)
-    raw_selection = view_state.get("trace_selection")
-    selection = raw_selection if isinstance(raw_selection, Mapping) else {}
-    trace_key = str(selection.get("trace", _first_option_key(trace_options)))
-    if trace_key not in trace_options:
-        trace_key = _first_option_key(trace_options)
-    output_mode = SimulationResult.parse_mode_token(
-        SimulationResult.mode_token(tuple(selection.get("output_mode", (0,))))
-    )
-    input_mode = SimulationResult.parse_mode_token(
-        SimulationResult.mode_token(tuple(selection.get("input_mode", (0,))))
-    )
-    output_mode_token = SimulationResult.mode_token(output_mode)
-    input_mode_token = SimulationResult.mode_token(input_mode)
-    if output_mode_token not in mode_options:
-        output_mode = SimulationResult.parse_mode_token(_first_option_key(mode_options))
-    if input_mode_token not in mode_options:
-        input_mode = SimulationResult.parse_mode_token(_first_option_key(mode_options))
+
+    trace_entries = view_state.get("traces")
+    if not isinstance(trace_entries, list):
+        trace_entries = []
+    if not trace_entries:
+        legacy = view_state.get("trace_selection")
+        if isinstance(legacy, Mapping):
+            trace_entries = [legacy]
 
     default_port = next(iter(port_options)) if port_options else 1
-    output_port = _coerce_int_value(selection.get("output_port"), default_port)
-    input_port = _coerce_int_value(selection.get("input_port"), default_port)
-    if output_port not in port_options:
-        output_port = default_port
-    if input_port not in port_options:
-        input_port = default_port
+    normalized_traces: list[dict[str, Any]] = []
+    for raw_trace in trace_entries:
+        if not isinstance(raw_trace, Mapping):
+            continue
+        trace_key = str(raw_trace.get("trace", _first_option_key(trace_options)))
+        if trace_key not in trace_options:
+            trace_key = _first_option_key(trace_options)
+        output_mode = SimulationResult.parse_mode_token(
+            SimulationResult.mode_token(tuple(raw_trace.get("output_mode", (0,))))
+        )
+        input_mode = SimulationResult.parse_mode_token(
+            SimulationResult.mode_token(tuple(raw_trace.get("input_mode", (0,))))
+        )
+        if SimulationResult.mode_token(output_mode) not in mode_options:
+            output_mode = SimulationResult.parse_mode_token(_first_option_key(mode_options))
+        if SimulationResult.mode_token(input_mode) not in mode_options:
+            input_mode = SimulationResult.parse_mode_token(_first_option_key(mode_options))
+
+        output_port = _coerce_int_value(raw_trace.get("output_port"), default_port)
+        input_port = _coerce_int_value(raw_trace.get("input_port"), default_port)
+        if output_port not in port_options:
+            output_port = default_port
+        if input_port not in port_options:
+            input_port = default_port
+        normalized_traces.append(
+            {
+                "trace": trace_key,
+                "output_mode": tuple(output_mode),
+                "output_port": output_port,
+                "input_mode": tuple(input_mode),
+                "input_port": input_port,
+            }
+        )
+    if not normalized_traces:
+        normalized_traces = [
+            _default_result_trace_selection(
+                representative,
+                family,
+                port_options=port_options,
+            )
+        ]
 
     frequency_count = max(len(representative.frequencies_ghz), 1)
     frequency_index = _coerce_int_value(view_state.get("frequency_index"), 0)
@@ -3389,21 +3467,55 @@ def _normalize_sweep_result_view_state(
     if z0 <= 0:
         z0 = 50.0
 
+    axis_keys = [axis.target_value_ref for axis in sweep_run.axes]
+    view_axis_target = str(view_state.get("view_axis_target_value_ref", "")).strip()
+    if view_axis_target not in axis_keys:
+        view_axis_target = axis_keys[0] if axis_keys else ""
+    raw_fixed_indices = view_state.get("fixed_axis_indices")
+    fixed_indices_input = raw_fixed_indices if isinstance(raw_fixed_indices, Mapping) else {}
+    fixed_axis_indices: dict[str, int] = {}
+    for axis in sweep_run.axes:
+        if axis.target_value_ref == view_axis_target:
+            continue
+        default_axis_index = len(axis.values) // 2
+        axis_index = _coerce_int_value(
+            fixed_indices_input.get(axis.target_value_ref),
+            default_axis_index,
+        )
+        axis_index = max(0, min(len(axis.values) - 1, axis_index))
+        fixed_axis_indices[axis.target_value_ref] = axis_index
+
     normalized = {
         "family": family,
         "metric": metric,
         "z0": z0,
         "frequency_index": frequency_index,
-        "trace_selection": {
-            "trace": trace_key,
-            "output_mode": tuple(output_mode),
-            "output_port": output_port,
-            "input_mode": tuple(input_mode),
-            "input_port": input_port,
-        },
+        "view_axis_target_value_ref": view_axis_target,
+        "fixed_axis_indices": fixed_axis_indices,
+        "traces": normalized_traces,
+        "trace_selection": dict(normalized_traces[0]),
     }
     view_state.update(normalized)
     return normalized
+
+
+def _sweep_axis_display_label(axis: SimulationSweepAxis) -> str:
+    """Format one sweep axis key into compact selector text."""
+    if str(axis.unit).strip():
+        return f"{axis.target_value_ref} ({axis.unit})"
+    return axis.target_value_ref
+
+
+def _sweep_axis_index_options(axis: SimulationSweepAxis) -> dict[int, str]:
+    """Build fixed-axis index selector options."""
+    options: dict[int, str] = {}
+    for idx, value in enumerate(axis.values):
+        token = _format_sweep_value_token(float(value))
+        if str(axis.unit).strip():
+            options[idx] = f"{idx + 1}: {token} {axis.unit}"
+        else:
+            options[idx] = f"{idx + 1}: {token}"
+    return options
 
 
 def _sweep_metric_series_for_point(
@@ -3457,25 +3569,65 @@ def _build_sweep_metric_rows(
     sweep_payload: Mapping[str, Any],
     family: str,
     metric: str,
-    trace_selection: Mapping[str, Any],
+    trace_selection: Mapping[str, Any] | None = None,
+    trace_selections: list[Mapping[str, Any]] | None = None,
+    view_axis_target_value_ref: str | None = None,
+    fixed_axis_indices: Mapping[str, int] | None = None,
     z0: float,
     frequency_index: int,
     dark_mode: bool,
 ) -> dict[str, Any]:
-    """Build one table+plot data payload for sweep-result view."""
+    """Build one table+plot payload for one sweep slice (`view axis` + fixed axes)."""
     sweep_run = simulation_sweep_run_from_payload(sweep_payload)
-    if sweep_run.dimension != 1:
-        raise ValueError("Sweep Result View currently supports single-axis payload only.")
     if not sweep_run.points:
         raise ValueError("Sweep payload has no points.")
 
-    axis = sweep_run.axes[0]
     representative = sweep_run.representative_result
-    representative_series, trace_label, y_axis_title = _sweep_metric_series_for_point(
+    axis_by_target = {axis.target_value_ref: axis for axis in sweep_run.axes}
+    if not axis_by_target:
+        raise ValueError("Sweep payload has no axis metadata.")
+
+    resolved_view_axis_target = str(view_axis_target_value_ref or "").strip()
+    if resolved_view_axis_target not in axis_by_target:
+        resolved_view_axis_target = sweep_run.axes[0].target_value_ref
+    view_axis = axis_by_target[resolved_view_axis_target]
+    view_axis_position = next(
+        idx
+        for idx, axis in enumerate(sweep_run.axes)
+        if axis.target_value_ref == resolved_view_axis_target
+    )
+
+    resolved_fixed_axis_indices: dict[str, int] = {}
+    raw_fixed_indices = fixed_axis_indices if isinstance(fixed_axis_indices, Mapping) else {}
+    for axis in sweep_run.axes:
+        if axis.target_value_ref == resolved_view_axis_target:
+            continue
+        axis_index = _coerce_int_value(
+            raw_fixed_indices.get(axis.target_value_ref),
+            len(axis.values) // 2,
+        )
+        axis_index = max(0, min(len(axis.values) - 1, axis_index))
+        resolved_fixed_axis_indices[axis.target_value_ref] = axis_index
+
+    raw_trace_selections: list[Mapping[str, Any]] = []
+    if isinstance(trace_selections, list) and trace_selections:
+        raw_trace_selections = [entry for entry in trace_selections if isinstance(entry, Mapping)]
+    elif isinstance(trace_selection, Mapping):
+        raw_trace_selections = [trace_selection]
+    if not raw_trace_selections:
+        raw_trace_selections = [
+            _default_result_trace_selection(
+                representative,
+                family,
+                port_options=_result_port_options(representative),
+            )
+        ]
+
+    representative_series, _, _ = _sweep_metric_series_for_point(
         result=representative,
         family=family,
         metric=metric,
-        trace_selection=trace_selection,
+        trace_selection=raw_trace_selections[0],
         z0=z0,
         dark_mode=dark_mode,
     )
@@ -3485,54 +3637,105 @@ def _build_sweep_metric_rows(
 
     rows: list[dict[str, Any]] = []
     x_values: list[float] = []
-    y_values: list[float] = []
+    trace_plot_y_values: dict[str, list[float]] = {}
+    trace_labels: dict[str, str] = {}
+    y_axis_title = ""
+
+    sliced_points: list[tuple[SimulationSweepPointResult, int, float]] = []
     for point in sweep_run.points:
-        point_series, _, _ = _sweep_metric_series_for_point(
-            result=point.result,
-            family=family,
-            metric=metric,
-            trace_selection=trace_selection,
-            z0=z0,
-            dark_mode=dark_mode,
+        matches_slice = True
+        point_axis_indices: list[int] = []
+        for axis_position, axis in enumerate(sweep_run.axes):
+            if axis_position < len(point.axis_indices):
+                axis_index = int(point.axis_indices[axis_position])
+            else:
+                axis_value = point.axis_values.get(axis.target_value_ref, axis.values[0])
+                axis_index = min(
+                    range(len(axis.values)),
+                    key=lambda idx: abs(float(axis.values[idx]) - float(axis_value)),
+                )
+            axis_index = max(0, min(len(axis.values) - 1, axis_index))
+            point_axis_indices.append(axis_index)
+            if axis.target_value_ref == resolved_view_axis_target:
+                continue
+            if axis_index != resolved_fixed_axis_indices.get(axis.target_value_ref, axis_index):
+                matches_slice = False
+                break
+        if not matches_slice:
+            continue
+        view_axis_index = point_axis_indices[view_axis_position]
+        view_axis_value = float(
+            point.axis_values.get(view_axis.target_value_ref, view_axis.values[view_axis_index])
         )
-        point_axis_index = (
-            int(point.axis_indices[0]) if point.axis_indices else int(point.point_index)
-        )
-        point_axis_index = max(0, min(len(axis.values) - 1, point_axis_index))
-        axis_value = float(
-            point.axis_values.get(axis.target_value_ref, axis.values[point_axis_index])
-        )
-        metric_value = (
-            point_series[safe_frequency_index] if safe_frequency_index < len(point_series) else None
-        )
+        sliced_points.append((point, view_axis_index, view_axis_value))
+
+    sliced_points.sort(key=lambda item: (item[1], int(item[0].point_index)))
+    if not sliced_points:
+        raise ValueError("No points match current slice selectors.")
+
+    for point, _axis_index, axis_value in sliced_points:
+        metric_values: dict[str, float | None] = {}
+        metric_text_by_trace: dict[str, str] = {}
+        x_values.append(axis_value)
+        for trace_index, resolved_trace_selection in enumerate(raw_trace_selections, start=1):
+            trace_key = f"trace_{trace_index}"
+            point_series, trace_label, axis_title = _sweep_metric_series_for_point(
+                result=point.result,
+                family=family,
+                metric=metric,
+                trace_selection=resolved_trace_selection,
+                z0=z0,
+                dark_mode=dark_mode,
+            )
+            if axis_title and not y_axis_title:
+                y_axis_title = axis_title
+            resolved_label = trace_label or f"Trace {trace_index}"
+            trace_labels[trace_key] = resolved_label
+            series_value = (
+                point_series[safe_frequency_index]
+                if safe_frequency_index < len(point_series)
+                else None
+            )
+            metric_values[trace_key] = series_value
+            metric_text_by_trace[trace_key] = (
+                "N/A" if series_value is None else f"{float(series_value):.10g}"
+            )
+            trace_plot_y_values.setdefault(trace_key, []).append(
+                float(series_value) if series_value is not None else float("nan")
+            )
+
         rows.append(
             {
                 "point_index": int(point.point_index),
                 "axis_value": axis_value,
-                "metric_value": metric_value,
-                "metric_text": ("N/A" if metric_value is None else f"{float(metric_value):.10g}"),
+                "metric_values": metric_values,
+                "metric_text_by_trace": metric_text_by_trace,
             }
         )
-        x_values.append(axis_value)
-        y_values.append(float(metric_value) if metric_value is not None else float("nan"))
 
-    frequency_ghz = float(representative.frequencies_ghz[safe_frequency_index])
+    frequency_ghz = (
+        float(representative.frequencies_ghz[safe_frequency_index])
+        if representative.frequencies_ghz
+        else 0.0
+    )
     metric_label = _result_metric_options_for_family(family).get(metric, metric)
     axis_label = (
-        f"{axis.target_value_ref} ({axis.unit})"
-        if str(axis.unit).strip()
-        else axis.target_value_ref
+        f"{view_axis.target_value_ref} ({view_axis.unit})"
+        if str(view_axis.unit).strip()
+        else view_axis.target_value_ref
     )
-    plot_title = f"{trace_label or metric_label} @ {frequency_ghz:.6g} GHz"
+    trace_title = ", ".join(str(trace_labels[trace_key]) for trace_key in sorted(trace_labels))
+    plot_title = f"{trace_title or metric_label} @ {frequency_ghz:.6g} GHz"
     figure = go.Figure()
-    figure.add_trace(
-        go.Scatter(
-            x=x_values,
-            y=y_values,
-            mode="lines+markers",
-            name=trace_label or metric_label,
+    for trace_key in sorted(trace_plot_y_values):
+        figure.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=trace_plot_y_values[trace_key],
+                mode="lines+markers",
+                name=trace_labels.get(trace_key, trace_key),
+            )
         )
-    )
     theme_layout = dict(get_plotly_layout(dark=dark_mode))
     figure.update_layout(theme_layout)
     figure.update_layout(
@@ -3545,9 +3748,24 @@ def _build_sweep_metric_rows(
         "figure": figure,
         "axis_label": axis_label,
         "metric_label": metric_label,
-        "trace_label": trace_label or metric_label,
+        "trace_labels": [trace_labels[trace_key] for trace_key in sorted(trace_labels)],
         "frequency_ghz": frequency_ghz,
         "frequency_index": safe_frequency_index,
+        "view_axis_target_value_ref": view_axis.target_value_ref,
+        "dimension": int(sweep_run.dimension),
+        "point_count": int(sweep_run.point_count),
+        "slice_point_count": len(rows),
+        "fixed_axis_indices": resolved_fixed_axis_indices,
+        "fixed_axis_details": [
+            {
+                "target_value_ref": axis.target_value_ref,
+                "index": resolved_fixed_axis_indices[axis.target_value_ref],
+                "value": float(axis.values[resolved_fixed_axis_indices[axis.target_value_ref]]),
+                "unit": str(axis.unit),
+            }
+            for axis in sweep_run.axes
+            if axis.target_value_ref in resolved_fixed_axis_indices
+        ],
     }
 
 
@@ -4156,12 +4374,6 @@ def _render_simulation_environment():
                 with simulation_sweep_results_container:
                     ui.label(f"Sweep payload decode failed: {exc}").classes("text-sm text-warning")
                 return
-            if sweep_run.dimension != 1:
-                with simulation_sweep_results_container:
-                    ui.label(
-                        "Sweep Result View currently supports single-axis sweep only."
-                    ).classes("text-sm text-muted")
-                return
             if not sweep_run.points:
                 with simulation_sweep_results_container:
                     ui.label("Sweep payload has no points to visualize.").classes(
@@ -4177,22 +4389,31 @@ def _render_simulation_environment():
             metric = str(normalized_state["metric"])
             z0_value = float(normalized_state["z0"])
             frequency_index = int(normalized_state["frequency_index"])
-            trace_selection = dict(normalized_state["trace_selection"])
+            view_axis_target_value_ref = str(normalized_state["view_axis_target_value_ref"])
+            fixed_axis_indices = dict(normalized_state["fixed_axis_indices"])
+            traces = list(normalized_state["traces"])
             representative = sweep_run.representative_result
             metric_options = _result_metric_options_for_family(family)
-            trace_options = _result_trace_options_for_family(family)
             mode_options = _result_mode_options(representative)
             port_options = _result_port_options(representative)
+            trace_options = _result_trace_options_for_family(family)
+            axis_options = {
+                axis.target_value_ref: _sweep_axis_display_label(axis) for axis in sweep_run.axes
+            }
             frequency_options = {
                 idx: f"{float(freq):.6g} GHz"
                 for idx, freq in enumerate(representative.frequencies_ghz)
             }
+            if not frequency_options:
+                frequency_options = {0: "0 GHz"}
             try:
                 payload = _build_sweep_metric_rows(
                     sweep_payload=sweep_payload,
                     family=family,
                     metric=metric,
-                    trace_selection=trace_selection,
+                    trace_selections=traces,
+                    view_axis_target_value_ref=view_axis_target_value_ref,
+                    fixed_axis_indices=fixed_axis_indices,
                     z0=z0_value,
                     frequency_index=frequency_index,
                     dark_mode=bool(_user_storage_get("dark_mode", True)),
@@ -4202,17 +4423,37 @@ def _render_simulation_environment():
                     ui.label(f"Sweep view rendering failed: {exc}").classes("text-sm text-warning")
                 return
             sweep_result_view_state["frequency_index"] = int(payload["frequency_index"])
+            sweep_result_view_state["view_axis_target_value_ref"] = str(
+                payload["view_axis_target_value_ref"]
+            )
+            sweep_result_view_state["fixed_axis_indices"] = dict(payload["fixed_axis_indices"])
             rows = list(payload["rows"])
             axis_label = str(payload["axis_label"])
             metric_label = str(payload["metric_label"])
-            trace_label = str(payload["trace_label"])
+            trace_labels = list(payload["trace_labels"])
             frequency_ghz = float(payload["frequency_ghz"])
+            fixed_axis_details = list(payload["fixed_axis_details"])
+            fixed_axis_summary = (
+                "; ".join(
+                    (
+                        f"{item['target_value_ref']}="
+                        f"{_format_sweep_value_token(float(item['value']))}"
+                        f"{(' ' + str(item['unit'])) if str(item['unit']).strip() else ''}"
+                    )
+                    for item in fixed_axis_details
+                )
+                if fixed_axis_details
+                else "-"
+            )
 
             with simulation_sweep_results_container:
                 ui.label("Sweep Result View").classes("text-sm font-bold text-fg")
                 ui.label(
-                    f"{trace_label} | {metric_label} | "
-                    f"freq={frequency_ghz:.6g} GHz | axis={axis_label}"
+                    f"dim={int(payload['dimension'])} | "
+                    f"total={int(payload['point_count'])} points | "
+                    f"slice={int(payload['slice_point_count'])} points | "
+                    f"freq={frequency_ghz:.6g} GHz | "
+                    f"view_axis={axis_label} | fixed={fixed_axis_summary}"
                 ).classes("text-xs text-muted mb-2")
                 with ui.row().classes("w-full items-end gap-3 flex-wrap"):
                     family_select = (
@@ -4235,16 +4476,16 @@ def _render_simulation_environment():
                         .classes("w-56")
                     )
                     _with_test_id(metric_select, "simulation-sweep-metric-select")
-                    trace_select = (
+                    view_axis_select = (
                         ui.select(
-                            label="Trace",
-                            options=trace_options,
-                            value=str(trace_selection["trace"]),
+                            label="View Axis",
+                            options=axis_options,
+                            value=str(payload["view_axis_target_value_ref"]),
                         )
                         .props("dense outlined options-dense")
                         .classes("w-56")
                     )
-                    _with_test_id(trace_select, "simulation-sweep-trace-select")
+                    _with_test_id(view_axis_select, "simulation-sweep-view-axis-select")
                     frequency_select = (
                         ui.select(
                             label="Frequency",
@@ -4265,54 +4506,39 @@ def _render_simulation_environment():
                         .classes(_Z0_CONTROL_CLASSES)
                     )
                     _with_test_id(z0_input, "simulation-sweep-z0-input")
+
                 with ui.row().classes("w-full items-end gap-3 flex-wrap mt-1"):
-                    output_mode_select = (
-                        ui.select(
-                            label="Output Mode",
-                            options=mode_options,
-                            value=SimulationResult.mode_token(
-                                tuple(trace_selection["output_mode"])
-                            ),
+                    fixed_selects: list[tuple[str, Any]] = []
+                    fixed_position = 0
+                    for axis in sweep_run.axes:
+                        if axis.target_value_ref == str(payload["view_axis_target_value_ref"]):
+                            continue
+                        fixed_position += 1
+                        fixed_select = (
+                            ui.select(
+                                label=f"Fixed: {axis.target_value_ref}",
+                                options=_sweep_axis_index_options(axis),
+                                value=int(
+                                    payload["fixed_axis_indices"].get(
+                                        axis.target_value_ref,
+                                        len(axis.values) // 2,
+                                    )
+                                ),
+                            )
+                            .props("dense outlined options-dense")
+                            .classes("w-72")
                         )
-                        .props("dense outlined options-dense")
-                        .classes("w-56")
-                    )
-                    input_mode_select = (
-                        ui.select(
-                            label="Input Mode",
-                            options=mode_options,
-                            value=SimulationResult.mode_token(tuple(trace_selection["input_mode"])),
+                        _with_test_id(
+                            fixed_select,
+                            f"simulation-sweep-fixed-axis-select-{fixed_position}",
                         )
-                        .props("dense outlined options-dense")
-                        .classes("w-56")
-                    )
-                    output_port_select = (
-                        ui.select(
-                            label="Output Port",
-                            options=port_options,
-                            value=int(trace_selection["output_port"]),
-                        )
-                        .props("dense outlined options-dense")
-                        .classes("w-44")
-                    )
-                    input_port_select = (
-                        ui.select(
-                            label="Input Port",
-                            options=port_options,
-                            value=int(trace_selection["input_port"]),
-                        )
-                        .props("dense outlined options-dense")
-                        .classes("w-44")
-                    )
+                        fixed_selects.append((axis.target_value_ref, fixed_select))
 
                 def _rerender() -> None:
                     _render_simulation_sweep_result_view()
 
                 family_select.on_value_change(
-                    lambda e: (
-                        sweep_result_view_state.__setitem__("family", str(e.value or "s")),
-                        _rerender(),
-                    )
+                    lambda e: _on_sweep_family_change(str(e.value or "s"))
                 )
                 metric_select.on_value_change(
                     lambda e: (
@@ -4320,47 +4546,11 @@ def _render_simulation_environment():
                         _rerender(),
                     )
                 )
-                trace_select.on_value_change(
+                view_axis_select.on_value_change(
                     lambda e: (
-                        sweep_result_view_state["trace_selection"].__setitem__(
-                            "trace",
-                            str(e.value or _first_option_key(trace_options)),
-                        ),
-                        _rerender(),
-                    )
-                )
-                output_mode_select.on_value_change(
-                    lambda e: (
-                        sweep_result_view_state["trace_selection"].__setitem__(
-                            "output_mode",
-                            tuple(SimulationResult.parse_mode_token(str(e.value or "0"))),
-                        ),
-                        _rerender(),
-                    )
-                )
-                input_mode_select.on_value_change(
-                    lambda e: (
-                        sweep_result_view_state["trace_selection"].__setitem__(
-                            "input_mode",
-                            tuple(SimulationResult.parse_mode_token(str(e.value or "0"))),
-                        ),
-                        _rerender(),
-                    )
-                )
-                output_port_select.on_value_change(
-                    lambda e: (
-                        sweep_result_view_state["trace_selection"].__setitem__(
-                            "output_port",
-                            _coerce_int_value(e.value, next(iter(port_options))),
-                        ),
-                        _rerender(),
-                    )
-                )
-                input_port_select.on_value_change(
-                    lambda e: (
-                        sweep_result_view_state["trace_selection"].__setitem__(
-                            "input_port",
-                            _coerce_int_value(e.value, next(iter(port_options))),
+                        sweep_result_view_state.__setitem__(
+                            "view_axis_target_value_ref",
+                            str(e.value or payload["view_axis_target_value_ref"]),
                         ),
                         _rerender(),
                     )
@@ -4374,6 +4564,16 @@ def _render_simulation_environment():
                         _rerender(),
                     )
                 )
+                for target, fixed_select in fixed_selects:
+                    fixed_select.on_value_change(
+                        lambda e, target=target: (
+                            sweep_result_view_state["fixed_axis_indices"].__setitem__(
+                                target,
+                                _coerce_int_value(e.value, 0),
+                            ),
+                            _rerender(),
+                        )
+                    )
 
                 def _commit_sweep_z0(raw_value: Any) -> None:
                     try:
@@ -4390,30 +4590,201 @@ def _render_simulation_environment():
                 z0_input.on("keydown.enter", lambda _e: _commit_sweep_z0(z0_input.value))
                 z0_input.on("blur", lambda _e: _commit_sweep_z0(z0_input.value))
 
+                with ui.row().classes("w-full items-center gap-3 mt-2"):
+                    add_trace_button = ui.button(
+                        "Add Trace",
+                        icon="add",
+                        on_click=lambda: (
+                            sweep_result_view_state["traces"].append(
+                                _default_result_trace_selection(
+                                    representative,
+                                    family,
+                                    port_options=port_options,
+                                )
+                            ),
+                            _rerender(),
+                        ),
+                    ).props("outline color=primary")
+                    _with_test_id(add_trace_button, "simulation-sweep-add-trace-button")
+
+                def _update_trace(trace_index: int, *, field: str, value: Any) -> None:
+                    traces_state = list(sweep_result_view_state.get("traces", []))
+                    if trace_index < 0 or trace_index >= len(traces_state):
+                        return
+                    traces_state[trace_index] = {**traces_state[trace_index], field: value}
+                    sweep_result_view_state["traces"] = traces_state
+                    sweep_result_view_state["trace_selection"] = dict(traces_state[0])
+                    _rerender()
+
+                for trace_idx, selection in enumerate(
+                    list(sweep_result_view_state.get("traces", [])),
+                    start=1,
+                ):
+                    with _with_test_id(
+                        ui.card().classes(
+                            "w-full bg-elevated border border-border rounded-lg p-4 mt-2"
+                        ),
+                        f"simulation-sweep-trace-card-{trace_idx}",
+                    ):
+                        with ui.row().classes("w-full items-center gap-3 mb-2"):
+                            ui.label(f"Trace {trace_idx}").classes("text-sm font-bold text-fg")
+                            if len(list(sweep_result_view_state.get("traces", []))) > 1:
+                                ui.button(
+                                    "",
+                                    icon="delete",
+                                    on_click=(
+                                        lambda _e, trace_index=trace_idx - 1: (
+                                            sweep_result_view_state["traces"].pop(trace_index),
+                                            sweep_result_view_state.__setitem__(
+                                                "trace_selection",
+                                                dict(sweep_result_view_state["traces"][0]),
+                                            ),
+                                            _rerender(),
+                                        )
+                                    ),
+                                ).props("flat color=negative round").classes("ml-auto")
+                        with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                            trace_select = (
+                                ui.select(
+                                    label="Trace",
+                                    options=trace_options,
+                                    value=selection["trace"],
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-56")
+                            )
+                            if trace_idx == 1:
+                                _with_test_id(trace_select, "simulation-sweep-trace-select")
+                            _with_test_id(
+                                trace_select,
+                                f"simulation-sweep-trace-select-{trace_idx}",
+                            )
+                            output_mode_select = (
+                                ui.select(
+                                    label="Output Mode",
+                                    options=mode_options,
+                                    value=SimulationResult.mode_token(
+                                        tuple(selection["output_mode"])
+                                    ),
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-52")
+                            )
+                            input_mode_select = (
+                                ui.select(
+                                    label="Input Mode",
+                                    options=mode_options,
+                                    value=SimulationResult.mode_token(
+                                        tuple(selection["input_mode"])
+                                    ),
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-52")
+                            )
+                            output_port_select = (
+                                ui.select(
+                                    label="Output Port",
+                                    options=port_options,
+                                    value=int(selection["output_port"]),
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-44")
+                            )
+                            input_port_select = (
+                                ui.select(
+                                    label="Input Port",
+                                    options=port_options,
+                                    value=int(selection["input_port"]),
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("w-44")
+                            )
+
+                        trace_select.on_value_change(
+                            lambda e, trace_index=trace_idx - 1: _update_trace(
+                                trace_index,
+                                field="trace",
+                                value=str(e.value or _first_option_key(trace_options)),
+                            )
+                        )
+                        output_mode_select.on_value_change(
+                            lambda e, trace_index=trace_idx - 1: _update_trace(
+                                trace_index,
+                                field="output_mode",
+                                value=tuple(SimulationResult.parse_mode_token(str(e.value or "0"))),
+                            )
+                        )
+                        input_mode_select.on_value_change(
+                            lambda e, trace_index=trace_idx - 1: _update_trace(
+                                trace_index,
+                                field="input_mode",
+                                value=tuple(SimulationResult.parse_mode_token(str(e.value or "0"))),
+                            )
+                        )
+                        output_port_select.on_value_change(
+                            lambda e, trace_index=trace_idx - 1: _update_trace(
+                                trace_index,
+                                field="output_port",
+                                value=_coerce_int_value(e.value, next(iter(port_options))),
+                            )
+                        )
+                        input_port_select.on_value_change(
+                            lambda e, trace_index=trace_idx - 1: _update_trace(
+                                trace_index,
+                                field="input_port",
+                                value=_coerce_int_value(e.value, next(iter(port_options))),
+                            )
+                        )
+
+                def _on_sweep_family_change(selected_family: str) -> None:
+                    metric_choices = _result_metric_options_for_family(selected_family)
+                    sweep_result_view_state["family"] = selected_family
+                    sweep_result_view_state["metric"] = _first_option_key(metric_choices)
+                    sweep_result_view_state["traces"] = [
+                        _default_result_trace_selection(
+                            representative,
+                            selected_family,
+                            port_options=port_options,
+                        )
+                    ]
+                    sweep_result_view_state["trace_selection"] = dict(
+                        sweep_result_view_state["traces"][0]
+                    )
+                    _rerender()
+
                 table_rows = [
                     {
                         "point": int(row["point_index"]) + 1,
                         "axis_value": float(row["axis_value"]),
-                        "metric_value": str(row["metric_text"]),
+                        **{
+                            f"trace_{idx}": str(
+                                row["metric_text_by_trace"].get(f"trace_{idx}", "N/A")
+                            )
+                            for idx in range(1, len(trace_labels) + 1)
+                        },
                     }
                     for row in rows
                 ]
-                sweep_table = ui.table(
-                    columns=[
-                        {"name": "point", "label": "Point", "field": "point", "sortable": True},
+                table_columns = [
+                    {"name": "point", "label": "Point", "field": "point", "sortable": True},
+                    {
+                        "name": "axis_value",
+                        "label": axis_label,
+                        "field": "axis_value",
+                        "sortable": True,
+                    },
+                ]
+                for idx, label in enumerate(trace_labels, start=1):
+                    table_columns.append(
                         {
-                            "name": "axis_value",
-                            "label": axis_label,
-                            "field": "axis_value",
-                            "sortable": True,
-                        },
-                        {
-                            "name": "metric_value",
-                            "label": metric_label,
-                            "field": "metric_value",
+                            "name": f"trace_{idx}",
+                            "label": f"{label} ({metric_label})",
+                            "field": f"trace_{idx}",
                             "sortable": False,
-                        },
-                    ],
+                        }
+                    )
+                sweep_table = ui.table(
+                    columns=table_columns,
                     rows=table_rows,
                     row_key="point",
                     pagination=5,
@@ -4580,12 +4951,16 @@ def _render_simulation_environment():
                             "outline color=primary size=sm"
                         )
 
-                with ui.row().classes("w-full gap-4"):
-                    start_input = ui.number("Start Freq (GHz)", value=1.0).classes("flex-grow")
-                    stop_input = ui.number("Stop Freq (GHz)", value=10.0).classes("flex-grow")
-                    points_input = ui.number("Points", value=1001, format="%.0f").classes(
-                        "flex-grow"
+                with ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4"):
+                    ui.label("Signal Frequency Sweep Range").classes(
+                        "text-sm font-bold text-fg mb-2"
                     )
+                    with ui.row().classes("w-full gap-4"):
+                        start_input = ui.number("Start Freq (GHz)", value=1.0).classes("flex-grow")
+                        stop_input = ui.number("Stop Freq (GHz)", value=10.0).classes("flex-grow")
+                        points_input = ui.number("Points", value=1001, format="%.0f").classes(
+                            "flex-grow"
+                        )
 
                 sweep_target_options = {
                     value_ref: (f"{value_ref} ({unit})" if str(unit).strip() else value_ref)
@@ -4595,109 +4970,340 @@ def _render_simulation_environment():
                     None,
                     available_target_units=sweep_target_unit_by_value_ref,
                 )
-                sweep_axis_defaults = sweep_setup_defaults["axes"][0]
-                default_sweep_target = str(sweep_axis_defaults.get("target_value_ref", "")).strip()
-                if default_sweep_target not in sweep_target_options:
-                    default_sweep_target = next(iter(sweep_target_options), "")
+                sweep_axis_forms: list[dict[str, Any]] = []
+                sweep_axes_container: Any = None
+                sweep_mode_select: Any
+                sweep_add_axis_button: Any
                 with _with_test_id(
                     ui.card().classes(
                         "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
                     ),
                     "simulation-sweep-setup-card",
                 ):
-                    ui.label("Parameter Sweep (MVP)").classes("text-sm font-bold text-fg mb-2")
+                    ui.label("Parameter Sweeps").classes("text-sm font-bold text-fg mb-2")
                     with ui.row().classes("w-full gap-3 items-end flex-wrap"):
                         sweep_enabled_switch = ui.switch(
                             "Enable Sweep",
                             value=bool(sweep_setup_defaults["enabled"]),
                         )
-                        sweep_target_select = (
+                        sweep_mode_select = (
                             ui.select(
-                                label="Sweep Target",
-                                options=sweep_target_options,
-                                value=(default_sweep_target or None),
+                                label="Sweep Mode",
+                                options=_SWEEP_MODE_OPTIONS,
+                                value=str(sweep_setup_defaults.get("mode", "cartesian")),
                             )
                             .props("dense outlined options-dense")
-                            .classes("min-w-[320px]")
+                            .classes("w-52")
                         )
-                        _with_test_id(sweep_target_select, "simulation-sweep-target-select")
-                        sweep_start_input = ui.number(
-                            "Sweep Start",
-                            value=float(sweep_axis_defaults.get("start", 0.0)),
-                            format="%.6g",
-                        ).classes("w-40")
-                        sweep_stop_input = ui.number(
-                            "Sweep Stop",
-                            value=float(sweep_axis_defaults.get("stop", 0.0)),
-                            format="%.6g",
-                        ).classes("w-40")
-                        sweep_points_input = ui.number(
-                            "Sweep Points",
-                            value=int(sweep_axis_defaults.get("points", 11)),
-                            format="%.0f",
-                        ).classes("w-40")
+                        sweep_add_axis_button = ui.button(
+                            "Add Axis",
+                            icon="add",
+                        ).props("outline color=primary size=sm")
+                        _with_test_id(sweep_add_axis_button, "simulation-sweep-add-axis-button")
                     sweep_hint_label = ui.label("").classes("text-xs text-muted mt-2")
+                    sweep_axes_container = ui.column().classes("w-full gap-2 mt-2")
+
+                def _default_sweep_target() -> str:
+                    return next(iter(sweep_target_options), "")
+
+                def _normalize_sweep_mode_value(value: Any) -> str:
+                    mode = str(value or "cartesian").strip().lower()
+                    if mode not in _SWEEP_MODE_OPTIONS:
+                        return "cartesian"
+                    return mode
+
+                def _collect_sweep_setup_payload(*, notify_errors: bool) -> dict[str, Any] | None:
+                    sweep_enabled = bool(sweep_enabled_switch.value)
+                    axes_payload: list[dict[str, Any]] = []
+                    for axis_idx, axis_form in enumerate(sweep_axis_forms, start=1):
+                        target_select = axis_form["target_select"]
+                        start_value = axis_form["start_input"].value
+                        stop_value = axis_form["stop_input"].value
+                        points_value = axis_form["points_input"].value
+                        target_value_ref = str(target_select.value or "").strip()
+                        if not target_value_ref:
+                            target_value_ref = _default_sweep_target()
+                        if sweep_enabled and target_value_ref not in sweep_target_options:
+                            if notify_errors:
+                                ui.notify(
+                                    f"Sweep axis {axis_idx} target is invalid.",
+                                    type="warning",
+                                )
+                            return None
+                        if sweep_enabled and (
+                            start_value is None or stop_value is None or points_value is None
+                        ):
+                            if notify_errors:
+                                ui.notify(
+                                    (
+                                        f"Sweep axis {axis_idx} requires "
+                                        "start/stop/points when sweep is enabled."
+                                    ),
+                                    type="warning",
+                                )
+                            return None
+                        axis_points = max(1, int(points_value or 11))
+                        if sweep_enabled and axis_points < 1:
+                            if notify_errors:
+                                ui.notify("Sweep points must be >= 1.", type="warning")
+                            return None
+                        axes_payload.append(
+                            {
+                                "target_value_ref": target_value_ref,
+                                "start": float(start_value or 0.0),
+                                "stop": float(
+                                    stop_value if stop_value is not None else (start_value or 0.0)
+                                ),
+                                "points": axis_points,
+                                "unit": str(
+                                    sweep_target_unit_by_value_ref.get(
+                                        target_value_ref,
+                                        "",
+                                    )
+                                ),
+                            }
+                        )
+
+                    if not axes_payload:
+                        axes_payload = [_default_sweep_axis_payload()]
+                    if sweep_enabled:
+                        dedup_targets = [
+                            str(axis["target_value_ref"]).strip() for axis in axes_payload
+                        ]
+                        if len(set(dedup_targets)) != len(dedup_targets):
+                            if notify_errors:
+                                ui.notify(
+                                    "Each sweep axis target must be unique.",
+                                    type="warning",
+                                )
+                            return None
+                    normalized = _normalize_sweep_setup_payload(
+                        {
+                            "enabled": sweep_enabled,
+                            "mode": _normalize_sweep_mode_value(sweep_mode_select.value),
+                            "axes": axes_payload,
+                        },
+                        available_target_units=sweep_target_unit_by_value_ref,
+                    )
+                    return normalized
+
+                def _reindex_sweep_axis_forms() -> None:
+                    has_multiple_axes = len(sweep_axis_forms) > 1
+                    for axis_idx, axis_form in enumerate(sweep_axis_forms, start=1):
+                        axis_form["title"].text = f"Sweep Axis {axis_idx}"
+                        axis_form["remove_button"].enabled = has_multiple_axes
 
                 def refresh_sweep_controls() -> None:
-                    enabled = bool(sweep_enabled_switch.value)
                     has_targets = bool(sweep_target_options)
                     if not has_targets:
                         sweep_enabled_switch.value = False
                         sweep_enabled_switch.disable()
-                        sweep_target_select.value = None
                     else:
                         sweep_enabled_switch.enable()
 
-                    target = str(sweep_target_select.value or "")
-                    if has_targets and target not in sweep_target_options:
-                        target = next(iter(sweep_target_options), "")
-                        sweep_target_select.value = target
-                    target_unit = str(sweep_target_unit_by_value_ref.get(target, "")).strip()
-                    if has_targets and target and target_unit:
-                        sweep_hint_label.text = (
-                            f"Target: {target} | Unit: {target_unit} | "
-                            "trace-first source = netlist value_ref or source setup field"
-                        )
-                    elif has_targets and target:
-                        sweep_hint_label.text = (
-                            f"Target: {target} | "
-                            "trace-first source = netlist value_ref or source setup field"
-                        )
+                    sweep_mode_select.value = _normalize_sweep_mode_value(sweep_mode_select.value)
+                    if bool(sweep_enabled_switch.value) and has_targets:
+                        sweep_mode_select.enable()
                     else:
-                        sweep_hint_label.text = "No sweepable targets in current schema/setup."
+                        sweep_mode_select.disable()
 
-                    if not enabled or not has_targets:
-                        sweep_target_select.disable()
-                        sweep_start_input.disable()
-                        sweep_stop_input.disable()
-                        sweep_points_input.disable()
+                    if bool(sweep_enabled_switch.value) and has_targets:
+                        sweep_add_axis_button.enable()
                     else:
-                        sweep_target_select.enable()
-                        sweep_start_input.enable()
-                        sweep_stop_input.enable()
-                        sweep_points_input.enable()
+                        sweep_add_axis_button.disable()
+
+                    for axis_form in sweep_axis_forms:
+                        target_select = axis_form["target_select"]
+                        target_select.options = dict(sweep_target_options)
+                        target_value_ref = str(target_select.value or "").strip()
+                        if has_targets and target_value_ref not in sweep_target_options:
+                            target_value_ref = _default_sweep_target()
+                            target_select.value = target_value_ref
+                        unit_label = axis_form["unit_label"]
+                        unit_hint = str(
+                            sweep_target_unit_by_value_ref.get(target_value_ref, "")
+                        ).strip()
+                        unit_label.text = f"Unit: {unit_hint or '-'}"
+                        controls = [
+                            target_select,
+                            axis_form["start_input"],
+                            axis_form["stop_input"],
+                            axis_form["points_input"],
+                        ]
+                        if bool(sweep_enabled_switch.value) and has_targets:
+                            for control in controls:
+                                control.enable()
+                        else:
+                            for control in controls:
+                                control.disable()
+
+                    _reindex_sweep_axis_forms()
+                    normalized_payload = _collect_sweep_setup_payload(notify_errors=False)
+                    if not has_targets:
+                        sweep_hint_label.text = "No sweepable targets in current schema/setup."
+                        return
+                    if normalized_payload is None:
+                        sweep_hint_label.text = "Sweep axes are invalid; fix inputs before run."
+                        return
+                    total_points = _estimate_sweep_cartesian_point_count(
+                        list(normalized_payload.get("axes", []))
+                    )
+                    axis_count = len(list(normalized_payload.get("axes", [])))
+                    if bool(normalized_payload.get("enabled", False)):
+                        mode_value = str(normalized_payload.get("mode", "cartesian"))
+                        if mode_value == "cartesian" and total_points > _SWEEP_MAX_CARTESIAN_POINTS:
+                            sweep_hint_label.text = (
+                                f"Warning: total Cartesian points = {total_points} "
+                                f"(limit {_SWEEP_MAX_CARTESIAN_POINTS}). "
+                                "Run is blocked until points are reduced."
+                            )
+                        else:
+                            sweep_hint_label.text = (
+                                f"Enabled | mode={mode_value} | axes={axis_count} | "
+                                f"total points={total_points} | "
+                                "targets from netlist value_ref + source fields."
+                            )
+                    else:
+                        sweep_hint_label.text = (
+                            "Sweep disabled. Configure axes now; run path stays single-run."
+                        )
+
+                def add_sweep_axis_form(
+                    initial: Mapping[str, Any] | None = None,
+                    *,
+                    refresh_after: bool = True,
+                ) -> None:
+                    if len(sweep_axis_forms) >= _SWEEP_MAX_AXIS_COUNT:
+                        ui.notify(
+                            f"At most {_SWEEP_MAX_AXIS_COUNT} sweep axes are supported.",
+                            type="warning",
+                        )
+                        return
+                    initial_axis = (
+                        dict(initial)
+                        if isinstance(initial, Mapping)
+                        else _default_sweep_axis_payload()
+                    )
+                    target_value_ref = str(initial_axis.get("target_value_ref", "")).strip()
+                    if target_value_ref not in sweep_target_options:
+                        target_value_ref = _default_sweep_target()
+                    with (
+                        sweep_axes_container,
+                        ui.card().classes(
+                            "w-full bg-bg border border-border rounded-lg p-3"
+                        ) as axis_card,
+                    ):
+                        with ui.row().classes("w-full items-center justify-between mb-2"):
+                            title_label = ui.label("Sweep Axis").classes(
+                                "text-sm font-bold text-fg"
+                            )
+                            remove_button = ui.button(
+                                icon="delete",
+                                on_click=lambda card=axis_card: remove_sweep_axis_form(card),
+                            ).props("flat dense round color=negative")
+                        with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                            target_select = (
+                                ui.select(
+                                    label="Sweep Target",
+                                    options=dict(sweep_target_options),
+                                    value=(target_value_ref or None),
+                                )
+                                .props("dense outlined options-dense")
+                                .classes("min-w-[320px]")
+                            )
+                            _with_test_id(target_select, "simulation-sweep-target-select")
+                            start_axis_input = ui.number(
+                                "Sweep Start",
+                                value=float(initial_axis.get("start", 0.0)),
+                                format="%.6g",
+                            ).classes("w-40")
+                            stop_axis_input = ui.number(
+                                "Sweep Stop",
+                                value=float(
+                                    initial_axis.get(
+                                        "stop",
+                                        initial_axis.get("start", 0.0),
+                                    )
+                                ),
+                                format="%.6g",
+                            ).classes("w-40")
+                            points_axis_input = ui.number(
+                                "Sweep Points",
+                                value=int(initial_axis.get("points", 11)),
+                                format="%.0f",
+                            ).classes("w-40")
+                        unit_label = ui.label("").classes("text-xs text-muted mt-2")
+
+                    sweep_axis_forms.append(
+                        {
+                            "card": axis_card,
+                            "title": title_label,
+                            "remove_button": remove_button,
+                            "target_select": target_select,
+                            "start_input": start_axis_input,
+                            "stop_input": stop_axis_input,
+                            "points_input": points_axis_input,
+                            "unit_label": unit_label,
+                        }
+                    )
+                    target_select.on_value_change(lambda _e: refresh_sweep_controls())
+                    if refresh_after:
+                        refresh_sweep_controls()
+
+                def set_sweep_axis_forms(axis_payloads: list[Mapping[str, Any]]) -> None:
+                    for axis_form in list(sweep_axis_forms):
+                        axis_card = axis_form["card"]
+                        axis_card.delete()
+                    sweep_axis_forms.clear()
+                    input_payloads = axis_payloads[:_SWEEP_MAX_AXIS_COUNT] if axis_payloads else []
+                    if not input_payloads:
+                        input_payloads = [_default_sweep_axis_payload()]
+                    for axis_payload in input_payloads:
+                        add_sweep_axis_form(axis_payload, refresh_after=False)
+                    refresh_sweep_controls()
+
+                def remove_sweep_axis_form(axis_card: Any) -> None:
+                    if len(sweep_axis_forms) <= 1:
+                        ui.notify("At least one sweep axis card must remain.", type="warning")
+                        return
+                    for idx, axis_form in enumerate(sweep_axis_forms):
+                        if axis_form["card"] is axis_card:
+                            sweep_axis_forms.pop(idx)
+                            axis_card.delete()
+                            refresh_sweep_controls()
+                            return
 
                 sweep_enabled_switch.on_value_change(lambda _e: refresh_sweep_controls())
-                sweep_target_select.on_value_change(lambda _e: refresh_sweep_controls())
-                refresh_sweep_controls()
+                sweep_mode_select.on_value_change(lambda _e: refresh_sweep_controls())
+                sweep_add_axis_button.on_click(lambda _e: add_sweep_axis_form())
+                set_sweep_axis_forms(list(sweep_setup_defaults.get("axes", [])))
 
-                ui.separator().classes("my-3 w-full")
-
-                ui.label("HB Solve Pump/Source Settings").classes("text-sm text-muted mb-2")
-                with ui.row().classes("w-full gap-4"):
-                    n_mod_input = ui.number(
-                        "Nmodulation Harmonics",
-                        value=10,
-                        format="%.0f",
-                    ).classes("flex-grow")
-                    n_pump_input = ui.number(
-                        "Npump Harmonics",
-                        value=20,
-                        format="%.0f",
-                    ).classes("flex-grow")
+                with ui.card().classes(
+                    "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                ):
+                    ui.label("HB Solve Setting").classes("text-sm font-bold text-fg mb-2")
+                    with ui.row().classes("w-full gap-4"):
+                        n_mod_input = ui.number(
+                            "Nmodulation Harmonics",
+                            value=10,
+                            format="%.0f",
+                        ).classes("flex-grow")
+                        n_pump_input = ui.number(
+                            "Npump Harmonics",
+                            value=20,
+                            format="%.0f",
+                        ).classes("flex-grow")
 
                 source_forms: list[dict[str, Any]] = []
-                sources_container = ui.column().classes("w-full gap-3 mt-2")
+                with ui.card().classes(
+                    "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                ):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        ui.label("Sources").classes("text-sm font-bold text-fg")
+                        add_source_button = ui.button("Add Source", icon="add").props(
+                            "outline color=primary size=sm"
+                        )
+                    sources_container = ui.column().classes("w-full gap-3 mt-3")
                 applying_saved_setup = False
                 suppress_saved_setup_select_callback = False
 
@@ -4760,7 +5366,6 @@ def _render_simulation_environment():
                             for value_ref, unit in sorted(latest_units.items())
                         }
                     )
-                    sweep_target_select.options = dict(sweep_target_options)
                     refresh_sweep_controls()
 
                 def normalize_source_mode_inputs() -> None:
@@ -4851,11 +5456,7 @@ def _render_simulation_environment():
                     )
                     refresh_source_forms()
 
-                with ui.row().classes("w-full items-center justify-between mt-3"):
-                    ui.label("Sources").classes("text-sm font-bold text-fg")
-                    ui.button("Add Source", icon="add", on_click=add_source_form).props(
-                        "outline color=primary size=sm"
-                    )
+                add_source_button.on_click(lambda _e: add_source_form())
 
                 add_source_form(
                     DriveSourceConfig(
@@ -4877,7 +5478,7 @@ def _render_simulation_environment():
                     ),
                     "termination-compensation-card",
                 ):
-                    ui.label("Port Termination Compensation (Optional)").classes(
+                    ui.label("Port Termination Compensation").classes(
                         "text-sm font-bold text-fg mb-2"
                     )
                     with ui.row().classes("w-full items-end gap-3 flex-wrap"):
@@ -5141,45 +5742,9 @@ def _render_simulation_environment():
                             )
                         )
 
-                    sweep_target = str(sweep_target_select.value or "").strip()
-                    sweep_start = sweep_start_input.value
-                    sweep_stop = sweep_stop_input.value
-                    sweep_points_value = sweep_points_input.value
-                    sweep_enabled = bool(sweep_enabled_switch.value)
-                    if sweep_enabled:
-                        if not sweep_target_options:
-                            ui.notify(
-                                "Current schema/setup has no sweepable targets.",
-                                type="warning",
-                            )
-                            return None
-                        if sweep_target not in sweep_target_options:
-                            ui.notify("Please choose a valid sweep target.", type="warning")
-                            return None
-                        if sweep_start is None or sweep_stop is None or sweep_points_value is None:
-                            ui.notify("Please fill sweep start/stop/points.", type="warning")
-                            return None
-                        if int(sweep_points_value) < 1:
-                            ui.notify("Sweep points must be >= 1.", type="warning")
-                            return None
-
-                    sweep_payload = _normalize_sweep_setup_payload(
-                        {
-                            "enabled": sweep_enabled,
-                            "axes": [
-                                {
-                                    "target_value_ref": sweep_target,
-                                    "start": float(sweep_start or 0.0),
-                                    "stop": float(sweep_stop or 0.0),
-                                    "points": int(sweep_points_value or 11),
-                                    "unit": str(
-                                        sweep_target_unit_by_value_ref.get(sweep_target, "")
-                                    ),
-                                }
-                            ],
-                        },
-                        available_target_units=sweep_target_unit_by_value_ref,
-                    )
+                    sweep_payload = _collect_sweep_setup_payload(notify_errors=True)
+                    if sweep_payload is None:
+                        return None
 
                     return {
                         "freq_range": {
@@ -5264,13 +5829,14 @@ def _render_simulation_environment():
                         )
                         alpha_min_input.value = float(advanced_payload.get("alpha_min", 1e-4))
                         sweep_enabled_switch.value = bool(sweep_payload.get("enabled", False))
-                        sweep_axis_payload = sweep_payload.get("axes", [{}])[0]
-                        sweep_target_select.value = str(
-                            sweep_axis_payload.get("target_value_ref", "")
+                        sweep_mode_select.value = str(sweep_payload.get("mode", "cartesian"))
+                        set_sweep_axis_forms(
+                            [
+                                axis
+                                for axis in list(sweep_payload.get("axes", []))
+                                if isinstance(axis, Mapping)
+                            ]
                         )
-                        sweep_start_input.value = float(sweep_axis_payload.get("start", 0.0))
-                        sweep_stop_input.value = float(sweep_axis_payload.get("stop", 0.0))
-                        sweep_points_input.value = int(sweep_axis_payload.get("points", 11))
                         refresh_sweep_controls()
                         termination_enabled = bool(
                             termination_payload.get("enabled", False)
@@ -5642,7 +6208,12 @@ def _render_simulation_environment():
                 manage_setups_button.on("click", on_manage_setups_click)
                 save_setup_button.on("click", on_save_setup_click)
 
-                with ui.expansion("Advanced hbsolve Options").classes("w-full mt-2"):
+                with (
+                    ui.card().classes(
+                        "w-full bg-elevated border border-border rounded-lg p-4 mt-3"
+                    ),
+                    ui.expansion("Advanced hbsolve Options").classes("w-full"),
+                ):
                     with ui.row().classes("w-full gap-6 items-center"):
                         include_dc_switch = ui.switch("Include DC", value=False)
                         three_wave_switch = ui.switch("Enable 3-Wave Mixing", value=False)
@@ -5814,54 +6385,110 @@ def _render_simulation_environment():
                             latest_circuit_def,
                             config=config,
                         )
-                        sweep_enabled = bool(sweep_enabled_switch.value)
+                        sweep_setup_payload = _collect_sweep_setup_payload(notify_errors=False)
+                        if sweep_setup_payload is None:
+                            reset_status()
+                            append_status(
+                                "warning",
+                                "Sweep setup is invalid. Please check axis inputs.",
+                            )
+                            ui.notify("Sweep setup is invalid.", type="warning")
+                            return
+                        sweep_setup_payload = _normalize_sweep_setup_payload(
+                            sweep_setup_payload,
+                            available_target_units=sweep_target_units_latest,
+                        )
+                        sweep_enabled = bool(sweep_setup_payload.get("enabled", False))
                         sweep_plan: SimulationSweepPlan | None = None
                         sweep_snapshot: dict[str, Any] | None = None
                         sweep_setup_hash: str | None = None
                         sweep_result_payload: dict[str, Any] | None = None
+                        sweep_mode = str(sweep_setup_payload.get("mode", "cartesian"))
                         if sweep_enabled:
-                            sweep_target = str(sweep_target_select.value or "").strip()
-                            if sweep_target not in sweep_target_units_latest:
+                            if sweep_mode != "cartesian":
+                                append_status(
+                                    "warning",
+                                    (
+                                        "Sweep mode 'paired' is reserved. "
+                                        "Current run falls back to cartesian expansion."
+                                    ),
+                                )
+                                sweep_mode = "cartesian"
+                            axes_payload = [
+                                axis
+                                for axis in list(sweep_setup_payload.get("axes", []))
+                                if isinstance(axis, Mapping)
+                            ]
+                            if not axes_payload:
                                 reset_status()
                                 append_status(
                                     "warning",
-                                    "Sweep target is invalid for the latest schema/setup.",
+                                    "Sweep setup has no axis definitions.",
                                 )
-                                ui.notify(
-                                    "Sweep target is invalid for the latest schema/setup.",
-                                    type="warning",
-                                )
+                                ui.notify("Sweep setup has no axis definitions.", type="warning")
                                 return
+                            total_sweep_points = _estimate_sweep_cartesian_point_count(axes_payload)
                             if (
-                                sweep_start_input.value is None
-                                or sweep_stop_input.value is None
-                                or sweep_points_input.value is None
+                                sweep_mode == "cartesian"
+                                and total_sweep_points > _SWEEP_MAX_CARTESIAN_POINTS
                             ):
+                                message = (
+                                    "Cartesian sweep point count exceeds limit "
+                                    f"({_SWEEP_MAX_CARTESIAN_POINTS}). "
+                                    f"Current total: {total_sweep_points}."
+                                )
                                 reset_status()
-                                append_status(
-                                    "warning",
-                                    "Sweep start/stop/points are required when sweep is enabled.",
-                                )
-                                ui.notify(
-                                    "Sweep start/stop/points are required when sweep is enabled.",
-                                    type="warning",
-                                )
+                                append_status("warning", message)
+                                ui.notify(message, type="warning")
                                 return
-                            sweep_axis = SimulationSweepAxis(
-                                target_value_ref=sweep_target,
-                                values=build_linear_sweep_values(
-                                    start=float(sweep_start_input.value),
-                                    stop=float(sweep_stop_input.value),
-                                    points=max(1, int(sweep_points_input.value)),
-                                ),
-                                unit=str(sweep_target_units_latest.get(sweep_target, "")),
-                            )
-                            sweep_plan = build_simulation_sweep_plan(
-                                circuit=latest_circuit_def,
-                                axes=[sweep_axis],
-                                config=config,
-                            )
+                            sweep_axes: list[SimulationSweepAxis] = []
+                            for axis_payload in axes_payload:
+                                target_value_ref = str(
+                                    axis_payload.get("target_value_ref", "")
+                                ).strip()
+                                if target_value_ref not in sweep_target_units_latest:
+                                    reset_status()
+                                    append_status(
+                                        "warning",
+                                        (
+                                            "Sweep target is invalid for the latest schema/setup: "
+                                            f"{target_value_ref}."
+                                        ),
+                                    )
+                                    ui.notify(
+                                        (
+                                            "Sweep target is invalid for the latest schema/setup: "
+                                            f"{target_value_ref}."
+                                        ),
+                                        type="warning",
+                                    )
+                                    return
+                                sweep_axes.append(
+                                    SimulationSweepAxis(
+                                        target_value_ref=target_value_ref,
+                                        values=build_linear_sweep_values(
+                                            start=float(axis_payload.get("start", 0.0)),
+                                            stop=float(axis_payload.get("stop", 0.0)),
+                                            points=max(1, int(axis_payload.get("points", 1))),
+                                        ),
+                                        unit=str(
+                                            sweep_target_units_latest.get(target_value_ref, "")
+                                        ),
+                                    )
+                                )
+                            try:
+                                sweep_plan = build_simulation_sweep_plan(
+                                    circuit=latest_circuit_def,
+                                    axes=sweep_axes,
+                                    config=config,
+                                )
+                            except ValueError as exc:
+                                reset_status()
+                                append_status("warning", str(exc))
+                                ui.notify(str(exc), type="warning")
+                                return
                             sweep_snapshot = simulation_sweep_setup_snapshot(sweep_plan)
+                            sweep_snapshot["mode"] = sweep_mode
                             sweep_setup_hash = _hash_stable_json(sweep_snapshot)
                         harmonic_grid_hits = _detect_harmonic_grid_coincidences(
                             freq_range=freq_range,
@@ -5918,15 +6545,21 @@ def _render_simulation_environment():
                             ),
                         )
                         if sweep_plan is not None:
-                            sweep_axis = sweep_plan.axes[0]
+                            axis_tokens = "; ".join(
+                                (
+                                    f"{axis.target_value_ref}[{len(axis.values)}]"
+                                    f"{(' ' + axis.unit) if str(axis.unit).strip() else ''}"
+                                )
+                                for axis in sweep_plan.axes
+                            )
                             append_status(
                                 "info",
                                 (
                                     "Parameter sweep enabled: "
+                                    f"mode={sweep_mode}, "
                                     f"dim={sweep_plan.dimension}, "
-                                    f"target={sweep_axis.target_value_ref}, "
                                     f"points={sweep_plan.point_count}, "
-                                    f"unit={sweep_axis.unit or '-'}."
+                                    f"axes={axis_tokens}."
                                 ),
                             )
                         append_status(
