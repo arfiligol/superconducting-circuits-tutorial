@@ -27,6 +27,14 @@ from app.services.dataset_profile import (
     normalize_dataset_profile,
     profile_summary_text,
 )
+from app.services.post_processing_step_registry import (
+    POST_PROCESS_STEP_OPTIONS,
+    build_default_step_config,
+    normalize_saved_step_config,
+    preview_pipeline_labels,
+    run_post_processing_step,
+    serialize_post_processing_step,
+)
 from core.shared.persistence import SqliteUnitOfWork, get_unit_of_work
 from core.shared.persistence.models import (
     CircuitRecord,
@@ -37,13 +45,10 @@ from core.shared.persistence.models import (
 from core.shared.visualization import get_plotly_layout
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
-    apply_coordinate_transform,
-    build_common_differential_transform,
     build_port_y_sweep,
     compensate_simulation_result_port_terminations,
     filtered_modes,
     infer_port_termination_resistance_ohm,
-    kron_reduce,
 )
 from core.simulation.application.run_simulation import run_simulation
 from core.simulation.domain.circuit import (
@@ -1710,10 +1715,7 @@ def _render_post_processing_panel(
                 step_type_select = (
                     ui.select(
                         label="Step Type",
-                        options={
-                            "coordinate_transform": "Coordinate Transformation",
-                            "kron_reduction": "Kron Reduction",
-                        },
+                        options=POST_PROCESS_STEP_OPTIONS,
                         value="coordinate_transform",
                     )
                     .props("dense outlined options-dense")
@@ -1741,45 +1743,17 @@ def _render_post_processing_panel(
     applying_saved_post_setup = False
 
     def _make_step_config(step_type: str) -> dict[str, Any]:
-        normalized = str(step_type).strip().lower()
-        if normalized == "kron_reduction":
-            return {
-                "type": "kron_reduction",
-                "enabled": True,
-                "keep_labels": [],
-            }
-        return {
-            "type": "coordinate_transform",
-            "enabled": True,
-            "template": "cm_dm",
-            "weight_mode": "auto",
-            "alpha": 0.5,
-            "beta": 0.5,
-            "port_a": default_port_a,
-            "port_b": default_port_b,
-        }
+        return build_default_step_config(
+            step_type,
+            default_port_a=default_port_a,
+            default_port_b=default_port_b,
+        )
 
     def invalidate_processed_state() -> None:
         emit_result(None, None)
 
     def _serialized_post_step(step: dict[str, Any]) -> dict[str, Any]:
-        step_type = str(step.get("type", "coordinate_transform"))
-        if step_type == "kron_reduction":
-            return {
-                "type": "kron_reduction",
-                "enabled": bool(step.get("enabled", True)),
-                "keep_labels": [str(label) for label in (step.get("keep_labels") or [])],
-            }
-        return {
-            "type": "coordinate_transform",
-            "enabled": bool(step.get("enabled", True)),
-            "template": str(step.get("template", "cm_dm")),
-            "weight_mode": str(step.get("weight_mode", "auto")),
-            "alpha": float(step.get("alpha", 0.5)),
-            "beta": float(step.get("beta", 0.5)),
-            "port_a": step.get("port_a"),
-            "port_b": step.get("port_b"),
-        }
+        return serialize_post_processing_step(step)
 
     def collect_current_post_setup_payload() -> dict[str, Any]:
         return {
@@ -1825,22 +1799,13 @@ def _render_post_processing_panel(
             for raw_step in payload.get("steps", []):
                 if not isinstance(raw_step, dict):
                     continue
-                normalized = _make_step_config(str(raw_step.get("type", "coordinate_transform")))
-                normalized["id"] = step_id_seed["value"]
+                normalized = normalize_saved_step_config(
+                    raw_step=raw_step,
+                    step_id=step_id_seed["value"],
+                    default_port_a=default_port_a,
+                    default_port_b=default_port_b,
+                )
                 step_id_seed["value"] += 1
-                normalized["enabled"] = bool(raw_step.get("enabled", normalized["enabled"]))
-                if normalized["type"] == "coordinate_transform":
-                    normalized["template"] = str(raw_step.get("template", normalized["template"]))
-                    normalized["weight_mode"] = str(
-                        raw_step.get("weight_mode", normalized["weight_mode"])
-                    )
-                    normalized["alpha"] = float(raw_step.get("alpha", normalized["alpha"]))
-                    normalized["beta"] = float(raw_step.get("beta", normalized["beta"]))
-                    normalized["port_a"] = raw_step.get("port_a", normalized["port_a"])
-                    normalized["port_b"] = raw_step.get("port_b", normalized["port_b"])
-                else:
-                    keep_labels = [str(label) for label in (raw_step.get("keep_labels") or [])]
-                    normalized["keep_labels"] = keep_labels
                 step_sequence.append(normalized)
 
             invalidate_processed_state()
@@ -1955,44 +1920,12 @@ def _render_post_processing_panel(
         ui.notify("Deleted post-processing setup.", type="positive")
 
     def _pipeline_labels_before_step(step_id: int | None = None) -> tuple[str, ...]:
-        labels = tuple(str(port) for port in sorted(raw_result.available_port_indices))
-        if not labels:
-            return labels
-
-        for step in step_sequence:
-            if step_id is not None and int(step.get("id", -1)) == step_id:
-                break
-            if not bool(step.get("enabled", True)):
-                continue
-
-            step_type = str(step.get("type", ""))
-            if step_type == "coordinate_transform":
-                if str(step.get("template", "identity")) != "cm_dm":
-                    continue
-                if not labels:
-                    break
-                port_a = _coerce_int_value(step.get("port_a"), int(labels[0]))
-                port_b = _coerce_int_value(step.get("port_b"), int(labels[-1]))
-                label_to_index = {
-                    int(label): idx for idx, label in enumerate(labels) if str(label).isdigit()
-                }
-                if port_a == port_b or port_a not in label_to_index or port_b not in label_to_index:
-                    continue
-                updated = list(labels)
-                idx_a = label_to_index[port_a]
-                idx_b = label_to_index[port_b]
-                updated[idx_a] = f"cm({port_a},{port_b})"
-                updated[idx_b] = f"dm({port_a},{port_b})"
-                labels = tuple(updated)
-                continue
-
-            if step_type == "kron_reduction":
-                keep_labels = [str(label) for label in (step.get("keep_labels") or [])]
-                filtered_keep = [label for label in labels if label in set(keep_labels)]
-                if filtered_keep:
-                    labels = tuple(filtered_keep)
-
-        return labels
+        initial_labels = tuple(str(port) for port in sorted(raw_result.available_port_indices))
+        return preview_pipeline_labels(
+            initial_labels=initial_labels,
+            step_sequence=step_sequence,
+            stop_before_step_id=step_id,
+        )
 
     @ui.refreshable
     def render_step_cards() -> None:
@@ -2022,10 +1955,7 @@ def _render_post_processing_panel(
                     step_type_select_local = (
                         ui.select(
                             label="Type",
-                            options={
-                                "coordinate_transform": "Coordinate Transformation",
-                                "kron_reduction": "Kron Reduction",
-                            },
+                            options=POST_PROCESS_STEP_OPTIONS,
                             value=step_type,
                         )
                         .props("dense outlined options-dense")
@@ -2337,117 +2267,24 @@ def _render_post_processing_panel(
             )
             flow_steps: list[dict[str, Any]] = []
 
-            for step in step_sequence:
+            for index, step in enumerate(step_sequence):
                 if not bool(step.get("enabled", True)):
                     continue
-
-                step_type = str(step.get("type", "coordinate_transform"))
-                if step_type == "coordinate_transform":
-                    template = str(step.get("template", "identity"))
-                    if template == "cm_dm":
-                        if sweep.dimension < 2:
-                            raise ValueError(
-                                "Common/Differential transform requires "
-                                "at least two available ports."
-                            )
-                        default_label = sweep.labels[0] if sweep.labels else "1"
-                        fallback_port = int(default_label) if default_label.isdigit() else 1
-                        selected_port_a = _coerce_int_value(step.get("port_a"), fallback_port)
-                        selected_port_b = _coerce_int_value(step.get("port_b"), fallback_port)
-                        if selected_port_a == selected_port_b:
-                            raise ValueError("Port A and Port B must be different.")
-
-                        label_to_index = {
-                            int(label): idx
-                            for idx, label in enumerate(sweep.labels)
-                            if label.isdigit()
-                        }
-                        if (
-                            selected_port_a not in label_to_index
-                            or selected_port_b not in label_to_index
-                        ):
-                            raise ValueError(
-                                "Selected ports are not available in current sweep basis."
-                            )
-
-                        if str(step.get("weight_mode", "auto")) == "auto":
-                            if circuit_definition is None:
-                                raise ValueError(
-                                    "Auto weight mode requires a loaded circuit definition."
-                                )
-                            estimated = _estimate_port_ground_cap_weights(
-                                circuit_definition,
-                                port_a=selected_port_a,
-                                port_b=selected_port_b,
-                            )
-                            if estimated is None:
-                                raise ValueError(
-                                    "Unable to estimate auto weights from "
-                                    "capacitor-to-ground topology. "
-                                    "Switch to manual mode."
-                                )
-                            alpha, beta = estimated
-                            step["alpha"] = alpha
-                            step["beta"] = beta
-                        else:
-                            alpha = float(step.get("alpha", 0.0))
-                            beta = float(step.get("beta", 0.0))
-
-                        transform = build_common_differential_transform(
-                            dimension=sweep.dimension,
-                            first_index=label_to_index[selected_port_a],
-                            second_index=label_to_index[selected_port_b],
-                            alpha=alpha,
-                            beta=beta,
+                execution = run_post_processing_step(
+                    sweep=sweep,
+                    step=step,
+                    circuit_definition=circuit_definition,
+                    estimate_auto_weights=lambda definition, port_a, port_b: (
+                        _estimate_port_ground_cap_weights(
+                            definition,
+                            port_a=port_a,
+                            port_b=port_b,
                         )
-                        labels = list(sweep.labels)
-                        idx_a = label_to_index[selected_port_a]
-                        idx_b = label_to_index[selected_port_b]
-                        labels[idx_a] = f"cm({selected_port_a},{selected_port_b})"
-                        labels[idx_b] = f"dm({selected_port_a},{selected_port_b})"
-                        sweep = apply_coordinate_transform(
-                            sweep,
-                            transform_matrix=transform,
-                            labels=tuple(labels),
-                        )
-                        flow_steps.append(
-                            {
-                                "step_id": int(step.get("id", -1)),
-                                "type": "coordinate_transform",
-                                "template": "cm_dm",
-                                "weight_mode": str(step.get("weight_mode", "auto")),
-                                "port_a": selected_port_a,
-                                "port_b": selected_port_b,
-                                "alpha": alpha,
-                                "beta": beta,
-                            }
-                        )
-                    else:
-                        flow_steps.append(
-                            {
-                                "step_id": int(step.get("id", -1)),
-                                "type": "coordinate_transform",
-                                "template": "identity",
-                            }
-                        )
-                    continue
-
-                keep_tokens = {str(label) for label in (step.get("keep_labels") or [])}
-                selected_keep_labels = [label for label in sweep.labels if label in keep_tokens]
-                keep_indices = [
-                    index for index, label in enumerate(sweep.labels) if label in keep_tokens
-                ]
-                if not keep_indices:
-                    raise ValueError("Kron reduction requires at least one kept basis label.")
-                sweep = kron_reduce(sweep, keep_indices=keep_indices)
-                flow_steps.append(
-                    {
-                        "step_id": int(step.get("id", -1)),
-                        "type": "kron_reduction",
-                        "keep_indices": list(keep_indices),
-                        "keep_labels": selected_keep_labels,
-                    }
+                    ),
                 )
+                sweep = execution.sweep
+                flow_steps.append(execution.flow_step)
+                step_sequence[index].update(execution.normalized_step)
 
             has_enabled_coordinate_transform = any(
                 bool(step.get("enabled", True))

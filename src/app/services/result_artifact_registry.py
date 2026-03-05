@@ -26,9 +26,7 @@ RESULT_CATEGORY_LABELS: dict[str, str] = {
     "summary": "Summary",
     "qa": "QA",
 }
-_CATEGORY_ORDER: dict[str, int] = {
-    name: idx for idx, name in enumerate(RESULT_CATEGORY_LABELS)
-}
+_CATEGORY_ORDER: dict[str, int] = {name: idx for idx, name in enumerate(RESULT_CATEGORY_LABELS)}
 _ANALYSIS_CATEGORY_DEFAULTS: dict[str, str] = {
     "admittance_extraction": "resonance",
     "s21_resonance_fit": "fit",
