@@ -101,4 +101,3 @@ class ParameterKey:
     def mode_group(self) -> ModeGroup:
         """Infer mode group from parameter suffix metadata."""
         return ModeGroup.SIDEBAND if self.has_sideband_suffix else ModeGroup.BASE
-

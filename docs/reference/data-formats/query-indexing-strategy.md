@@ -71,11 +71,11 @@ updated_by: codex
 !!! note "候選，非立即強制"
     以下是針對高頻 query 的優先候選，需在 migration 任務中驗證後實施。
 
-1. `data_records(dataset_id, data_type, parameter, representation)`  
+1. `data_records(dataset_id, data_type, parameter, representation)`
    適用 `list_index_page_by_dataset` 多條件過濾。
-2. `result_bundle_data_links(result_bundle_id, data_record_id)`  
+2. `result_bundle_data_links(result_bundle_id, data_record_id)`
    適用 bundle-scoped trace paging join。
-3. `result_bundle_records(dataset_id, role, bundle_type, status)`  
+3. `result_bundle_records(dataset_id, role, bundle_type, status)`
    適用 provenance/cache summary 與列表。
 
 ## 監控建議

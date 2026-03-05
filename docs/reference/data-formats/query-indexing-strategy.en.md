@@ -70,11 +70,11 @@ References:
 !!! note "Candidates, not mandatory yet"
     Validate these in dedicated migration tasks before applying.
 
-1. `data_records(dataset_id, data_type, parameter, representation)`  
+1. `data_records(dataset_id, data_type, parameter, representation)`
    For multi-filter `list_index_page_by_dataset`.
-2. `result_bundle_data_links(result_bundle_id, data_record_id)`  
+2. `result_bundle_data_links(result_bundle_id, data_record_id)`
    For bundle-scoped trace paging joins.
-3. `result_bundle_records(dataset_id, role, bundle_type, status)`  
+3. `result_bundle_records(dataset_id, role, bundle_type, status)`
    For provenance/cache summary and listing.
 
 ## Monitoring Guidance

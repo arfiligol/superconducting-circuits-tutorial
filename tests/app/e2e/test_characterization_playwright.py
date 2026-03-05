@@ -304,9 +304,7 @@ def _expect_analysis_status(page: Page, analysis_label: str, status: str) -> Non
         fallback=page.get_by_text(re.compile(r"for current scope$")).first,
     )
     expected_prefix = (
-        status
-        if status in {"Available", "Recommended", "Unavailable"}
-        else "Available"
+        status if status in {"Available", "Recommended", "Unavailable"} else "Available"
     )
     expect(availability_label).to_contain_text(
         re.compile(rf"^{re.escape(expected_prefix)} for current scope$")
