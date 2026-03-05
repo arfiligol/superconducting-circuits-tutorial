@@ -17,6 +17,8 @@ from nicegui import app, run, ui
 from app.layout import app_shell
 from app.pages.simulation.state import (
     SimulationRuntimeState,
+    TerminationSetupState,
+    TerminationViewElements,
     default_post_processing_input_state,
     default_result_view_state,
 )
@@ -3685,22 +3687,11 @@ def _render_simulation_environment():
                     f"fallback to {_TERMINATION_DEFAULT_RESISTANCE_OHM:g} Ohm."
                 )
 
-        termination_state: dict[str, Any] = {
-            "enabled": False,
-            "mode": "auto",
-            "selected_ports": list(available_setup_ports),
-            "manual_resistance_ohm_by_port": {
-                int(port): _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
-            },
-        }
-        termination_view_elements: dict[str, Any] = {
-            "enabled_switch": None,
-            "mode_select": None,
-            "ports_select": None,
-            "reset_button": None,
-            "summary_label": None,
-            "details_container": None,
-        }
+        termination_state = TerminationSetupState.create(
+            available_ports=available_setup_ports,
+            default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+        )
+        termination_view_elements = TerminationViewElements()
 
         def append_status(level: str, message: str) -> None:
             runtime_state.append_status(
@@ -3768,14 +3759,14 @@ def _render_simulation_environment():
 
         def _resolved_termination_plan() -> dict[str, Any]:
             return _build_termination_compensation_plan(
-                enabled=bool(termination_state.get("enabled", False)),
-                mode=_normalize_termination_mode(termination_state.get("mode", "auto")),
+                enabled=bool(termination_state.enabled),
+                mode=_normalize_termination_mode(termination_state.mode),
                 selected_ports=_normalize_termination_selected_ports(
-                    termination_state.get("selected_ports", []),
+                    termination_state.selected_ports,
                     available_ports=available_setup_ports,
                 ),
                 manual_resistance_ohm_by_port=_normalize_manual_termination_resistance_map(
-                    termination_state.get("manual_resistance_ohm_by_port", {}),
+                    termination_state.manual_resistance_ohm_by_port,
                     available_ports=available_setup_ports,
                     default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
                 ),
@@ -4177,8 +4168,8 @@ def _render_simulation_environment():
                     )
                 )
 
-                termination_state["selected_ports"] = list(available_setup_ports)
-                termination_state["manual_resistance_ohm_by_port"] = {
+                termination_state.selected_ports = list(available_setup_ports)
+                termination_state.manual_resistance_ohm_by_port = {
                     int(port): _TERMINATION_DEFAULT_RESISTANCE_OHM for port in available_setup_ports
                 }
 
@@ -4191,13 +4182,13 @@ def _render_simulation_environment():
                     with ui.row().classes("w-full items-end gap-3 flex-wrap"):
                         termination_enabled_switch = ui.switch(
                             "Enable",
-                            value=bool(termination_state["enabled"]),
+                            value=bool(termination_state.enabled),
                         )
                         termination_mode_select = (
                             ui.select(
                                 label="Mode",
                                 options=_TERMINATION_MODE_OPTIONS,
-                                value=str(termination_state["mode"]),
+                                value=str(termination_state.mode),
                             )
                             .props("dense outlined options-dense")
                             .classes("w-56")
@@ -4206,7 +4197,7 @@ def _render_simulation_environment():
                             ui.select(
                                 label="Compensate Ports",
                                 options={port: str(port) for port in available_setup_ports},
-                                value=list(termination_state["selected_ports"]),
+                                value=list(termination_state.selected_ports),
                                 multiple=True,
                             )
                             .props("dense outlined options-dense use-chips")
@@ -4223,20 +4214,20 @@ def _render_simulation_environment():
                     termination_summary_label = ui.label("").classes("text-xs text-muted mt-2")
                     termination_details_container = ui.column().classes("w-full gap-1 mt-2")
 
-                termination_view_elements["enabled_switch"] = termination_enabled_switch
-                termination_view_elements["mode_select"] = termination_mode_select
-                termination_view_elements["ports_select"] = termination_ports_select
-                termination_view_elements["reset_button"] = termination_reset_button
-                termination_view_elements["summary_label"] = termination_summary_label
-                termination_view_elements["details_container"] = termination_details_container
+                termination_view_elements.enabled_switch = termination_enabled_switch
+                termination_view_elements.mode_select = termination_mode_select
+                termination_view_elements.ports_select = termination_ports_select
+                termination_view_elements.reset_button = termination_reset_button
+                termination_view_elements.summary_label = termination_summary_label
+                termination_view_elements.details_container = termination_details_container
 
                 def refresh_termination_controls() -> None:
-                    enabled_switch = termination_view_elements.get("enabled_switch")
-                    mode_select = termination_view_elements.get("mode_select")
-                    ports_select = termination_view_elements.get("ports_select")
-                    reset_button = termination_view_elements.get("reset_button")
-                    summary_label = termination_view_elements.get("summary_label")
-                    details_container = termination_view_elements.get("details_container")
+                    enabled_switch = termination_view_elements.enabled_switch
+                    mode_select = termination_view_elements.mode_select
+                    ports_select = termination_view_elements.ports_select
+                    reset_button = termination_view_elements.reset_button
+                    summary_label = termination_view_elements.summary_label
+                    details_container = termination_view_elements.details_container
                     if (
                         enabled_switch is None
                         or mode_select is None
@@ -4258,14 +4249,14 @@ def _render_simulation_environment():
                     ports_select.value = selected_ports
 
                     normalized_manual_map = _normalize_manual_termination_resistance_map(
-                        termination_state.get("manual_resistance_ohm_by_port", {}),
+                        termination_state.manual_resistance_ohm_by_port,
                         available_ports=available_setup_ports,
                         default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
                     )
-                    termination_state["enabled"] = bool(enabled_switch.value)
-                    termination_state["mode"] = normalized_mode
-                    termination_state["selected_ports"] = list(selected_ports)
-                    termination_state["manual_resistance_ohm_by_port"] = normalized_manual_map
+                    termination_state.enabled = bool(enabled_switch.value)
+                    termination_state.mode = normalized_mode
+                    termination_state.selected_ports = list(selected_ports)
+                    termination_state.manual_resistance_ohm_by_port = normalized_manual_map
 
                     resolved_plan = _resolved_termination_plan()
                     summary_label.text = _termination_plan_summary(resolved_plan)
@@ -4313,17 +4304,14 @@ def _render_simulation_environment():
                                     target_port: int,
                                 ) -> None:
                                     manual_map = dict(
-                                        termination_state.get(
-                                            "manual_resistance_ohm_by_port",
-                                            {},
-                                        )
+                                        termination_state.manual_resistance_ohm_by_port
                                     )
                                     try:
                                         value = float(e.value)
                                     except Exception:
                                         value = _TERMINATION_DEFAULT_RESISTANCE_OHM
                                     manual_map[target_port] = value
-                                    termination_state["manual_resistance_ohm_by_port"] = manual_map
+                                    termination_state.manual_resistance_ohm_by_port = manual_map
                                     if not applying_saved_setup:
                                         on_termination_setup_change()
                                     else:
@@ -4373,17 +4361,17 @@ def _render_simulation_environment():
 
                 def on_reset_termination_manual_defaults() -> None:
                     manual_map = _normalize_manual_termination_resistance_map(
-                        termination_state.get("manual_resistance_ohm_by_port", {}),
+                        termination_state.manual_resistance_ohm_by_port,
                         available_ports=available_setup_ports,
                         default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
                     )
                     selected_ports = _normalize_termination_selected_ports(
-                        termination_state.get("selected_ports", []),
+                        termination_state.selected_ports,
                         available_ports=available_setup_ports,
                     )
                     for port in selected_ports:
                         manual_map[port] = _TERMINATION_DEFAULT_RESISTANCE_OHM
-                    termination_state["manual_resistance_ohm_by_port"] = manual_map
+                    termination_state.manual_resistance_ohm_by_port = manual_map
                     on_termination_setup_change()
 
                 termination_reset_button.on_click(lambda _e: on_reset_termination_manual_defaults())
@@ -4470,18 +4458,16 @@ def _render_simulation_environment():
                             "alpha_min": float(alpha_min_input.value),
                         },
                         "termination_compensation": {
-                            "enabled": bool(termination_state.get("enabled", False)),
-                            "mode": _normalize_termination_mode(
-                                termination_state.get("mode", "auto")
-                            ),
+                            "enabled": bool(termination_state.enabled),
+                            "mode": _normalize_termination_mode(termination_state.mode),
                             "selected_ports": _normalize_termination_selected_ports(
-                                termination_state.get("selected_ports", []),
+                                termination_state.selected_ports,
                                 available_ports=available_setup_ports,
                             ),
                             "manual_resistance_ohm_by_port": {
                                 str(port): float(value)
                                 for port, value in _normalize_manual_termination_resistance_map(
-                                    termination_state.get("manual_resistance_ohm_by_port", {}),
+                                    termination_state.manual_resistance_ohm_by_port,
                                     available_ports=available_setup_ports,
                                     default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
                                 ).items()
@@ -4550,18 +4536,18 @@ def _render_simulation_environment():
                             available_ports=available_setup_ports,
                             default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
                         )
-                        termination_state["enabled"] = termination_enabled
-                        termination_state["mode"] = termination_mode
-                        termination_state["selected_ports"] = list(termination_selected_ports)
-                        termination_state["manual_resistance_ohm_by_port"] = termination_manual_map
-                        if termination_view_elements.get("enabled_switch") is not None:
-                            termination_view_elements["enabled_switch"].value = termination_enabled
-                        if termination_view_elements.get("mode_select") is not None:
-                            termination_view_elements["mode_select"].value = termination_mode
-                        if termination_view_elements.get("ports_select") is not None:
-                            termination_view_elements[
-                                "ports_select"
-                            ].value = termination_selected_ports
+                        termination_state.enabled = termination_enabled
+                        termination_state.mode = termination_mode
+                        termination_state.selected_ports = list(termination_selected_ports)
+                        termination_state.manual_resistance_ohm_by_port = termination_manual_map
+                        if termination_view_elements.enabled_switch is not None:
+                            termination_view_elements.enabled_switch.value = termination_enabled
+                        if termination_view_elements.mode_select is not None:
+                            termination_view_elements.mode_select.value = termination_mode
+                        if termination_view_elements.ports_select is not None:
+                            termination_view_elements.ports_select.value = (
+                                termination_selected_ports
+                            )
                         refresh_termination_controls()
 
                         for source_form in list(source_forms):

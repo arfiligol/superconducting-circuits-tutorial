@@ -58,3 +58,37 @@ class SimulationRuntimeState:
         )
         if len(self.status_history) > limit:
             self.status_history.pop(0)
+
+
+@dataclass
+class TerminationSetupState:
+    """Mutable setup state for port-termination compensation controls."""
+
+    enabled: bool
+    mode: str
+    selected_ports: list[int]
+    manual_resistance_ohm_by_port: dict[int, float]
+
+    @classmethod
+    def create(cls, *, available_ports: list[int], default_ohm: float) -> TerminationSetupState:
+        """Build default termination setup state."""
+        return cls(
+            enabled=False,
+            mode="auto",
+            selected_ports=list(available_ports),
+            manual_resistance_ohm_by_port={
+                int(port): float(default_ohm) for port in available_ports
+            },
+        )
+
+
+@dataclass
+class TerminationViewElements:
+    """References for termination setup UI elements."""
+
+    enabled_switch: Any | None = None
+    mode_select: Any | None = None
+    ports_select: Any | None = None
+    reset_button: Any | None = None
+    summary_label: Any | None = None
+    details_container: Any | None = None
