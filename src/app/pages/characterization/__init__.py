@@ -20,6 +20,10 @@ from app.pages.characterization.state import (
 )
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
 from app.services.analysis_registry import ANALYSIS_REGISTRY
+from app.services.characterization_trace_scope import (
+    count_scope_trace_records,
+    list_scope_compatible_trace_index_page,
+)
 from app.services.dataset_profile import normalize_dataset_profile, profile_summary_text
 from core.analysis.application.services.characterization_fitting_service import (
     CharacterizationFittingService,
@@ -30,7 +34,6 @@ from core.analysis.application.services.resonance_extract_service import Resonan
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
-from core.shared.persistence.repositories import TraceIndexPageQuery
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -159,100 +162,6 @@ def _resolve_selected_option(preferred: str, options: list[str]) -> str:
     return options[0] if options else ""
 
 
-def _normalize_analysis_data_type(data_type: str) -> str:
-    """Normalize record data_type names for analysis availability checks."""
-    aliases = {
-        "s_params": "s_parameters",
-        "y_params": "y_parameters",
-        "z_params": "z_parameters",
-    }
-    return aliases.get(str(data_type), str(data_type))
-
-
-def _normalize_analysis_parameter_name(parameter: str) -> str:
-    """Strip mode suffixes so analysis matchers can compare canonical parameter names."""
-    return str(parameter).split(" [", maxsplit=1)[0]
-
-
-def _normalize_analysis_representation(representation: str) -> str:
-    """Normalize representation string for case-insensitive matching."""
-    return str(representation).strip().lower()
-
-
-def _normalize_analysis_requirement_value(key: str, value: object) -> object:
-    """Normalize one `requires` value to align with record metadata normalization."""
-    if key == "data_type":
-        return _normalize_analysis_data_type(str(value))
-    if key == "parameter":
-        if isinstance(value, list):
-            return [_normalize_analysis_parameter_name(str(item)) for item in value]
-        return _normalize_analysis_parameter_name(str(value))
-    if key == "representation":
-        return _normalize_analysis_representation(str(value))
-    return value
-
-
-def _normalize_analysis_requirements(requirements: dict[str, object]) -> dict[str, object]:
-    """Normalize `requires` block so all matching uses one canonical rule set."""
-    return {
-        key: _normalize_analysis_requirement_value(key, value)
-        for key, value in requirements.items()
-    }
-
-
-def _record_field(record: dict[str, str | int] | object, key: str) -> object:
-    """Read one metadata field from either dict-like or ORM-like record."""
-    if isinstance(record, dict):
-        return record.get(key, "")
-    return getattr(record, key, "")
-
-
-def _record_text_field(record: dict[str, str | int] | object, key: str) -> str:
-    """Read one metadata field as text."""
-    value = _record_field(record, key)
-    return "" if value is None else str(value)
-
-
-def _record_int_id(record: dict[str, str | int] | object) -> int | None:
-    """Read record id as int when available."""
-    value = _record_field(record, "id")
-    return value if isinstance(value, int) else None
-
-
-def _normalized_analysis_record(record: dict[str, str | int] | object) -> dict[str, str]:
-    """Return normalized metadata used for compatibility matching."""
-    return {
-        "data_type": _normalize_analysis_data_type(_record_text_field(record, "data_type")),
-        "parameter": _normalize_analysis_parameter_name(_record_text_field(record, "parameter")),
-        "representation": _normalize_analysis_representation(
-            _record_text_field(record, "representation")
-        ),
-    }
-
-
-def _analysis_record_index(
-    records: Sequence[dict[str, str | int] | object],
-) -> list[dict[str, str]]:
-    """Normalize lightweight record metadata for analysis-registry matching."""
-    return [_normalized_analysis_record(record) for record in records]
-
-
-def _record_matches_analysis_requirements(
-    record: Mapping[str, object],
-    requirements: Mapping[str, object],
-) -> bool:
-    """Return True when one record satisfies one analysis `requires` block."""
-    for key, required_value in requirements.items():
-        record_value = record.get(key)
-        if key == "parameter" and isinstance(required_value, list):
-            if str(record_value) not in {str(item) for item in required_value}:
-                return False
-            continue
-        if str(record_value) != str(required_value):
-            return False
-    return True
-
-
 def _effective_analysis_requires(
     *,
     analysis_id: str,
@@ -264,140 +173,6 @@ def _effective_analysis_requires(
         # Current fit execution path is fixed to S21.
         resolved_requires["parameter"] = "S21"
     return resolved_requires
-
-
-def _evaluate_analysis_scope_compatibility(
-    *,
-    scoped_record_index: Sequence[dict[str, str | int] | object],
-    analysis_requires: dict[str, object],
-) -> AnalysisScopeCompatibility:
-    """Evaluate compatible traces using metadata-only rules for one scope."""
-    normalized_requires = _normalize_analysis_requirements(analysis_requires)
-    compatible_trace_rows: list[dict[str, str | int]] = []
-
-    for record in scoped_record_index:
-        record_id = _record_int_id(record)
-        if record_id is None:
-            continue
-
-        if not _record_matches_analysis_requirements(
-            _normalized_analysis_record(record),
-            normalized_requires,
-        ):
-            continue
-
-        raw_parameter = _record_text_field(record, "parameter")
-        compatible_trace_rows.append(
-            {
-                "id": record_id,
-                "data_type": _record_text_field(record, "data_type"),
-                "parameter": raw_parameter,
-                "representation": _record_text_field(record, "representation"),
-                "mode": "Sideband" if _is_sideband_trace_parameter(raw_parameter) else "Base",
-            }
-        )
-
-    has_compatible_traces = bool(compatible_trace_rows)
-    return AnalysisScopeCompatibility(
-        compatible_trace_rows=compatible_trace_rows,
-        compatible_trace_count=len(compatible_trace_rows),
-        has_compatible_traces=has_compatible_traces,
-        status="available" if has_compatible_traces else "unavailable",
-        message=(
-            "Available for current scope"
-            if has_compatible_traces
-            else "Unavailable for current scope"
-        ),
-    )
-
-
-def _analysis_data_type_candidates(data_type: str) -> list[str]:
-    """Resolve canonical + alias data_type keys accepted by persistence rows."""
-    normalized = _normalize_analysis_data_type(data_type)
-    aliases = {
-        "s_parameters": ["s_parameters", "s_params"],
-        "y_parameters": ["y_parameters", "y_params"],
-        "z_parameters": ["z_parameters", "z_params"],
-    }
-    return aliases.get(normalized, [normalized])
-
-
-def _analysis_query_filters(analysis_requires: dict[str, object]) -> dict[str, object]:
-    """Convert analysis `requires` into DB-friendly metadata filter clauses."""
-    normalized_requires = _normalize_analysis_requirements(analysis_requires)
-    data_type_value = normalized_requires.get("data_type", "")
-    data_types: list[str] = []
-    if isinstance(data_type_value, str) and data_type_value:
-        data_types = _analysis_data_type_candidates(data_type_value)
-
-    parameter_value = normalized_requires.get("parameter")
-    parameters: list[str] = []
-    if isinstance(parameter_value, list):
-        parameters = [str(item) for item in parameter_value if str(item)]
-    elif isinstance(parameter_value, str) and parameter_value:
-        parameters = [parameter_value]
-
-    representation = str(normalized_requires.get("representation", "") or "")
-    return {
-        "data_types": data_types,
-        "parameters": parameters,
-        "representation": representation,
-    }
-
-
-def _count_scope_trace_records(
-    *,
-    uow: Any,
-    dataset_id: int,
-    selected_bundle_id: int | None,
-) -> int:
-    """Count trace rows for current source scope."""
-    if selected_bundle_id is not None:
-        return uow.result_bundles.count_data_records(selected_bundle_id)
-    return uow.data_records.count_by_dataset(dataset_id)
-
-
-def _list_scope_compatible_trace_index_page(
-    *,
-    uow: Any,
-    dataset_id: int,
-    selected_bundle_id: int | None,
-    analysis_requires: dict[str, object],
-    search: str = "",
-    sort_by: str = "id",
-    descending: bool = False,
-    mode_filter: str = _TRACE_MODE_ALL,
-    ids: Sequence[int] | None = None,
-    limit: int = 20,
-    offset: int = 0,
-) -> tuple[list[dict[str, str | int]], int]:
-    """List one page of compatible trace metadata under current scope."""
-    filters = _analysis_query_filters(analysis_requires)
-    raw_data_types = filters.get("data_types")
-    raw_parameters = filters.get("parameters")
-    data_types = raw_data_types if isinstance(raw_data_types, list) else []
-    parameters = raw_parameters if isinstance(raw_parameters, list) else []
-    query = TraceIndexPageQuery(
-        search=search,
-        sort_by=sort_by,
-        descending=descending,
-        data_types=tuple(str(item) for item in data_types),
-        parameters=tuple(str(item) for item in parameters),
-        representation=str(filters["representation"]),
-        mode_filter=mode_filter if mode_filter in ("all", "base", "sideband") else "all",
-        ids=tuple(int(record_id) for record_id in ids) if ids is not None else None,
-        limit=limit,
-        offset=offset,
-    )
-    if selected_bundle_id is not None:
-        return uow.result_bundles.list_data_record_index_page(
-            selected_bundle_id,
-            query=query,
-        )
-    return uow.data_records.list_index_page_by_dataset(
-        dataset_id,
-        query=query,
-    )
 
 
 def _build_analysis_run_ui_state(
@@ -1447,7 +1222,7 @@ def characterization_page():
                         bundles = refresh_uow.result_bundles.list_by_dataset(active_id)
                         selected_bundle_id = None
                         selected_scope_token = "all_dataset_records"
-                        scoped_trace_count = _count_scope_trace_records(
+                        scoped_trace_count = count_scope_trace_records(
                             uow=refresh_uow,
                             dataset_id=active_id,
                             selected_bundle_id=selected_bundle_id,
@@ -1482,13 +1257,15 @@ def characterization_page():
                                 compatibility_cache_key
                             )
                             if compatibility is None:
-                                _, compatible_trace_count = _list_scope_compatible_trace_index_page(
+                                _, compatible_trace_count = (
+                                    list_scope_compatible_trace_index_page(
                                     uow=refresh_uow,
                                     dataset_id=active_id,
                                     selected_bundle_id=selected_bundle_id,
                                     analysis_requires=effective_requires,
                                     limit=1,
                                     offset=0,
+                                    )
                                 )
                                 has_compatible_traces = compatible_trace_count > 0
                                 compatibility = AnalysisScopeCompatibility(
@@ -1563,7 +1340,7 @@ def characterization_page():
                             limit: int = 20,
                             offset: int = 0,
                         ) -> tuple[list[dict[str, str | int]], int]:
-                            return _list_scope_compatible_trace_index_page(
+                            return list_scope_compatible_trace_index_page(
                                 uow=refresh_uow,
                                 dataset_id=active_id,
                                 selected_bundle_id=selected_bundle_id,

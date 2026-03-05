@@ -1,13 +1,11 @@
 """Tests for Characterization page helpers."""
 
 from app.pages.characterization import (
-    _analysis_record_index,
     _build_analysis_run_availability,
     _build_analysis_run_bundle_record,
     _build_analysis_run_ui_state,
     _build_mode_vs_ljun_dataframe,
     _build_result_artifacts_for_analysis,
-    _evaluate_analysis_scope_compatibility,
     _filter_method_groups_by_trace_mode,
     _result_view_controls_row_classes,
     _result_view_empty_state_message,
@@ -15,44 +13,9 @@ from app.pages.characterization import (
     _trace_mode_group_for_selected_rows,
 )
 from core.shared.persistence.models import (
-    DataRecord,
     DerivedParameter,
     DeviceType,
 )
-
-
-def test_analysis_record_index_normalizes_simulation_record_aliases() -> None:
-    records = [
-        DataRecord(
-            dataset_id=7,
-            data_type="s_params",
-            parameter="S21 [om=(1,), im=(0,)]",
-            representation="real",
-            axes=[],
-            values=[],
-        ),
-        DataRecord(
-            dataset_id=7,
-            data_type="y_params",
-            parameter="Y11",
-            representation="imaginary",
-            axes=[],
-            values=[],
-        ),
-    ]
-
-    assert _analysis_record_index(records) == [
-        {
-            "data_type": "s_parameters",
-            "parameter": "S21",
-            "representation": "real",
-        },
-        {
-            "data_type": "y_parameters",
-            "parameter": "Y11",
-            "representation": "imaginary",
-        },
-    ]
 
 
 def test_build_analysis_run_bundle_record_captures_dataset_scope_input() -> None:
@@ -75,71 +38,32 @@ def test_build_analysis_run_bundle_record_captures_dataset_scope_input() -> None
     assert bundle.config_snapshot == {"model": "notch", "f_min": 4.5}
 
 
-def test_compatibility_zero_marks_unavailable_and_disables_run() -> None:
-    compatibility = _evaluate_analysis_scope_compatibility(
-        scoped_record_index=[
-            {
-                "id": 11,
-                "data_type": "s_parameters",
-                "parameter": "S21",
-                "representation": "real",
-            }
-        ],
-        analysis_requires={"data_type": "y_parameters", "representation": "imaginary"},
-    )
+def test_build_analysis_run_ui_state_without_compatible_traces_disables_run() -> None:
     ui_state = _build_analysis_run_ui_state(
-        has_compatible_traces=compatibility.has_compatible_traces,
+        has_compatible_traces=False,
         selected_trace_count=0,
     )
 
-    assert compatibility.has_compatible_traces is False
-    assert compatibility.compatible_trace_rows == []
-    assert compatibility.message == "Unavailable for current scope"
     assert ui_state.run_disabled is True
     assert ui_state.availability_text == "Unavailable for current scope"
 
 
-def test_compatible_scope_with_zero_selection_disables_run() -> None:
-    compatibility = _evaluate_analysis_scope_compatibility(
-        scoped_record_index=[
-            {
-                "id": 21,
-                "data_type": "y_parameters",
-                "parameter": "Y11",
-                "representation": "imaginary",
-            }
-        ],
-        analysis_requires={"data_type": "y_parameters", "representation": "imaginary"},
-    )
+def test_build_analysis_run_ui_state_with_no_selection_disables_run() -> None:
     ui_state = _build_analysis_run_ui_state(
-        has_compatible_traces=compatibility.has_compatible_traces,
+        has_compatible_traces=True,
         selected_trace_count=0,
     )
 
-    assert compatibility.has_compatible_traces is True
-    assert len(compatibility.compatible_trace_rows) == 1
     assert ui_state.run_disabled is True
     assert ui_state.run_hint == "Select at least one trace to run."
 
 
-def test_compatible_scope_with_selected_trace_enables_run() -> None:
-    compatibility = _evaluate_analysis_scope_compatibility(
-        scoped_record_index=[
-            {
-                "id": 31,
-                "data_type": "y_parameters",
-                "parameter": "Y11",
-                "representation": "imaginary",
-            }
-        ],
-        analysis_requires={"data_type": "y_parameters", "representation": "imaginary"},
-    )
+def test_build_analysis_run_ui_state_with_selection_enables_run() -> None:
     ui_state = _build_analysis_run_ui_state(
-        has_compatible_traces=compatibility.has_compatible_traces,
+        has_compatible_traces=True,
         selected_trace_count=1,
     )
 
-    assert compatibility.has_compatible_traces is True
     assert ui_state.run_disabled is False
     assert ui_state.availability_text == "Available for current scope"
 
@@ -163,30 +87,6 @@ def test_build_analysis_run_availability_marks_recommended_when_all_checks_pass(
     )
     assert availability.status == "Recommended"
     assert availability.has_compatible_traces is True
-
-
-def test_compatibility_normalizes_y_params_aliases_for_scope_matching() -> None:
-    compatibility = _evaluate_analysis_scope_compatibility(
-        scoped_record_index=[
-            {
-                "id": 41,
-                "data_type": "y_params",
-                "parameter": "Y11 [om=(1,), im=(0,)]",
-                "representation": "Imaginary",
-            },
-            {
-                "id": 42,
-                "data_type": "y_parameters",
-                "parameter": "Y11",
-                "representation": "imaginary",
-            },
-        ],
-        analysis_requires={"data_type": "y_parameters", "parameter": ["Y11"]},
-    )
-
-    assert compatibility.has_compatible_traces is True
-    assert {int(row["id"]) for row in compatibility.compatible_trace_rows} == {41, 42}
-
 
 def test_build_mode_vs_ljun_dataframe_supports_single_column_non_sweep() -> None:
     params = [
