@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: Raw ingest, SQLite persistence, and analysis-output format contracts
-version: v1.6.0
-last_updated: 2026-03-05
+version: v1.7.0
+last_updated: 2026-03-06
 updated_by: codex
 ---
 
@@ -38,6 +38,18 @@ This section is the reference SoT for data contracts across:
 | [Circuit Netlist](circuit-netlist.en.md) | Circuit Netlist source/expanded contract and repeat expansion |
 | [Analysis Result](analysis-result.en.md) | `ResultBundleRecord`, `analysis_result` DataRecord, and DerivedParameter contracts |
 | [Query Indexing Strategy](query-indexing-strategy.en.md) | High-frequency query paths, index candidates, and monitoring guidance |
+
+## Quick Lookup (Start Here)
+
+| Question | Read this first |
+|---|---|
+| Is Circuit Definition components-first or parameters-first? | [Circuit Netlist](circuit-netlist.en.md) |
+| Where are Simulation sweep outputs (including multi-axis) persisted? | [Dataset Record](dataset-record.en.md) |
+| Which fields are valid sweep targets (netlist parameters vs source/bias fields)? | [Circuit Netlist](circuit-netlist.en.md) + [Circuit Simulation UI](../ui/circuit-simulation.en.md) |
+| Where is Characterization run provenance / selected traces stored? | [Analysis Result](analysis-result.en.md) |
+| Why does UI show availability but run still depends on trace selection? | [Analysis Result](analysis-result.en.md) + [Dataset Record](dataset-record.en.md) |
+| Does adding sweep require Characterization changes at the same time? | [Dataset Record](dataset-record.en.md) + [Analysis Result](analysis-result.en.md) |
+| Which contract covers large-data querying and indexing? | [Query Indexing Strategy](query-indexing-strategy.en.md) |
 
 ## Implementation Alignment (2026-03-04)
 

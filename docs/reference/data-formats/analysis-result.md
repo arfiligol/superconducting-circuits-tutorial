@@ -11,14 +11,19 @@ status: stable
 owner: docs-team
 audience: team
 scope: Characterization analysis run 的 persistence / provenance 契約
-version: v0.3.1
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v0.3.2
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Analysis Result Schema
 
 本頁定義 Characterization 分析結果在資料層的正式契約。
+
+!!! note "Boundary"
+    本頁只描述 `characterization` analysis run 契約。
+    `circuit_simulation` / `parameter_sweep` 的 payload 結構與欄位，請看
+    [Dataset Record Schema](dataset-record.md)。
 
 !!! note "Current implementation（2026-03-04）"
     目前分析結果主要由兩層組成：
@@ -112,3 +117,4 @@ updated_by: docs-team
 
 - [Dataset Record Schema](dataset-record.md)
 - [Characterization](../ui/characterization.md)
+- [Circuit Simulation UI](../ui/circuit-simulation.md) - Simulation sweep/post-process provenance 邊界

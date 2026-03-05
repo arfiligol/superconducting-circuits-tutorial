@@ -11,14 +11,19 @@ status: stable
 owner: docs-team
 audience: team
 scope: Persistence and provenance contract for Characterization analysis runs
-version: v0.3.1
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v0.3.2
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Analysis Result Schema
 
 This page defines the formal persistence contract for Characterization analysis results.
+
+!!! note "Boundary"
+    This page covers `characterization` analysis-run contracts only.
+    For `circuit_simulation` / `parameter_sweep` payload structure and fields, see
+    [Dataset Record Schema](dataset-record.en.md).
 
 !!! note "Current implementation (2026-03-04)"
     Analysis outputs are currently persisted in two layers:
@@ -114,3 +119,4 @@ Analysis outputs are persisted as `DerivedParameter` rows, minimum requirements:
 
 - [Dataset Record Schema](dataset-record.en.md)
 - [Characterization](../ui/characterization.en.md)
+- [Circuit Simulation UI](../ui/circuit-simulation.en.md) - Simulation sweep/post-process provenance boundary

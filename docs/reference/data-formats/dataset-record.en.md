@@ -8,9 +8,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema definition and usage"
-version: v1.3.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v1.4.0
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Dataset Record Schema
@@ -164,6 +164,26 @@ When `bundle_type=simulation_postprocess`, `config_snapshot` should include:
     `hfss_comparable` describes only whether the post-processed output satisfies
     HFSS-comparison preconditions. It does not mean Raw Result View `S` is rewritten.
 
+### Simulation sweep provenance (new)
+
+When `bundle_type=circuit_simulation` and the run is a sweep, `result_payload` should include:
+
+- `run_kind`: `parameter_sweep`
+- `sweep_axes`: axis definitions (target/unit/values per axis)
+- `point_count`: total number of sweep points
+- `points`: per-point `axis_values` and per-point simulation result
+
+`config_snapshot` should include:
+
+- `sweep_setup_hash`
+- full sweep setup snapshot (at minimum, `axes`)
+
+!!! important "Canonical vs projection"
+    Sweep run authority is canonical in `ResultBundleRecord.result_payload`.
+    `DataRecord` acts as projection/index-oriented views (optionally with sweep-axis metadata)
+    for querying and analysis flows.
+    High-dimensional sweep data should not rely on UI-materialized traces as the only SoT.
+
 ---
 
 ### Tag
@@ -232,4 +252,6 @@ Defined in `src/core/shared/persistence/models.py`.
 ## Related
 
 - [Data Handling](../guardrails/code-quality/data-handling.en.md) - Data handling rules
-- [Raw Data Layout](raw-data-layout.md) - Raw data directory structure
+- [Raw Data Layout](raw-data-layout.en.md) - Raw data directory structure
+- [Circuit Netlist](circuit-netlist.en.md) - Netlist-parameter sweep target definition
+- [Circuit Simulation UI](../ui/circuit-simulation.en.md) - Source/bias sweep setup and Result View rendering contract

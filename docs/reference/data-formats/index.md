@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: Raw ingest、SQLite persistence、analysis output 的資料格式契約
-version: v1.6.0
-last_updated: 2026-03-05
+version: v1.7.0
+last_updated: 2026-03-06
 updated_by: codex
 ---
 
@@ -38,6 +38,18 @@ updated_by: codex
 | [Circuit Netlist](circuit-netlist.md) | Circuit Netlist Source/Expanded 契約與 repeat 展開 |
 | [Analysis Result](analysis-result.md) | `ResultBundleRecord`、`analysis_result` DataRecord、DerivedParameter 契約 |
 | [Query Indexing Strategy](query-indexing-strategy.md) | 高頻查詢路徑、索引候選與效能監控建議 |
+
+## 問題導覽（先看這裡）
+
+| 你想確認什麼？ | 先看哪頁 |
+|---|---|
+| Circuit Definition 到底是 components-first 還是 parameters-first？ | [Circuit Netlist](circuit-netlist.md) |
+| Simulation sweep（含多軸）結果實際存在哪裡？ | [Dataset Record](dataset-record.md) |
+| Sweep target 到底可以掃哪些欄位（netlist parameter vs source bias）？ | [Circuit Netlist](circuit-netlist.md) + [Circuit Simulation UI](../ui/circuit-simulation.md) |
+| Characterization run 的 provenance / selected traces 存在哪裡？ | [Analysis Result](analysis-result.md) |
+| 為什麼 UI 顯示可執行但 run 仍需選 trace？ | [Analysis Result](analysis-result.md) + [Dataset Record](dataset-record.md) |
+| 增加 sweep 後，是否必須同時改 Characterization？ | [Dataset Record](dataset-record.md) + [Analysis Result](analysis-result.md) |
+| 大資料時應該看哪個查詢契約與索引策略？ | [Query Indexing Strategy](query-indexing-strategy.md) |
 
 ## 實作對齊狀態（2026-03-04）
 

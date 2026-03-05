@@ -9,9 +9,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema 詳細定義與使用規範"
-version: v1.3.0
-last_updated: 2026-03-04
-updated_by: docs-team
+version: v1.4.0
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Dataset Record Schema
@@ -176,6 +176,25 @@ DatasetRecord (集合)
     `hfss_comparable` 只描述 post-processed 輸出是否符合 HFSS 比對前提，
     不代表 Raw Result View 的 `S` 已被改寫或替換。
 
+### Simulation Sweep provenance（新增）
+
+當 `bundle_type=circuit_simulation` 且是 sweep run，`result_payload` 應包含：
+
+- `run_kind`: `parameter_sweep`
+- `sweep_axes`: 軸定義陣列（每軸 target/unit/values）
+- `point_count`: 總點數
+- `points`: 每點的 `axis_values` 與該點 simulation result
+
+`config_snapshot` 應包含：
+
+- `sweep_setup_hash`
+- sweep setup 的完整快照（至少含 `axes`）
+
+!!! important "Canonical vs projection"
+    Sweep 的 canonical run authority 在 `ResultBundleRecord.result_payload`。
+    `DataRecord` 是 projection/index 化視圖（可附 sweep 軸 metadata），供查詢與分析流程使用。
+    高維 sweep 不應把「只為 UI 一次瀏覽」的資料設計成唯一 SoT。
+
 ---
 
 ### Tag
@@ -251,3 +270,5 @@ uv run sc-analyze PF6FQ_Q0_XY --data Y11:imag
 
 - [Data Handling](../guardrails/code-quality/data-handling.md) - 數據處理規範
 - [Raw Data Layout](raw-data-layout.md) - 原始數據目錄結構
+- [Circuit Netlist](circuit-netlist.md) - netlist 參數層 sweep target 定義
+- [Circuit Simulation UI](../ui/circuit-simulation.md) - source/bias sweep setup 與 Result View 顯示契約
