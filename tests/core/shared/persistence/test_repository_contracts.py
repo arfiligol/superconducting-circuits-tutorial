@@ -7,6 +7,7 @@ from core.shared.persistence.repositories import (
     DataRecordCharacterizationContract,
     DataRecordRepository,
     ResultBundleCharacterizationContract,
+    ResultBundleDatasetSummaryContract,
     ResultBundleRepository,
 )
 
@@ -45,3 +46,16 @@ def test_result_bundle_repository_satisfies_characterization_contract() -> None:
         rows, total = repo.list_data_record_index_page(1)
         assert rows == []
         assert total == 0
+
+
+def test_result_bundle_repository_satisfies_dataset_summary_contract() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRecord(name="Summary Contract Dataset", source_meta={}, parameters={})
+        session.add(dataset)
+        session.commit()
+        session.refresh(dataset)
+        assert dataset.id is not None
+
+        repo = ResultBundleRepository(session)
+        assert isinstance(repo, ResultBundleDatasetSummaryContract)
+        assert repo.count_by_dataset(dataset.id) == 0

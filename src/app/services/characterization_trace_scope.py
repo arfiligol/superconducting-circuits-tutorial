@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Protocol, runtime_checkable
 
-from core.shared.persistence.repositories import TraceIndexPageQuery
+from core.shared.persistence.repositories import (
+    DataRecordCharacterizationContract,
+    ResultBundleCharacterizationContract,
+    TraceIndexPageQuery,
+)
+
+
+@runtime_checkable
+class CharacterizationTraceScopeUnitOfWork(Protocol):
+    """Typed UoW interface consumed by trace-scope query service."""
+
+    data_records: DataRecordCharacterizationContract
+    result_bundles: ResultBundleCharacterizationContract
 
 
 def _normalize_analysis_data_type(data_type: str) -> str:
@@ -86,7 +98,7 @@ def _analysis_query_filters(analysis_requires: dict[str, object]) -> dict[str, o
 
 def count_scope_trace_records(
     *,
-    uow: Any,
+    uow: CharacterizationTraceScopeUnitOfWork,
     dataset_id: int,
     selected_bundle_id: int | None,
 ) -> int:
@@ -98,7 +110,7 @@ def count_scope_trace_records(
 
 def list_scope_compatible_trace_index_page(
     *,
-    uow: Any,
+    uow: CharacterizationTraceScopeUnitOfWork,
     dataset_id: int,
     selected_bundle_id: int | None,
     analysis_requires: dict[str, object],
@@ -137,3 +149,10 @@ def list_scope_compatible_trace_index_page(
         dataset_id,
         query=query,
     )
+
+
+__all__ = [
+    "CharacterizationTraceScopeUnitOfWork",
+    "count_scope_trace_records",
+    "list_scope_compatible_trace_index_page",
+]

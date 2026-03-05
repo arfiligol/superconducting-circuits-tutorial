@@ -4,6 +4,7 @@ from core.shared.persistence.repositories.circuit_repository import CircuitRepos
 from core.shared.persistence.repositories.contracts import (
     DataRecordCharacterizationContract,
     ResultBundleCharacterizationContract,
+    ResultBundleDatasetSummaryContract,
 )
 from core.shared.persistence.repositories.data_record_repository import (
     DataRecordRepository,
@@ -25,6 +26,7 @@ __all__ = [
     "DatasetRepository",
     "DerivedParameterRepository",
     "ResultBundleCharacterizationContract",
+    "ResultBundleDatasetSummaryContract",
     "ResultBundleRepository",
     "TagRepository",
     "TraceIndexPageQuery",

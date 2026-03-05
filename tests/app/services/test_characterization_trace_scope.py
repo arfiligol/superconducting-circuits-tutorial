@@ -5,8 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.characterization_trace_scope import (
+    CharacterizationTraceScopeUnitOfWork,
     count_scope_trace_records,
     list_scope_compatible_trace_index_page,
+)
+from core.shared.persistence.repositories import (
+    DataRecordCharacterizationContract,
+    ResultBundleCharacterizationContract,
 )
 
 
@@ -23,9 +28,19 @@ class _FakeDataRecordsRepo:
         self.counted_dataset_id = dataset_id
         return self.count_value
 
-    def list_index_page_by_dataset(self, dataset_id: int, *, query: object) -> tuple[list, int]:
+    def list_distinct_index_for_profile(self, dataset_id: int) -> list[dict[str, str]]:
+        _ = dataset_id
+        return []
+
+    def list_index_page_by_dataset(
+        self,
+        dataset_id: int,
+        *,
+        query: object | None = None,
+        **kwargs: object,
+    ) -> tuple[list, int]:
         self.page_dataset_id = dataset_id
-        self.last_query = query
+        self.last_query = query if query is not None else kwargs.get("query")
         return (self.page_rows or []), self.page_total
 
 
@@ -42,9 +57,15 @@ class _FakeResultBundlesRepo:
         self.counted_bundle_id = bundle_id
         return self.count_value
 
-    def list_data_record_index_page(self, bundle_id: int, *, query: object) -> tuple[list, int]:
+    def list_data_record_index_page(
+        self,
+        bundle_id: int,
+        *,
+        query: object | None = None,
+        **kwargs: object,
+    ) -> tuple[list, int]:
         self.page_bundle_id = bundle_id
-        self.last_query = query
+        self.last_query = query if query is not None else kwargs.get("query")
         return (self.page_rows or []), self.page_total
 
 
@@ -52,6 +73,16 @@ class _FakeResultBundlesRepo:
 class _FakeUow:
     data_records: _FakeDataRecordsRepo
     result_bundles: _FakeResultBundlesRepo
+
+
+def test_trace_scope_service_protocol_contracts_are_satisfied() -> None:
+    data_records = _FakeDataRecordsRepo()
+    bundles = _FakeResultBundlesRepo()
+    uow = _FakeUow(data_records=data_records, result_bundles=bundles)
+
+    assert isinstance(data_records, DataRecordCharacterizationContract)
+    assert isinstance(bundles, ResultBundleCharacterizationContract)
+    assert isinstance(uow, CharacterizationTraceScopeUnitOfWork)
 
 
 def test_count_scope_trace_records_uses_dataset_repo_when_scope_is_all_dataset() -> None:

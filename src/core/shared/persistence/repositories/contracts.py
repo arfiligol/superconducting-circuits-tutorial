@@ -39,3 +39,17 @@ class ResultBundleCharacterizationContract(Protocol):
         query: TraceIndexPageQuery | None = None,
         **kwargs: object,
     ) -> tuple[list[TraceIndexRow], int]: ...
+
+
+@runtime_checkable
+class ResultBundleDatasetSummaryContract(Protocol):
+    """ResultBundle summary API used by dataset-scoped UI summaries."""
+
+    def count_by_dataset(
+        self,
+        dataset_id: int,
+        *,
+        bundle_type: str | None = None,
+        role: str | None = None,
+        include_cache: bool = True,
+    ) -> int: ...
