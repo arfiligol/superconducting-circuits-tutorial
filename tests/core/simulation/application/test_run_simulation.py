@@ -1,0 +1,149 @@
+"""Tests for simulation sweep helpers in application layer."""
+
+from __future__ import annotations
+
+import core.simulation.application.run_simulation as run_sim_app
+from core.simulation.domain.circuit import (
+    FrequencyRange,
+    SimulationConfig,
+    SimulationResult,
+    parse_circuit_definition_source,
+)
+
+
+def _sample_circuit():
+    return parse_circuit_definition_source(
+        {
+            "name": "SweepableCircuit",
+            "parameters": [
+                {"name": "Lj", "default": 1000.0, "unit": "pH"},
+                {"name": "Cc", "default": 120.0, "unit": "fF"},
+            ],
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "Lj1", "value_ref": "Lj", "unit": "pH"},
+                {"name": "C1", "value_ref": "Cc", "unit": "fF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R1", "1", "0", "R50"),
+                ("Lj1", "1", "2", "Lj1"),
+                ("C1", "2", "0", "C1"),
+            ],
+        }
+    )
+
+
+def test_list_simulation_sweep_targets_uses_component_value_refs() -> None:
+    targets = run_sim_app.list_simulation_sweep_targets(_sample_circuit())
+
+    assert [target.value_ref for target in targets] == ["Cc", "Lj"]
+    assert {target.value_ref: target.unit for target in targets} == {"Cc": "fF", "Lj": "pH"}
+
+
+def test_build_simulation_sweep_plan_single_axis() -> None:
+    circuit = _sample_circuit()
+    plan = run_sim_app.build_simulation_sweep_plan(
+        circuit=circuit,
+        axes=[
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="Lj",
+                values=(900.0, 1000.0, 1100.0),
+                unit="pH",
+            )
+        ],
+    )
+
+    assert plan.dimension == 1
+    assert plan.point_count == 3
+    assert plan.points[0].axis_indices == (0,)
+    assert plan.points[2].value_ref_overrides == {"Lj": 1100.0}
+
+
+def test_apply_simulation_sweep_overrides_updates_resolved_values() -> None:
+    circuit = _sample_circuit()
+
+    swept = run_sim_app.apply_simulation_sweep_overrides(
+        circuit=circuit,
+        value_ref_overrides={"Lj": 1250.0},
+    )
+
+    assert swept.resolve_component_value("Lj1") == 1250.0
+    assert swept.resolve_component_value("C1") == 120.0
+
+
+def test_simulation_sweep_payload_roundtrip_preserves_points() -> None:
+    sample_result = SimulationResult(
+        frequencies_ghz=[4.0, 5.0],
+        s11_real=[0.0, 0.1],
+        s11_imag=[0.0, -0.1],
+    )
+    run_payload = run_sim_app.SimulationSweepRun(
+        axes=(
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="Lj",
+                values=(900.0, 1000.0),
+                unit="pH",
+            ),
+        ),
+        points=(
+            run_sim_app.SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"Lj": 900.0},
+                result=sample_result,
+            ),
+            run_sim_app.SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1000.0},
+                result=sample_result,
+            ),
+        ),
+    )
+
+    payload = run_sim_app.simulation_sweep_run_to_payload(run_payload)
+    restored = run_sim_app.simulation_sweep_run_from_payload(payload)
+
+    assert restored.dimension == 1
+    assert restored.point_count == 2
+    assert restored.points[1].axis_values == {"Lj": 1000.0}
+    assert restored.representative_result.frequencies_ghz == [4.0, 5.0]
+
+
+def test_run_parameter_sweep_executes_each_point(monkeypatch) -> None:
+    circuit = _sample_circuit()
+    plan = run_sim_app.build_simulation_sweep_plan(
+        circuit=circuit,
+        axes=[
+            run_sim_app.SimulationSweepAxis(
+                target_value_ref="Lj",
+                values=(900.0, 1100.0),
+                unit="pH",
+            )
+        ],
+    )
+
+    calls: list[float] = []
+
+    class _StubSimulator:
+        def run_hbsolve(self, circuit_for_run, freq_range, config):
+            calls.append(circuit_for_run.resolve_component_value("Lj1"))
+            return SimulationResult(
+                frequencies_ghz=[float(freq_range.start_ghz), float(freq_range.stop_ghz)],
+                s11_real=[0.0, 0.0],
+                s11_imag=[0.0, 0.0],
+            )
+
+    monkeypatch.setattr(run_sim_app, "JuliaSimulator", _StubSimulator)
+
+    result = run_sim_app.run_parameter_sweep(
+        circuit=circuit,
+        freq_range=FrequencyRange(start_ghz=4.0, stop_ghz=5.0, points=11),
+        config=SimulationConfig(),
+        plan=plan,
+    )
+
+    assert calls == [900.0, 1100.0]
+    assert result.point_count == 2
+    assert result.representative_result.frequencies_ghz == [4.0, 5.0]

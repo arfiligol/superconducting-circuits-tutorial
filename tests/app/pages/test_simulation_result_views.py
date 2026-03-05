@@ -16,15 +16,18 @@ from app.pages.simulation import (
     _build_result_bundle_data_records,
     _build_s_parameter_data_records,
     _build_simulation_result_figure,
+    _build_sweep_result_bundle_data_records,
     _build_termination_compensation_plan,
     _can_save_post_processed_results,
     _coordinate_weight_fields_editable,
+    _decode_simulation_result_payload,
     _hash_schema_source,
     _hash_stable_json,
     _load_saved_post_process_setups_for_schema,
     _load_saved_setups_for_schema,
     _load_selected_post_process_setup_id,
     _matrix_element_name,
+    _normalize_sweep_setup_payload,
     _normalize_termination_mode,
     _normalize_termination_selected_ports,
     _normalized_simulation_setup_snapshot,
@@ -42,6 +45,12 @@ from app.services.simulation_setup_manager import (
     save_setup_as,
 )
 from core.simulation.application.post_processing import PortMatrixSweep
+from core.simulation.application.run_simulation import (
+    SimulationSweepAxis,
+    SimulationSweepPointResult,
+    SimulationSweepRun,
+    simulation_sweep_run_to_payload,
+)
 from core.simulation.domain.circuit import (
     DriveSourceConfig,
     FrequencyRange,
@@ -815,3 +824,89 @@ def test_normalized_simulation_setup_snapshot_captures_sources_and_advanced_opti
     ]
     assert snapshot["advanced"]["include_dc"] is True
     assert snapshot["advanced"]["max_intermod_order"] == -1
+
+
+def test_normalize_sweep_setup_payload_resolves_unknown_target_to_available_option() -> None:
+    normalized = _normalize_sweep_setup_payload(
+        {
+            "enabled": True,
+            "axes": [
+                {
+                    "target_value_ref": "UnknownRef",
+                    "start": 1.0,
+                    "stop": 3.0,
+                    "points": 5,
+                    "unit": "X",
+                }
+            ],
+        },
+        available_target_units={"Lj": "pH", "Cc": "fF"},
+    )
+
+    assert normalized["enabled"] is True
+    assert normalized["axes"][0]["target_value_ref"] == "Lj"
+    assert normalized["axes"][0]["unit"] == "pH"
+
+
+def test_decode_simulation_result_payload_supports_parameter_sweep_payload() -> None:
+    base = _sample_result()
+    sweep_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"Lj": 900.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1100.0},
+                result=base,
+            ),
+        ),
+        representative_point_index=0,
+    )
+    payload = simulation_sweep_run_to_payload(sweep_run)
+
+    result, sweep_payload = _decode_simulation_result_payload(payload)
+
+    assert sweep_payload is not None
+    assert sweep_payload["run_kind"] == "parameter_sweep"
+    assert sweep_payload["point_count"] == 2
+    assert result.frequencies_ghz == base.frequencies_ghz
+
+
+def test_build_sweep_result_bundle_data_records_embeds_sweep_axis_metadata() -> None:
+    base = _sample_result()
+    sweep_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"Lj": 900.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1100.0},
+                result=base,
+            ),
+        ),
+        representative_point_index=0,
+    )
+    records = _build_sweep_result_bundle_data_records(
+        dataset_id=42,
+        sweep_payload=simulation_sweep_run_to_payload(sweep_run),
+    )
+
+    assert records
+    first_axes = records[0].axes
+    assert first_axes[0]["name"] == "frequency"
+    assert first_axes[1]["name"] == "sweep:Lj"
+    assert first_axes[1]["unit"] == "pH"
+    assert first_axes[1]["axis_points"] == 2
+    assert any("[sweep Lj=" in record.parameter for record in records)
