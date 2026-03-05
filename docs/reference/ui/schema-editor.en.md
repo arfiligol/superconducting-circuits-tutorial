@@ -12,8 +12,8 @@ owner: docs-team
 audience: team
 scope: /schemas/{id} contract for source-form editing, expanded preview, and validation feedback
 version: v0.2.0
-last_updated: 2026-03-03
-updated_by: docs-team
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Schema Editor
@@ -40,6 +40,19 @@ This page defines the formal UI contract for `/schemas/{id}`.
 
 - `Format` formats source form only and does not expand `repeat`
 - `Save Schema` stores source form only and does not store expanded output
+
+### Formatting Behavior Contract
+
+- `Format` button and keyboard shortcut must use the same formatter pipeline
+- successful formatting must write back through one editor-state transaction
+- formatting failures must not overwrite the original text and must show readable error feedback
+- formatting must not implicitly trigger schema migration or `repeat` expansion
+
+### Formatting Failure Strategy
+
+- formatter init failure: preserve current editor text, show failure feedback, keep editing available
+- per-run format error: preserve original text and forbid partial overwrite
+- formatter-unavailable state must not alter `Save Schema` source-form persistence semantics
 
 ## Expanded Netlist Preview
 
@@ -68,3 +81,9 @@ The UI must expose parse/validation/expansion errors, including at least:
 
 `/simulation` `Netlist Configuration` must use the same expansion pipeline
 and show the same expanded netlist as this preview.
+
+## Related
+
+- [Schema Editor Formatting](../../explanation/architecture/design-decisions/schema-editor-formatting.en.md)
+- [Circuit Netlist Schema](../data-formats/circuit-netlist.en.md)
+- [Circuit Simulation](circuit-simulation.en.md)
