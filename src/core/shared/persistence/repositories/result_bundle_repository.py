@@ -13,6 +13,7 @@ from core.shared.persistence.models import (
     ResultBundleDataLink,
     ResultBundleRecord,
 )
+from core.shared.persistence.repositories.contracts import ResultBundleAnalysisRunSummary
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
@@ -86,6 +87,36 @@ class ResultBundleRepository:
         )
         count_statement = sa_select(func.count()).select_from(statement.subquery())
         return int(self._session.execute(count_statement).scalar_one())
+
+    def list_analysis_run_summaries_by_dataset(
+        self,
+        dataset_id: int,
+    ) -> list[ResultBundleAnalysisRunSummary]:
+        """List primitive-only summaries for characterization analysis runs."""
+        statement = self._dataset_statement(
+            dataset_id=dataset_id,
+            bundle_type="characterization",
+            role="analysis_run",
+        ).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
+        bundles = self._session.exec(statement).all()
+        summaries: list[ResultBundleAnalysisRunSummary] = []
+        for bundle in bundles:
+            if bundle.id is None:
+                continue
+            source_meta = bundle.source_meta if isinstance(bundle.source_meta, dict) else {}
+            analysis_id = str(source_meta.get("analysis_id", "")).strip()
+            if not analysis_id:
+                continue
+            summaries.append(
+                {
+                    "bundle_id": int(bundle.id),
+                    "dataset_id": int(bundle.dataset_id),
+                    "analysis_id": analysis_id,
+                    "analysis_label": str(source_meta.get("analysis_label", analysis_id)),
+                    "status": str(bundle.status),
+                }
+            )
+        return summaries
 
     def find_simulation_cache(
         self,

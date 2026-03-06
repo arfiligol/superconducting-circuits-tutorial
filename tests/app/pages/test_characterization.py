@@ -6,9 +6,12 @@ from app.pages.characterization import (
     _build_analysis_run_ui_state,
     _build_fit_parameter_table,
     _build_mode_vs_ljun_dataframe,
+    _build_post_run_result_view_selection,
     _build_resonator_table,
+    _completed_result_analysis_ids,
     _filter_method_groups_by_trace_mode,
     _is_summary_scalar_parameter,
+    _latest_completed_analysis_run_summaries,
     _result_view_controls_row_classes,
     _result_view_empty_state_message,
     _trace_mode_filter_options,
@@ -209,6 +212,51 @@ def test_build_result_artifacts_for_squid_emits_fit_parameters_manifest() -> Non
     assert any(artifact.artifact_id.endswith(".fit_parameters") for artifact in fit_artifacts)
 
 
+def test_build_post_run_result_view_selection_prefers_first_fit_artifact() -> None:
+    params = [
+        DerivedParameter(
+            dataset_id=11,
+            device_type=DeviceType.OTHER,
+            name="Ls_nH",
+            value=0.05,
+            unit="nH",
+            method="lc_squid_fit",
+            extra={"mode": "mode_1", "rmse": 0.001, "trace_mode_group": "base"},
+        ),
+        DerivedParameter(
+            dataset_id=11,
+            device_type=DeviceType.OTHER,
+            name="C_eff_pF",
+            value=1.02,
+            unit="pF",
+            method="lc_squid_fit",
+            extra={"mode": "mode_1", "rmse": 0.001, "trace_mode_group": "base"},
+        ),
+    ]
+
+    selection = _build_post_run_result_view_selection(
+        analysis_id="squid_fitting",
+        method_groups={"lc_squid_fit": params},
+    )
+
+    assert selection.analysis_id == "squid_fitting"
+    assert selection.trace_mode_filter == "all"
+    assert selection.category == "fit"
+    assert selection.artifact_id.endswith(".fit_parameters")
+
+
+def test_build_post_run_result_view_selection_keeps_analysis_when_no_artifacts_exist() -> None:
+    selection = _build_post_run_result_view_selection(
+        analysis_id="squid_fitting",
+        method_groups={},
+    )
+
+    assert selection.analysis_id == "squid_fitting"
+    assert selection.trace_mode_filter == "all"
+    assert selection.category == ""
+    assert selection.artifact_id == ""
+
+
 def test_trace_mode_group_for_selected_rows_maps_mixed_selection_to_sideband() -> None:
     assert _trace_mode_group_for_selected_rows([{"mode": "Base"}]) == "base"
     assert _trace_mode_group_for_selected_rows([{"mode": "Sideband"}]) == "sideband"
@@ -287,6 +335,70 @@ def test_result_view_empty_state_message_reports_persisted_but_unmapped_methods(
     )
     assert "Persisted results found but no renderable artifacts" in message
     assert "lc_squid_fit" in message
+
+
+def test_result_view_empty_state_message_reports_completed_run_without_artifacts() -> None:
+    message = _result_view_empty_state_message(
+        selected_mode_label="All",
+        selected_analysis_groups_raw={},
+        selected_analysis_groups={},
+        latest_completed_run_bundle_id=42,
+    )
+
+    assert "did not publish any result artifacts yet" in message
+    assert "#42" in message
+
+
+def test_latest_completed_analysis_run_summaries_keeps_latest_completed_bundle() -> None:
+    latest = _latest_completed_analysis_run_summaries(
+        [
+            {
+                "bundle_id": 4,
+                "analysis_id": "admittance_extraction",
+                "analysis_label": "Admittance Extraction",
+                "status": "completed",
+            },
+            {
+                "bundle_id": 5,
+                "analysis_id": "squid_fitting",
+                "analysis_label": "SQUID Fitting",
+                "status": "failed",
+            },
+            {
+                "bundle_id": 6,
+                "analysis_id": "squid_fitting",
+                "analysis_label": "SQUID Fitting",
+                "status": "completed",
+            },
+        ]
+    )
+
+    assert sorted(latest) == ["admittance_extraction", "squid_fitting"]
+    assert int(latest["squid_fitting"]["bundle_id"]) == 6
+
+
+def test_completed_result_analysis_ids_include_completed_run_without_methods() -> None:
+    completed_ids = _completed_result_analysis_ids(
+        analyses=[
+            {"id": "admittance_extraction"},
+            {"id": "squid_fitting"},
+            {"id": "y11_fit"},
+        ],
+        analysis_method_groups={
+            "admittance_extraction": {"admittance_zero_crossing": [object()]},
+            "squid_fitting": {},
+            "y11_fit": {},
+        },
+        latest_completed_runs={
+            "squid_fitting": {
+                "bundle_id": 7,
+                "analysis_id": "squid_fitting",
+                "status": "completed",
+            }
+        },
+    )
+
+    assert completed_ids == ["admittance_extraction", "squid_fitting"]
 
 
 def test_result_view_controls_row_uses_single_row_desktop_contract() -> None:

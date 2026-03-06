@@ -457,6 +457,76 @@ def test_result_bundle_repository_exposes_cache_and_provenance_queries() -> None
         )
 
 
+def test_result_bundle_repository_lists_primitive_analysis_run_summaries() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Analysis Summary Dataset", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        bundle_repo = ResultBundleRepository(session)
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+                status="completed",
+                source_meta={
+                    "analysis_id": "squid_fitting",
+                    "analysis_label": "SQUID Fitting",
+                },
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+                status="failed",
+                source_meta={
+                    "analysis_id": "y11_fit",
+                    "analysis_label": "Y11 Response Fit",
+                },
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+                status="completed",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        session.commit()
+
+        summaries = bundle_repo.list_analysis_run_summaries_by_dataset(dataset.id)
+
+        assert summaries == [
+            {
+                "bundle_id": 1,
+                "dataset_id": dataset.id,
+                "analysis_id": "squid_fitting",
+                "analysis_label": "SQUID Fitting",
+                "status": "completed",
+            },
+            {
+                "bundle_id": 2,
+                "dataset_id": dataset.id,
+                "analysis_id": "y11_fit",
+                "analysis_label": "Y11 Response Fit",
+                "status": "failed",
+            },
+        ]
+
+
 def test_circuit_repository_summary_page_supports_search_and_sort() -> None:
     with _memory_session() as session:
         circuit_repo = CircuitRepository(session)

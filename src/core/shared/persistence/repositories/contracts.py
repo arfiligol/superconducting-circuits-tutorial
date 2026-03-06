@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypedDict, runtime_checkable
 
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 TraceIndexRow = dict[str, str | int]
+
+
+class ResultBundleAnalysisRunSummary(TypedDict):
+    """Primitive-only summary row for one characterization analysis run bundle."""
+
+    bundle_id: int
+    dataset_id: int
+    analysis_id: str
+    analysis_label: str
+    status: str
 
 
 @runtime_checkable
@@ -53,3 +63,8 @@ class ResultBundleDatasetSummaryContract(Protocol):
         role: str | None = None,
         include_cache: bool = True,
     ) -> int: ...
+
+    def list_analysis_run_summaries_by_dataset(
+        self,
+        dataset_id: int,
+    ) -> list[ResultBundleAnalysisRunSummary]: ...

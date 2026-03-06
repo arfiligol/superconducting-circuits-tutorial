@@ -59,3 +59,4 @@ def test_result_bundle_repository_satisfies_dataset_summary_contract() -> None:
         repo = ResultBundleRepository(session)
         assert isinstance(repo, ResultBundleDatasetSummaryContract)
         assert repo.count_by_dataset(dataset.id) == 0
+        assert repo.list_analysis_run_summaries_by_dataset(dataset.id) == []

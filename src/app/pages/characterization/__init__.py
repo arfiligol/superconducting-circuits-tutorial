@@ -6,6 +6,7 @@ import asyncio
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
@@ -67,6 +68,16 @@ _TRACE_MODE_FILTER_OPTIONS: dict[str, str] = {
 _MAX_BULK_TRACE_SELECTION = 2000
 _ANALYSIS_HEARTBEAT_SECONDS = 5.0
 _ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS = 60
+
+
+@dataclass(frozen=True)
+class _PostRunResultViewSelection:
+    """Result-view selection state to apply after a successful analysis run."""
+
+    analysis_id: str
+    trace_mode_filter: str
+    category: str
+    artifact_id: str
 
 
 def _with_test_id(element: Any, test_id: str) -> Any:
@@ -153,6 +164,122 @@ def _resolve_selected_option(preferred: str, options: list[str]) -> str:
     if preferred in options:
         return preferred
     return options[0] if options else ""
+
+
+def _latest_completed_analysis_run_summaries(
+    summaries: Sequence[Mapping[str, object]],
+) -> dict[str, dict[str, object]]:
+    """Collapse primitive run summaries to the latest completed row per analysis id."""
+    latest_by_analysis: dict[str, dict[str, object]] = {}
+    for summary in summaries:
+        analysis_id = str(summary.get("analysis_id", "")).strip()
+        if not analysis_id or str(summary.get("status", "")).strip() != "completed":
+            continue
+        bundle_id = int(summary.get("bundle_id", 0) or 0)
+        current = latest_by_analysis.get(analysis_id)
+        current_bundle_id = int(current.get("bundle_id", 0) or 0) if current else 0
+        if current is None or bundle_id >= current_bundle_id:
+            latest_by_analysis[analysis_id] = dict(summary)
+    return latest_by_analysis
+
+
+def _completed_result_analysis_ids(
+    *,
+    analyses: Sequence[Mapping[str, object]],
+    analysis_method_groups: Mapping[str, Mapping[str, list]],
+    latest_completed_runs: Mapping[str, Mapping[str, object]],
+) -> list[str]:
+    """Return result-view analysis ids in registry order.
+
+    Analyses stay visible when either renderable method groups exist or a completed
+    run bundle exists for that analysis. This avoids falling back to stale tabs when
+    a new run completed without publishing artifacts yet.
+    """
+    completed_ids: list[str] = []
+    for analysis in analyses:
+        analysis_id = str(analysis.get("id", "")).strip()
+        if not analysis_id:
+            continue
+        if analysis_method_groups.get(analysis_id) or analysis_id in latest_completed_runs:
+            completed_ids.append(analysis_id)
+    return completed_ids
+
+
+def _build_post_run_result_view_selection(
+    *,
+    analysis_id: str,
+    method_groups: dict[str, list],
+) -> _PostRunResultViewSelection:
+    """Choose a stable Result View target immediately after a successful run."""
+    artifacts = build_result_artifacts_for_analysis(
+        analysis_id=analysis_id,
+        method_groups=_filter_method_groups_by_trace_mode(
+            method_groups,
+            trace_mode_filter=_TRACE_MODE_ALL,
+        ),
+        build_mode_vs_ljun_dataframe=_build_mode_vs_ljun_dataframe,
+        build_resonator_table=_build_resonator_table,
+        build_fit_parameter_table=_build_fit_parameter_table,
+        is_summary_scalar=_is_summary_scalar_parameter,
+    )
+    if not artifacts:
+        return _PostRunResultViewSelection(
+            analysis_id=analysis_id,
+            trace_mode_filter=_TRACE_MODE_ALL,
+            category="",
+            artifact_id="",
+        )
+
+    first_artifact = artifacts[0]
+    return _PostRunResultViewSelection(
+        analysis_id=analysis_id,
+        trace_mode_filter=_TRACE_MODE_ALL,
+        category=first_artifact.category,
+        artifact_id=first_artifact.artifact_id,
+    )
+
+
+def _sync_result_view_selection_after_run(
+    *,
+    dataset_id: int,
+    analysis: Mapping[str, object],
+) -> _PostRunResultViewSelection:
+    """Persist Result View state so refresh lands on the completed analysis."""
+    analysis_id = str(analysis.get("id", "")).strip()
+    completed_methods = set(analysis.get("completed_methods", []))
+    with get_unit_of_work() as uow:
+        method_params = _group_by_method(uow.derived_params.list_by_dataset(dataset_id))
+    analysis_method_groups = {
+        method_key: list(method_params[method_key])
+        for method_key in sorted(completed_methods)
+        if method_key in method_params
+    }
+    selection = _build_post_run_result_view_selection(
+        analysis_id=analysis_id,
+        method_groups=analysis_method_groups,
+    )
+    _save_dataset_text_selection(
+        _ANALYSIS_RESULT_SELECTED_KEY,
+        dataset_id,
+        selection.analysis_id,
+    )
+    analysis_scope_key = _analysis_scope_key(dataset_id, selection.analysis_id)
+    _save_scope_text_selection(
+        _ANALYSIS_RESULT_TRACE_MODE_SELECTED_KEY,
+        analysis_scope_key,
+        selection.trace_mode_filter,
+    )
+    _save_scope_text_selection(
+        _ANALYSIS_RESULT_CATEGORY_SELECTED_KEY,
+        analysis_scope_key,
+        selection.category,
+    )
+    _save_scope_text_selection(
+        _ANALYSIS_RESULT_ARTIFACT_SELECTED_KEY,
+        analysis_scope_key,
+        selection.artifact_id,
+    )
+    return selection
 
 
 def _effective_analysis_requires(
@@ -565,6 +692,7 @@ def _result_view_empty_state_message(
     selected_mode_label: str,
     selected_analysis_groups_raw: Mapping[str, list],
     selected_analysis_groups: Mapping[str, list],
+    latest_completed_run_bundle_id: int | None = None,
 ) -> str:
     """Build one diagnosable empty-state message for Result View."""
     if selected_analysis_groups:
@@ -576,6 +704,11 @@ def _result_view_empty_state_message(
     if selected_analysis_groups_raw:
         return (
             f"No artifacts available for selected analysis under trace mode: {selected_mode_label}."
+        )
+    if latest_completed_run_bundle_id is not None:
+        return (
+            "Analysis completed but did not publish any result artifacts yet "
+            f"(latest run bundle #{latest_completed_run_bundle_id})."
         )
     return "No artifacts available for selected analysis."
 
@@ -992,6 +1125,11 @@ def characterization_page():
                         )
 
                         ds_params = refresh_uow.derived_params.list_by_dataset(active_id)
+                        analysis_run_summaries = (
+                            refresh_uow.result_bundles.list_analysis_run_summaries_by_dataset(
+                                active_id
+                            )
+                        )
                         method_params = _group_by_method(ds_params)
                         analyses = list_dataset_analyses()
                         if not analyses:
@@ -1234,11 +1372,14 @@ def characterization_page():
                                 if method_key in method_params
                             }
 
-                        completed_analysis_ids = [
-                            analysis_id
-                            for analysis_id, groups in analysis_method_groups.items()
-                            if groups
-                        ]
+                        latest_completed_runs = _latest_completed_analysis_run_summaries(
+                            analysis_run_summaries
+                        )
+                        completed_analysis_ids = _completed_result_analysis_ids(
+                            analyses=analyses,
+                            analysis_method_groups=analysis_method_groups,
+                            latest_completed_runs=latest_completed_runs,
+                        )
                         selected_result_analysis_id = _resolve_selected_option(
                             _load_dataset_text_selection(_ANALYSIS_RESULT_SELECTED_KEY, active_id),
                             completed_analysis_ids,
@@ -1497,10 +1638,25 @@ def characterization_page():
                                                         f"Recorded analysis bundle #{bundle.id}.",
                                                     )
 
+                                            post_run_selection = (
+                                                _sync_result_view_selection_after_run(
+                                                    dataset_id=ds.id,
+                                                    analysis=selected_run_analysis,
+                                                )
+                                            )
                                             append_analysis_status(
                                                 "positive",
                                                 f"{selected_run_analysis['label']} completed.",
                                             )
+                                            if not post_run_selection.artifact_id:
+                                                append_analysis_status(
+                                                    "info",
+                                                    (
+                                                        "Result View switched to the completed "
+                                                        "analysis, but no renderable artifacts "
+                                                        "were found."
+                                                    ),
+                                                )
                                             render_dataset_view.refresh()
                                         except NotImplementedError:
                                             append_analysis_status(
@@ -2086,6 +2242,14 @@ def characterization_page():
                                             selected_trace_mode_filter,
                                             "All",
                                         )
+                                        latest_completed_run_bundle_id = None
+                                        latest_completed_run = latest_completed_runs.get(
+                                            selected_result_analysis_id
+                                        )
+                                        if latest_completed_run is not None:
+                                            latest_completed_run_bundle_id = int(
+                                                latest_completed_run.get("bundle_id", 0) or 0
+                                            ) or None
                                         ui.label(
                                             _result_view_empty_state_message(
                                                 selected_mode_label=selected_mode_label,
@@ -2093,6 +2257,9 @@ def characterization_page():
                                                     selected_analysis_groups_raw
                                                 ),
                                                 selected_analysis_groups=selected_analysis_groups,
+                                                latest_completed_run_bundle_id=(
+                                                    latest_completed_run_bundle_id
+                                                ),
                                             )
                                         ).classes("text-sm text-muted mt-3")
                                     else:
