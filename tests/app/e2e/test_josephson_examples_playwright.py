@@ -662,6 +662,18 @@ def _read_first_plot_y_value(page: Page) -> float:
     )
     plot = raw_results_card.locator(".js-plotly-plot").first
     expect(plot).to_be_visible(timeout=30000)
+    plot_handle = plot.element_handle(timeout=30000)
+    assert plot_handle is not None
+    page.wait_for_function(
+        (
+            "el => Array.isArray(el?.data)"
+            " && el.data.length > 0"
+            " && Array.isArray(el.data[0]?.y)"
+            " && el.data[0].y.length > 0"
+        ),
+        arg=plot_handle,
+        timeout=30000,
+    )
     value = plot.evaluate("el => el.data[0].y[0]")
     return float(value)
 

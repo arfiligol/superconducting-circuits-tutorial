@@ -59,6 +59,7 @@ from core.simulation.application.run_simulation import (
     SimulationSweepAxis,
     SimulationSweepPointResult,
     SimulationSweepRun,
+    simulation_sweep_run_from_payload,
     simulation_sweep_run_to_payload,
 )
 from core.simulation.domain.circuit import (
