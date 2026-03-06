@@ -11,7 +11,7 @@ from app.pages.simulation import (
     _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY,
     _Z0_CONTROL_CLASSES,
     _Z0_CONTROL_PROPS,
-    _build_compensated_simulation_sweep_payload,
+    _build_post_processed_bundle_artifacts,
     _build_post_processed_result_payload,
     _build_post_processed_y_data_records,
     _build_result_bundle_data_records,
@@ -54,7 +54,6 @@ from core.simulation.application.run_simulation import (
     SimulationSweepAxis,
     SimulationSweepPointResult,
     SimulationSweepRun,
-    simulation_sweep_run_from_payload,
     simulation_sweep_run_to_payload,
 )
 from core.simulation.domain.circuit import (
@@ -482,16 +481,109 @@ def test_can_save_post_processed_results_requires_valid_output_state() -> None:
         y_matrices=(np.asarray(((1.0 + 0.0j, 0.0), (0.0, 2.0 + 0.0j))),),
         source_kind="y",
     )
-    assert _can_save_post_processed_results(
-        sweep,
-        {"steps": [], "run_kind": "single_result"},
-    ) is True
-    assert _can_save_post_processed_results(
-        sweep,
-        {"steps": [], "run_kind": "parameter_sweep"},
-    ) is False
+    assert _can_save_post_processed_results(sweep, {"steps": []}) is True
     assert _can_save_post_processed_results(None, {"steps": []}) is False
     assert _can_save_post_processed_results(sweep, None) is False
+
+
+def test_build_post_processed_bundle_artifacts_keep_single_run_payload_minimal() -> None:
+    sweep = PortMatrixSweep(
+        mode=(0,),
+        labels=("1", "2"),
+        frequencies_ghz=(5.0,),
+        y_matrices=(np.asarray(((1.0 + 0.0j, 0.0), (0.0, 2.0 + 0.0j))),),
+        source_kind="y",
+    )
+
+    source_meta, config_snapshot, result_payload = _build_post_processed_bundle_artifacts(
+        sweep=sweep,
+        flow_spec={"input_y_source": "raw_y", "steps": []},
+        source_simulation_bundle_id=17,
+    )
+
+    assert source_meta["source_run_kind"] == "single_run"
+    assert source_meta["input_source_type"] == "raw_y"
+    assert config_snapshot["source_simulation_bundle_id"] == 17
+    assert config_snapshot["source_run_kind"] == "single_run"
+    assert result_payload["run_kind"] == "single_run"
+    assert result_payload["canonical_authority"]["source_simulation_bundle_id"] == 17
+    assert result_payload["projection"]["kind"] == "frequency_only_data_records"
+    assert "sweep_axes" not in result_payload
+    assert "points" not in result_payload
+
+
+def test_build_post_processed_bundle_artifacts_preserve_source_sweep_authority() -> None:
+    base = _sample_result()
+    sweep = PortMatrixSweep(
+        mode=(0,),
+        labels=("1", "2"),
+        frequencies_ghz=(5.0, 5.1),
+        y_matrices=(
+            np.asarray(((1.0 + 0.0j, 0.1 + 0.0j), (0.1 + 0.0j, 2.0 + 0.0j))),
+            np.asarray(((1.1 + 0.0j, 0.2 + 0.0j), (0.2 + 0.0j, 2.1 + 0.0j))),
+        ),
+        source_kind="y",
+    )
+    source_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"Lj": 900.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1100.0},
+                result=base,
+            ),
+        ),
+        representative_point_index=1,
+    )
+    source_bundle_snapshot = {
+        "id": 21,
+        "dataset_id": 7,
+        "bundle_type": "circuit_simulation",
+        "role": "cache",
+        "status": "completed",
+        "schema_source_hash": "sha256:schema",
+        "simulation_setup_hash": "sha256:setup",
+        "source_meta": {"origin": "circuit_simulation", "sweep_setup_hash": "sha256:sweep"},
+        "config_snapshot": {"sweep": {"setup_hash": "sha256:sweep"}},
+        "result_payload": simulation_sweep_run_to_payload(source_run),
+    }
+
+    source_meta, config_snapshot, result_payload = _build_post_processed_bundle_artifacts(
+        sweep=sweep,
+        flow_spec={
+            "input_y_source": "ptc_y",
+            "steps": [{"type": "coordinate_transform", "enabled": True}],
+            "hfss_comparable": True,
+        },
+        source_simulation_bundle_id=21,
+        source_bundle_snapshot=source_bundle_snapshot,
+    )
+
+    assert source_meta["source_run_kind"] == "parameter_sweep"
+    assert source_meta["source_bundle_type"] == "circuit_simulation"
+    assert source_meta["input_source_type"] == "ptc_y"
+    assert config_snapshot["sweep_setup_hash"] == "sha256:sweep"
+    assert result_payload["run_kind"] == "parameter_sweep"
+    assert result_payload["source_bundle"]["bundle_id"] == 21
+    assert result_payload["point_count"] == 2
+    assert result_payload["sweep_axes"][0]["target_value_ref"] == "Lj"
+    assert result_payload["projection"]["representative_source_point_index"] == 1
+    assert result_payload["points"][0]["source_point_index"] == 0
+    assert result_payload["points"][0]["axis_values"]["Lj"] == pytest.approx(900.0)
+    assert result_payload["points"][0]["postprocess_result_handle"] == {
+        "kind": "replay_from_source_bundle_point",
+        "source_simulation_bundle_id": 21,
+        "source_point_index": 0,
+        "input_source_type": "ptc_y",
+        "flow_spec_ref": "config_snapshot",
+    }
 
 
 def test_z0_control_tokens_are_shared_across_views() -> None:
@@ -1020,49 +1112,6 @@ def test_decode_simulation_result_payload_supports_source_sweep_target_axis() ->
         150e-6
     )
     assert result.frequencies_ghz == base.frequencies_ghz
-
-
-def test_build_compensated_simulation_sweep_payload_preserves_all_points() -> None:
-    first = _sample_result()
-    second = _sample_result().model_copy(deep=True)
-    second.y_parameter_mode_real["om=0|op=2|im=0|ip=2"] = [0.02, 0.019, 0.018]
-
-    payload = simulation_sweep_run_to_payload(
-        SimulationSweepRun(
-            axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
-            points=(
-                SimulationSweepPointResult(
-                    point_index=0,
-                    axis_indices=(0,),
-                    axis_values={"Lj": 900.0},
-                    result=first,
-                ),
-                SimulationSweepPointResult(
-                    point_index=1,
-                    axis_indices=(1,),
-                    axis_values={"Lj": 1100.0},
-                    result=second,
-                ),
-            ),
-            representative_point_index=0,
-        )
-    )
-
-    compensated_payload = _build_compensated_simulation_sweep_payload(
-        payload,
-        resistance_ohm_by_port={2: 100.0},
-        reference_impedance_ohm=50.0,
-    )
-    compensated_run = simulation_sweep_run_from_payload(compensated_payload)
-
-    assert compensated_payload["run_kind"] == "parameter_sweep"
-    assert compensated_payload["point_count"] == 2
-    assert compensated_run.points[0].axis_values == {"Lj": 900.0}
-    assert compensated_run.points[1].axis_values == {"Lj": 1100.0}
-    first_trace = compensated_run.points[0].result.get_mode_y_parameter_complex((0,), 2, (0,), 2)
-    second_trace = compensated_run.points[1].result.get_mode_y_parameter_complex((0,), 2, (0,), 2)
-    assert first_trace[0].real == pytest.approx(0.01)
-    assert second_trace[0].real == pytest.approx(0.02)
 
 
 def test_build_sweep_result_bundle_data_records_embeds_sweep_axis_metadata() -> None:

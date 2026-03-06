@@ -156,6 +156,51 @@ def test_result_bundle_repository_finds_cache_bundle_and_lists_member_records() 
         assert len(data_repo.list_all(include_hidden=True)) == 2
 
 
+def test_result_bundle_repository_get_snapshot_returns_detached_dto() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Snapshot Source", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        bundle = ResultBundleRepository(session).add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="simulation_postprocess",
+                role="derived_from_simulation",
+                status="completed",
+                schema_source_hash="sha256:schema",
+                simulation_setup_hash="sha256:setup",
+                source_meta={"origin": "simulation_postprocess"},
+                config_snapshot={"input_y_source": "ptc_y"},
+                result_payload={
+                    "run_kind": "parameter_sweep",
+                    "point_count": 2,
+                    "points": [{"source_point_index": 0}],
+                },
+            )
+        )
+        session.commit()
+        assert bundle.id is not None
+
+        snapshot = ResultBundleRepository(session).get_snapshot(bundle.id)
+
+        assert snapshot is not None
+        assert snapshot["id"] == bundle.id
+        assert snapshot["bundle_type"] == "simulation_postprocess"
+        assert snapshot["config_snapshot"]["input_y_source"] == "ptc_y"
+        assert snapshot["result_payload"]["point_count"] == 2
+
+        snapshot["source_meta"]["origin"] = "mutated"
+        snapshot["result_payload"]["points"][0]["source_point_index"] = 99
+
+        refreshed = ResultBundleRepository(session).get(bundle.id)
+        assert refreshed is not None
+        assert refreshed.source_meta["origin"] == "simulation_postprocess"
+        assert refreshed.result_payload["points"][0]["source_point_index"] == 0
+
+
 def test_data_record_repository_index_page_filters_and_sorts() -> None:
     with _memory_session() as session:
         dataset = DatasetRepository(session).add(

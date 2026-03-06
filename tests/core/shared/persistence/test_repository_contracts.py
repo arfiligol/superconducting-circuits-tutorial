@@ -10,6 +10,7 @@ from core.shared.persistence.repositories import (
     ResultBundleDatasetSummaryContract,
     ResultBundleRepository,
 )
+from core.shared.persistence.repositories.contracts import ResultBundleSnapshotContract
 
 
 def _memory_session() -> Session:
@@ -60,3 +61,10 @@ def test_result_bundle_repository_satisfies_dataset_summary_contract() -> None:
         assert isinstance(repo, ResultBundleDatasetSummaryContract)
         assert repo.count_by_dataset(dataset.id) == 0
         assert repo.list_analysis_run_summaries_by_dataset(dataset.id) == []
+
+
+def test_result_bundle_repository_satisfies_snapshot_contract() -> None:
+    with _memory_session() as session:
+        repo = ResultBundleRepository(session)
+        assert isinstance(repo, ResultBundleSnapshotContract)
+        assert repo.get_snapshot(1) is None

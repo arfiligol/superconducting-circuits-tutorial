@@ -1,6 +1,7 @@
 """Repository for ResultBundleRecord operations."""
 
 from collections.abc import Sequence
+from copy import deepcopy
 from typing import Any, cast
 
 from sqlalchemy import String, asc, case, desc, func, not_, or_
@@ -13,7 +14,10 @@ from core.shared.persistence.models import (
     ResultBundleDataLink,
     ResultBundleRecord,
 )
-from core.shared.persistence.repositories.contracts import ResultBundleAnalysisRunSummary
+from core.shared.persistence.repositories.contracts import (
+    ResultBundleAnalysisRunSummary,
+    ResultBundleSnapshot,
+)
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
@@ -26,6 +30,30 @@ class ResultBundleRepository:
     def get(self, id: int) -> ResultBundleRecord | None:
         """Get a result bundle by ID."""
         return self._session.get(ResultBundleRecord, id)
+
+    def get_snapshot(self, id: int) -> ResultBundleSnapshot | None:
+        """Get one detached primitive snapshot for provenance reads."""
+        bundle = self._session.get(ResultBundleRecord, id)
+        if bundle is None or bundle.id is None:
+            return None
+        return {
+            "id": int(bundle.id),
+            "dataset_id": int(bundle.dataset_id),
+            "bundle_type": str(bundle.bundle_type),
+            "role": str(bundle.role),
+            "status": str(bundle.status),
+            "schema_source_hash": (
+                str(bundle.schema_source_hash) if bundle.schema_source_hash is not None else None
+            ),
+            "simulation_setup_hash": (
+                str(bundle.simulation_setup_hash)
+                if bundle.simulation_setup_hash is not None
+                else None
+            ),
+            "source_meta": deepcopy(bundle.source_meta),
+            "config_snapshot": deepcopy(bundle.config_snapshot),
+            "result_payload": deepcopy(bundle.result_payload),
+        }
 
     def add(self, bundle: ResultBundleRecord) -> ResultBundleRecord:
         """Add a new result bundle."""

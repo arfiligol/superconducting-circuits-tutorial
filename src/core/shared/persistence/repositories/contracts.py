@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
@@ -17,6 +17,21 @@ class ResultBundleAnalysisRunSummary(TypedDict):
     analysis_id: str
     analysis_label: str
     status: str
+
+
+class ResultBundleSnapshot(TypedDict):
+    """Primitive snapshot DTO for result-bundle provenance lookups."""
+
+    id: int
+    dataset_id: int
+    bundle_type: str
+    role: str
+    status: str
+    schema_source_hash: str | None
+    simulation_setup_hash: str | None
+    source_meta: dict[str, Any]
+    config_snapshot: dict[str, Any]
+    result_payload: dict[str, Any]
 
 
 @runtime_checkable
@@ -68,3 +83,10 @@ class ResultBundleDatasetSummaryContract(Protocol):
         self,
         dataset_id: int,
     ) -> list[ResultBundleAnalysisRunSummary]: ...
+
+
+@runtime_checkable
+class ResultBundleSnapshotContract(Protocol):
+    """ResultBundle provenance lookup API that returns DTO snapshots only."""
+
+    def get_snapshot(self, id: int) -> ResultBundleSnapshot | None: ...

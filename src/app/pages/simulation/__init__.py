@@ -50,6 +50,7 @@ from core.shared.persistence.models import (
     DatasetRecord,
     ResultBundleRecord,
 )
+from core.shared.persistence.repositories.contracts import ResultBundleSnapshot
 from core.shared.visualization import get_plotly_layout
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
@@ -2756,6 +2757,211 @@ def _build_post_processed_y_data_records(
     return records
 
 
+def _resolved_source_run_kind(
+    source_bundle_snapshot: ResultBundleSnapshot | None,
+    *,
+    source_sweep_payload: Mapping[str, Any] | None = None,
+) -> str:
+    """Resolve one canonical source run kind from stored bundle payload or runtime fallback."""
+    result_payload = source_bundle_snapshot["result_payload"] if source_bundle_snapshot else None
+    if isinstance(result_payload, Mapping):
+        run_kind = str(result_payload.get("run_kind", "")).strip()
+        if run_kind:
+            return run_kind
+    if isinstance(source_sweep_payload, Mapping):
+        run_kind = str(source_sweep_payload.get("run_kind", "")).strip()
+        if run_kind:
+            return run_kind
+    return "single_run"
+
+
+def _resolved_source_sweep_setup_hash(
+    source_bundle_snapshot: ResultBundleSnapshot | None,
+) -> str | None:
+    """Extract one stable sweep-setup hash from the source simulation bundle snapshot."""
+    if source_bundle_snapshot is None:
+        return None
+    source_meta = source_bundle_snapshot["source_meta"]
+    if isinstance(source_meta, Mapping):
+        raw_hash = source_meta.get("sweep_setup_hash")
+        if isinstance(raw_hash, str) and raw_hash.strip():
+            return raw_hash.strip()
+
+    config_snapshot = source_bundle_snapshot["config_snapshot"]
+    if not isinstance(config_snapshot, Mapping):
+        return None
+    raw_hash = config_snapshot.get("sweep_setup_hash")
+    if isinstance(raw_hash, str) and raw_hash.strip():
+        return raw_hash.strip()
+    sweep_snapshot = config_snapshot.get("sweep")
+    if not isinstance(sweep_snapshot, Mapping):
+        return None
+    nested_hash = sweep_snapshot.get("setup_hash")
+    if isinstance(nested_hash, str) and nested_hash.strip():
+        return nested_hash.strip()
+    return None
+
+
+def _resolved_source_sweep_payload(
+    source_bundle_snapshot: ResultBundleSnapshot | None,
+    *,
+    source_sweep_payload: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Resolve one canonical sweep payload from bundle storage or runtime fallback."""
+    if source_bundle_snapshot is not None:
+        result_payload = source_bundle_snapshot["result_payload"]
+        if (
+            isinstance(result_payload, Mapping)
+            and str(result_payload.get("run_kind", "")).strip() == "parameter_sweep"
+        ):
+            return json.loads(json.dumps(result_payload))
+    if (
+        isinstance(source_sweep_payload, Mapping)
+        and str(source_sweep_payload.get("run_kind", "")).strip() == "parameter_sweep"
+    ):
+        return json.loads(json.dumps(source_sweep_payload))
+    return None
+
+
+def _build_post_processed_sweep_point_metadata(
+    *,
+    source_point: Mapping[str, Any],
+    source_simulation_bundle_id: int | None,
+    input_source_type: str,
+) -> dict[str, Any]:
+    """Build one reproducible point-handle entry for a post-processed sweep bundle."""
+    axis_indices = source_point.get("axis_indices", [])
+    if not isinstance(axis_indices, list):
+        axis_indices = []
+    raw_axis_values = source_point.get("axis_values", {})
+    if not isinstance(raw_axis_values, Mapping):
+        raw_axis_values = {}
+
+    point_index = int(source_point.get("point_index", 0))
+    handle: dict[str, Any] = {
+        "kind": "replay_from_source_bundle_point",
+        "source_point_index": point_index,
+        "input_source_type": input_source_type,
+        "flow_spec_ref": "config_snapshot",
+    }
+    if source_simulation_bundle_id is not None:
+        handle["source_simulation_bundle_id"] = int(source_simulation_bundle_id)
+
+    return {
+        "source_point_index": point_index,
+        "axis_indices": [int(value) for value in axis_indices],
+        "axis_values": {
+            str(target): float(value) for target, value in sorted(raw_axis_values.items())
+        },
+        "postprocess_result_handle": handle,
+    }
+
+
+def _build_post_processed_bundle_artifacts(
+    *,
+    sweep: PortMatrixSweep,
+    flow_spec: Mapping[str, Any],
+    source_simulation_bundle_id: int | None,
+    source_bundle_snapshot: ResultBundleSnapshot | None = None,
+    source_sweep_payload: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Build source_meta/config/result payloads for saving one post-processed bundle."""
+    input_source_type = str(flow_spec.get("input_y_source", "raw_y")).strip() or "raw_y"
+    source_run_kind = _resolved_source_run_kind(
+        source_bundle_snapshot,
+        source_sweep_payload=source_sweep_payload,
+    )
+    resolved_sweep_payload = _resolved_source_sweep_payload(
+        source_bundle_snapshot,
+        source_sweep_payload=source_sweep_payload,
+    )
+
+    source_meta: dict[str, Any] = {
+        "origin": "simulation_postprocess",
+        "source_simulation_bundle_id": source_simulation_bundle_id,
+        "source_run_kind": source_run_kind,
+        "source_kind": sweep.source_kind,
+        "input_source_type": input_source_type,
+        "mode_token": SimulationResult.mode_token(sweep.mode),
+    }
+    if source_bundle_snapshot is not None:
+        source_meta["source_bundle_type"] = source_bundle_snapshot["bundle_type"]
+
+    config_snapshot = json.loads(json.dumps(flow_spec))
+    config_snapshot["input_source_type"] = input_source_type
+    config_snapshot["source_run_kind"] = source_run_kind
+    if source_simulation_bundle_id is not None:
+        config_snapshot["source_simulation_bundle_id"] = int(source_simulation_bundle_id)
+    if (sweep_setup_hash := _resolved_source_sweep_setup_hash(source_bundle_snapshot)) is not None:
+        config_snapshot["sweep_setup_hash"] = sweep_setup_hash
+
+    result_payload: dict[str, Any] = {
+        "kind": "port_level_postprocess",
+        "run_kind": source_run_kind,
+        "dimension": int(sweep.dimension),
+        "labels": list(sweep.labels),
+        "mode": [int(value) for value in sweep.mode],
+        "frequency_points": len(sweep.frequencies_ghz),
+        "input_source_type": input_source_type,
+        "canonical_authority": {
+            "kind": "bundle_payload",
+            "scope": "postprocess_bundle",
+        },
+        "projection": {
+            "kind": "frequency_only_data_records",
+            "data_type": "y_params",
+            "frequency_points": len(sweep.frequencies_ghz),
+            "mode_token": SimulationResult.mode_token(sweep.mode),
+        },
+    }
+    if source_simulation_bundle_id is not None:
+        result_payload["canonical_authority"]["source_simulation_bundle_id"] = int(
+            source_simulation_bundle_id
+        )
+
+    if isinstance(resolved_sweep_payload, Mapping):
+        source_points = resolved_sweep_payload.get("points", [])
+        if not isinstance(source_points, list):
+            source_points = []
+        representative_point_index = int(
+            resolved_sweep_payload.get("representative_point_index", 0)
+        )
+        result_payload.update(
+            {
+                "source_bundle": {
+                    "bundle_type": (
+                        source_bundle_snapshot["bundle_type"]
+                        if source_bundle_snapshot is not None
+                        else "circuit_simulation"
+                    ),
+                    "bundle_id": source_simulation_bundle_id,
+                    "run_kind": "parameter_sweep",
+                },
+                "sweep_axes": json.loads(
+                    json.dumps(resolved_sweep_payload.get("sweep_axes", []))
+                ),
+                "point_count": int(
+                    resolved_sweep_payload.get("point_count", len(source_points))
+                ),
+                "representative_point_index": representative_point_index,
+                "points": [
+                    _build_post_processed_sweep_point_metadata(
+                        source_point=point,
+                        source_simulation_bundle_id=source_simulation_bundle_id,
+                        input_source_type=input_source_type,
+                    )
+                    for point in source_points
+                    if isinstance(point, Mapping)
+                ],
+            }
+        )
+        result_payload["projection"]["representative_source_point_index"] = (
+            representative_point_index
+        )
+
+    return (source_meta, config_snapshot, result_payload)
+
+
 def _port_label_token(label: str) -> str:
     """Convert one port label into a stable matrix-name token."""
     normalized = str(label).strip()
@@ -4950,6 +5156,7 @@ def _render_simulation_environment():
                 flow_spec=dict(flow_spec),
                 circuit_record=runtime_state.latest_circuit_record,
                 source_simulation_bundle_id=runtime_state.latest_source_simulation_bundle_id,
+                source_sweep_payload=runtime_state.latest_simulation_sweep_payload,
                 schema_source_hash=runtime_state.latest_schema_source_hash,
                 simulation_setup_hash=runtime_state.latest_simulation_setup_hash,
             )
@@ -7378,6 +7585,7 @@ def _save_post_processed_results_dialog(
     flow_spec: dict[str, Any],
     circuit_record: CircuitRecord | None,
     source_simulation_bundle_id: int | None,
+    source_sweep_payload: dict[str, Any] | None,
     schema_source_hash: str | None,
     simulation_setup_hash: str | None,
 ) -> None:
@@ -7436,12 +7644,25 @@ def _save_post_processed_results_dialog(
             selected_dataset_id: int | None,
         ) -> str:
             with get_unit_of_work() as uow:
+                source_bundle_snapshot = (
+                    uow.result_bundles.get_snapshot(source_simulation_bundle_id)
+                    if source_simulation_bundle_id is not None
+                    else None
+                )
+                bundle_source_meta, bundle_config_snapshot, bundle_result_payload = (
+                    _build_post_processed_bundle_artifacts(
+                        sweep=sweep,
+                        flow_spec=flow_spec,
+                        source_simulation_bundle_id=source_simulation_bundle_id,
+                        source_bundle_snapshot=source_bundle_snapshot,
+                        source_sweep_payload=source_sweep_payload,
+                    )
+                )
                 if mode == "Create New":
                     dataset = DatasetRecord(
                         name=new_dataset_name,
                         source_meta={
-                            "origin": "simulation_postprocess",
-                            "source_simulation_bundle_id": source_simulation_bundle_id,
+                            **bundle_source_meta,
                             "circuit_id": (
                                 int(circuit_record.id)
                                 if circuit_record is not None and circuit_record.id is not None
@@ -7487,10 +7708,7 @@ def _save_post_processed_results_dialog(
                     schema_source_hash=schema_source_hash,
                     simulation_setup_hash=simulation_setup_hash,
                     source_meta={
-                        "origin": "simulation_postprocess",
-                        "source_simulation_bundle_id": source_simulation_bundle_id,
-                        "source_kind": sweep.source_kind,
-                        "mode_token": SimulationResult.mode_token(sweep.mode),
+                        **bundle_source_meta,
                         "circuit_id": (
                             int(circuit_record.id)
                             if circuit_record is not None and circuit_record.id is not None
@@ -7498,14 +7716,8 @@ def _save_post_processed_results_dialog(
                         ),
                         "circuit_name": circuit_name,
                     },
-                    config_snapshot=dict(flow_spec),
-                    result_payload={
-                        "kind": "port_level_postprocess",
-                        "dimension": int(sweep.dimension),
-                        "labels": list(sweep.labels),
-                        "mode": [int(value) for value in sweep.mode],
-                        "frequency_points": len(sweep.frequencies_ghz),
-                    },
+                    config_snapshot=bundle_config_snapshot,
+                    result_payload=bundle_result_payload,
                     completed_at=datetime.utcnow(),
                 )
                 uow.result_bundles.add(bundle)
