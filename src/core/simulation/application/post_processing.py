@@ -7,6 +7,7 @@ from typing import Literal
 
 import numpy as np
 
+from core.simulation.application.run_simulation import SimulationSweepAxis
 from core.simulation.domain.circuit import CircuitDefinition, SimulationResult
 
 type ModeFilter = Literal["base", "sideband", "all"]
@@ -48,6 +49,46 @@ class PortMatrixSweep:
         if row < 0 or col < 0 or row >= self.dimension or col >= self.dimension:
             raise IndexError("Trace index out of range.")
         return [complex(matrix[row, col]) for matrix in self.y_matrices]
+
+
+@dataclass(frozen=True)
+class PortMatrixSweepPoint:
+    """One post-processed sweep point that preserves original sweep provenance."""
+
+    point_index: int
+    axis_indices: tuple[int, ...]
+    axis_values: dict[str, float]
+    sweep: PortMatrixSweep
+
+
+@dataclass(frozen=True)
+class PortMatrixSweepRun:
+    """Post-processing runtime output for one full parameter sweep."""
+
+    axes: tuple[SimulationSweepAxis, ...]
+    points: tuple[PortMatrixSweepPoint, ...]
+    representative_point_index: int = 0
+
+    @property
+    def dimension(self) -> int:
+        """Return sweep dimensionality."""
+        return len(self.axes)
+
+    @property
+    def point_count(self) -> int:
+        """Return total point count."""
+        return len(self.points)
+
+    @property
+    def representative_sweep(self) -> PortMatrixSweep:
+        """Return UI preview projection for the current canonical runtime payload."""
+        if not self.points:
+            raise ValueError("Post-processed sweep run produced no points.")
+        if self.representative_point_index < 0 or self.representative_point_index >= len(
+            self.points
+        ):
+            raise ValueError("representative_point_index is out of range.")
+        return self.points[self.representative_point_index].sweep
 
 
 def infer_port_termination_resistance_ohm(

@@ -8,6 +8,13 @@ from app.services.post_processing_runner import (
     PostProcessingRunRequest,
     execute_post_processing_pipeline,
 )
+from core.simulation.application.post_processing import PortMatrixSweepRun
+from core.simulation.application.run_simulation import (
+    SimulationSweepAxis,
+    SimulationSweepPointResult,
+    SimulationSweepRun,
+    simulation_sweep_run_to_payload,
+)
 from core.simulation.domain.circuit import SimulationResult
 
 
@@ -43,6 +50,7 @@ def test_execute_post_processing_pipeline_requires_mode_selection() -> None:
         execute_post_processing_pipeline(
             PostProcessingRunRequest(
                 result=_sample_result(),
+                sweep_payload=None,
                 input_source="raw_y",
                 mode_filter="base",
                 mode_token="",
@@ -59,6 +67,7 @@ def test_execute_post_processing_pipeline_identity_marks_not_hfss_comparable() -
     run = execute_post_processing_pipeline(
         PostProcessingRunRequest(
             result=_sample_result(),
+            sweep_payload=None,
             input_source="raw_y",
             mode_filter="base",
             mode_token="0",
@@ -89,6 +98,7 @@ def test_execute_post_processing_pipeline_ct_plus_kron_marks_hfss_comparable() -
     run = execute_post_processing_pipeline(
         PostProcessingRunRequest(
             result=_sample_result(),
+            sweep_payload=None,
             input_source="ptc_y",
             mode_filter="base",
             mode_token="0",
@@ -123,3 +133,59 @@ def test_execute_post_processing_pipeline_ct_plus_kron_marks_hfss_comparable() -
     assert run.flow_spec["input_y_source"] == "ptc_y"
     assert len(run.flow_spec["steps"]) == 2
     assert run.normalized_steps[0]["alpha"] == 0.5
+
+
+def test_execute_post_processing_pipeline_preserves_full_parameter_sweep_runtime() -> None:
+    first = _sample_result()
+    second = _sample_result().model_copy(deep=True)
+    second.y_parameter_mode_real["om=0|op=1|im=0|ip=1"] = [3.0, 4.0]
+    second.y_parameter_mode_real["om=0|op=2|im=0|ip=2"] = [5.0, 6.0]
+
+    sweep_payload = simulation_sweep_run_to_payload(
+        SimulationSweepRun(
+            axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+            points=(
+                SimulationSweepPointResult(
+                    point_index=0,
+                    axis_indices=(0,),
+                    axis_values={"Lj": 900.0},
+                    result=first,
+                ),
+                SimulationSweepPointResult(
+                    point_index=1,
+                    axis_indices=(1,),
+                    axis_values={"Lj": 1100.0},
+                    result=second,
+                ),
+            ),
+            representative_point_index=0,
+        )
+    )
+
+    run = execute_post_processing_pipeline(
+        PostProcessingRunRequest(
+            result=first,
+            sweep_payload=sweep_payload,
+            input_source="raw_y",
+            mode_filter="base",
+            mode_token="0",
+            reference_impedance_ohm=50.0,
+            step_sequence=[],
+            circuit_definition=None,
+            has_ptc_result=False,
+        ),
+        estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
+    )
+
+    assert isinstance(run.runtime_output, PortMatrixSweepRun)
+    assert run.flow_spec["run_kind"] == "parameter_sweep"
+    assert run.flow_spec["point_count"] == 2
+    assert run.flow_spec["preview_projection"] == {
+        "kind": "representative_point",
+        "point_index": 0,
+        "axis_indices": [0],
+        "axis_values": {"Lj": 900.0},
+    }
+    assert run.preview_sweep.trace(0, 0) == [1.0 + 0.0j, 1.0 + 0.0j]
+    assert run.runtime_output.points[1].sweep.trace(0, 0) == [3.0 + 0.0j, 4.0 + 0.0j]
+    assert run.runtime_output.points[1].sweep.trace(1, 1) == [5.0 + 0.0j, 6.0 + 0.0j]

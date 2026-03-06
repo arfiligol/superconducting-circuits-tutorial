@@ -26,6 +26,7 @@ from app.pages.simulation.state import (
 )
 from app.services.post_processing_runner import (
     PostProcessingRunRequest,
+    PostProcessingRunResult,
     execute_post_processing_pipeline,
 )
 from app.services.post_processing_step_registry import (
@@ -378,13 +379,48 @@ def _load_cached_simulation_result(
 def _decode_simulation_result_payload(
     payload: Mapping[str, Any],
 ) -> tuple[SimulationResult, dict[str, Any] | None]:
-    """Decode one persisted payload into quick-view result plus optional sweep payload."""
+    """Decode one persisted payload into preview result plus optional canonical sweep payload."""
     run_kind = str(payload.get("run_kind", "")).strip() if isinstance(payload, Mapping) else ""
     if run_kind == "parameter_sweep":
         sweep_run = simulation_sweep_run_from_payload(payload)
         return (sweep_run.representative_result, simulation_sweep_run_to_payload(sweep_run))
     result = SimulationResult.model_validate(payload)
     return (result, None)
+
+
+def _build_compensated_simulation_sweep_payload(
+    sweep_payload: Mapping[str, Any],
+    *,
+    resistance_ohm_by_port: Mapping[int, float],
+    reference_impedance_ohm: float,
+) -> dict[str, Any]:
+    """Apply port-termination compensation point-wise while preserving full sweep provenance."""
+    sweep_run = simulation_sweep_run_from_payload(sweep_payload)
+    compensated_points = tuple(
+        SimulationSweepPointResult(
+            point_index=int(point.point_index),
+            axis_indices=tuple(int(index) for index in point.axis_indices),
+            axis_values={
+                str(target_value_ref): float(value)
+                for target_value_ref, value in point.axis_values.items()
+            },
+            result=compensate_simulation_result_port_terminations(
+                point.result,
+                resistance_ohm_by_port={
+                    int(port): float(value) for port, value in resistance_ohm_by_port.items()
+                },
+                reference_impedance_ohm=reference_impedance_ohm,
+            ),
+        )
+        for point in sweep_run.points
+    )
+    return simulation_sweep_run_to_payload(
+        SimulationSweepRun(
+            axes=tuple(sweep_run.axes),
+            points=compensated_points,
+            representative_point_index=int(sweep_run.representative_point_index),
+        )
+    )
 
 
 def _persist_simulation_result_bundle(
@@ -1176,7 +1212,11 @@ def _can_save_post_processed_results(
     flow_spec: dict[str, Any] | None,
 ) -> bool:
     """Return whether post-processed results are ready for dataset persistence."""
-    return isinstance(sweep, PortMatrixSweep) and isinstance(flow_spec, dict)
+    return (
+        isinstance(sweep, PortMatrixSweep)
+        and isinstance(flow_spec, dict)
+        and str(flow_spec.get("run_kind", "single_result")) != "parameter_sweep"
+    )
 
 
 def _build_post_processed_result_payload(
@@ -1743,11 +1783,13 @@ def _render_post_processing_panel(
     ptc_result: SimulationResult | None = None,
     initial_input_y_source: str = "raw_y",
     on_input_y_source_change: Callable[[str], None] | None = None,
+    resolve_input_bundle: Callable[[str, float], tuple[SimulationResult, dict[str, Any] | None]]
+    | None = None,
     circuit_definition: CircuitDefinition | None = None,
     schema_id: int | None = None,
     schema_name: str | None = None,
     append_status: Callable[[str, str], None] | None = None,
-    on_result: Callable[[PortMatrixSweep | None, dict[str, Any] | None], None] | None = None,
+    on_result: Callable[[PostProcessingRunResult | None], None] | None = None,
 ) -> None:
     """Render one dynamic card-list style Port-Level post-processing pipeline."""
 
@@ -1755,12 +1797,9 @@ def _render_post_processing_panel(
         if append_status is not None:
             append_status("info", message)
 
-    def emit_result(
-        sweep: PortMatrixSweep | None,
-        flow_spec: dict[str, Any] | None,
-    ) -> None:
+    def emit_result(run_result: PostProcessingRunResult | None) -> None:
         if on_result is not None:
-            on_result(sweep, flow_spec)
+            on_result(run_result)
 
     input_y_source_options = {"raw_y": _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["raw_y"]}
     if isinstance(ptc_result, SimulationResult):
@@ -1771,6 +1810,13 @@ def _render_post_processing_panel(
         if source == "ptc_y" and isinstance(ptc_result, SimulationResult):
             return ptc_result
         return raw_result
+
+    def _active_input_bundle(source: str, reference_impedance_ohm: float) -> tuple[
+        SimulationResult, dict[str, Any] | None
+    ]:
+        if resolve_input_bundle is not None:
+            return resolve_input_bundle(source, reference_impedance_ohm)
+        return (_active_input_result(source), None)
 
     port_options = _result_port_options(raw_result)
     default_ports = list(port_options)
@@ -1920,7 +1966,7 @@ def _render_post_processing_panel(
         )
 
     def invalidate_processed_state() -> None:
-        emit_result(None, None)
+        emit_result(None)
 
     def _serialized_post_step(step: dict[str, Any]) -> dict[str, Any]:
         return serialize_post_processing_step(step)
@@ -2421,9 +2467,14 @@ def _render_post_processing_panel(
         try:
             input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
             input_y_source_select.value = input_source
+            active_result, active_sweep_payload = _active_input_bundle(
+                input_source,
+                float(z0_input.value or 50.0),
+            )
             run_result = execute_post_processing_pipeline(
                 PostProcessingRunRequest(
-                    result=_active_input_result(input_source),
+                    result=active_result,
+                    sweep_payload=active_sweep_payload,
                     input_source=input_source,
                     mode_filter=str(mode_filter_select.value or "base"),
                     mode_token=str(mode_select.value or ""),
@@ -2447,13 +2498,14 @@ def _render_post_processing_panel(
 
             hfss_comparable = bool(flow_spec.get("hfss_comparable"))
             hfss_not_comparable_reason = str(flow_spec.get("hfss_not_comparable_reason", ""))
-            emit_result(sweep, flow_spec)
+            emit_result(run_result)
             render_step_cards.refresh()
 
             log_info(
                 "Post Processing completed: "
                 f"mode={sweep.mode}, dim={sweep.dimension}, source={sweep.source_kind}, "
-                f"input={input_source}, hfss_comparable={hfss_comparable}."
+                f"input={input_source}, run_kind={flow_spec.get('run_kind', 'single_result')}, "
+                f"hfss_comparable={hfss_comparable}."
             )
 
             with output_container:
@@ -4307,6 +4359,59 @@ def _render_simulation_environment():
                     append_status("warning", message)
                 return raw_result
 
+        def _ptc_simulation_sweep_payload(
+            *,
+            reference_impedance_ohm: float,
+        ) -> dict[str, Any] | None:
+            raw_sweep_payload = runtime_state.latest_simulation_sweep_payload
+            if not isinstance(raw_sweep_payload, Mapping):
+                return None
+            plan = _resolved_termination_plan()
+            if not bool(plan.get("enabled", False)):
+                return None
+            try:
+                return _build_compensated_simulation_sweep_payload(
+                    raw_sweep_payload,
+                    resistance_ohm_by_port=dict(plan.get("resistance_ohm_by_port", {})),
+                    reference_impedance_ohm=reference_impedance_ohm,
+                )
+            except Exception as exc:
+                message = f"Termination compensation sweep payload skipped: {exc}"
+                if runtime_state.termination_last_warning != message:
+                    runtime_state.termination_last_warning = message
+                    append_status("warning", message)
+                return None
+
+        def _resolve_post_processing_input_bundle(
+            source: str,
+            reference_impedance_ohm: float,
+        ) -> tuple[SimulationResult, dict[str, Any] | None]:
+            raw_result = _raw_simulation_result()
+            if not isinstance(raw_result, SimulationResult):
+                raise ValueError("Simulation result is unavailable.")
+
+            canonical_sweep_payload = (
+                dict(runtime_state.latest_simulation_sweep_payload)
+                if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping)
+                else None
+            )
+            if source == "ptc_y":
+                ptc_result = _ptc_simulation_result(
+                    reference_impedance_ohm=reference_impedance_ohm,
+                )
+                if not isinstance(ptc_result, SimulationResult):
+                    raise ValueError("PTC Y is unavailable for post-processing.")
+                if canonical_sweep_payload is None:
+                    return (ptc_result, None)
+                ptc_sweep_payload = _ptc_simulation_sweep_payload(
+                    reference_impedance_ohm=reference_impedance_ohm,
+                )
+                if ptc_sweep_payload is None:
+                    raise ValueError("PTC Y sweep payload is unavailable for post-processing.")
+                return (ptc_result, ptc_sweep_payload)
+
+            return (raw_result, canonical_sweep_payload)
+
         def _render_post_processing_input_panel() -> None:
             if post_processing_container is None:
                 return
@@ -4336,6 +4441,7 @@ def _render_simulation_environment():
                             str(source),
                         )
                     ),
+                    resolve_input_bundle=_resolve_post_processing_input_bundle,
                     circuit_definition=latest_circuit_definition_ref["definition"],
                     schema_id=active_record_id,
                     schema_name=active_record.name,
@@ -4856,28 +4962,35 @@ def _render_simulation_environment():
             flow_spec = runtime_state.latest_flow_spec
             save_enabled = _can_save_post_processed_results(sweep, flow_spec)
             context_line = None
-            if save_enabled:
-                typed_sweep = sweep
-                typed_flow_spec = flow_spec
-                if not isinstance(typed_sweep, PortMatrixSweep) or not isinstance(
-                    typed_flow_spec, dict
-                ):
-                    typed_sweep = None
-                    typed_flow_spec = None
-                if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
-                    step_count = len(typed_flow_spec.get("steps", []))
-                    input_source = str(typed_flow_spec.get("input_y_source", "raw_y"))
-                    hfss_comparable = bool(typed_flow_spec.get("hfss_comparable", False))
-                    hfss_reason = str(typed_flow_spec.get("hfss_not_comparable_reason", "")).strip()
-                    hfss_token = "HFSS Comparable=Yes" if hfss_comparable else "HFSS Comparable=No"
-                    if not hfss_comparable and hfss_reason:
-                        hfss_token = f"{hfss_token} ({hfss_reason})"
-                    context_line = (
-                        f"Pipeline steps applied: {step_count} | "
-                        f"mode={SimulationResult.mode_token(typed_sweep.mode)} | "
-                        f"basis={', '.join(typed_sweep.labels)} | "
-                        f"input={input_source} | {hfss_token}"
+            typed_sweep = sweep if isinstance(sweep, PortMatrixSweep) else None
+            typed_flow_spec = flow_spec if isinstance(flow_spec, dict) else None
+            if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
+                step_count = len(typed_flow_spec.get("steps", []))
+                input_source = str(typed_flow_spec.get("input_y_source", "raw_y"))
+                hfss_comparable = bool(typed_flow_spec.get("hfss_comparable", False))
+                hfss_reason = str(typed_flow_spec.get("hfss_not_comparable_reason", "")).strip()
+                hfss_token = "HFSS Comparable=Yes" if hfss_comparable else "HFSS Comparable=No"
+                if not hfss_comparable and hfss_reason:
+                    hfss_token = f"{hfss_token} ({hfss_reason})"
+                preview_token = ""
+                if str(typed_flow_spec.get("run_kind", "single_result")) == "parameter_sweep":
+                    projection = (
+                        typed_flow_spec.get("preview_projection")
+                        if isinstance(typed_flow_spec.get("preview_projection"), Mapping)
+                        else {}
                     )
+                    point_count = int(typed_flow_spec.get("point_count", 0) or 0)
+                    point_index = int(projection.get("point_index", 0)) + 1
+                    preview_token = (
+                        f" | canonical=parameter_sweep({point_count} points) "
+                        f"| preview=representative point #{point_index}"
+                    )
+                context_line = (
+                    f"Pipeline steps applied: {step_count} | "
+                    f"mode={SimulationResult.mode_token(typed_sweep.mode)} | "
+                    f"basis={', '.join(typed_sweep.labels)} | "
+                    f"input={input_source}{preview_token} | {hfss_token}"
+                )
             _render_result_family_explorer(
                 container=post_processing_results_container,
                 view_state=post_view_state,
@@ -4894,12 +5007,15 @@ def _render_simulation_environment():
                 testid_prefix="post-result-view",
             )
 
-        def handle_post_processing_result(
-            sweep: PortMatrixSweep | None,
-            flow_spec: dict[str, Any] | None,
-        ) -> None:
-            runtime_state.latest_sweep = sweep
-            runtime_state.latest_flow_spec = flow_spec
+        def handle_post_processing_result(run_result: PostProcessingRunResult | None) -> None:
+            if isinstance(run_result, PostProcessingRunResult):
+                runtime_state.latest_post_processing_runtime = run_result.runtime_output
+                runtime_state.latest_sweep = run_result.preview_sweep
+                runtime_state.latest_flow_spec = run_result.flow_spec
+            else:
+                runtime_state.latest_post_processing_runtime = None
+                runtime_state.latest_sweep = None
+                runtime_state.latest_flow_spec = None
             _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
             render_post_processed_result_view()
 
@@ -5665,7 +5781,7 @@ def _render_simulation_environment():
                         return
                     if not isinstance(runtime_state.latest_simulation_result, SimulationResult):
                         return
-                    handle_post_processing_result(None, None)
+                    handle_post_processing_result(None)
                     render_simulation_result_view()
                     _render_post_processing_input_panel()
                     render_post_processed_result_view()
@@ -6528,7 +6644,7 @@ def _render_simulation_environment():
                         runtime_state.latest_simulation_setup_hash = None
                         runtime_state.latest_sweep_setup_hash = None
                         runtime_state.latest_simulation_sweep_payload = None
-                        handle_post_processing_result(None, None)
+                        handle_post_processing_result(None)
                         simulation_results_container.clear()
                         if simulation_sweep_results_container is not None:
                             simulation_sweep_results_container.clear()
@@ -6950,7 +7066,7 @@ def _render_simulation_environment():
                         runtime_state.latest_simulation_setup_hash = last_simulation_setup_hash
                         runtime_state.latest_sweep_setup_hash = last_sweep_setup_hash
                         render_simulation_result_view()
-                        handle_post_processing_result(None, None)
+                        handle_post_processing_result(None)
                         _render_post_processing_input_panel()
                         render_post_processed_result_view()
 
@@ -6973,7 +7089,7 @@ def _render_simulation_environment():
                         runtime_state.latest_simulation_setup_hash = None
                         runtime_state.latest_sweep_setup_hash = None
                         runtime_state.latest_simulation_sweep_payload = None
-                        handle_post_processing_result(None, None)
+                        handle_post_processing_result(None)
                         simulation_results_container.clear()
                         if simulation_sweep_results_container is not None:
                             simulation_sweep_results_container.clear()

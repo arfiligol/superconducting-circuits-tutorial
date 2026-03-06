@@ -51,6 +51,7 @@ class SimulationRuntimeState:
 
     status_history: list[dict[str, str]] = field(default_factory=list)
     latest_sweep: Any | None = None
+    latest_post_processing_runtime: Any | None = None
     latest_flow_spec: dict[str, Any] | None = None
     latest_circuit_record: Any | None = None
     latest_source_simulation_bundle_id: int | None = None
