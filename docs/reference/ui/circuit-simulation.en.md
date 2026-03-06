@@ -537,23 +537,16 @@ Recommended model:
 - `config_snapshot` stores flow spec (mode filter, A, keep/drop, step order)
 - bundle must attach output `DataRecord` rows (at least `y_params` with `real/imaginary`)
 
-### Post Processing over Parameter Sweep (Current vs Target)
+### Post Processing over Parameter Sweep (Current Contract)
 
-!!! note "Current behavior (2026-03-07)"
-    The current `Post Processing Results` contract is still written around one latest post-processing output node.
-    If the input simulation bundle is `parameter_sweep`, the docs guarantee only that:
-    - raw sweep authority stays in the source `circuit_simulation.result_payload`
-    - post-processing remains a separate node and must not overwrite the raw simulation node
-    - full post-processed sweep persistence is not yet documented as a completed capability
-
-!!! important "Target contract"
+!!! important "Current contract (2026-03-07)"
     If `simulation_postprocess` consumes a parameter sweep:
     1. the canonical SoT must be a full post-processed sweep bundle payload, not the representative point
     2. `representative_point_index` is quick-inspect projection only
     3. `Post Processing Results` may start from representative-point or slice views, but those views must not be treated as the full sweep authority
     4. raw simulation and post-processed sweep must stay as two separate provenance nodes
 
-### Minimum Persistence Contract for Post-Processed Sweep (Target)
+### Minimum Persistence Contract for Post-Processed Sweep (Current)
 
 When `bundle_type=simulation_postprocess` is saved from a `run_kind=parameter_sweep` source bundle, persistence must include at least:
 
@@ -570,6 +563,17 @@ When `bundle_type=simulation_postprocess` is saved from a `run_kind=parameter_sw
 !!! warning "Do not collapse to one point"
     If only one representative-point output is saved and sweep axes / point metadata are dropped,
     the bundle must not claim to be the full post-processed sweep authority.
+
+!!! important "Post-processed sweep save semantics"
+    When the source is a sweep run, `Save Post-Processed Results` currently guarantees
+    provenance, replayability, and explorer-readable projections.
+    The action itself does not promise that every post-processed sweep point is written
+    to durable storage as a fully materialized processed-value snapshot.
+
+!!! note "Future full snapshot is additive"
+    If a self-contained snapshot/export artifact is later required, it should be approved
+    as an additive contract or subtype rather than documented as implicit behavior of the
+    current save action.
 
 ### HFSS Comparable semantic marker
 

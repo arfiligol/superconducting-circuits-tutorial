@@ -479,23 +479,16 @@ UI 必須在 `Run Post Processing` 成功後提供 `Save Post-Processed Results`
 - `config_snapshot` 記錄 flow spec（mode filter、A、keep/drop、step 順序）
 - bundle 需綁定本次後處理輸出的 `DataRecord`（至少 `y_params` 的 `real/imaginary`）
 
-### Parameter Sweep 輸入下的 Post Processing（Current vs Target）
+### Parameter Sweep 輸入下的 Post Processing（Current Contract）
 
-!!! note "Current behavior（2026-03-07）"
-    目前 `Post Processing Results` 的互動與保存契約是以「最新一次 post-processing output node」為主。
-    若輸入 simulation bundle 是 `parameter_sweep`，現有文件只保證：
-    - raw sweep 的 canonical authority 仍在來源 `circuit_simulation.result_payload`
-    - post-processing 仍是另一個節點，不可覆寫 raw simulation node
-    - 尚未把「完整 post-processed sweep payload 如何保存」寫成已完成能力
-
-!!! important "Target contract"
+!!! important "Current contract（2026-03-07）"
     若 `simulation_postprocess` 的輸入是 parameter sweep：
     1. canonical source of truth 仍必須是完整 post-processed sweep bundle payload，而不是代表點
     2. `representative_point_index` 只能作 `Post Processing Results` 的 quick-inspect projection
     3. `Post Processing Results` 可以先顯示代表點/切片，但不得把該投影誤寫為整個後處理 sweep 的 authority
     4. raw simulation bundle 與 post-processed sweep bundle 必須維持兩個不同節點，各自保存 provenance
 
-### Post-Processed Sweep 保存最低契約（Target）
+### Post-Processed Sweep 保存最低契約（Current）
 
 當 `bundle_type=simulation_postprocess` 且來源 simulation bundle 為 `run_kind=parameter_sweep`，保存結果至少需包含：
 
@@ -511,6 +504,16 @@ UI 必須在 `Run Post Processing` 成功後提供 `Save Post-Processed Results`
 
 !!! warning "不可偷換成單點輸出"
     若只保存代表點輸出而遺失 sweep 軸與 point metadata，該 bundle 不得宣稱自己是完整的 post-processed sweep authority。
+
+!!! important "Post-Processed Sweep Save 語意"
+    若來源是 sweep run，`Save Post-Processed Results` 目前保證的是 provenance、
+    replayability 與 explorer 可讀的 projection。
+    此動作本身不承諾每個 post-processed sweep 點都已作為 fully materialized
+    processed-value snapshot 寫入 durable storage。
+
+!!! note "Future full snapshot is additive"
+    若未來需要 self-contained snapshot/export artifact，應以新增契約或 subtype
+    另行批准；不要把目前的 save 動作文件化成「一定落盤所有 processed points」。
 
 ### HFSS Comparable 語意標記
 

@@ -176,11 +176,7 @@ DatasetRecord (集合)
     `hfss_comparable` 只描述 post-processed 輸出是否符合 HFSS 比對前提，
     不代表 Raw Result View 的 `S` 已被改寫或替換。
 
-!!! note "Current behavior（2026-03-07）"
-    現有契約已定義 post-processing 的 flow provenance 與輸出 traces，
-    但尚未把「parameter sweep 輸入下的完整 post-processed sweep payload」寫成已完成能力。
-
-### Simulation Post-Process over Sweep（Target）
+### Simulation Post-Process over Sweep（Current Contract）
 
 若 `simulation_postprocess` 的來源 simulation bundle 為 `run_kind=parameter_sweep`，最低契約應包含：
 
@@ -201,6 +197,17 @@ DatasetRecord (集合)
 !!! important "Representative point is projection only"
     `representative_point_index` 只能作 quick-inspect projection。
     若缺少完整 `sweep_axes` / `points[]` / point metadata，就不能宣稱此 bundle 是完整的 post-processed sweep authority。
+
+!!! important "Post-Processed Sweep Save Contract"
+    當 post-processing 來源是 sweep run 時，既有保存契約的最低保證是
+    canonical provenance、flow/config snapshot 與 replay handles。
+    這不自動代表每個 post-processed sweep 點的 fully materialized values
+    已 durable 地保存於 bundle payload。
+
+!!! note "Snapshot artifact requires separate approval"
+    若未來產品需要 self-contained frozen snapshot/export artifact，
+    應以 additive contract 另行批准；不得直接把既有
+    `simulation_postprocess` bundles 重新解讀為 full snapshot。
 
 ### Simulation Sweep provenance（新增）
 

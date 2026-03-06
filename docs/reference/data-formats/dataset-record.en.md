@@ -164,11 +164,7 @@ When `bundle_type=simulation_postprocess`, `config_snapshot` should include:
     `hfss_comparable` describes only whether the post-processed output satisfies
     HFSS-comparison preconditions. It does not mean Raw Result View `S` is rewritten.
 
-!!! note "Current behavior (2026-03-07)"
-    The current contract defines post-processing flow provenance and output traces,
-    but it does not yet document full post-processed sweep payload preservation as a completed capability.
-
-### Simulation Post-Process over Sweep (Target)
+### Simulation Post-Process over Sweep (Current Contract)
 
 If a `simulation_postprocess` bundle is derived from a source simulation bundle with `run_kind=parameter_sweep`,
 the minimum contract should include:
@@ -190,6 +186,17 @@ the minimum contract should include:
 !!! important "Representative point is projection only"
     `representative_point_index` is quick-inspect projection only.
     Without full `sweep_axes` / `points[]` / point metadata, the bundle must not claim to be the complete post-processed sweep authority.
+
+!!! important "Post-processed sweep save contract"
+    When post-processing is derived from a sweep run, the minimum save guarantee is
+    canonical provenance, flow/config snapshot, and replay handles.
+    That does not automatically mean every post-processed sweep point is durably stored
+    as fully materialized values inside the bundle payload.
+
+!!! note "Snapshot artifact requires separate approval"
+    If product requirements later need a self-contained frozen snapshot/export artifact,
+    it should be introduced through an additive contract decision rather than by
+    reinterpreting existing `simulation_postprocess` bundles as full snapshots.
 
 ### Simulation sweep provenance (new)
 
