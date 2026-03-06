@@ -30,6 +30,20 @@ def app_shell(content_builder):
         def content_area():
             content_builder(*args, **kwargs)
 
+        def _safe_refresh_content_area() -> None:
+            """Refresh content area only when the current client is still alive."""
+            try:
+                client = ui.context.client
+            except RuntimeError:
+                return
+            if client is None or client.disconnected or not client.has_socket_connection:
+                return
+            try:
+                content_area.refresh()
+            except RuntimeError:
+                # Ignore stale refresh attempts from deleted clients.
+                return
+
         # Dataset Context Selector
         from core.shared.persistence import get_unit_of_work
 
@@ -42,7 +56,7 @@ def app_shell(content_builder):
                 return {}
 
         def on_dataset_change(_):
-            content_area.refresh()
+            _safe_refresh_content_area()
 
         def build_dataset_selector(extra_classes: str = ""):
             selector = ui.select(
