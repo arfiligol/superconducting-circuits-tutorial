@@ -13,6 +13,7 @@ from app.pages.simulation import (
     _Z0_CONTROL_PROPS,
     _build_post_processed_bundle_artifacts,
     _build_post_processed_result_payload,
+    _build_post_processed_sweep_explorer_payload,
     _build_post_processed_y_data_records,
     _build_result_bundle_data_records,
     _build_s_parameter_data_records,
@@ -49,7 +50,11 @@ from app.services.simulation_setup_manager import (
     rename_setup,
     save_setup_as,
 )
-from core.simulation.application.post_processing import PortMatrixSweep
+from core.simulation.application.post_processing import (
+    PortMatrixSweep,
+    PortMatrixSweepPoint,
+    PortMatrixSweepRun,
+)
 from core.simulation.application.run_simulation import (
     SimulationSweepAxis,
     SimulationSweepPointResult,
@@ -100,6 +105,41 @@ def _sample_result() -> SimulationResult:
         qe_parameter_mode={"om=1|op=2|im=0|ip=1": [0.8, 0.82, 0.84]},
         qe_ideal_parameter_mode={"om=1|op=2|im=0|ip=1": [0.9, 0.91, 0.92]},
         cm_parameter_mode={"om=1|op=2": [1.0, 1.0, 1.0]},
+    )
+
+
+def _sample_post_processed_sweep_run() -> PortMatrixSweepRun:
+    first_matrix = np.asarray(((1.0 + 0.0j, 0.0 + 0.0j), (0.0 + 0.0j, 2.0 + 0.0j)))
+    second_matrix = np.asarray(((3.0 + 0.0j, 0.0 + 0.0j), (0.0 + 0.0j, 4.0 + 0.0j)))
+    return PortMatrixSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+        points=(
+            PortMatrixSweepPoint(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"Lj": 900.0},
+                sweep=PortMatrixSweep(
+                    mode=(0,),
+                    labels=("1", "2"),
+                    frequencies_ghz=(5.0, 5.2),
+                    y_matrices=(first_matrix, first_matrix.copy()),
+                    source_kind="y",
+                ),
+            ),
+            PortMatrixSweepPoint(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1100.0},
+                sweep=PortMatrixSweep(
+                    mode=(0,),
+                    labels=("1", "2"),
+                    frequencies_ghz=(5.0, 5.2),
+                    y_matrices=(second_matrix, second_matrix.copy()),
+                    source_kind="y",
+                ),
+            ),
+        ),
+        representative_point_index=0,
     )
 
 
@@ -738,6 +778,49 @@ def test_post_processed_result_figure_y_axis_title_updates_across_y_z_y_switches
     assert fig_z.layout.yaxis.title.text == "Imaginary (Ohm)"
     assert fig_y_second.layout.title.text == "Y11 [om=(1,), im=(1,)] Imaginary Part"
     assert fig_y_second.layout.yaxis.title.text == "Imaginary (S)"
+
+
+def test_build_post_processed_sweep_explorer_payload_preserves_canonical_points() -> None:
+    payload = _build_post_processed_sweep_explorer_payload(
+        _sample_post_processed_sweep_run(),
+        reference_impedance_ohm=50.0,
+    )
+    sweep_run = simulation_sweep_run_from_payload(payload)
+
+    assert payload["run_kind"] == "parameter_sweep"
+    assert payload["point_count"] == 2
+    assert payload["representative_point_index"] == 0
+    assert sweep_run.points[1].axis_values == {"Lj": 1100.0}
+    second_trace = sweep_run.points[1].result.get_mode_y_parameter_complex((0,), 1, (0,), 1)
+    assert second_trace[0].real == pytest.approx(3.0)
+
+
+def test_post_processed_sweep_metric_rows_can_render_non_representative_point() -> None:
+    payload = _build_post_processed_sweep_explorer_payload(
+        _sample_post_processed_sweep_run(),
+        reference_impedance_ohm=50.0,
+    )
+
+    rendered = _build_sweep_metric_rows(
+        sweep_payload=payload,
+        family="admittance",
+        metric="real",
+        trace_selection={
+            "trace": "admittance",
+            "output_mode": (0,),
+            "output_port": 1,
+            "input_mode": (0,),
+            "input_port": 1,
+        },
+        z0=50.0,
+        frequency_index=0,
+        dark_mode=True,
+    )
+
+    assert rendered["point_count"] == 2
+    assert rendered["rows"][0]["metric_values"]["trace_1"] == pytest.approx(1.0)
+    assert rendered["rows"][1]["metric_values"]["trace_1"] == pytest.approx(3.0)
+    assert rendered["rows"][1]["axis_value"] == pytest.approx(1100.0)
 
 
 def test_hash_stable_json_is_order_independent() -> None:

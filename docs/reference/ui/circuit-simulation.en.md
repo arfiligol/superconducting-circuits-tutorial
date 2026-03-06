@@ -643,6 +643,28 @@ Full nodal internal-node elimination (steps 1/2 UI flow) is explicitly out of M1
 - after successful run: use the same Result Family Explorer interaction pattern as `Simulation Results` (family/metric/trace cards/shared plot)
 - after pipeline-step parameter changes: invalidate previous output and require rerun
 
+### Post-Processed Sweep Result View Contract
+
+When the canonical `Post Processing Results` output is `run_kind=parameter_sweep`, the UI must provide a full sweep explorer in addition to the representative quick preview:
+
+- the section header must clearly distinguish:
+  - canonical full sweep payload
+  - UI preview / projection (for example representative-point quick preview)
+- minimum `selectors`:
+  - `View Axis`
+  - remaining `Fixed Axis` selectors
+  - `family`
+  - `metric`
+  - `Add Trace` and multiple trace cards
+  - `Output Port` / `Input Port`
+  - `Output Mode` / `Input Mode`
+  - `Frequency`
+- minimum `outputs`:
+  - `Table`: per-point `axis value` + `point index` + per-trace metric columns for the active slice
+  - `Plot`: `metric vs view axis` for the active slice, with multi-trace overlay
+- the representative point must never be promoted back to authority; preview remains a quick-inspect projection only
+- if save/persistence does not yet support canonical post-processed full sweep output, the UI must state that limitation explicitly and must not present the preview as canonical export
+
 !!! note "Processed S source"
     `Post Processing Results` `S` must be converted from post-processed `Y/Z`,
     not produced by direct S-domain transformation.
