@@ -6859,13 +6859,15 @@ def _render_simulation_environment():
                                 sweep_result_payload = simulation_sweep_run_to_payload(sweep_run)
 
                             try:
+                                cache_dataset_id: int | None = None
                                 with get_unit_of_work() as uow:
                                     cache_dataset = _ensure_simulation_cache_dataset(uow)
                                     if cache_dataset.id is None:
                                         raise ValueError("Failed to allocate cache dataset id.")
+                                    cache_dataset_id = int(cache_dataset.id)
                                     cache_bundle_id = _persist_simulation_result_bundle(
                                         uow=uow,
-                                        dataset_id=cache_dataset.id,
+                                        dataset_id=cache_dataset_id,
                                         result=result,
                                         role="cache",
                                         source_meta={
@@ -6886,7 +6888,7 @@ def _render_simulation_environment():
                                 runtime_state.set_log_context(
                                     run_id=simulation_run_id,
                                     circuit_id=latest_record.id,
-                                    dataset_id=cache_dataset.id,
+                                    dataset_id=cache_dataset_id,
                                     bundle_id=cache_bundle_id,
                                 )
                                 append_status(
