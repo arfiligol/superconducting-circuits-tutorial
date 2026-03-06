@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: Dataset-centric 資料儲存心智模型與跨頁面資料流
-version: v0.1.0
-last_updated: 2026-03-06
+version: v0.2.0
+last_updated: 2026-03-07
 updated_by: codex
 ---
 
@@ -70,6 +70,14 @@ flowchart TB
 - 描述每次運行如何產生結果（設定、來源、scope、狀態）
 - sweep / post-process / characterization 都屬於 bundle contract 的一部分
 
+!!! important "Sweep authority stays in bundle payload"
+    parameter sweep 的 canonical source of truth 應保留在 bundle payload。
+    UI 顯示用的 representative point 只是 quick-inspect projection，不是唯一 authority。
+
+!!! note "Post-processed sweep is a different node"
+    若 post-processing 作用在 raw sweep 上，產生的是另一個 `simulation_postprocess` bundle。
+    它必須保留自己的 provenance 與 sweep metadata，不能覆寫 raw simulation sweep 的 authority。
+
 ### 4) Derived layer（physics）
 
 - 保存萃取結果（例如 resonance、Q、擬合參數）
@@ -109,6 +117,9 @@ flowchart LR
 
 3. 「DerivedParameter 可以當作下一輪 raw trace 輸入」  
 預設不行，除非某分析明確宣告這個契約。
+
+4. 「representative point 就是整個 sweep 的正式保存內容」
+不是。representative point 只能幫 UI 快速檢視；完整 sweep authority 仍應保留在 bundle payload。
 
 ## Related
 

@@ -8,8 +8,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema definition and usage"
-version: v1.4.0
-last_updated: 2026-03-06
+version: v1.5.0
+last_updated: 2026-03-07
 updated_by: codex
 ---
 
@@ -163,6 +163,33 @@ When `bundle_type=simulation_postprocess`, `config_snapshot` should include:
 !!! important "Raw/processed semantic alignment"
     `hfss_comparable` describes only whether the post-processed output satisfies
     HFSS-comparison preconditions. It does not mean Raw Result View `S` is rewritten.
+
+!!! note "Current behavior (2026-03-07)"
+    The current contract defines post-processing flow provenance and output traces,
+    but it does not yet document full post-processed sweep payload preservation as a completed capability.
+
+### Simulation Post-Process over Sweep (Target)
+
+If a `simulation_postprocess` bundle is derived from a source simulation bundle with `run_kind=parameter_sweep`,
+the minimum contract should include:
+
+- `source_meta.source_simulation_bundle_id`
+- `source_meta.source_run_kind = "parameter_sweep"`
+- `config_snapshot.sweep_setup_hash`
+- full post-processing flow spec in `config_snapshot`
+- `result_payload.run_kind = "parameter_sweep"`
+- `result_payload.sweep_axes`
+- `result_payload.point_count`
+- `result_payload.points[]`
+  - each point includes at least `source_point_index`
+  - `axis_indices`
+  - `axis_values`
+  - the post-processed point result, or a stable handle that reconstructs that point result
+- `result_payload.representative_point_index`
+
+!!! important "Representative point is projection only"
+    `representative_point_index` is quick-inspect projection only.
+    Without full `sweep_axes` / `points[]` / point metadata, the bundle must not claim to be the complete post-processed sweep authority.
 
 ### Simulation sweep provenance (new)
 

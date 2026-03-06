@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization 的 Source Scope、Run Analysis、Trace Selection 與 Result View 契約
-version: v0.9.0
-last_updated: 2026-03-05
+version: v0.10.0
+last_updated: 2026-03-07
 updated_by: codex
 ---
 
@@ -174,6 +174,34 @@ Reason 必須可機器組合，最少包含：
 - compatibility 判定只能使用 metadata index（不得讀取 payload）
 - `data_type` alias 必須一致正規化（例如：`y_params` ↔ `y_parameters`、`s_params` ↔ `s_parameters`）
 
+## Parameter Sweep Support Boundary（Current vs Target）
+
+!!! note "Current behavior（2026-03-07）"
+    `/characterization` 目前仍是 trace-first、dataset-centric。
+    它處理的是「可選取的 `DataRecord` traces」，不是直接把 raw/post-processed sweep bundle 當 primary input object。
+
+目前支援邊界如下：
+
+- `Supported`：
+  `admittance_zero_crossing`、`squid_fitting`、`y11_fit` 這類已定義的 analysis，
+  在 sweep dataset 已 materialize 成可相容 `DataRecord` traces、且使用者明確選到那些 traces 時，可以照既有 trace-first 契約執行。
+- `Partial support`：
+  這些 analysis 可以跑在 sweep-origin traces 上，但目前沒有正式 sweep-native UI 契約來保證：
+  軸切片 selector、N-D sweep summary artifact、或直接從 canonical bundle payload 做跨點瀏覽。
+- `Blocked`：
+  直接把 `ResultBundleRecord(bundle_type=circuit_simulation|simulation_postprocess, run_kind=parameter_sweep)` 當 `/characterization` 的主要輸入物件、
+  或要求 analysis 直接遍歷完整 canonical sweep payload，而不經 trace selection，現在都不在契約內。
+
+!!! important "Target contract"
+    之後若擴充 Characterization 對 sweep 的支援，仍必須保留：
+    - trace-first authority 是 run gate
+    - `dataset_profile` 只是 hint，不是 hard gate
+    - raw/post-processed sweep bundle 可作 provenance 與 reconstruction source，但不能取代 selected trace ids
+
+!!! warning "代表點不是 analysis authority"
+    若 sweep dataset 只有 representative-point projection，而沒有對應 selected traces 或 sweep-aware contract，
+    `/characterization` 不得宣稱自己支援「完整 sweep analysis」。
+
 ## Result View Contract
 
 `Result View` 採單一統一結果檢視，且支援可擴充分類：
@@ -330,6 +358,9 @@ analysis 可用性必須以「當前 scope 的 compatible traces」為準。
 - `bundle_type=characterization`
 - `role=analysis_run`
 - `config_snapshot` 應包含本次 analysis config 與 selected trace ids
+
+若輸入 traces 來自 sweep dataset，`config_snapshot` 還應保留足以回推 sweep slice 的資訊
+（例如選到的 trace ids、trace mode group，以及 trace 自身攜帶的 sweep axes metadata）。
 
 ## Admittance Output Replacement Rule
 

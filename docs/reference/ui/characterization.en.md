@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /characterization contract for Source Scope, Run Analysis, trace selection, and unified Result View
-version: v0.9.0
-last_updated: 2026-03-05
+version: v0.10.0
+last_updated: 2026-03-07
 updated_by: codex
 ---
 
@@ -178,6 +178,35 @@ Before each run, users must be able to choose which traces will be analyzed.
 - compatibility evaluation must use metadata index only (payload must not be loaded)
 - `data_type` aliases must be normalized consistently (`y_params` ↔ `y_parameters`, `s_params` ↔ `s_parameters`)
 
+## Parameter Sweep Support Boundary (Current vs Target)
+
+!!! note "Current behavior (2026-03-07)"
+    `/characterization` is still trace-first and dataset-centric.
+    It operates on selectable `DataRecord` traces, not on raw/post-processed sweep bundles as the primary input object.
+
+Current support boundary:
+
+- `Supported`:
+  documented analyses such as `admittance_zero_crossing`, `squid_fitting`, and `y11_fit`
+  may run when sweep-origin data has already been materialized into compatible selectable `DataRecord` traces.
+- `Partial support`:
+  those analyses may run on sweep-origin traces, but there is no formal sweep-native UI contract yet for
+  axis-slice selectors, N-D sweep summary artifacts, or direct cross-point browsing from canonical bundle payloads.
+- `Blocked`:
+  using `ResultBundleRecord(bundle_type=circuit_simulation|simulation_postprocess, run_kind=parameter_sweep)`
+  as the primary `/characterization` input object, or requiring analyses to traverse canonical sweep payloads
+  without trace selection, is not contracted today.
+
+!!! important "Target contract"
+    Any future sweep support in Characterization must still preserve:
+    - trace-first authority as the run gate
+    - `dataset_profile` as hint only, never as hard gate
+    - raw/post-processed sweep bundles as provenance and reconstruction sources, not replacements for selected trace ids
+
+!!! warning "Representative point is not analysis authority"
+    If a sweep dataset exposes only a representative-point projection and no selected traces or sweep-aware contract,
+    `/characterization` must not claim full sweep-analysis support.
+
 ## Result View Contract
 
 `Result View` should be a unified and extensible surface:
@@ -334,6 +363,9 @@ Each completed run must create a new `ResultBundleRecord`:
 - `bundle_type=characterization`
 - `role=analysis_run`
 - `config_snapshot` includes analysis config and selected trace ids
+
+When selected traces come from a sweep dataset, `config_snapshot` should also preserve enough information to reconstruct the chosen sweep slice
+(for example selected trace ids, selected trace mode group, and the sweep-axis metadata carried by those traces).
 
 ## Admittance Output Replacement Rule
 

@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.13.0
-last_updated: 2026-03-06
+version: v0.14.0
+last_updated: 2026-03-07
 updated_by: codex
 ---
 
@@ -217,6 +217,10 @@ After a successful sweep run, bundle `result_payload` must include:
 - `representative_point_index` (for Result View quick inspect)
 
 When exporting to `DataRecord`, sweep-axis metadata must be explicit in `axes` so sweep traces remain distinguishable from single-run traces.
+
+!!! important "Current vs Target (2026-03-07)"
+    - `Current`: the canonical raw parameter-sweep authority is already the full `circuit_simulation` bundle `result_payload`.
+    - `Target`: `representative_point_index` is quick-inspect projection only and must never replace the full sweep payload as SoT.
 
 ### Sweep Result View Contract (inside Simulation Results)
 
@@ -533,6 +537,40 @@ Recommended model:
 - `config_snapshot` stores flow spec (mode filter, A, keep/drop, step order)
 - bundle must attach output `DataRecord` rows (at least `y_params` with `real/imaginary`)
 
+### Post Processing over Parameter Sweep (Current vs Target)
+
+!!! note "Current behavior (2026-03-07)"
+    The current `Post Processing Results` contract is still written around one latest post-processing output node.
+    If the input simulation bundle is `parameter_sweep`, the docs guarantee only that:
+    - raw sweep authority stays in the source `circuit_simulation.result_payload`
+    - post-processing remains a separate node and must not overwrite the raw simulation node
+    - full post-processed sweep persistence is not yet documented as a completed capability
+
+!!! important "Target contract"
+    If `simulation_postprocess` consumes a parameter sweep:
+    1. the canonical SoT must be a full post-processed sweep bundle payload, not the representative point
+    2. `representative_point_index` is quick-inspect projection only
+    3. `Post Processing Results` may start from representative-point or slice views, but those views must not be treated as the full sweep authority
+    4. raw simulation and post-processed sweep must stay as two separate provenance nodes
+
+### Minimum Persistence Contract for Post-Processed Sweep (Target)
+
+When `bundle_type=simulation_postprocess` is saved from a `run_kind=parameter_sweep` source bundle, persistence must include at least:
+
+- `source_meta.source_simulation_bundle_id`
+- `source_meta.source_run_kind = "parameter_sweep"`
+- `config_snapshot.input_y_source`
+- full post-processing flow spec in `config_snapshot`
+- `config_snapshot.sweep_setup_hash` (matching the source sweep)
+- `result_payload.sweep_axes`
+- `result_payload.point_count`
+- `result_payload.points[]` (each point includes at least `source_point_index`, `axis_indices`, `axis_values`, and the post-processed point result or a stable handle to reconstruct it)
+- `result_payload.representative_point_index`
+
+!!! warning "Do not collapse to one point"
+    If only one representative-point output is saved and sweep axes / point metadata are dropped,
+    the bundle must not claim to be the full post-processed sweep authority.
+
 ### HFSS Comparable semantic marker
 
 `Post Processing Results` must expose an `HFSS Comparable` state marker (badge/label).
@@ -617,6 +655,7 @@ Full nodal internal-node elimination (steps 1/2 UI flow) is explicitly out of M1
 
 - simulation raw result cache/bundle (with raw `S/Y/Z` families)
 - optional post-processed output node (readable by result-family explorer)
+- optional post-processed sweep bundle (when input is a raw sweep, full sweep payload must remain canonical)
 - traceable logs (cache hit/miss, solver run, post-processing run)
 
 ### Invariants

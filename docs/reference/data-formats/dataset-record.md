@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "DatasetRecord SQLite Schema 詳細定義與使用規範"
-version: v1.4.0
-last_updated: 2026-03-06
+version: v1.5.0
+last_updated: 2026-03-07
 updated_by: codex
 ---
 
@@ -175,6 +175,32 @@ DatasetRecord (集合)
 !!! important "Raw/Processed 語意對齊"
     `hfss_comparable` 只描述 post-processed 輸出是否符合 HFSS 比對前提，
     不代表 Raw Result View 的 `S` 已被改寫或替換。
+
+!!! note "Current behavior（2026-03-07）"
+    現有契約已定義 post-processing 的 flow provenance 與輸出 traces，
+    但尚未把「parameter sweep 輸入下的完整 post-processed sweep payload」寫成已完成能力。
+
+### Simulation Post-Process over Sweep（Target）
+
+若 `simulation_postprocess` 的來源 simulation bundle 為 `run_kind=parameter_sweep`，最低契約應包含：
+
+- `source_meta.source_simulation_bundle_id`
+- `source_meta.source_run_kind = "parameter_sweep"`
+- `config_snapshot.sweep_setup_hash`
+- `config_snapshot` 的完整 post-processing flow spec
+- `result_payload.run_kind = "parameter_sweep"`
+- `result_payload.sweep_axes`
+- `result_payload.point_count`
+- `result_payload.points[]`
+  - 每點至少含 `source_point_index`
+  - `axis_indices`
+  - `axis_values`
+  - 該點 post-processed result 或可穩定回推該點結果的 handle
+- `result_payload.representative_point_index`
+
+!!! important "Representative point is projection only"
+    `representative_point_index` 只能作 quick-inspect projection。
+    若缺少完整 `sweep_axes` / `points[]` / point metadata，就不能宣稱此 bundle 是完整的 post-processed sweep authority。
 
 ### Simulation Sweep provenance（新增）
 
