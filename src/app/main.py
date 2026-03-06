@@ -24,6 +24,14 @@ styles_dir = Path(__file__).parent / "styles"
 ui_app.add_static_files("/styles", str(styles_dir))
 
 
+def _env_flag(name: str, *, default: bool) -> bool:
+    """Parse one boolean environment flag with a safe default."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def start():
     """Launch the NiceGUI application."""
     # NiceGUI reload mode expects execution as a module/script (__main__/__mp_main__).
@@ -52,12 +60,16 @@ def start():
     # - dark=True: Default to dark mode
     # - show=True: Open browser automatically
     # - port=8080: Standard dev port
+    # - reload=False by default to avoid unexpected refresh during long simulations
+    #   (set SC_APP_RELOAD=1 for development hot reload)
     ui.run(
         title="SC Tutorial App",
         port=int(os.getenv("SC_APP_PORT", "8080")),
         dark=True,
         show=False,  # Wait until everything loads cleanly, user can click or we can show later
-        reload=True,
+        reload=_env_flag("SC_APP_RELOAD", default=False),
+        reconnect_timeout=float(os.getenv("SC_APP_RECONNECT_TIMEOUT", "30.0")),
+        message_history_length=int(os.getenv("SC_APP_MESSAGE_HISTORY_LENGTH", "5000")),
         storage_secret="SC_DATA_BROWSER_SECRET",
     )
 

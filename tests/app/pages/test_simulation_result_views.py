@@ -40,6 +40,8 @@ from app.pages.simulation import (
     _save_saved_post_process_setups_for_schema,
     _save_saved_setups_for_schema,
     _save_selected_post_process_setup_id,
+    _should_log_sweep_point_progress,
+    _sweep_progress_log_step,
 )
 from app.services.simulation_setup_manager import (
     delete_setup,
@@ -228,6 +230,20 @@ def test_build_simulation_result_figure_builds_complex_plane_view() -> None:
     assert figure.layout.xaxis.title.text == "Real"
     assert figure.layout.yaxis.title.text == "Imaginary"
     assert len(figure.data) == 1
+
+
+def test_sweep_progress_log_step_scales_with_point_count() -> None:
+    assert _sweep_progress_log_step(1) == 1
+    assert _sweep_progress_log_step(40) == 1
+    assert _sweep_progress_log_step(400) == 10
+
+
+def test_should_log_sweep_point_progress_logs_first_last_and_interval() -> None:
+    step = _sweep_progress_log_step(100)
+    assert _should_log_sweep_point_progress(point_index=0, point_count=100, step=step) is True
+    assert _should_log_sweep_point_progress(point_index=99, point_count=100, step=step) is True
+    assert _should_log_sweep_point_progress(point_index=9, point_count=100, step=step) is True
+    assert _should_log_sweep_point_progress(point_index=10, point_count=100, step=step) is False
 
 
 def test_build_simulation_result_figure_builds_selected_s_parameter_view() -> None:

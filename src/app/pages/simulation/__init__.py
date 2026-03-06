@@ -196,6 +196,7 @@ _SIMULATION_HEARTBEAT_SECONDS = 5.0
 _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
 _SWEEP_MAX_AXIS_COUNT = 4
 _SWEEP_MAX_CARTESIAN_POINTS = 625
+_SWEEP_PROGRESS_MAX_LOG_LINES = 40
 _SWEEP_MODE_OPTIONS = {
     "cartesian": "Cartesian",
     "paired": "Paired (reserved)",
@@ -3312,6 +3313,24 @@ def _build_result_bundle_data_records(
 def _format_sweep_value_token(value: float) -> str:
     """Format one sweep coordinate value into a compact stable token."""
     return f"{float(value):.10g}"
+
+
+def _sweep_progress_log_step(point_count: int) -> int:
+    """Return one stable progress log interval for long sweep runs."""
+    normalized_points = max(1, int(point_count))
+    if normalized_points <= _SWEEP_PROGRESS_MAX_LOG_LINES:
+        return 1
+    return max(1, normalized_points // _SWEEP_PROGRESS_MAX_LOG_LINES)
+
+
+def _should_log_sweep_point_progress(*, point_index: int, point_count: int, step: int) -> bool:
+    """Decide whether to emit one per-point progress status line."""
+    if point_count <= 1:
+        return True
+    point_no = int(point_index) + 1
+    if point_no <= 1 or point_no >= int(point_count):
+        return True
+    return point_no % max(1, int(step)) == 0
 
 
 def _format_sweep_parameter_suffix(
@@ -6761,23 +6780,45 @@ def _render_simulation_environment():
                                 )
                             else:
                                 point_results = []
+                                sweep_progress_log_step = _sweep_progress_log_step(
+                                    sweep_plan.point_count
+                                )
                                 for point in sweep_plan.points:
                                     point_no = int(point.point_index) + 1
-                                    point_tokens = ", ".join(
-                                        (
-                                            f"{target}={_format_sweep_value_token(value)}"
-                                            for target, value in sorted(
-                                                point.value_ref_overrides.items()
-                                            )
+                                    if _should_log_sweep_point_progress(
+                                        point_index=point.point_index,
+                                        point_count=sweep_plan.point_count,
+                                        step=sweep_progress_log_step,
+                                    ):
+                                        progress_pct = round(
+                                            (point_no / sweep_plan.point_count) * 100.0
                                         )
-                                    )
-                                    append_status(
-                                        "info",
-                                        (
-                                            f"Sweep point {point_no}/{sweep_plan.point_count}: "
-                                            f"{point_tokens}."
-                                        ),
-                                    )
+                                        if point_no in {1, sweep_plan.point_count}:
+                                            point_tokens = ", ".join(
+                                                (
+                                                    f"{target}={_format_sweep_value_token(value)}"
+                                                    for target, value in sorted(
+                                                        point.value_ref_overrides.items()
+                                                    )
+                                                )
+                                            )
+                                            append_status(
+                                                "info",
+                                                (
+                                                    "Sweep point "
+                                                    f"{point_no}/{sweep_plan.point_count} "
+                                                    f"({progress_pct}%): {point_tokens}."
+                                                ),
+                                            )
+                                        else:
+                                            append_status(
+                                                "info",
+                                                (
+                                                    "Sweep point "
+                                                    f"{point_no}/{sweep_plan.point_count} "
+                                                    f"({progress_pct}%)."
+                                                ),
+                                            )
                                     swept_circuit = apply_simulation_sweep_overrides(
                                         circuit=latest_circuit_def,
                                         value_ref_overrides=point.value_ref_overrides,
