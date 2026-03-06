@@ -189,6 +189,62 @@ def test_build_result_artifacts_for_analysis_emits_mode_vs_ljun_manifest() -> No
     assert mode_artifacts[0].artifact_id.endswith(".mode_vs_ljun")
 
 
+def test_build_result_artifacts_for_s21_ljun_sweep_emits_mode_vs_ljun_manifest() -> None:
+    params = [
+        DerivedParameter(
+            dataset_id=10,
+            device_type=DeviceType.RESONATOR,
+            name="mode_1_ghz_b0",
+            value=5.01,
+            unit="GHz",
+            method="complex_notch_fit_S21",
+            extra={"sweep_axis": "L_jun", "sweep_value": 1.1, "sweep_index": 0},
+        ),
+        DerivedParameter(
+            dataset_id=10,
+            device_type=DeviceType.RESONATOR,
+            name="L_jun_b0",
+            value=1.1,
+            unit="nH",
+            method="complex_notch_fit_S21",
+            extra={"sweep_axis": "L_jun", "sweep_value": 1.1, "sweep_index": 0},
+        ),
+        DerivedParameter(
+            dataset_id=10,
+            device_type=DeviceType.RESONATOR,
+            name="mode_1_ghz_b1",
+            value=5.12,
+            unit="GHz",
+            method="complex_notch_fit_S21",
+            extra={"sweep_axis": "L_jun", "sweep_value": 1.6, "sweep_index": 1},
+        ),
+        DerivedParameter(
+            dataset_id=10,
+            device_type=DeviceType.RESONATOR,
+            name="L_jun_b1",
+            value=1.6,
+            unit="nH",
+            method="complex_notch_fit_S21",
+            extra={"sweep_axis": "L_jun", "sweep_value": 1.6, "sweep_index": 1},
+        ),
+    ]
+
+    artifacts = build_result_artifacts_for_analysis(
+        analysis_id="s21_resonance_fit",
+        method_groups={"complex_notch_fit_S21": params},
+        build_mode_vs_ljun_dataframe=_build_mode_vs_ljun_dataframe,
+        build_resonator_table=_build_resonator_table,
+        build_fit_parameter_table=_build_fit_parameter_table,
+        is_summary_scalar=_is_summary_scalar_parameter,
+    )
+
+    mode_artifacts = [
+        artifact for artifact in artifacts if artifact.view_kind == "matrix_table_plot"
+    ]
+    assert len(mode_artifacts) == 1
+    assert mode_artifacts[0].artifact_id.endswith(".mode_vs_ljun")
+
+
 def test_build_result_artifacts_for_squid_emits_fit_parameters_manifest() -> None:
     params = [
         DerivedParameter(

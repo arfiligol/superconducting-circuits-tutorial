@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import numpy as np
 import pytest
 
 from app.services.characterization_runner import (
@@ -9,6 +12,7 @@ from app.services.characterization_runner import (
     _diagnose_analysis_sweep_support_from_records,
     execute_analysis_run,
 )
+from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import DataRecord
 
 
@@ -167,7 +171,30 @@ def test_diagnose_analysis_sweep_support_blocks_wrong_sweep_axis() -> None:
     )
 
 
-def test_diagnose_analysis_sweep_support_marks_s21_2d_as_partial() -> None:
+def test_diagnose_analysis_sweep_support_marks_s21_ljun_2d_as_sweep_ready() -> None:
+    s21_record = _record(
+        data_type="s_parameters",
+        parameter="S21",
+        representation="real",
+        axes=[
+            {"name": "Freq", "values": [4.0, 5.0]},
+            {"name": "L_jun", "values": [1.0, 2.0]},
+        ],
+        values=[[0.1, 0.2], [0.3, 0.4]],
+    )
+
+    diagnostic = _diagnose_analysis_sweep_support_from_records(
+        analysis_id="s21_resonance_fit",
+        records=[s21_record],
+    )
+
+    assert diagnostic == SweepSupportDiagnostic(
+        status="sweep-ready",
+        reason="2D Freq x L_jun sweeps persist per-slice bias and render Mode vs L_jun.",
+    )
+
+
+def test_diagnose_analysis_sweep_support_marks_s21_non_ljun_2d_as_partial() -> None:
     s21_record = _record(
         data_type="s_parameters",
         parameter="S21",
@@ -187,8 +214,8 @@ def test_diagnose_analysis_sweep_support_marks_s21_2d_as_partial() -> None:
     assert diagnostic == SweepSupportDiagnostic(
         status="partial",
         reason=(
-            "Single-axis 2D sweeps run per slice, but sweep artifact/provenance support "
-            "is still partial."
+            "Single-axis 2D sweeps run per slice, but only L_jun sweeps get the canonical "
+            "Mode vs L_jun artifact."
         ),
     )
 
@@ -213,7 +240,7 @@ def test_diagnose_analysis_sweep_support_blocks_multi_axis_sweeps() -> None:
 
     assert diagnostic == SweepSupportDiagnostic(
         status="blocked",
-        reason="S21 resonance fitting is blocked for sweeps beyond one extra axis.",
+        reason="S21 resonance fitting supports at most one sweep axis.",
     )
 
 
@@ -224,23 +251,113 @@ def test_execute_analysis_run_blocks_unsupported_sweep_before_dispatch(
         "app.services.characterization_runner.diagnose_analysis_sweep_support",
         lambda **_: SweepSupportDiagnostic(
             status="blocked",
-            reason="Admittance extraction supports up to 2D sweeps only.",
+            reason="S21 resonance fitting supports at most one sweep axis.",
         ),
     )
 
     with pytest.raises(
         ValueError,
-        match=(
-            r"Sweep support: blocked - Admittance extraction supports up to 2D sweeps only\."
-        ),
+        match=r"Sweep support: blocked - S21 resonance fitting supports at most one sweep axis\.",
     ):
         execute_analysis_run(
-            analysis_id="admittance_extraction",
-            dataset_id=12,
+            analysis_id="s21_resonance_fit",
+            dataset_id=5,
             config_state={},
-            trace_record_ids=[1, 2],
-            trace_mode_group="base",
+            trace_record_ids=[1],
+            trace_mode_group=None,
         )
+
+
+def test_resonance_fit_service_persists_ljun_bias_params_for_2d_sweeps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_calls: list[dict[str, object]] = []
+    service = ResonanceFitService()
+    dataset = SimpleNamespace(id=1)
+    real_record = _record(
+        data_type="s_parameters",
+        parameter="S21",
+        representation="real",
+        axes=[
+            {"name": "Freq", "values": [4.0, 5.0, 6.0, 7.0, 8.0]},
+            {"name": "L_jun", "values": [1.1, 1.6]},
+        ],
+        values=[
+            [0.1, 0.2],
+            [0.1, 0.2],
+            [0.1, 0.2],
+            [0.1, 0.2],
+            [0.1, 0.2],
+        ],
+    )
+    real_record.id = 10
+    imag_record = _record(
+        data_type="s_parameters",
+        parameter="S21",
+        representation="imaginary",
+        axes=real_record.axes,
+        values=[
+            [0.01, 0.02],
+            [0.01, 0.02],
+            [0.01, 0.02],
+            [0.01, 0.02],
+            [0.01, 0.02],
+        ],
+    )
+    imag_record.id = 11
+
+    monkeypatch.setattr(service.dataset_service, "get_dataset", lambda _: dataset)
+    monkeypatch.setattr(
+        service.data_record_service,
+        "list_records",
+        lambda _: [real_record, imag_record],
+    )
+    monkeypatch.setattr(
+        service.data_record_service,
+        "get_record",
+        lambda record_id: {10: real_record, 11: imag_record}[record_id],
+    )
+    monkeypatch.setattr(
+        service.param_service,
+        "create_or_update_param",
+        lambda dataset_id, **kwargs: captured_calls.append(
+            {"dataset_id": dataset_id, **kwargs}
+        ),
+    )
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_fit_service.fit_notch_s21",
+        lambda f_arr, s21_arr: {
+            "fr": float(f_arr[2]),
+            "Ql": 1000.0,
+            "Qc_mag": 1200.0,
+            "Qi": 6000.0,
+            "tau": 1e-9,
+            "Qc_real": 1200.0,
+            "Qc_imag": 0.0,
+            "a": 1.0,
+            "alpha": 0.0,
+        },
+    )
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_fit_service.notch_s21",
+        lambda f_arr, **kwargs: np.ones_like(f_arr, dtype=complex),
+    )
+
+    service.perform_fit(
+        dataset_identifier="1",
+        parameter="S21",
+        model="notch",
+        record_ids=[10, 11],
+    )
+
+    mode_params = [call for call in captured_calls if str(call["name"]).startswith("mode_1_ghz")]
+    l_jun_params = [call for call in captured_calls if str(call["name"]).startswith("L_jun")]
+
+    assert {call["name"] for call in mode_params} == {"mode_1_ghz_b0", "mode_1_ghz_b1"}
+    assert {call["name"] for call in l_jun_params} == {"L_jun_b0", "L_jun_b1"}
+    assert l_jun_params[0]["extra"]["sweep_axis"] == "L_jun"
+    assert l_jun_params[0]["extra"]["sweep_index"] == 0
+    assert l_jun_params[1]["extra"]["sweep_index"] == 1
 
 
 def test_execute_analysis_run_rejects_unknown_analysis_id() -> None:

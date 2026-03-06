@@ -284,6 +284,33 @@ Reason 必須可機器組合，最少包含：
 - 擬合參數（`Ls1_nH`, `Ls2_nH`, `C_pF`）與 `RMSE`
 - 至少一個可檢視 artifact（建議 `scalar_cards`）
 
+### S21 Resonance Fit（2D Sweep）
+
+- 單軸 2D `S21` sweep 的正式語意為：`Freq x L_jun`
+- 單軸 2D `Freq x L_jun` sweep 應逐 bias slice 執行 fitting，並保留每個 slice 的 `L_jun`
+- Result View 應能用既有 artifact contract 呈現：
+  - `fit` category 下的 `Mode vs L_jun`
+  - `Resonator Summary`
+  - `Fit Parameters`
+
+輸入/執行邊界：
+
+- `sweep-ready`：2D `S21`，且第二軸為 `L_jun`
+- `partial`：2D 單軸 sweep，但第二軸不是 `L_jun`；允許 per-slice fit，但不承諾 canonical `Mode vs L_jun` artifact
+- `blocked`：>2D / multi-axis sweep
+
+Persistence 最小契約：
+
+- persisted method：沿用既有 `complex_notch_fit_S21` / `transmission_fit_S21` / `vector_fit_S21`
+- 若為 2D `Freq x L_jun` sweep：
+  - 每個 bias slice 的 mode / Q 參數仍以既有 `_b<idx>` suffix 寫入
+  - 必須同時寫入對應 `L_jun_b<idx>`
+  - `extra` 應保留 sweep provenance（至少 `sweep_axis`, `sweep_value`, `sweep_index`）
+
+!!! important "S21 sweep 可視化契約"
+    只要存在 `mode_*_ghz_b*` 與對應 `L_jun_b*`，Result View 就必須能重建 `Mode vs L_jun` artifact；
+    不得再把 2D `Freq x L_jun` S21 sweep 僅視為看不到 sweep artifact 的 partial support。
+
 ### Run → Persistence → Artifact Mapping（SQUID / Y11）
 
 下表為 Result View 可見性的正式資料契約（必須成立）：

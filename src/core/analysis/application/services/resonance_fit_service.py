@@ -123,6 +123,8 @@ class ResonanceFitService:
         bias_indices: list[int] = [0]
 
         if s21_complex.ndim > 1:
+            if s21_complex.ndim > 2:
+                raise ValueError("S21 resonance fitting supports at most one sweep axis.")
             n_biases = s21_complex.shape[1]
 
             # Try to extract L_jun values from axes[1]
@@ -196,6 +198,13 @@ class ResonanceFitService:
 
             # Persist parameters (suffix with bias index when multiple slices)
             suffix = f"_b{bi}" if len(bias_indices) > 1 else ""
+            l_jun_val = l_jun_values[bi] if l_jun_values and bi < len(l_jun_values) else None
+            param_extra = {
+                **extra_context,
+                "sweep_index": bi,
+                "sweep_axis": "L_jun" if l_jun_val is not None else None,
+                "sweep_value": l_jun_val,
+            }
 
             if model in ["notch", "transmission"]:
                 self.param_service.create_or_update_param(
@@ -205,7 +214,7 @@ class ResonanceFitService:
                     unit="GHz",
                     device_type="resonator",
                     method=method_name,
-                    extra=extra_context,
+                    extra=param_extra,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
@@ -214,7 +223,7 @@ class ResonanceFitService:
                     unit="",
                     device_type="resonator",
                     method=method_name,
-                    extra=extra_context,
+                    extra=param_extra,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
@@ -223,7 +232,7 @@ class ResonanceFitService:
                     unit="",
                     device_type="resonator",
                     method=method_name,
-                    extra=extra_context,
+                    extra=param_extra,
                 )
                 self.param_service.create_or_update_param(
                     dataset.id,
@@ -232,7 +241,7 @@ class ResonanceFitService:
                     unit="",
                     device_type="resonator",
                     method=method_name,
-                    extra=extra_context,
+                    extra=param_extra,
                 )
                 if "tau" in result:
                     self.param_service.create_or_update_param(
@@ -242,7 +251,7 @@ class ResonanceFitService:
                         unit="ns",
                         device_type="resonator",
                         method=method_name,
-                        extra=extra_context,
+                        extra=param_extra,
                     )
 
                 if model == "notch":
@@ -274,7 +283,7 @@ class ResonanceFitService:
                         unit="GHz",
                         device_type="resonator",
                         method=method_name,
-                        extra=extra_context,
+                        extra=param_extra,
                     )
                     self.param_service.create_or_update_param(
                         dataset.id,
@@ -283,11 +292,20 @@ class ResonanceFitService:
                         unit="",
                         device_type="resonator",
                         method=method_name,
-                        extra=extra_context,
+                        extra=param_extra,
                     )
                 model_s21 = result["model_s21"]
 
-            l_jun_val = l_jun_values[bi] if l_jun_values and bi < len(l_jun_values) else None
+            if l_jun_val is not None:
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"L_jun{suffix}",
+                    value=l_jun_val,
+                    unit="nH",
+                    device_type="resonator",
+                    method=method_name,
+                    extra=param_extra,
+                )
 
             slice_results.append(
                 {

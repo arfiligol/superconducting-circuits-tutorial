@@ -289,6 +289,33 @@ Output contract (minimum):
 - fitted parameters (`Ls1_nH`, `Ls2_nH`, `C_pF`) and `RMSE`
 - at least one inspectable artifact (recommended `scalar_cards`)
 
+### S21 Resonance Fit (2D Sweep)
+
+- The formal single-axis 2D `S21` sweep semantic is `Freq x L_jun`
+- A 2D `Freq x L_jun` sweep should run fitting per bias slice and preserve the per-slice `L_jun`
+- Result View should stay within the existing artifact contract and expose:
+  - `Mode vs L_jun` under `fit`
+  - `Resonator Summary`
+  - `Fit Parameters`
+
+Execution boundary:
+
+- `sweep-ready`: 2D `S21` with `L_jun` as the second axis
+- `partial`: 2D single-axis sweeps whose second axis is not `L_jun`; per-slice fitting may run, but canonical `Mode vs L_jun` is not guaranteed
+- `blocked`: >2D / multi-axis sweeps
+
+Minimum persistence contract:
+
+- persisted method stays on existing `complex_notch_fit_S21` / `transmission_fit_S21` / `vector_fit_S21`
+- for 2D `Freq x L_jun` sweeps:
+  - per-slice mode / Q parameters continue to use the existing `_b<idx>` suffix
+  - matching `L_jun_b<idx>` must also be persisted
+  - `extra` should retain sweep provenance (at least `sweep_axis`, `sweep_value`, `sweep_index`)
+
+!!! important "S21 sweep visualization contract"
+    Whenever `mode_*_ghz_b*` and matching `L_jun_b*` exist, Result View must be able to rebuild the `Mode vs L_jun` artifact.
+    A 2D `Freq x L_jun` S21 sweep must no longer degrade into partial support merely because sweep artifacts are missing.
+
 ### Run -> Persistence -> Artifact Mapping (SQUID / Y11)
 
 The following is the formal visibility contract for Result View:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -66,6 +66,15 @@ def _load_selected_records(
         return [record for record in records if int(record.id or 0) in selected_ids]
 
 
+def _selected_s21_records(records: Iterable[DataRecord]) -> list[DataRecord]:
+    return [
+        record
+        for record in records
+        if str(record.data_type) in {"s_parameters", "s_params"}
+        and str(record.parameter).strip().upper() == "S21"
+    ]
+
+
 def _diagnose_analysis_sweep_support_from_records(
     *,
     analysis_id: str,
@@ -115,16 +124,33 @@ def _diagnose_analysis_sweep_support_from_records(
         )
 
     if analysis_id == "s21_resonance_fit":
-        if max_ndim > 2:
+        s21_sweep_records = [
+            record for record in _selected_s21_records(records) if _is_sweep_record(record)
+        ]
+        if not s21_sweep_records:
+            return None
+
+        s21_max_ndim = max(_value_ndim(record.values) for record in s21_sweep_records)
+        if s21_max_ndim > 2:
             return SweepSupportDiagnostic(
                 status="blocked",
-                reason="S21 resonance fitting is blocked for sweeps beyond one extra axis.",
+                reason="S21 resonance fitting supports at most one sweep axis.",
+            )
+        s21_second_axis_names = {
+            _axis_name(record, 1) for record in s21_sweep_records if len(record.axes) > 1
+        }
+        if s21_second_axis_names and all(_is_l_jun_axis(name) for name in s21_second_axis_names):
+            return SweepSupportDiagnostic(
+                status="sweep-ready",
+                reason=(
+                    "2D Freq x L_jun sweeps persist per-slice bias and render Mode vs L_jun."
+                ),
             )
         return SweepSupportDiagnostic(
             status="partial",
             reason=(
-                "Single-axis 2D sweeps run per slice, but sweep artifact/provenance support "
-                "is still partial."
+                "Single-axis 2D sweeps run per slice, but only L_jun sweeps get the canonical "
+                "Mode vs L_jun artifact."
             ),
         )
 
