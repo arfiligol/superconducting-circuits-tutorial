@@ -10,6 +10,7 @@ from app.pages.characterization import (
     _build_resonator_table,
     _completed_result_analysis_ids,
     _filter_method_groups_by_trace_mode,
+    _format_sweep_support_reason,
     _is_summary_scalar_parameter,
     _latest_completed_analysis_run_summaries,
     _result_view_controls_row_classes,
@@ -17,6 +18,7 @@ from app.pages.characterization import (
     _trace_mode_filter_options,
     _trace_mode_group_for_selected_rows,
 )
+from app.services.characterization_runner import SweepSupportDiagnostic
 from app.services.result_artifact_registry import build_result_artifacts_for_analysis
 from core.shared.persistence.models import (
     DerivedParameter,
@@ -95,6 +97,18 @@ def test_build_analysis_run_availability_marks_recommended_when_all_checks_pass(
     )
     assert availability.status == "Recommended"
     assert availability.has_compatible_traces is True
+
+
+def test_format_sweep_support_reason_renders_status_and_reason() -> None:
+    diagnostic = SweepSupportDiagnostic(
+        status="partial",
+        reason="Single-axis 2D sweeps run per slice only.",
+    )
+
+    assert (
+        _format_sweep_support_reason(diagnostic)
+        == "Sweep support: partial - Single-axis 2D sweeps run per slice only."
+    )
 
 
 def test_build_mode_vs_ljun_dataframe_supports_single_column_non_sweep() -> None:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Literal
 
 from core.analysis.application.services.characterization_fitting_service import (
     CharacterizationFittingService,
@@ -11,6 +13,136 @@ from core.analysis.application.services.characterization_fitting_service import 
 )
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
+from core.shared.persistence import DataRecord, get_unit_of_work
+
+
+@dataclass(frozen=True)
+class SweepSupportDiagnostic:
+    """Support boundary for one analysis against selected parameter-sweep traces."""
+
+    status: Literal["sweep-ready", "partial", "blocked"]
+    reason: str
+
+
+def _value_ndim(values: object) -> int:
+    """Infer nested list dimensionality without loading numerical libraries."""
+    if not isinstance(values, list) or not values:
+        return 1
+    first = values[0]
+    if isinstance(first, list):
+        return 1 + _value_ndim(first)
+    return 1
+
+
+def _axis_name(record: DataRecord, index: int) -> str:
+    if index >= len(record.axes):
+        return ""
+    return str(record.axes[index].get("name", "")).strip().lower()
+
+
+def _is_l_jun_axis(name: str) -> bool:
+    return name in {"l_jun", "l_ind"}
+
+
+def _is_sweep_record(record: DataRecord) -> bool:
+    value_ndim = _value_ndim(record.values)
+    if value_ndim > 1:
+        return True
+    if len(record.axes) <= 1:
+        return False
+    axis_values = record.axes[1].get("values", [])
+    return isinstance(axis_values, list) and len(axis_values) > 1
+
+
+def _load_selected_records(
+    dataset_id: int,
+    trace_record_ids: Sequence[int] | None,
+) -> list[DataRecord]:
+    with get_unit_of_work() as uow:
+        records = list(uow.data_records.list_by_dataset(dataset_id))
+        if trace_record_ids is None:
+            return records
+        selected_ids = {int(record_id) for record_id in trace_record_ids}
+        return [record for record in records if int(record.id or 0) in selected_ids]
+
+
+def _diagnose_analysis_sweep_support_from_records(
+    *,
+    analysis_id: str,
+    records: Sequence[DataRecord],
+) -> SweepSupportDiagnostic | None:
+    """Classify parameter-sweep support for one analysis against selected records."""
+    sweep_records = [record for record in records if _is_sweep_record(record)]
+    if not sweep_records:
+        return None
+
+    max_ndim = max(_value_ndim(record.values) for record in sweep_records)
+    second_axis_names = {_axis_name(record, 1) for record in sweep_records if len(record.axes) > 1}
+    has_non_l_jun_second_axis = any(
+        axis_name and not _is_l_jun_axis(axis_name) for axis_name in second_axis_names
+    )
+
+    if analysis_id == "admittance_extraction":
+        if max_ndim > 2:
+            return SweepSupportDiagnostic(
+                status="blocked",
+                reason="Admittance extraction supports up to 2D sweeps only.",
+            )
+        if has_non_l_jun_second_axis:
+            return SweepSupportDiagnostic(
+                status="blocked",
+                reason="Admittance extraction requires a single L_jun sweep axis for 2D traces.",
+            )
+        return SweepSupportDiagnostic(
+            status="sweep-ready",
+            reason="2D Freq x L_jun admittance sweeps are supported.",
+        )
+
+    if analysis_id in {"y11_fit", "squid_fitting"}:
+        if max_ndim > 2:
+            return SweepSupportDiagnostic(
+                status="blocked",
+                reason="This fitting path supports up to 2D sweeps only.",
+            )
+        if has_non_l_jun_second_axis:
+            return SweepSupportDiagnostic(
+                status="blocked",
+                reason="This fitting path requires a 2D Freq x L_jun sweep.",
+            )
+        return SweepSupportDiagnostic(
+            status="sweep-ready",
+            reason="2D Freq x L_jun sweeps are supported.",
+        )
+
+    if analysis_id == "s21_resonance_fit":
+        if max_ndim > 2:
+            return SweepSupportDiagnostic(
+                status="blocked",
+                reason="S21 resonance fitting is blocked for sweeps beyond one extra axis.",
+            )
+        return SweepSupportDiagnostic(
+            status="partial",
+            reason=(
+                "Single-axis 2D sweeps run per slice, but sweep artifact/provenance support "
+                "is still partial."
+            ),
+        )
+
+    return None
+
+
+def diagnose_analysis_sweep_support(
+    *,
+    analysis_id: str,
+    dataset_id: int,
+    trace_record_ids: Sequence[int] | None,
+) -> SweepSupportDiagnostic | None:
+    """Load selected traces and classify parameter-sweep support for one analysis."""
+    records = _load_selected_records(dataset_id, trace_record_ids)
+    return _diagnose_analysis_sweep_support_from_records(
+        analysis_id=analysis_id,
+        records=records,
+    )
 
 
 def _config_int(
@@ -52,6 +184,13 @@ def execute_analysis_run(
 ) -> None:
     """Execute one characterization analysis run for one dataset scope."""
     trace_ids = list(trace_record_ids) if trace_record_ids is not None else None
+    sweep_support = diagnose_analysis_sweep_support(
+        analysis_id=analysis_id,
+        dataset_id=dataset_id,
+        trace_record_ids=trace_ids,
+    )
+    if sweep_support is not None and sweep_support.status == "blocked":
+        raise ValueError(f"Sweep support: blocked - {sweep_support.reason}")
 
     if analysis_id == "admittance_extraction":
         ResonanceExtractService().extract_admittance(
@@ -108,4 +247,9 @@ def execute_analysis_run(
     raise ValueError(f"Unsupported analysis id: {analysis_id}")
 
 
-__all__ = ["execute_analysis_run"]
+__all__ = [
+    "SweepSupportDiagnostic",
+    "_diagnose_analysis_sweep_support_from_records",
+    "diagnose_analysis_sweep_support",
+    "execute_analysis_run",
+]

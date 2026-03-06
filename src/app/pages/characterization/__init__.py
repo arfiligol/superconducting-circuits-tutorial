@@ -24,7 +24,11 @@ from app.pages.characterization.state import (
 )
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
 from app.services.analysis_registry import list_dataset_analyses
-from app.services.characterization_runner import execute_analysis_run
+from app.services.characterization_runner import (
+    SweepSupportDiagnostic,
+    diagnose_analysis_sweep_support,
+    execute_analysis_run,
+)
 from app.services.characterization_trace_scope import (
     count_scope_trace_records,
     list_scope_compatible_trace_index_page,
@@ -356,6 +360,11 @@ def _build_analysis_run_availability(
         has_compatible_traces=True,
         profile_hints=list(profile_hints),
     )
+
+
+def _format_sweep_support_reason(diagnostic: SweepSupportDiagnostic) -> str:
+    """Render one stable sweep-support diagnostic string for Run Analysis."""
+    return f"Sweep support: {diagnostic.status} - {diagnostic.reason}"
 
 
 def _is_sideband_trace_parameter(parameter: str) -> bool:
@@ -1334,6 +1343,18 @@ def characterization_page():
                         def set_selected_trace_ids(updated_ids: set[int]) -> None:
                             runtime_state.set_selected_trace_ids(trace_scope_key, updated_ids)
 
+                        def current_sweep_support_diagnostic() -> (
+                            SweepSupportDiagnostic | None
+                        ):
+                            selected_ids = sorted(current_selected_trace_ids())
+                            if not selected_ids:
+                                return None
+                            return diagnose_analysis_sweep_support(
+                                analysis_id=selected_run_analysis_id,
+                                dataset_id=active_id,
+                                trace_record_ids=selected_ids,
+                            )
+
                         def bulk_select_for_mode(mode_filter: str) -> None:
                             rows, total = _compatible_trace_page(
                                 mode_filter=mode_filter,
@@ -1358,10 +1379,24 @@ def characterization_page():
                                 )
 
                         def current_run_ui_state() -> AnalysisRunUiState:
-                            return _build_analysis_run_ui_state(
+                            base_state = _build_analysis_run_ui_state(
                                 has_compatible_traces=current_mode_trace_total() > 0,
                                 selected_trace_count=len(current_selected_trace_ids()),
                             )
+                            sweep_diagnostic = current_sweep_support_diagnostic()
+                            if (
+                                sweep_diagnostic is not None
+                                and sweep_diagnostic.status == "blocked"
+                                and len(current_selected_trace_ids()) > 0
+                            ):
+                                return AnalysisRunUiState(
+                                    has_compatible_traces=True,
+                                    availability_text="Blocked for selected sweep",
+                                    availability_class="text-warning",
+                                    run_disabled=True,
+                                    run_hint=_format_sweep_support_reason(sweep_diagnostic),
+                                )
+                            return base_state
 
                         analysis_method_groups: dict[str, dict[str, list]] = {}
                         for analysis in analyses:
@@ -1443,10 +1478,19 @@ def characterization_page():
                                 def refresh_run_controls() -> None:
                                     ui_state = current_run_ui_state()
                                     has_selected_traces = len(current_selected_trace_ids()) > 0
+                                    sweep_diagnostic = current_sweep_support_diagnostic()
                                     if not ui_state.has_compatible_traces:
                                         availability_text = "Unavailable for current scope"
                                         availability_class = "text-warning"
                                         reason_text = "No compatible traces in current scope."
+                                        run_disabled = True
+                                    elif (
+                                        sweep_diagnostic is not None
+                                        and sweep_diagnostic.status == "blocked"
+                                    ):
+                                        availability_text = ui_state.availability_text
+                                        availability_class = ui_state.availability_class
+                                        reason_text = ui_state.run_hint
                                         run_disabled = True
                                     elif selected_run_availability.status == "Recommended":
                                         availability_text = "Recommended for current scope"
@@ -1466,6 +1510,21 @@ def characterization_page():
                                             else selected_run_availability.reason
                                         )
                                         run_disabled = not has_selected_traces
+
+                                    if (
+                                        sweep_diagnostic is not None
+                                        and sweep_diagnostic.status != "blocked"
+                                        and has_selected_traces
+                                    ):
+                                        base_reason = str(reason_text).strip()
+                                        sweep_reason = _format_sweep_support_reason(
+                                            sweep_diagnostic
+                                        )
+                                        reason_text = (
+                                            f"{base_reason}; {sweep_reason}"
+                                            if base_reason
+                                            else sweep_reason
+                                        )
 
                                     if availability_label is not None:
                                         availability_label.set_text(availability_text)
@@ -1536,6 +1595,16 @@ def characterization_page():
                                                 "Select at least one trace to run.",
                                             )
                                             return
+                                        sweep_diagnostic = current_sweep_support_diagnostic()
+                                        if (
+                                            sweep_diagnostic is not None
+                                            and sweep_diagnostic.status == "blocked"
+                                        ):
+                                            append_analysis_status(
+                                                "warning",
+                                                _format_sweep_support_reason(sweep_diagnostic),
+                                            )
+                                            return
 
                                         run_button.props("loading")
                                         append_analysis_status(
@@ -1546,6 +1615,14 @@ def characterization_page():
                                                 f"{len(run_trace_ids)} trace(s)."
                                             ),
                                         )
+                                        if (
+                                            sweep_diagnostic is not None
+                                            and sweep_diagnostic.status == "partial"
+                                        ):
+                                            append_analysis_status(
+                                                "warning",
+                                                _format_sweep_support_reason(sweep_diagnostic),
+                                            )
                                         try:
                                             if ds.id is None:
                                                 raise ValueError("Active dataset id is missing.")
