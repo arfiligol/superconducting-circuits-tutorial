@@ -182,6 +182,23 @@ Reason 必須可機器組合，最少包含：
 - 第二層：`Tabs`（該 category 內的 artifacts）
 - 共用結果檢視區（由 `view_kind` 驅動）
 
+### Run Success Navigation Contract
+
+當 `Run Selected Analysis` 成功完成後，Result View 必須立即同步到本次執行的 analysis：
+
+- 自動切到剛執行完成的 `analysis_id`
+- 若該 analysis 有 artifacts，直接選到第一個可用 artifact
+- 若該 analysis 無 artifacts，停留在該 analysis 並顯示可診斷 empty-state
+
+!!! important "禁止停留在舊 analysis"
+    run 成功後不可沿用先前的 Result View analysis/category/artifact 選擇，
+    否則會讓使用者誤以為新 analysis 沒有產生結果。
+
+!!! note "SQUID Fitting 顯示要求"
+    `SQUID Fitting` 完成後，Result View 應優先落在 `fit` category，
+    並顯示 `Fit Parameters` tab（若有資料）。
+    不可讓畫面仍停在舊的 `Admittance Extraction / Mode vs L_jun` 視圖。
+
 ### Trace Mode Filter (Result View)
 
 - Result View 必須提供 `Trace Mode Filter`

@@ -186,6 +186,23 @@ Before each run, users must be able to choose which traces will be analyzed.
 - second layer: `Tabs` within the selected category
 - shared render area driven by `view_kind`
 
+### Run Success Navigation Contract
+
+After `Run Selected Analysis` completes successfully, Result View must immediately sync to the analysis that just ran:
+
+- automatically switch to the completed `analysis_id`
+- if that analysis has artifacts, select the first available artifact directly
+- if that analysis has no artifacts, stay on that analysis and show a diagnosable empty state
+
+!!! important "Do not stay on stale analysis"
+    A successful run must not keep the previous Result View analysis/category/artifact selection,
+    because that makes users think the new analysis produced no results.
+
+!!! note "SQUID Fitting display requirement"
+    After `SQUID Fitting` completes, Result View should land in the `fit` category
+    and show the `Fit Parameters` tab when data exists.
+    The UI must not remain on an older `Admittance Extraction / Mode vs L_jun` view.
+
 ### Trace Mode Filter (Result View)
 
 - Result View must expose a `Trace Mode Filter`
