@@ -46,6 +46,14 @@ class ExampleCase:
     sources: tuple[tuple[float, int, float], ...]
 
 
+@dataclass(frozen=True)
+class AppServer:
+    """Runtime metadata for the spawned NiceGUI app under test."""
+
+    base_url: str
+    log_path: Path
+
+
 def _stable_series_lc_definition() -> str:
     return str(
         {
@@ -265,7 +273,7 @@ def _wait_for_server(url: str, timeout_seconds: float = 60.0) -> None:
 
 
 @pytest.fixture(scope="session")
-def app_base_url(tmp_path_factory: pytest.TempPathFactory) -> str:
+def app_server(tmp_path_factory: pytest.TempPathFactory) -> AppServer:
     """Start the NiceGUI app once for all Playwright example tests."""
     port = int(os.getenv("PLAYWRIGHT_SC_APP_PORT", "8093"))
     base_url = f"http://127.0.0.1:{port}"
@@ -277,6 +285,7 @@ def app_base_url(tmp_path_factory: pytest.TempPathFactory) -> str:
     env = os.environ.copy()
     env["SC_APP_PORT"] = str(port)
     env["NICEGUI_SCREEN_TEST_PORT"] = str(port)
+    env["SC_APP_RECONNECT_TIMEOUT"] = "1.0"
     process = subprocess.Popen(
         ["uv", "run", "sc-app"],
         cwd=Path(__file__).resolve().parents[3],
@@ -288,7 +297,7 @@ def app_base_url(tmp_path_factory: pytest.TempPathFactory) -> str:
 
     try:
         _wait_for_server(f"{base_url}/simulation")
-        yield base_url
+        yield AppServer(base_url=base_url, log_path=log_path)
     except Exception as err:
         log_file.flush()
         log_file.close()
@@ -303,6 +312,11 @@ def app_base_url(tmp_path_factory: pytest.TempPathFactory) -> str:
                 os.killpg(process.pid, signal.SIGKILL)
         if not log_file.closed:
             log_file.close()
+
+
+@pytest.fixture(scope="session")
+def app_base_url(app_server: AppServer) -> str:
+    return app_server.base_url
 
 
 @pytest.fixture
@@ -434,6 +448,22 @@ def _run_and_expect_success(page: Page, *, allow_long_running: bool = False) -> 
     expect(success_banner).to_be_visible(timeout=180000)
     expect(page.get_by_text("Numerical solver error", exact=False)).to_have_count(0)
     return True
+
+
+def _assert_log_never_contains(
+    log_path: Path,
+    needle: str,
+    *,
+    timeout_seconds: float = 4.0,
+) -> None:
+    deadline = time.time() + timeout_seconds
+    latest = ""
+    while time.time() < deadline:
+        latest = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+        assert needle not in latest, latest
+        time.sleep(0.25)
+    latest = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
+    assert needle not in latest, latest
 
 
 def _run_post_processing_and_expect_output(page: Page) -> None:
@@ -879,6 +909,36 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
         timeout=60000
     )
     page.screenshot(path=str(tmp_path / "flux_pumped_jpa_bias_sweep_view.png"), full_page=True)
+
+
+def test_simulation_reload_and_disconnect_do_not_reuse_deleted_root_client(
+    page: Page,
+    app_server: AppServer,
+    example_cases: tuple[ExampleCase, ...],
+    tmp_path: Path,
+) -> None:
+    case = next(c for c in example_cases if c.slug == "jpa_double_pump")
+
+    _choose_schema(page, case.schema_name)
+    _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+    _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+    _set_spinbutton_value(page, "Points", case.points)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
+    _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+    _configure_sources(page, case.sources)
+
+    _run_and_expect_success(page, allow_long_running=True)
+    screenshot_path = tmp_path / "simulation_deleted_client_lifecycle.png"
+    page.screenshot(path=str(screenshot_path), full_page=True)
+    page.reload(wait_until="domcontentloaded")
+    expect(page.get_by_text("Simulation Setup")).to_be_visible(timeout=30000)
+    page.goto("about:blank", wait_until="load")
+    _assert_log_never_contains(
+        app_server.log_path,
+        "Client has been deleted but is still being used",
+    )
+    print(f"LIFECYCLE_SCREENSHOT={screenshot_path}")
+    print(f"LIFECYCLE_LOG={app_server.log_path}")
 
 
 def test_port_termination_compensation_modes_in_ui(

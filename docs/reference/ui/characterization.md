@@ -53,6 +53,18 @@ updated_by: codex
 2. `Run Analysis`
 3. `Result View`
 
+## Client Lifecycle Contract
+
+`/characterization` 的 refresh 行為必須受 owner client lifecycle 保護。
+
+!!! important "斷線後不可持續 rerender"
+    若使用者 reload 頁面、切離 `/characterization`，或在 `reconnect_timeout` 內未重新連回，
+    stale / deleted client 上不得再執行 shell refresh 或 analysis-related 局部 refresh。
+
+!!! note "Analysis 可繼續，舊頁面不可再收 UI 更新"
+    server-side characterization run 可以完成並保存結果，
+    但舊 client 一旦 disconnected 或 deleted，任何 background UI refresh path 都必須停止命中該頁面的 refreshable target。
+
 ## Source Scope Contract
 
 !!! note "Current behavior（2026-03-04）"

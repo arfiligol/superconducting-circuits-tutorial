@@ -30,6 +30,19 @@ updated_by: codex
 6. `Post Processing`
 7. `Post Processing Results`
 
+## Client Lifecycle Contract
+
+`/simulation` 的 UI refresh 必須綁定目前仍存活的 NiceGUI client。
+
+!!! important "禁止 stale client rerender"
+    當使用者在模擬進行中發生 page reload、navigate away，或超過 `reconnect_timeout` 後斷線刪除 client，
+    shell-level 與 page-level refresh path 都不得再對舊 client 建立新 element。
+
+!!! note "Background work 可持續，UI refresh 不可誤送"
+    server-side simulation / post-processing 可以依既有流程繼續執行或完成，
+    但任何之後的 UI rerender 都必須先確認 refresh target 的 owner client 仍然 connected；
+    若 owner client 已 stale / deleted，該 refresh 必須直接停止。
+
 ## Result View 互動契約（Raw vs Post-Processed）
 
 `Simulation Results` 與 `Post Processing Results` 必須是兩個獨立區塊，但互動能力要對齊。

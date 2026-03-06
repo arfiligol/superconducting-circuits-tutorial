@@ -1,6 +1,39 @@
 """Central App Layout Shell for NiceGUI Data Browser."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from nicegui import app, ui
+
+
+def _is_client_alive(client: Any) -> bool:
+    """Return whether a NiceGUI client can still receive UI updates."""
+    if client is None:
+        return False
+    client_id = getattr(client, "id", None)
+    client_instances = getattr(type(client), "instances", {})
+    return (
+        client_id in client_instances
+        and not getattr(client, "_deleted", False)
+        and getattr(client, "has_socket_connection", False)
+    )
+
+
+def _prune_refreshable_targets(refreshable: Any, owner_client: Any) -> bool:
+    """Keep only live targets that still belong to the owner client."""
+    owner_client_id = getattr(owner_client, "id", None)
+    live_targets = []
+    for target in list(getattr(refreshable, "targets", [])):
+        container = getattr(target, "container", None)
+        if container is None or getattr(container, "is_deleted", False):
+            continue
+        target_client = getattr(container, "client", None)
+        if getattr(target_client, "id", None) != owner_client_id:
+            continue
+        live_targets.append(target)
+    refreshable.targets = live_targets
+    return bool(live_targets)
 
 
 def app_shell(content_builder):
@@ -22,6 +55,12 @@ def app_shell(content_builder):
     )
 
     def wrapper(*args, **kwargs):
+        owner_client = ui.context.client
+        lifecycle_state = {
+            "connected": _is_client_alive(owner_client),
+            "deleted": False,
+        }
+
         # Global body setup (Dark mode handled globally in ui.run(dark=True))
         ui.query("body").classes("bg-bg text-fg")
 
@@ -30,13 +69,31 @@ def app_shell(content_builder):
         def content_area():
             content_builder(*args, **kwargs)
 
+        def _mark_connected(_client: Any | None = None) -> None:
+            lifecycle_state["connected"] = True
+            lifecycle_state["deleted"] = False
+
+        def _mark_disconnected(_client: Any | None = None) -> None:
+            lifecycle_state["connected"] = False
+
+        def _mark_deleted(_client: Any | None = None) -> None:
+            lifecycle_state["connected"] = False
+            lifecycle_state["deleted"] = True
+            content_area.targets = []
+
+        if owner_client is not None:
+            owner_client.on_connect(_mark_connected)
+            owner_client.on_disconnect(_mark_disconnected)
+            owner_client.on_delete(_mark_deleted)
+
         def _safe_refresh_content_area() -> None:
-            """Refresh content area only when the current client is still alive."""
-            try:
-                client = ui.context.client
-            except RuntimeError:
+            """Refresh content area only while its owner client is still alive."""
+            if lifecycle_state["deleted"] or not lifecycle_state["connected"]:
                 return
-            if client is None or client.disconnected or not client.has_socket_connection:
+            if not _is_client_alive(owner_client):
+                lifecycle_state["connected"] = False
+                return
+            if not _prune_refreshable_targets(content_area, owner_client):
                 return
             try:
                 content_area.refresh()
