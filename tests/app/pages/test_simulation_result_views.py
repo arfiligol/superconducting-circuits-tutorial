@@ -1,6 +1,7 @@
 """Tests for simulation result view helpers."""
 
 import inspect
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -63,6 +64,13 @@ from core.simulation.application.run_simulation import (
     SimulationSweepRun,
     simulation_sweep_run_from_payload,
     simulation_sweep_run_to_payload,
+)
+from core.simulation.application.trace_architecture import (
+    TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+    build_post_processed_trace_specs,
+    build_raw_simulation_trace_specs,
+    load_raw_simulation_bundle,
+    persist_trace_batch_bundle,
 )
 from core.simulation.domain.circuit import (
     DriveSourceConfig,
@@ -612,9 +620,10 @@ def test_build_post_processed_bundle_artifacts_keep_single_run_payload_minimal()
     assert source_meta["input_source_type"] == "raw_y"
     assert config_snapshot["source_simulation_bundle_id"] == 17
     assert config_snapshot["source_run_kind"] == "single_run"
+    assert result_payload["kind"] == "trace_batch_postprocess_lineage"
     assert result_payload["run_kind"] == "single_run"
     assert result_payload["canonical_authority"]["source_simulation_bundle_id"] == 17
-    assert result_payload["projection"]["kind"] == "frequency_only_data_records"
+    assert result_payload["projection"]["kind"] == "trace_store_projection"
     assert "sweep_axes" not in result_payload
     assert "points" not in result_payload
 
@@ -691,6 +700,98 @@ def test_build_post_processed_bundle_artifacts_preserve_source_sweep_authority()
         "input_source_type": "ptc_y",
         "flow_spec_ref": "config_snapshot",
     }
+
+
+def test_trace_batch_bundle_roundtrip_rebuilds_parameter_sweep_from_trace_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
+    base = _sample_result()
+    sweep_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"Lj": 900.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1100.0},
+                result=SimulationResult.model_validate(
+                    {
+                        **base.model_dump(mode="json"),
+                        "s_parameter_mode_real": {
+                            **base.s_parameter_mode_real,
+                            "om=0|op=2|im=0|ip=1": [2.5, 2.6, 2.7],
+                        },
+                    }
+                ),
+            ),
+        ),
+        representative_point_index=1,
+    )
+    payload = persist_trace_batch_bundle(
+        bundle_id=105,
+        design_id=42,
+        design_name="Flux JPA",
+        source_kind="circuit_simulation",
+        stage_kind="raw",
+        setup_kind="circuit_simulation.raw",
+        setup_payload={"freq_range": {"start_ghz": 4.9, "stop_ghz": 5.1, "points": 3}},
+        provenance_payload={"origin": "circuit_simulation"},
+        trace_specs=build_raw_simulation_trace_specs(
+            result=sweep_run.representative_result,
+            sweep_payload=simulation_sweep_run_to_payload(sweep_run),
+        ),
+        summary_payload={
+            "trace_count": 1,
+            "run_kind": "parameter_sweep",
+            "frequency_points": 3,
+            "point_count": 2,
+            "representative_point_index": 1,
+        },
+    )
+
+    assert payload["schema_kind"] == TRACE_BATCH_BUNDLE_SCHEMA_KIND
+    assert payload["trace_batch_record"]["stage_kind"] == "raw"
+    assert payload["trace_batch_record"]["summary_payload"]["point_count"] == 2
+    assert payload["trace_records"][0]["store_ref"]["backend"] == "local_zarr"
+    store_uri = payload["trace_records"][0]["store_ref"]["store_uri"]
+    assert (Path(__file__).resolve().parents[3] / store_uri).exists()
+
+    rebuilt_result, rebuilt_sweep_payload = load_raw_simulation_bundle(payload)
+
+    assert rebuilt_sweep_payload is not None
+    rebuilt_run = simulation_sweep_run_from_payload(rebuilt_sweep_payload)
+    assert rebuilt_result.frequencies_ghz == base.frequencies_ghz
+    assert rebuilt_run.points[1].axis_values["Lj"] == pytest.approx(1100.0)
+    assert rebuilt_run.representative_point_index == 1
+    assert rebuilt_run.points[1].result.get_mode_s_parameter_real((0,), 2, (0,), 1) == [
+        2.5,
+        2.6,
+        2.7,
+    ]
+
+
+def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:
+    trace_specs = build_post_processed_trace_specs(
+        runtime_output=_sample_transformed_post_processed_sweep_run(),
+    )
+
+    assert trace_specs
+    example = next(
+        spec
+        for spec in trace_specs
+        if spec.parameter.startswith("Y_dm_1_2_dm_1_2") and spec.representation == "imaginary"
+    )
+    assert example.axes[0].name == "frequency"
+    assert example.axes[1].name == "L_q"
+    assert example.values.shape == (2, 2)
+    assert example.values[:, 0].tolist() == pytest.approx([0.0, 0.0])
 
 
 def test_z0_control_tokens_are_shared_across_views() -> None:

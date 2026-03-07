@@ -18,7 +18,7 @@ import pytest
 from playwright.sync_api import Page, expect, sync_playwright
 
 from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import CircuitRecord
+from core.shared.persistence.models import CircuitRecord, ResultBundleRecord
 
 _RUN_PLAYWRIGHT_E2E = os.getenv("RUN_PLAYWRIGHT_JOSEPHSON_E2E") == "1"
 
@@ -331,6 +331,53 @@ def page(app_base_url: str) -> Page:
         browser.close()
 
 
+def _latest_trace_batch_bundle_for_circuit(
+    *,
+    circuit_name: str,
+    bundle_type: str,
+    role: str | None = None,
+) -> ResultBundleRecord:
+    with get_unit_of_work() as uow:
+        candidates: list[ResultBundleRecord] = []
+        for dataset in uow.datasets.list_all(include_hidden=True):
+            if dataset.id is None:
+                continue
+            for bundle in uow.result_bundles.list_by_dataset(int(dataset.id)):
+                if str(bundle.bundle_type) != bundle_type:
+                    continue
+                if role is not None and str(bundle.role) != role:
+                    continue
+                if str(bundle.source_meta.get("circuit_name", "")) != circuit_name:
+                    continue
+                if str(bundle.result_payload.get("schema_kind", "")) != "trace_batch_bundle":
+                    continue
+                candidates.append(bundle)
+    assert candidates, f"No trace-batch bundle found for {circuit_name} ({bundle_type}, {role})"
+    return max(candidates, key=lambda bundle: int(bundle.id or 0))
+
+
+def _assert_trace_batch_payload(
+    bundle: ResultBundleRecord,
+    *,
+    stage_kind: str,
+    point_count: int,
+    parent_batch_id: int | None = None,
+) -> None:
+    payload = bundle.result_payload
+    assert payload["schema_kind"] == "trace_batch_bundle"
+    trace_batch = payload["trace_batch_record"]
+    assert trace_batch["stage_kind"] == stage_kind
+    assert trace_batch["summary_payload"]["point_count"] == point_count
+    assert trace_batch["summary_payload"]["trace_count"] > 0
+    if parent_batch_id is not None:
+        assert trace_batch["parent_batch_id"] == parent_batch_id
+
+    trace_records = payload["trace_records"]
+    assert trace_records
+    store_uri = Path(__file__).resolve().parents[3] / trace_records[0]["store_ref"]["store_uri"]
+    assert store_uri.exists()
+
+
 def _set_spinbutton_value(page: Page, label: str, value: float | int | str, index: int = 0) -> None:
     target = page.get_by_role("spinbutton", name=label).nth(index)
     expect(target).to_be_visible(timeout=15000)
@@ -569,6 +616,23 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
 
     post_results_card.get_by_role("button", name="Add Trace").click()
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
+
+
+def _save_post_processed_results(page: Page, *, dataset_name: str) -> None:
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
+    post_results_card.get_by_role("button", name="Save Post-Processed Results").click()
+    expect(page.get_by_text("Save Post-Processed Results")).to_be_visible(timeout=30000)
+    name_input = page.get_by_role("textbox", name="New Dataset Name")
+    name_input.click()
+    name_input.fill(dataset_name)
+    page.get_by_role("button", name="Save").last.click()
+    expect(
+        page.get_by_text(re.compile(r"Saved .* post-processed trace", re.IGNORECASE))
+    ).to_be_visible(timeout=30000)
 
 
 def _select_card_option(
@@ -843,7 +907,25 @@ def test_josephson_example_runs_in_ui(
         allow_long_running=(case.slug == "jpa_double_pump"),
     )
     if simulation_completed:
+        raw_bundle = _latest_trace_batch_bundle_for_circuit(
+            circuit_name=case.schema_name,
+            bundle_type="circuit_simulation",
+            role="cache",
+        )
+        _assert_trace_batch_payload(raw_bundle, stage_kind="raw", point_count=1)
         _run_post_processing_and_expect_output(page)
+        saved_dataset_name = f"E2E Post Saved {uuid.uuid4().hex[:8]}"
+        _save_post_processed_results(page, dataset_name=saved_dataset_name)
+        post_bundle = _latest_trace_batch_bundle_for_circuit(
+            circuit_name=case.schema_name,
+            bundle_type="simulation_postprocess",
+        )
+        _assert_trace_batch_payload(
+            post_bundle,
+            stage_kind="postprocess",
+            point_count=1,
+            parent_batch_id=int(raw_bundle.id or 0),
+        )
 
 
 def test_flux_pumped_jpa_bias_sweep_result_view_flow(
@@ -881,6 +963,12 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     expect(page.get_by_text("Parameter sweep completed successfully", exact=False)).to_be_visible(
         timeout=180000
     )
+    raw_bundle = _latest_trace_batch_bundle_for_circuit(
+        circuit_name=case.schema_name,
+        bundle_type="circuit_simulation",
+        role="cache",
+    )
+    _assert_trace_batch_payload(raw_bundle, stage_kind="raw", point_count=9)
 
     raw_results_card = _card_by_testid(
         page,

@@ -74,6 +74,14 @@ from core.simulation.application.run_simulation import (
     simulation_sweep_run_to_payload,
     simulation_sweep_setup_snapshot,
 )
+from core.simulation.application.trace_architecture import (
+    TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+    build_post_processed_trace_specs,
+    build_raw_simulation_trace_specs,
+    is_trace_batch_bundle_payload,
+    load_raw_simulation_bundle,
+    persist_trace_batch_bundle,
+)
 from core.simulation.domain.circuit import (
     CircuitDefinition,
     DriveSourceConfig,
@@ -473,6 +481,8 @@ def _decode_simulation_result_payload(
     payload: Mapping[str, Any],
 ) -> tuple[SimulationResult, dict[str, Any] | None]:
     """Decode one persisted payload into preview result plus optional canonical sweep payload."""
+    if is_trace_batch_bundle_payload(payload):
+        return load_raw_simulation_bundle(payload)
     run_kind = str(payload.get("run_kind", "")).strip() if isinstance(payload, Mapping) else ""
     if run_kind == "parameter_sweep":
         sweep_run = simulation_sweep_run_from_payload(payload)
@@ -529,9 +539,13 @@ def _persist_simulation_result_bundle(
     include_data_records: bool = True,
     result_payload: dict[str, Any] | None = None,
 ) -> int:
-    """Persist one simulation result bundle plus its trace-level DataRecord rows."""
-    resolved_payload = (
-        dict(result_payload) if isinstance(result_payload, dict) else result.model_dump(mode="json")
+    """Persist one simulation result bundle using the trace-batch + TraceStore contract."""
+    design_id = int(source_meta.get("circuit_id") or dataset_id)
+    design_name = str(
+        source_meta.get("circuit_name")
+        or source_meta.get("design_name")
+        or source_meta.get("dataset_name")
+        or f"design-{design_id}"
     )
     bundle = ResultBundleRecord(
         dataset_id=dataset_id,
@@ -540,9 +554,14 @@ def _persist_simulation_result_bundle(
         status="completed",
         schema_source_hash=schema_source_hash,
         simulation_setup_hash=simulation_setup_hash,
-        source_meta=dict(source_meta),
+        source_meta={
+            **dict(source_meta),
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "design_id": design_id,
+            "design_name": design_name,
+        },
         config_snapshot=dict(config_snapshot),
-        result_payload=resolved_payload,
+        result_payload={},
         completed_at=datetime.utcnow(),
     )
     uow.result_bundles.add(bundle)
@@ -551,6 +570,48 @@ def _persist_simulation_result_bundle(
     if bundle.id is None:
         raise ValueError("Failed to allocate a result bundle id.")
     bundle_id = bundle.id
+
+    provenance_payload = {
+        **dict(source_meta),
+        "schema_source_hash": schema_source_hash,
+        "simulation_setup_hash": simulation_setup_hash,
+        "run_kind": (
+            "parameter_sweep"
+            if isinstance(result_payload, Mapping)
+            and str(result_payload.get("run_kind", "")).strip() == "parameter_sweep"
+            else "single_run"
+        ),
+    }
+    trace_specs = build_raw_simulation_trace_specs(
+        result=result,
+        sweep_payload=result_payload,
+    )
+    bundle.result_payload = persist_trace_batch_bundle(
+        bundle_id=bundle_id,
+        design_id=design_id,
+        design_name=design_name,
+        source_kind="circuit_simulation",
+        stage_kind="raw",
+        setup_kind="circuit_simulation.raw",
+        setup_payload=config_snapshot,
+        provenance_payload=provenance_payload,
+        trace_specs=trace_specs,
+        summary_payload={
+            "trace_count": len(trace_specs),
+            "run_kind": provenance_payload["run_kind"],
+            "frequency_points": len(result.frequencies_ghz),
+            "point_count": (
+                int(result_payload.get("point_count", 0))
+                if isinstance(result_payload, Mapping)
+                else 1
+            ),
+            "representative_point_index": (
+                int(result_payload.get("representative_point_index", 0))
+                if isinstance(result_payload, Mapping)
+                else 0
+            ),
+        },
+    )
 
     if not include_data_records:
         return bundle_id
@@ -3149,7 +3210,7 @@ def _build_post_processed_bundle_artifacts(
     source_bundle_snapshot: ResultBundleSnapshot | None = None,
     source_sweep_payload: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Build source_meta/config/result payloads for saving one post-processed bundle."""
+    """Build source_meta/config/provenance payloads for one post-processed trace batch."""
     input_source_type = str(flow_spec.get("input_y_source", "raw_y")).strip() or "raw_y"
     source_run_kind = _resolved_source_run_kind(
         source_bundle_snapshot,
@@ -3179,8 +3240,8 @@ def _build_post_processed_bundle_artifacts(
     if (sweep_setup_hash := _resolved_source_sweep_setup_hash(source_bundle_snapshot)) is not None:
         config_snapshot["sweep_setup_hash"] = sweep_setup_hash
 
-    result_payload: dict[str, Any] = {
-        "kind": "port_level_postprocess",
+    provenance_payload: dict[str, Any] = {
+        "kind": "trace_batch_postprocess_lineage",
         "run_kind": source_run_kind,
         "dimension": int(sweep.dimension),
         "labels": list(sweep.labels),
@@ -3188,18 +3249,18 @@ def _build_post_processed_bundle_artifacts(
         "frequency_points": len(sweep.frequencies_ghz),
         "input_source_type": input_source_type,
         "canonical_authority": {
-            "kind": "bundle_payload",
-            "scope": "postprocess_bundle",
+            "kind": "trace_batch_record",
+            "scope": "postprocess_trace_batch",
         },
         "projection": {
-            "kind": "frequency_only_data_records",
-            "data_type": "y_params",
+            "kind": "trace_store_projection",
+            "family": "y_matrix",
             "frequency_points": len(sweep.frequencies_ghz),
             "mode_token": SimulationResult.mode_token(sweep.mode),
         },
     }
     if source_simulation_bundle_id is not None:
-        result_payload["canonical_authority"]["source_simulation_bundle_id"] = int(
+        provenance_payload["canonical_authority"]["source_simulation_bundle_id"] = int(
             source_simulation_bundle_id
         )
 
@@ -3210,7 +3271,7 @@ def _build_post_processed_bundle_artifacts(
         representative_point_index = int(
             resolved_sweep_payload.get("representative_point_index", 0)
         )
-        result_payload.update(
+        provenance_payload.update(
             {
                 "source_bundle": {
                     "bundle_type": (
@@ -3239,11 +3300,11 @@ def _build_post_processed_bundle_artifacts(
                 ],
             }
         )
-        result_payload["projection"]["representative_source_point_index"] = (
+        provenance_payload["projection"]["representative_source_point_index"] = (
             representative_point_index
         )
 
-    return (source_meta, config_snapshot, result_payload)
+    return (source_meta, config_snapshot, provenance_payload)
 
 
 def _port_label_token(label: str) -> str:
@@ -8200,7 +8261,7 @@ def _save_post_processed_results_dialog(
                     if source_simulation_bundle_id is not None
                     else None
                 )
-                bundle_source_meta, bundle_config_snapshot, bundle_result_payload = (
+                bundle_source_meta, bundle_config_snapshot, bundle_provenance_payload = (
                     _build_post_processed_bundle_artifacts(
                         sweep=representative_sweep,
                         flow_spec=flow_spec,
@@ -8239,18 +8300,6 @@ def _save_post_processed_results_dialog(
                     ds_id = int(selected_dataset_id)
                     ds_name = str(dataset_options[ds_id])
 
-                persisted_records = _build_post_processed_runtime_data_records(
-                    dataset_id=ds_id,
-                    runtime_output=runtime_output,
-                )
-                for record in persisted_records:
-                    uow.data_records.add(record)
-                uow.flush()
-
-                record_ids = [record.id for record in persisted_records if record.id is not None]
-                if len(record_ids) != len(persisted_records):
-                    raise ValueError("Failed to allocate one or more data record ids.")
-
                 bundle = ResultBundleRecord(
                     dataset_id=ds_id,
                     bundle_type="simulation_postprocess",
@@ -8260,6 +8309,7 @@ def _save_post_processed_results_dialog(
                     simulation_setup_hash=simulation_setup_hash,
                     source_meta={
                         **bundle_source_meta,
+                        "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
                         "circuit_id": (
                             int(circuit_record.id)
                             if circuit_record is not None and circuit_record.id is not None
@@ -8268,16 +8318,55 @@ def _save_post_processed_results_dialog(
                         "circuit_name": circuit_name,
                     },
                     config_snapshot=bundle_config_snapshot,
-                    result_payload=bundle_result_payload,
+                    result_payload={},
                     completed_at=datetime.utcnow(),
                 )
                 uow.result_bundles.add(bundle)
                 uow.flush()
                 if bundle.id is None:
                     raise ValueError("Failed to allocate a post-process bundle id.")
-                uow.result_bundles.attach_data_records(
-                    bundle_id=bundle.id,
-                    data_record_ids=record_ids,
+
+                design_id = (
+                    int(circuit_record.id)
+                    if circuit_record is not None and circuit_record.id is not None
+                    else ds_id
+                )
+                design_name = (
+                    str(circuit_record.name)
+                    if circuit_record is not None and circuit_record.id is not None
+                    else ds_name
+                )
+                trace_specs = build_post_processed_trace_specs(runtime_output=runtime_output)
+                bundle.result_payload = persist_trace_batch_bundle(
+                    bundle_id=int(bundle.id),
+                    design_id=design_id,
+                    design_name=design_name,
+                    source_kind="circuit_simulation",
+                    stage_kind="postprocess",
+                    setup_kind="circuit_simulation.postprocess",
+                    setup_payload=bundle_config_snapshot,
+                    provenance_payload=bundle_provenance_payload,
+                    trace_specs=trace_specs,
+                    parent_batch_id=source_simulation_bundle_id,
+                    summary_payload={
+                        "trace_count": len(trace_specs),
+                        "run_kind": (
+                            "parameter_sweep"
+                            if isinstance(runtime_output, PortMatrixSweepRun)
+                            else "single_run"
+                        ),
+                        "frequency_points": len(representative_sweep.frequencies_ghz),
+                        "point_count": (
+                            runtime_output.point_count
+                            if isinstance(runtime_output, PortMatrixSweepRun)
+                            else 1
+                        ),
+                        "representative_point_index": (
+                            runtime_output.representative_point_index
+                            if isinstance(runtime_output, PortMatrixSweepRun)
+                            else 0
+                        ),
+                    },
                 )
                 uow.commit()
                 return ds_name
