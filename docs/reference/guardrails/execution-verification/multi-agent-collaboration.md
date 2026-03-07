@@ -9,9 +9,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "本地多 Agent 並行開發的隔離、整合與衝突避免規範"
-version: v1.1.0
-last_updated: 2026-03-05
-updated_by: docs-team
+version: v1.2.0
+last_updated: 2026-03-07
+updated_by: codex
 ---
 
 # 多 Agent 協作
@@ -27,6 +27,9 @@ updated_by: docs-team
 - **Integrator Agent**：
   - 唯一可進行整合動作（cherry-pick、resolve conflict、最終 merge 準備）
   - 負責整體驗收與回歸結果彙整
+  - 負責把 Contributor 在各自 `worktree + branch` 產出的變更整合回主交付 branch
+  - 若使用者平常工作的 branch 是 `main`，預設整合回 `main`
+  - 若使用者明確在另一條開發 branch / IDE 所在 branch 上工作，則整合回該 branch，而不是只停留在 Integrator 自己的隔離 branch
 - **Contributor Agent**：
   - 只在被分派範圍內修改
   - 只能產出可被整合的原子 commits 與交接說明
@@ -52,6 +55,8 @@ updated_by: docs-team
      - 測試結果
      - 已知風險
    - Integrator 才可進行最終整合。
+   - `最終整合` 的完成定義是：相關變更已從 contributor worktrees 整合回主交付 branch
+     （通常是 `main`；若使用者正在另一條明確指定的開發 branch 上工作，則為該 branch）。
 
 ## 禁止事項
 
@@ -68,6 +73,8 @@ updated_by: docs-team
 - **Single Integrator (Mandatory)**:
     - One delivery line/PR MUST have exactly one Integrator Agent at a time.
     - Only Integrator may perform final integration (cherry-pick/conflict resolution/merge prep).
+    - Integrator MUST carry accepted contributor changes back to the delivery branch used by the user.
+    - The default delivery branch is `main`; if the user is actively working on another explicit branch, integrate back to that branch instead.
 - **Contributor Boundaries**:
     - Contributors MUST edit only assigned files (`Allowed Files`).
     - If required changes exceed scope, stop and hand off to Integrator.
