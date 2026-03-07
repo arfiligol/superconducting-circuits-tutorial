@@ -9,8 +9,8 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Design/Trace/TraceStore architecture phase-2 execution plan and multi-agent execution split
-version: v0.2.0
+scope: Design/Trace/TraceStore architecture phase-3 execution plan and multi-agent execution split
+version: v0.3.0
 last_updated: 2026-03-08
 updated_by: codex
 ---
@@ -36,9 +36,24 @@ The following foundation work is already complete and integrated into `main`:
 
 This plan no longer lists those completed workstreams as active work.
 
-### Phase 2 Active
+### Phase 2 Completed
 
-The next phase extends the new circuit-simulation architecture into the full platform model.
+The following phase-2 workstreams are now complete and integrated into `main`:
+
+- the main user-facing language in `Raw Data` and `Characterization` now converges on `Design / Trace / Trace Batch`
+- layout ingest and measurement ingest now write through `TraceBatchRecord + TraceRecord + TraceStore`
+- `TraceStoreRef` now exposes a formal `local_zarr` / `s3_zarr` backend contract
+- `AnalysisRunRecord` now exists as a logical persistence boundary
+- the examples-driven validation matrix now has a formal phase-2 skeleton
+
+### Phase 3 Active
+
+The next phase is not a second schema rewrite. It is the push from “new architecture is usable” to:
+
+- full cross-source product workflows
+- cleaner legacy retirement
+- deployable backend and storage boundaries
+- stronger examples-driven acceptance baselines
 
 ## Goal
 
@@ -47,196 +62,148 @@ Make the system reach the following steady state:
 - `DesignRecord` is the unified root container
 - `TraceRecord` is the unified analysis unit for layout / circuit / measurement
 - `TraceBatchRecord` is the shared provenance boundary for import / simulation / preprocess / postprocess
-- `TraceStore` stays local-first while exposing a backend abstraction that is ready for future `S3 / MinIO`
+- `TraceStore` moves beyond contract-ready and reaches server/object-storage operational readiness
 - `Characterization` remains source-agnostic and depends only on trace compatibility
+- users can reliably compare layout / circuit / measurement traces inside the same `Design` scope
 
 ## Non-Goals
 
 - no historical-data migration
-- no physical DB table rename / migration yet
-- no live S3/MinIO integration yet
 - no full UI hierarchy rewrite
 - no point-per-record replacement of canonical ND `TraceRecord`
+- no regression that pushes large numeric payloads back into the metadata DB for convenience
 
 ## Success Criteria
 
-1. the main user-facing language in `Raw Data`, `Characterization`, and related flows converges on `Design / Trace / Trace Batch`
-2. layout and measurement ingest can also emit `TraceBatchRecord + TraceRecord + TraceStore`
-3. Characterization uses the same trace-first model for layout, circuit, and measurement sources
-4. the TraceStore backend abstraction has an explicit contract for both local and `s3_zarr`
-5. examples-driven regression extends beyond circuit simulation and includes ingest + characterize paths
+1. the `Design` scope supports stable cross-source browsing and compare workflows over layout / circuit / measurement traces
+2. the remaining phase-2 compatibility layers now have explicit retirement or containment rules instead of open-ended dual paths
+3. the `TraceStore` boundary is not only contract-ready for `local_zarr` / `s3_zarr`, but operationally ready for server deployment work
+4. examples-driven regression covers circuit / layout / measurement saved-trace reuse paths rather than only one source path
+5. after phase-3 acceptance, the Integrator can clearly identify which legacy names and compatibility paths still exist and why
 
 ## Active Workstreams
 
-### Workstream A: Product Vocabulary and UI Semantics
+### Workstream A: Cross-Source Product Workflow
 
 Goal:
 
-- converge user-facing language away from `Dataset/DataRecord/ResultBundle`
-- move toward:
-  - `Design`
-  - `Trace`
-  - `Trace Batch`
+- move from semantic convergence to a complete product workflow inside one `Design`
+- let users understand and operate:
+  - circuit traces
+  - layout traces
+  - measurement traces
+  - characterization outputs
 
 Focus:
 
 - `Raw Data`
 - `Characterization`
 - trace selection and result navigation
-- semantic cleanup only, without a large page-layout rewrite
+- source compare / source summary / provenance visibility
+- no large page-layout rewrite, but the cross-source compare experience must become complete
 
-### Workstream B: Layout and Measurement Ingest
+### Workstream B: Legacy Cleanup and Persistence Convergence
 
 Goal:
 
-- layout simulation ingest
-- measurement ingest
-
-must both produce:
-
-- `TraceBatchRecord`
-- `TraceRecord`
-- `TraceStore` payload
+- converge the compatibility layers intentionally kept during phase 2
+- decide which dual-write / dual-read / legacy aliases can now be retired
+- make persistence, query, characterization, and result-view flows rely on the same canonical path whenever possible
 
 Focus:
 
-- generalized import contracts
-- trace-first materialization
-- compatibility with the same characterization path used for circuit simulation
+- legacy aliases vs canonical names
+- trace-store authority vs inline fallback
+- dual-path save/read behavior
+- no physical table rename yet, but less logical duplication
 
-### Workstream C: TraceStore Backend Boundary
+### Workstream C: TraceStore Operational Boundary
 
 Goal:
 
-- evolve the current local `Zarr` baseline into a formal backend abstraction
-- make the contract explicitly support:
-  - `local_zarr`
-  - `s3_zarr`
+- move the current backend abstraction from contract-ready to deployment-ready
+- make the local-development, server-deployment, and future S3/MinIO extension boundaries explicit
 
 Focus:
 
 - stable `TraceStoreRef` contract
 - no backend-specific path logic leaking into UI/app code
 - equivalent semantics for local filesystem and object storage layouts
+- `s3_zarr` must expose a clear operational config/validation surface
+- live production integration is optional, but the design cannot stop at abstract naming
 
-### Workstream D: Analysis Run Persistence Decision
+### Workstream D: Platform Acceptance Matrix
 
 Goal:
 
-- decide whether `AnalysisRunRecord` remains contract-only
-- or becomes a formal persistence object
+- evolve the phase-2 validation skeleton into a phase-3 acceptance baseline
+- prove the platform reuse paths, not only the original circuit-only path
 
 Focus:
 
-- characterization history
-- run provenance
-- result navigation
-- responsibility split versus `TraceBatchRecord`
-
-Decision target for this workstream:
-
-- Current
-  - Characterization writes already land in the metadata DB, but the page layer still writes `TraceBatchRecord(bundle_type="characterization", role="analysis_run")` directly
-  - `AnalysisRunRecord` still lacks a formal repository boundary, so history and result navigation can drift back toward batch semantics
-- Target
-  - use `AnalysisRunRecord` as the logical persistence contract
-  - persist it through a repository adapter backed by existing `TraceBatchRecord(bundle_type="characterization", role="analysis_run")` rows
-  - make Characterization UI read and write the analysis-run repository instead of assembling generic batch rows directly
-  - keep `TraceBatchRecord` responsible for import / simulation / postprocess provenance rather than run-specific execution semantics
-- Why this is safe now
-  - no migration required
-  - no new physical table required
-  - no large numeric payload moves back into the metadata DB
-  - no regression to point-per-record canonical `TraceRecord`
-- Deferred
-  - if a dedicated physical `analysis_runs` table is needed later, that should happen in a separate migration workstream rather than in this phase-2 task
-
-### Workstream E: Examples-Driven Validation Matrix
-
-Goal:
-
-- define the formal regression matrix for the next phase
-
-It must cover at least:
-
-- circuit simulation examples
-- post-process save/read
-- characterization over saved traces
-- layout/measurement ingest paths once they land
-
-The recommended shape is a scenario-first matrix, not a page-specific checklist:
+- circuit simulation -> save/read -> characterize
+- layout ingest -> save/read -> characterize
+- measurement ingest -> save/read -> characterize
+- cross-source compare inside one `Design`
+- TraceStore local vs backend-boundary readiness
 
 | Scenario | Current status | Minimum verification focus | Extension point |
 |---|---|---|---|
-| circuit simulation -> save/read | implemented | the simulation UI runs, raw traces can be saved, and the saved dataset-facing read path remains usable | add more JosephsonCircuits example families and sweep variants |
-| postprocess -> save/read | implemented | the post-processing pipeline runs, derived traces can be saved, and the saved trace scope can be read again | expand to more pipeline steps and matrix families |
-| characterization over saved traces | implemented | analyses run against already-saved traces and preserve trace-first compatibility plus provenance | add analysis-history and run-persistence assertions |
-| layout ingest -> save/read | blocked until ingest lands | keep a dedicated test slot / TODO instead of inventing fake coverage | attach the same matrix once the ingest contract exists |
-| measurement ingest -> save/read | blocked until ingest lands | keep a dedicated test slot / TODO instead of inventing fake coverage | attach the same matrix once the ingest contract exists |
+| circuit simulation -> save/read -> characterize | implemented | saved traces can be re-read, re-characterized, and still preserve provenance | add more JosephsonCircuits example families and sweep variants |
+| postprocess -> save/read -> characterize | implemented | post-processed traces can be saved, re-read, and reused in characterization / result navigation | expand to more pipeline steps and matrix families |
+| layout ingest -> save/read -> characterize | implemented | layout traces persist through the trace-store path and can be consumed by characterization | add full browser/E2E coverage |
+| measurement ingest -> save/read -> characterize | implemented | measurement traces persist through the trace-store path and can be consumed by characterization | add broader matrix-family coverage |
+| cross-source compare within one design | active | multiple source traces can be browsed and compared inside the same design scope | add UX and compare assertions for source differences |
+| TraceStore backend readiness | active | the local backend path is stable and the `s3_zarr` boundary has explicit validation points | add MinIO/S3 integration smoke coverage |
 
 Constraints:
 
 - do not let the validation matrix regress back to “only prove circuit simulation runs”
-- do not fabricate layout/measurement ingest coverage before those paths exist
+- do not replace real cross-source reuse paths with fake fixtures
 - prioritize proving that saved traces can be reused by characterization, rather than re-running only the phase-1 simulation success path
 
 ## Recommended Multi-Agent Split
 
-### 1. Design Semantics Agent
+Phase 3 should default back to the **3 fixed Contributor Agents** model, with the Integrator defining exact `Allowed Files` and bridge scope per round.
 
-Allowed Files:
+### 1. Platform Agent
 
-- raw-data / characterization UI
-- trace scope / selection services
-- related docs and tests
+Primary ownership:
 
-### 2. Layout Ingest Agent
+- persistence contracts
+- TraceStore backend
+- ingest write paths
+- lineage / query / metadata convergence
+- cross-cutting architecture docs when needed
 
-Allowed Files:
+### 2. Simulation Agent
 
-- layout import / preprocess services
-- persistence write path
-- ingest tests
+Primary ownership:
 
-### 3. Measurement Ingest Agent
+- simulation page
+- post-processing page
+- result views
+- simulation-oriented UX/performance/lifecycle
+- Josephson example E2E
 
-Allowed Files:
+### 3. Characterization Agent
 
-- measurement import / preprocess services
-- persistence write path
-- ingest tests
+Primary ownership:
 
-### 4. TraceStore Backend Agent
+- characterization page
+- analysis services
+- trace scope / trace compatibility
+- characterization regressions
+- cross-source compare behaviors when they center on analysis consumption
 
-Allowed Files:
-
-- TraceStore abstraction
-- storage contracts
-- backend tests
-- data-handling / tech-stack docs if needed
-
-### 5. Analysis Run Contract Agent
-
-Allowed Files:
-
-- characterization persistence contracts
-- analysis-run repositories / docs / tests
-
-### 6. Validation Matrix Agent
-
-Allowed Files:
-
-- examples-driven E2E / integration tests
-- supporting fixtures only
+If a round contains a large docs-only, validation-only, or infra-only task, the Integrator may temporarily add a specialist contributor, but that should supplement rather than replace the 3 fixed contributors model.
 
 ## Integration Order
 
-1. product vocabulary / UI semantics
-2. TraceStore backend boundary
-3. layout ingest
-4. measurement ingest
-5. analysis-run persistence decision
-6. validation matrix expansion
+1. legacy cleanup / canonical path convergence
+2. TraceStore operational boundary
+3. cross-source product workflow
+4. platform acceptance matrix expansion
 
 ## Required Regression Set
 
@@ -245,14 +212,15 @@ At minimum:
 1. `uv run ruff check .`
 2. targeted `pytest` for the touched architecture slices
 3. JosephsonCircuits.jl app flows
-4. trace write/read regressions for each newly added ingest path
+4. layout / measurement saved-trace reuse regressions
 5. characterization over saved traces regression
-6. blocked scenarios in the validation matrix must remain explicit TODO/skipped slots, not silent omissions
+6. cross-source compare / scope regression whenever touched
+7. TraceStore backend-boundary regression (local is mandatory; `s3_zarr` must at least have contract-level validation)
 
 ## Acceptance Notes for Integrator
 
-- do not reopen completed phase-1 work unless the new phase explicitly expands its contract
-- first reject contributor diffs that introduce new legacy naming into phase-2 work
-- if an ingest path still stores large numeric payloads primarily in the metadata DB, treat it as architecturally incomplete
+- do not reopen completed phase-1 or phase-2 work unless phase 3 explicitly expands that contract
+- reject contributor diffs that introduce new legacy naming or new dual-path persistence patterns
+- if ingest, UI, or characterization still primarily depend on inline metadata-DB payload instead of TraceStore authority, treat the work as architecturally incomplete
 - if UI/app code directly touches backend-specific TraceStore paths, treat the backend boundary as incomplete
-- if validation still proves only “circuit simulation works” and does not cover the cross-source trace model, treat phase-2 as incomplete
+- if validation still proves only a single source path rather than the cross-source trace model, treat phase 3 as incomplete

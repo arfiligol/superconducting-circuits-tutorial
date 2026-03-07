@@ -10,8 +10,8 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Design/Trace/TraceStore architecture phase-2 execution plan and multi-agent execution split
-version: v0.2.0
+scope: Design/Trace/TraceStore architecture phase-3 execution plan and multi-agent execution split
+version: v0.3.0
 last_updated: 2026-03-08
 updated_by: codex
 ---
@@ -37,9 +37,24 @@ updated_by: codex
 
 本頁不再重複列出上述已完成 workstreams。
 
-### Phase 2 Active
+### Phase 2 Completed
 
-接下來的工作重點是把「circuit simulation 已打通的新架構」擴展為完整平台語意。
+以下 phase-2 workstreams 已完成並進入 `main`：
+
+- `Raw Data` / `Characterization` 的主要使用者語言已收斂到 `Design / Trace / Trace Batch`
+- layout ingest 與 measurement ingest 已能寫入 `TraceBatchRecord + TraceRecord + TraceStore`
+- `TraceStoreRef` 已收斂出 `local_zarr` / `s3_zarr` backend contract
+- `AnalysisRunRecord` 已落地為 logical persistence boundary
+- examples-driven validation matrix 已建立 phase-2 基礎骨架
+
+### Phase 3 Active
+
+接下來的工作重點不是再重做一次 schema，而是把已落地的新架構推進到：
+
+- 更完整的 cross-source product workflow
+- 更乾淨的 legacy cleanup
+- 更可部署的 backend / operational boundary
+- 更穩定的 examples-driven acceptance baseline
 
 ## Goal
 
@@ -48,196 +63,148 @@ updated_by: codex
 - `DesignRecord` 成為統一 root container
 - `TraceRecord` 成為 layout / circuit / measurement 的統一分析單位
 - `TraceBatchRecord` 成為 import / simulation / preprocess / postprocess 的統一 provenance boundary
-- `TraceStore` 保持 local-first，但 backend abstraction 明確支援未來 `S3 / MinIO` extension
+- `TraceStore` 不只 contract-ready，還要達到 server / object-storage operational readiness
 - `Characterization` 對來源保持 source-agnostic，只依賴 trace compatibility
+- 使用者可在同一個 `Design` scope 下穩定比較 layout / circuit / measurement traces
 
 ## Non-Goals
 
 - 不做歷史資料 migration
-- 不做 DB physical table rename / migration
-- 不先做 live S3/MinIO integration
 - 不先重寫全部 UI hierarchy
 - 不以 point-per-record 取代 canonical ND `TraceRecord`
+- 不為了 phase-3 便利而把大型 numeric payload 回塞 metadata DB
 
 ## Success Criteria
 
-1. `Raw Data` / `Characterization` / 相關 UI 主要語言收斂到 `Design / Trace / Trace Batch`
-2. layout / measurement ingest 也能寫入 `TraceBatchRecord + TraceRecord + TraceStore`
-3. Characterization 對 layout / circuit / measurement 三種來源維持同一套 trace-first model
-4. TraceStore backend abstraction 對 local 與 `s3_zarr` 都有正式 contract
-5. examples-driven regression 不再只覆蓋 circuit simulation，也覆蓋 ingest + characterize path
+1. `Design` scope 下可穩定完成 layout / circuit / measurement traces 的 cross-source browsing 與 compare workflow
+2. phase-2 遺留的 legacy compatibility paths 有明確收斂策略，不再無限制保留 dual-write / dual-read
+3. `TraceStore` backend boundary 對 `local_zarr` 與 `s3_zarr` 不只停在 contract，而是具備明確 operational entry points
+4. examples-driven regression 能覆蓋 circuit / layout / measurement 的 saved-trace reuse paths，而不是只驗證單一路徑
+5. phase-3 驗收完成後，Integrator 能明確指出哪些 legacy names / compatibility layers 仍保留，哪些已退休
 
 ## Active Workstreams
 
-### Workstream A: Product Vocabulary and UI Semantics
+### Workstream A: Cross-Source Product Workflow
 
 目標：
 
-- 將使用者可見語言從 `Dataset/DataRecord/ResultBundle` 收斂到：
-  - `Design`
-  - `Trace`
-  - `Trace Batch`
-- 清掉 UI / docs / service layer 中殘留的舊語意
+- 把 `Design` 從語意收斂推進到真正的 product workflow
+- 讓使用者能在同一個 `Design` scope 內理解並操作：
+  - circuit traces
+  - layout traces
+  - measurement traces
+  - characterization outputs
 
 重點：
 
 - `Raw Data`
 - `Characterization`
 - trace selection / result navigation
-- 只改語意與查詢介面，不做大型頁面重排
+- source compare / source summary / provenance visibility
+- 不做大型頁面重排，但要把 cross-source compare 體驗補完整
 
-### Workstream B: Layout and Measurement Ingest
+### Workstream B: Legacy Cleanup and Persistence Convergence
 
 目標：
 
-- layout simulation ingest
-- measurement ingest
-
-都能產出：
-
-- `TraceBatchRecord`
-- `TraceRecord`
-- `TraceStore` payload
+- 收斂 phase-2 為了安全整合而保留的 compatibility layers
+- 明確決定哪些 dual-write / dual-read / legacy aliases 可以退休
+- 讓 persistence / query / characterization / result-view 盡量共用同一套 canonical path
 
 重點：
 
-- import contract generalized
-- trace-first materialization
-- 與 circuit simulation 同一 characterization path
+- legacy aliases vs canonical names
+- trace-store authority vs inline fallback
+- raw/postprocess/manual-save 等雙軌路徑
+- 不要求 physical table rename，但要讓 logical contract 更單一路徑
 
-### Workstream C: TraceStore Backend Boundary
+### Workstream C: TraceStore Operational Boundary
 
 目標：
 
-- 把目前 local `Zarr` baseline 收斂成正式 backend abstraction
-- contract 明確支持：
-  - `local_zarr`
-  - `s3_zarr`
+- 把目前 backend abstraction 從 contract-ready 推進到可部署 readiness
+- 讓 local 開發、server 部署、未來 S3/MinIO extension 的 boundary 更清楚
 
 重點：
 
 - `TraceStoreRef` contract 穩定
 - backend-specific path logic 不外漏到 UI/app layer
 - local filesystem 與 object storage layout 保持一致語意
+- `s3_zarr` 至少要有明確 operational config / validation surface
+- 不一定要做 live production integration，但不能只停在抽象名稱
 
-### Workstream D: Analysis Run Persistence Decision
+### Workstream D: Platform Acceptance Matrix
 
 目標：
 
-- 決定 `AnalysisRunRecord` 是否維持 contract-only
-- 或升級成正式 persistence object
+- 把 examples-driven validation matrix 從 phase-2 骨架擴張成 phase-3 acceptance baseline
+- 不只驗證 circuit simulation，而是驗證整個設計平台的核心 reuse 路徑
 
 重點：
 
-- characterization history
-- run provenance
-- result navigation
-- 與 `TraceBatchRecord` 的責任切分
-
-Decision target for this workstream：
-
-- Current
-  - Characterization 寫入已落在 metadata DB，但 UI / page helper 仍直接操作 `TraceBatchRecord(bundle_type="characterization", role="analysis_run")`
-  - `AnalysisRunRecord` 仍缺正式 repository boundary，因此 history / result navigation 仍容易退回 batch semantics
-- Target
-  - 以 `AnalysisRunRecord` 作為 logical persistence contract
-  - 透過 repository adapter 將其持久化到既有 `TraceBatchRecord(bundle_type="characterization", role="analysis_run")`
-  - Characterization UI 改讀寫 analysis-run repository，而不是直接組 generic batch row
-  - `TraceBatchRecord` 繼續負責 import / simulation / postprocess provenance，不吸收 run-specific execution semantics
-- Why this is safe now
-  - 不需要 migration
-  - 不需要新增 physical table
-  - 不會把大型 numeric payload 放回 metadata DB
-  - 不會把 canonical `TraceRecord` 退回 point-per-record
-- Deferred
-  - 若未來需要獨立 physical table，再另開 migration workstream；這不屬於本 phase-2 task
-
-### Workstream E: Examples-Driven Validation Matrix
-
-目標：
-
-- 建立下一階段的正式 regression matrix
-
-至少包含：
-
-- circuit simulation examples
-- post-process save/read
-- characterization over saved traces
-- layout/measurement ingest path（當其落地後）
-
-目前建議先把 matrix 固定成「scenario first」骨架，而不是把驗證綁死在單一來源頁面：
+- circuit simulation -> save/read -> characterize
+- layout ingest -> save/read -> characterize
+- measurement ingest -> save/read -> characterize
+- cross-source compare in same `Design`
+- TraceStore local vs backend-boundary readiness
 
 | Scenario | 目前狀態 | 最低驗證重點 | 後續擴張點 |
 |---|---|---|---|
-| circuit simulation -> save/read | implemented | simulation UI 可執行、raw traces 可保存、保存後 dataset-facing read path 可用 | 增加更多 JosephsonCircuits example families / sweep variants |
-| postprocess -> save/read | implemented | post-processing pipeline 可執行、derived traces 可保存、保存後可重新讀取其 trace scope | 擴張更多 pipeline steps / matrix families |
-| characterization over saved traces | implemented | 以已保存 traces 為輸入執行 analysis，驗證 trace-first compatibility 與 provenance | 補 analysis history / run-persistence assertions |
-| layout ingest -> save/read | blocked until ingest lands | 先保留 test slot / TODO，不用假造 coverage | ingest contract 落地後接入同一 matrix |
-| measurement ingest -> save/read | blocked until ingest lands | 先保留 test slot / TODO，不用假造 coverage | ingest contract 落地後接入同一 matrix |
+| circuit simulation -> save/read -> characterize | implemented | saved traces 能重讀、能再進 characterization、能保留 provenance | 擴張更多 JosephsonCircuits example families / sweep variants |
+| postprocess -> save/read -> characterize | implemented | post-processed traces 可保存、重讀、再次進 characterization / result navigation | 擴張更多 pipeline steps / matrix families |
+| layout ingest -> save/read -> characterize | implemented | layout traces 以 trace-store path 寫入並可被 characterization 消費 | 補 full browser/E2E path |
+| measurement ingest -> save/read -> characterize | implemented | measurement traces 以 trace-store path 寫入並可被 characterization 消費 | 補更多 matrix family coverage |
+| cross-source compare within one design | active | 同一 design scope 下能同時顯示與比較多來源 traces | 補 source difference UX 與 compare assertions |
+| TraceStore backend readiness | active | local backend 路徑穩定且 `s3_zarr` boundary 有明確驗證點 | 補 MinIO/S3 integration smoke tests |
 
 約束：
 
 - 不要把 validation matrix 重新退回「只驗證 circuit simulation 能跑」
-- 不要要求 layout/measurement 在尚未落地時製造假 fixture 來冒充 ingest coverage
+- 不要用假 fixture 取代真實 cross-source reuse path
 - characterization coverage 應優先驗證「saved traces 可被再利用」，而不是重複驗證 phase-1 的單次 simulation 成功訊息
 
 ## Recommended Multi-Agent Split
 
-### 1. Design Semantics Agent
+Phase 3 預設維持 **3 位固定 Contributor Agents**，由 Integrator 每輪在 prompt 內細化 `Allowed Files` 與 bridge 邊界。
 
-Allowed Files:
+### 1. Platform Agent
 
-- raw-data / characterization UI
-- trace scope / selection services
-- related docs / tests
+主要承接：
 
-### 2. Layout Ingest Agent
+- persistence contracts
+- TraceStore backend
+- ingest write paths
+- lineage / query / metadata convergence
+- cross-cutting architecture docs when needed
 
-Allowed Files:
+### 2. Simulation Agent
 
-- layout import / preprocess services
-- persistence write path
-- ingest tests
+主要承接：
 
-### 3. Measurement Ingest Agent
+- simulation page
+- post-processing page
+- result views
+- simulation-oriented UX/performance/lifecycle
+- Josephson examples E2E
 
-Allowed Files:
+### 3. Characterization Agent
 
-- measurement import / preprocess services
-- persistence write path
-- ingest tests
+主要承接：
 
-### 4. TraceStore Backend Agent
+- characterization page
+- analysis services
+- trace scope / trace compatibility
+- characterization regressions
+- cross-source compare behaviors when they center on analysis consumption
 
-Allowed Files:
-
-- TraceStore abstraction
-- storage contracts
-- backend tests
-- data handling / tech stack docs if needed
-
-### 5. Analysis Run Contract Agent
-
-Allowed Files:
-
-- characterization persistence contracts
-- analysis run repositories / docs / tests
-
-### 6. Validation Matrix Agent
-
-Allowed Files:
-
-- examples-driven E2E / integration tests
-- supporting fixtures only
+如有大型 docs-only、validation-only、或 infra-only 任務，可由 Integrator 臨時增派 specialist agent，但不應取代上述 3 位固定 contributors 的預設模式。
 
 ## Integration Order
 
-1. product vocabulary / UI semantics
-2. TraceStore backend boundary
-3. layout ingest
-4. measurement ingest
-5. analysis-run persistence decision
-6. validation matrix expansion
+1. legacy cleanup / canonical path convergence
+2. TraceStore operational boundary
+3. cross-source product workflow
+4. platform acceptance matrix expansion
 
 ## Required Regression Set
 
@@ -246,14 +213,15 @@ Allowed Files:
 1. `uv run ruff check .`
 2. targeted `pytest` for touched architecture slices
 3. JosephsonCircuits.jl app flows
-4. 新增 ingest path 的 trace write/read regression
+4. layout / measurement saved-trace reuse regression
 5. characterization over saved traces regression
-6. validation matrix 中 blocked scenarios 需明確保留 TODO / skipped reason，不可默默缺席
+6. cross-source compare / scope regression（若本輪有碰）
+7. TraceStore backend-boundary regression（local 必跑；`s3_zarr` 至少 contract-level validation）
 
 ## Acceptance Notes for Integrator
 
-- 已完成的 phase-1 workstreams 不要重新打開，除非新 phase 明確需要擴張其 contract
-- 優先檢查 contributor 是否仍引入新的 legacy naming
-- 若 ingest path 仍把大型 numeric payload 主要存進 metadata DB，視為未符合架構
+- 已完成的 phase-1 / phase-2 workstreams 不要重新打開，除非 phase-3 明確需要擴張其 contract
+- 優先檢查 contributor 是否仍引入新的 legacy naming 或新的 dual-path 寫法
+- 若 ingest / UI / characterization 仍主要依賴 metadata DB inline payload，而不是 TraceStore authority，視為未符合架構
 - 若 UI/app layer 直接碰 backend-specific TraceStore path，視為 backend boundary 未完成
-- 若 validation 仍只證明「circuit simulation 可跑」，而未覆蓋 cross-source trace model，視為 phase-2 未完成
+- 若 validation 仍只證明單一路徑，而未覆蓋 cross-source trace model，視為 phase-3 未完成
