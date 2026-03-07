@@ -229,23 +229,29 @@ When the latest successful run is `run_kind=parameter_sweep`, `Simulation Result
 - section header must show:
   - sweep dimension count
   - total point count
-  - current view-axis and fixed-axis slice summary
+  - current compare-axis and fixed-axis slice summary
 - minimum `selectors`:
-  - `View Axis` selector (x-axis)
-  - `Fixed Axis` selectors for N-1 axes
   - `family`
   - `metric`
+  - `Compare Axis` selector (choose which sweep axis expands into multiple traces)
+  - `Fixed Axis` selectors for N-1 axes
   - `Add Trace` and multiple trace cards
+  - each trace card must select one `sweep value`
   - `Output Port` / `Input Port`
   - `Output Mode` / `Input Mode`
-  - `Frequency`
 - minimum `outputs`:
-  - `Table`: per-point `axis value` + `point index` + per-trace metric columns for the active slice
-  - `Plot`: `metric vs view axis` for the active slice, with multi-trace overlay
+  - one shared plot with `X = Frequency` and `Y = selected metric`
+  - multiple traces, where each trace corresponds to a different sweep value on the active compare axis
+  - for sweeps with dimension > 1, UI must allow fixing the remaining axes and comparing the active axis as overlaid frequency responses
 
 !!! important "Trace-first"
     Sweep selectors must follow the existing trace-first design.
     Do not hardcode one trace path (for example `S11` only).
+
+!!! important "Simulation focus"
+    `Sweep Result View` should prioritize basic `S / Y / Z / QE / CM` frequency-response comparison.
+    More analysis-oriented `metric vs parameter` or `mode vs L_jun` plots should not become the
+    main visual path inside `Simulation Results`.
 
 !!! note "Save consistency"
     For sweep runs, `Save Raw Simulation Results` must persist full sweep payload and provenance
@@ -270,8 +276,8 @@ Use this flow to reproduce official `Flux-pumped JPA` bias-sweep semantics (bias
 4. add at least one sweep axis in `Parameter Sweeps` and set `Sweep Start / Stop / Points`
    (optionally add a second axis for slice analysis)
 5. run `Run Simulation`
-6. in `Simulation Results` -> `Sweep Result View`, pick `View Axis`, fix the remaining axes, then pick trace/metric/frequency selectors
-7. verify `Table` and `Plot` stay synchronized as `metric vs view axis` for the active slice
+6. in `Simulation Results` -> `Sweep Result View`, pick `Compare Axis`, fix the remaining axes, then assign different `sweep value` selections to each trace
+7. verify the single shared plot keeps `Frequency` on the x-axis and overlays the selected sweep values as multiple traces
 
 ### Port Termination Compensation (optional)
 
@@ -645,23 +651,23 @@ Full nodal internal-node elimination (steps 1/2 UI flow) is explicitly out of M1
 
 ### Post-Processed Sweep Result View Contract
 
-When the canonical `Post Processing Results` output is `run_kind=parameter_sweep`, the UI must provide a full sweep explorer in addition to the representative quick preview:
+When the canonical `Post Processing Results` output is `run_kind=parameter_sweep`, the main result surface must switch directly to the canonical sweep compare view instead of stacking a representative quick-preview plot plus a second sweep plot:
 
 - the section header must clearly distinguish:
   - canonical full sweep payload
   - UI preview / projection (for example representative-point quick preview)
 - minimum `selectors`:
-  - `View Axis`
-  - remaining `Fixed Axis` selectors
   - `family`
   - `metric`
+  - `Compare Axis`
+  - remaining `Fixed Axis` selectors
   - `Add Trace` and multiple trace cards
+  - each trace card must select one `sweep value`
   - `Output Port` / `Input Port`
   - `Output Mode` / `Input Mode`
-  - `Frequency`
 - minimum `outputs`:
-  - `Table`: per-point `axis value` + `point index` + per-trace metric columns for the active slice
-  - `Plot`: `metric vs view axis` for the active slice, with multi-trace overlay
+  - one shared plot with `X = Frequency` and `Y = selected metric`
+  - multiple traces, where each trace corresponds to a different post-processed sweep value
 - the representative point must never be promoted back to authority; preview remains a quick-inspect projection only
 - if save/persistence does not yet support canonical post-processed full sweep output, the UI must state that limitation explicitly and must not present the preview as canonical export
 

@@ -13,6 +13,7 @@ from app.pages.simulation import (
     _Z0_CONTROL_PROPS,
     _build_post_processed_bundle_artifacts,
     _build_post_processed_result_payload,
+    _build_post_processed_runtime_data_records,
     _build_post_processed_sweep_explorer_payload,
     _build_post_processed_y_data_records,
     _build_result_bundle_data_records,
@@ -43,6 +44,7 @@ from app.pages.simulation import (
     _save_saved_setups_for_schema,
     _save_selected_post_process_setup_id,
     _should_log_sweep_point_progress,
+    _sweep_payload_port_options,
     _sweep_progress_log_step,
 )
 from app.services.simulation_setup_manager import (
@@ -135,6 +137,41 @@ def _sample_post_processed_sweep_run() -> PortMatrixSweepRun:
                     mode=(0,),
                     labels=("1", "2"),
                     frequencies_ghz=(5.0, 5.2),
+                    y_matrices=(second_matrix, second_matrix.copy()),
+                    source_kind="y",
+                ),
+            ),
+        ),
+        representative_point_index=0,
+    )
+
+
+def _sample_transformed_post_processed_sweep_run() -> PortMatrixSweepRun:
+    first_matrix = np.asarray(((1.0 + 0.0j, 0.2 + 0.0j), (0.3 + 0.0j, 2.0 + 0.0j)))
+    second_matrix = np.asarray(((3.0 + 0.0j, 0.4 + 0.0j), (0.5 + 0.0j, 4.0 + 0.0j)))
+    return PortMatrixSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="L_q", values=(10.0, 15.0), unit="nH"),),
+        points=(
+            PortMatrixSweepPoint(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"L_q": 10.0},
+                sweep=PortMatrixSweep(
+                    mode=(0,),
+                    labels=("cm(1,2)", "dm(1,2)"),
+                    frequencies_ghz=(4.8, 4.9),
+                    y_matrices=(first_matrix, first_matrix.copy()),
+                    source_kind="y",
+                ),
+            ),
+            PortMatrixSweepPoint(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"L_q": 15.0},
+                sweep=PortMatrixSweep(
+                    mode=(0,),
+                    labels=("cm(1,2)", "dm(1,2)"),
+                    frequencies_ghz=(4.8, 4.9),
                     y_matrices=(second_matrix, second_matrix.copy()),
                     source_kind="y",
                 ),
@@ -522,9 +559,38 @@ def test_can_save_post_processed_results_requires_valid_output_state() -> None:
         y_matrices=(np.asarray(((1.0 + 0.0j, 0.0), (0.0, 2.0 + 0.0j))),),
         source_kind="y",
     )
+    runtime_output = _sample_post_processed_sweep_run()
     assert _can_save_post_processed_results(sweep, {"steps": []}) is True
+    assert _can_save_post_processed_results(runtime_output, {"run_kind": "parameter_sweep"}) is True
     assert _can_save_post_processed_results(None, {"steps": []}) is False
     assert _can_save_post_processed_results(sweep, None) is False
+
+
+def test_build_post_processed_runtime_data_records_materializes_all_sweep_points() -> None:
+    runtime_output = _sample_transformed_post_processed_sweep_run()
+
+    records = _build_post_processed_runtime_data_records(
+        dataset_id=7,
+        runtime_output=runtime_output,
+    )
+
+    imag_records = [
+        record
+        for record in records
+        if record.data_type == "y_params" and record.representation == "imaginary"
+    ]
+    assert len(records) == 16
+    assert {record.dataset_id for record in records} == {7}
+    assert {
+        record.parameter
+        for record in imag_records
+        if record.parameter.startswith("Y_dm_1_2_dm_1_2")
+    } == {
+        "Y_dm_1_2_dm_1_2 [sweep L_q=10 nH]",
+        "Y_dm_1_2_dm_1_2 [sweep L_q=15 nH]",
+    }
+    assert imag_records[0].axes[1]["name"] == "L_q"
+    assert imag_records[0].axes[1]["values"] == [10.0]
 
 
 def test_build_post_processed_bundle_artifacts_keep_single_run_payload_minimal() -> None:
@@ -796,6 +862,41 @@ def test_build_post_processed_sweep_explorer_payload_preserves_canonical_points(
     assert second_trace[0].real == pytest.approx(3.0)
 
 
+def test_post_processed_sweep_explorer_payload_preserves_transformed_port_labels() -> None:
+    payload = _build_post_processed_sweep_explorer_payload(
+        _sample_transformed_post_processed_sweep_run(),
+        reference_impedance_ohm=50.0,
+    )
+    sweep_run = simulation_sweep_run_from_payload(payload)
+
+    port_options = _sweep_payload_port_options(
+        payload,
+        fallback_result=sweep_run.representative_result,
+    )
+    rendered = _build_sweep_metric_rows(
+        sweep_payload=payload,
+        family="admittance",
+        metric="real",
+        trace_selection={
+            "trace": "admittance",
+            "output_mode": (0,),
+            "output_port": 2,
+            "input_mode": (0,),
+            "input_port": 2,
+            "sweep_axis_index": 1,
+        },
+        z0=50.0,
+        frequency_index=0,
+        dark_mode=True,
+        port_label_by_index=port_options,
+    )
+
+    assert payload["port_labels"] == {"1": "cm(1,2)", "2": "dm(1,2)"}
+    assert port_options == {1: "cm(1,2)", 2: "dm(1,2)"}
+    assert rendered["figure"].data[0].name.startswith("Y_dm_dm")
+    assert "Y22" not in rendered["figure"].data[0].name
+
+
 def test_post_processed_sweep_metric_rows_can_render_non_representative_point() -> None:
     payload = _build_post_processed_sweep_explorer_payload(
         _sample_post_processed_sweep_run(),
@@ -812,6 +913,7 @@ def test_post_processed_sweep_metric_rows_can_render_non_representative_point() 
             "output_port": 1,
             "input_mode": (0,),
             "input_port": 1,
+            "sweep_axis_index": 1,
         },
         z0=50.0,
         frequency_index=0,
@@ -819,9 +921,10 @@ def test_post_processed_sweep_metric_rows_can_render_non_representative_point() 
     )
 
     assert rendered["point_count"] == 2
-    assert rendered["rows"][0]["metric_values"]["trace_1"] == pytest.approx(1.0)
-    assert rendered["rows"][1]["metric_values"]["trace_1"] == pytest.approx(3.0)
-    assert rendered["rows"][1]["axis_value"] == pytest.approx(1100.0)
+    assert rendered["slice_point_count"] == 1
+    assert rendered["trace_details"][0]["point_index"] == 1
+    assert rendered["trace_details"][0]["axis_value"] == pytest.approx(1100.0)
+    assert rendered["figure"].data[0].y[0] == pytest.approx(3.0)
 
 
 def test_hash_stable_json_is_order_independent() -> None:
@@ -1272,12 +1375,64 @@ def test_normalize_sweep_result_view_state_clamps_invalid_selector_state() -> No
     assert normalized["trace_selection"]["trace"] == "s_param"
     assert normalized["trace_selection"]["output_port"] == 1
     assert normalized["trace_selection"]["input_port"] == 1
+    assert normalized["trace_selection"]["sweep_axis_index"] == 0
     assert normalized["view_axis_target_value_ref"] == "Lj"
     assert normalized["fixed_axis_indices"] == {}
     assert len(normalized["traces"]) == 1
 
 
-def test_build_sweep_metric_rows_maps_metric_vs_axis_with_frequency_selector() -> None:
+def test_normalize_sweep_result_view_state_accepts_sweep_value_label_text() -> None:
+    base = _sample_result()
+    sweep_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="L_q", values=(10.0, 15.0, 20.0), unit="nH"),),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"L_q": 10.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"L_q": 15.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=2,
+                axis_indices=(2,),
+                axis_values={"L_q": 20.0},
+                result=base,
+            ),
+        ),
+        representative_point_index=0,
+    )
+    view_state = {
+        "family": "admittance",
+        "metric": "real",
+        "view_axis_target_value_ref": "L_q",
+        "traces": [
+            {
+                "trace": "admittance",
+                "output_mode": (0,),
+                "output_port": 1,
+                "input_mode": (0,),
+                "input_port": 1,
+                "sweep_axis_index": "2: 15 nH",
+            }
+        ],
+    }
+
+    normalized = _normalize_sweep_result_view_state(
+        view_state=view_state,
+        sweep_run=sweep_run,
+    )
+
+    assert normalized["traces"][0]["sweep_axis_index"] == 1
+    assert normalized["trace_selection"]["sweep_axis_index"] == 1
+
+
+def test_build_sweep_metric_rows_maps_selected_sweep_value_to_frequency_trace() -> None:
     result_a = _sample_result()
     result_b = _sample_result().model_copy(deep=True)
     result_b.s11_real = [0.4, 0.0, -0.4]
@@ -1312,36 +1467,42 @@ def test_build_sweep_metric_rows_maps_metric_vs_axis_with_frequency_selector() -
             "output_port": 1,
             "input_mode": (0,),
             "input_port": 1,
+            "sweep_axis_index": 1,
         },
         z0=50.0,
         frequency_index=0,
         dark_mode=True,
     )
 
-    rows = payload["rows"]
-    assert len(rows) == 2
-    assert rows[0]["axis_value"] == pytest.approx(900.0)
-    assert rows[1]["axis_value"] == pytest.approx(1100.0)
-    assert rows[0]["metric_values"]["trace_1"] == pytest.approx(0.2)
-    assert rows[1]["metric_values"]["trace_1"] == pytest.approx(0.4)
     assert payload["axis_label"] == "Lj (pH)"
     assert payload["metric_label"] == "Magnitude (linear)"
-    assert len(payload["trace_labels"]) == 1
-    assert isinstance(payload["trace_labels"][0], str)
-    assert payload["trace_labels"][0]
+    assert payload["slice_point_count"] == 1
+    assert payload["trace_details"][0]["axis_index"] == 1
+    assert payload["trace_details"][0]["axis_value"] == pytest.approx(1100.0)
+    assert payload["figure"].data[0].x[0] == pytest.approx(4.9)
+    assert payload["figure"].data[0].y[0] == pytest.approx(0.4)
     assert len(payload["figure"].data) == 1
 
 
-def test_build_sweep_metric_rows_updates_when_frequency_selector_changes() -> None:
+def test_build_sweep_metric_rows_updates_when_sweep_value_changes() -> None:
     base = _sample_result()
+    second = _sample_result().model_copy(deep=True)
+    second.s_parameter_real["S11"] = [0.5, 0.25, -0.25]
+    second.s_parameter_mode_real["om=0|op=1|im=0|ip=1"] = [0.5, 0.25, -0.25]
     sweep_run = SimulationSweepRun(
-        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0,), unit="pH"),),
+        axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
         points=(
             SimulationSweepPointResult(
                 point_index=0,
                 axis_indices=(0,),
                 axis_values={"Lj": 900.0},
                 result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"Lj": 1100.0},
+                result=second,
             ),
         ),
         representative_point_index=0,
@@ -1350,13 +1511,14 @@ def test_build_sweep_metric_rows_updates_when_frequency_selector_changes() -> No
     first = _build_sweep_metric_rows(
         sweep_payload=payload,
         family="s",
-        metric="phase_deg",
+        metric="magnitude_linear",
         trace_selection={
             "trace": "s_param",
             "output_mode": (0,),
             "output_port": 1,
             "input_mode": (0,),
             "input_port": 1,
+            "sweep_axis_index": 0,
         },
         z0=50.0,
         frequency_index=0,
@@ -1365,22 +1527,75 @@ def test_build_sweep_metric_rows_updates_when_frequency_selector_changes() -> No
     second = _build_sweep_metric_rows(
         sweep_payload=payload,
         family="s",
-        metric="phase_deg",
+        metric="magnitude_linear",
         trace_selection={
             "trace": "s_param",
             "output_mode": (0,),
             "output_port": 1,
             "input_mode": (0,),
             "input_port": 1,
+            "sweep_axis_index": 1,
         },
         z0=50.0,
-        frequency_index=1,
+        frequency_index=0,
         dark_mode=True,
     )
-    assert (
-        first["rows"][0]["metric_values"]["trace_1"]
-        != second["rows"][0]["metric_values"]["trace_1"]
+    assert first["figure"].data[0].y[0] != second["figure"].data[0].y[0]
+
+
+def test_build_sweep_metric_rows_reuses_cached_series_for_same_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = simulation_sweep_run_to_payload(
+        SimulationSweepRun(
+            axes=(SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH"),),
+            points=(
+                SimulationSweepPointResult(
+                    point_index=0,
+                    axis_indices=(0,),
+                    axis_values={"Lj": 900.0},
+                    result=_sample_result(),
+                ),
+                SimulationSweepPointResult(
+                    point_index=1,
+                    axis_indices=(1,),
+                    axis_values={"Lj": 1100.0},
+                    result=_sample_result(),
+                ),
+            ),
+            representative_point_index=0,
+        )
     )
+    original_builder = simulation_page._build_simulation_result_figure
+    call_count = 0
+
+    def counting_builder(*args: object, **kwargs: object):
+        nonlocal call_count
+        call_count += 1
+        return original_builder(*args, **kwargs)
+
+    monkeypatch.setattr(simulation_page, "_build_simulation_result_figure", counting_builder)
+
+    kwargs = {
+        "sweep_payload": payload,
+        "family": "s",
+        "metric": "magnitude_linear",
+        "trace_selection": {
+            "trace": "s_param",
+            "output_mode": (0,),
+            "output_port": 1,
+            "input_mode": (0,),
+            "input_port": 1,
+            "sweep_axis_index": 0,
+        },
+        "z0": 50.0,
+        "frequency_index": 0,
+        "dark_mode": True,
+    }
+    _build_sweep_metric_rows(**kwargs)
+    _build_sweep_metric_rows(**kwargs)
+
+    assert call_count == 1
 
 
 def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:
@@ -1438,6 +1653,7 @@ def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:
                 "output_port": 1,
                 "input_mode": (0,),
                 "input_port": 1,
+                "sweep_axis_index": 0,
             },
             {
                 "trace": "s_param",
@@ -1445,6 +1661,7 @@ def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:
                 "output_port": 2,
                 "input_mode": (0,),
                 "input_port": 1,
+                "sweep_axis_index": 1,
             },
         ],
         view_axis_target_value_ref="Lj",
@@ -1459,7 +1676,6 @@ def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:
     assert payload["slice_point_count"] == 2
     assert payload["view_axis_target_value_ref"] == "Lj"
     assert payload["fixed_axis_indices"]["sources[1].current_amp"] == 1
-    assert len(payload["rows"]) == 2
-    assert payload["rows"][0]["axis_value"] == pytest.approx(900.0)
-    assert payload["rows"][1]["axis_value"] == pytest.approx(1100.0)
+    assert payload["trace_details"][0]["axis_value"] == pytest.approx(900.0)
+    assert payload["trace_details"][1]["axis_value"] == pytest.approx(1100.0)
     assert len(payload["figure"].data) == 2

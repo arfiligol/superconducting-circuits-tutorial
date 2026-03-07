@@ -426,6 +426,17 @@ def _configure_single_axis_sweep(
 
 def _run_and_expect_success(page: Page, *, allow_long_running: bool = False) -> bool:
     page.get_by_role("button", name="Run Simulation").click()
+    expect(
+        page.get_by_text(
+            re.compile(
+                (
+                    r"Preparing simulation|Checking cached results|"
+                    r"Submitting job to Julia worker|Simulation completed successfully"
+                ),
+                re.IGNORECASE,
+            )
+        ).first
+    ).to_be_visible(timeout=3000)
     success_banner = page.get_by_text("Simulation completed successfully")
 
     if allow_long_running:
@@ -527,7 +538,27 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     select_all_button.click()
 
     run_button.click()
+    expect(
+        page.get_by_text(
+            re.compile(
+                r"Running post-processing pipeline|Pipeline output ready",
+                re.IGNORECASE,
+            )
+        ).first
+    ).to_be_visible(timeout=3000)
+    expect(
+        post_results_card.get_by_text(
+            re.compile(
+                (
+                    r"Updating Post Processing Result View|"
+                    r"Result View consumes the latest Post Processing pipeline output node"
+                ),
+                re.IGNORECASE,
+            )
+        ).first
+    ).to_be_visible(timeout=3000)
     expect(page.get_by_text(ready_text)).to_be_visible(timeout=30000)
+    expect(page.get_by_text("Running post-processing pipeline...")).to_have_count(0)
     expect(save_button).to_be_enabled(timeout=30000)
 
     post_results_card.get_by_role("tab", name="Impedance (Z)").click()
@@ -868,25 +899,10 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     sweep_view = _locator_by_testid(
         page,
         "simulation-sweep-results-view",
-        fallback=raw_results_card.get_by_text("Sweep Result View").first,
+        fallback=raw_results_card.get_by_text("Parameter Sweep Compare").first,
     )
     expect(sweep_view).to_be_visible(timeout=30000)
 
-    frequency_select = _locator_by_testid(
-        page,
-        "simulation-sweep-frequency-select",
-        fallback=sweep_view.get_by_role("combobox", name="Frequency"),
-    )
-    frequency_select.click()
-    frequency_select.press("ArrowDown")
-    frequency_select.press("Enter")
-
-    sweep_table = _locator_by_testid(
-        page,
-        "simulation-sweep-table",
-        fallback=raw_results_card.locator("table").last,
-    )
-    expect(sweep_table.locator("tbody tr")).to_have_count(3, timeout=30000)
     sweep_plot = _locator_by_testid(
         page,
         "simulation-sweep-plot",
@@ -894,8 +910,14 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     )
     expect(sweep_plot).to_be_visible(timeout=30000)
 
-    _select_card_option(page, sweep_view, "View Axis", "sources[2].current_amp")
-    expect(sweep_table.locator("tbody tr")).to_have_count(3, timeout=30000)
+    compare_axis_select = _locator_by_testid(
+        page,
+        "simulation-sweep-view-axis-select",
+        fallback=sweep_view.get_by_role("combobox", name="Compare Axis"),
+    )
+    compare_axis_select.click()
+    compare_axis_select.press("ArrowDown")
+    compare_axis_select.press("Enter")
 
     fixed_axis_select = _locator_by_testid(
         page,
@@ -905,7 +927,6 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     fixed_axis_select.click()
     fixed_axis_select.press("ArrowDown")
     fixed_axis_select.press("Enter")
-    expect(sweep_table.locator("tbody tr")).to_have_count(3, timeout=30000)
 
     add_trace_button = _locator_by_testid(
         page,
@@ -913,8 +934,17 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
         fallback=sweep_view.get_by_role("button", name="Add Trace"),
     )
     add_trace_button.click()
-    trace_cards = sweep_view.locator("[data-testid^='simulation-sweep-trace-card-']")
+    trace_cards = page.locator("[data-testid^='simulation-sweep-trace-card-']")
     expect(trace_cards).to_have_count(2, timeout=30000)
+    second_sweep_value_select = _locator_by_testid(
+        page,
+        "simulation-sweep-sweep-value-select-2",
+        fallback=trace_cards.nth(1).get_by_role("combobox", name="Sweep Value"),
+    )
+    second_sweep_value_select.click()
+    second_sweep_value_select.press("ArrowDown")
+    second_sweep_value_select.press("Enter")
+    expect(sweep_plot).to_be_visible(timeout=30000)
 
     page.get_by_role("button", name="Run Simulation").click()
     expect(page.get_by_text("Loaded cached parameter sweep payload", exact=False)).to_be_visible(

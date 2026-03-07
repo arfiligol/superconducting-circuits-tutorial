@@ -109,6 +109,12 @@ _POST_PROCESSED_RESULT_FAMILY_OPTIONS = {
     "admittance": "Admittance (Y)",
     "complex": "Complex Plane",
 }
+_POST_PROCESSED_SWEEP_COMPARE_FAMILY_OPTIONS = {
+    "s": "S",
+    "gain": "Gain",
+    "impedance": "Impedance (Z)",
+    "admittance": "Admittance (Y)",
+}
 _SWEEP_RESULT_FAMILY_OPTIONS = {
     "s": "S",
     "gain": "Gain",
@@ -200,6 +206,9 @@ _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
 _SWEEP_MAX_AXIS_COUNT = 4
 _SWEEP_MAX_CARTESIAN_POINTS = 625
 _SWEEP_PROGRESS_MAX_LOG_LINES = 40
+_SWEEP_RUN_CACHE_LIMIT = 8
+_SWEEP_POINT_LOOKUP_CACHE_LIMIT = 8
+_SWEEP_SERIES_CACHE_LIMIT = 512
 _SWEEP_MODE_OPTIONS = {
     "cartesian": "Cartesian",
     "paired": "Paired (reserved)",
@@ -216,6 +225,16 @@ class _ResultTraceSelection(TypedDict):
     input_port: int
 
 
+_SWEEP_RUN_CACHE: dict[tuple[int, int, int], SimulationSweepRun] = {}
+_SWEEP_POINT_LOOKUP_CACHE: dict[
+    tuple[int, int, int], dict[tuple[int, ...], SimulationSweepPointResult]
+] = {}
+_SWEEP_SERIES_CACHE: dict[
+    tuple[Any, ...],
+    tuple[list[float | None], str, str],
+] = {}
+
+
 def _with_test_id(element: Any, test_id: str) -> Any:
     """Attach one stable test id to a NiceGUI element."""
     try:
@@ -225,6 +244,64 @@ def _with_test_id(element: Any, test_id: str) -> Any:
         if isinstance(props, dict):
             props["data-testid"] = test_id
     return element
+
+
+def _cache_store_limited(cache: dict[Any, Any], key: Any, value: Any, *, limit: int) -> Any:
+    """Insert one cache entry while keeping insertion-ordered size bounded."""
+    cache[key] = value
+    while len(cache) > limit:
+        cache.pop(next(iter(cache)))
+    return value
+
+
+def _cached_sweep_run_from_payload(payload: Mapping[str, Any]) -> SimulationSweepRun:
+    """Decode one sweep payload once per in-memory payload object."""
+    cache_key = (
+        id(payload),
+        int(payload.get("point_count", 0) or 0),
+        int(payload.get("representative_point_index", 0) or 0),
+    )
+    cached = _SWEEP_RUN_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    return _cache_store_limited(
+        _SWEEP_RUN_CACHE,
+        cache_key,
+        simulation_sweep_run_from_payload(payload),
+        limit=_SWEEP_RUN_CACHE_LIMIT,
+    )
+
+
+def _cached_sweep_point_lookup(
+    sweep_run: SimulationSweepRun,
+) -> dict[tuple[int, ...], SimulationSweepPointResult]:
+    """Build one direct point lookup keyed by normalized axis-index tuples."""
+    cache_key = (
+        id(sweep_run),
+        int(sweep_run.dimension),
+        int(sweep_run.point_count),
+    )
+    cached = _SWEEP_POINT_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    resolved = {
+        tuple(
+            _resolve_sweep_point_axis_index(
+                point,
+                axis_position=axis_position,
+                axis=axis,
+            )
+            for axis_position, axis in enumerate(sweep_run.axes)
+        ): point
+        for point in sweep_run.points
+    }
+    return _cache_store_limited(
+        _SWEEP_POINT_LOOKUP_CACHE,
+        cache_key,
+        resolved,
+        limit=_SWEEP_POINT_LOOKUP_CACHE_LIMIT,
+    )
 
 
 def _user_storage_get(key: str, default: Any = None) -> Any:
@@ -378,6 +455,20 @@ def _load_cached_simulation_result(
     return (bundle.id, cache_dataset.id, result, sweep_payload)
 
 
+def _load_cached_simulation_result_io(
+    *,
+    schema_source_hash: str,
+    simulation_setup_hash: str,
+) -> tuple[int, int, SimulationResult, dict[str, Any] | None] | None:
+    """Run one cache lookup inside a background IO worker."""
+    with get_unit_of_work() as uow:
+        return _load_cached_simulation_result(
+            uow,
+            schema_source_hash=schema_source_hash,
+            simulation_setup_hash=simulation_setup_hash,
+        )
+
+
 def _decode_simulation_result_payload(
     payload: Mapping[str, Any],
 ) -> tuple[SimulationResult, dict[str, Any] | None]:
@@ -484,6 +575,41 @@ def _persist_simulation_result_bundle(
 
     uow.result_bundles.attach_data_records(bundle_id=bundle_id, data_record_ids=record_ids)
     return bundle_id
+
+
+def _persist_simulation_result_bundle_io(
+    *,
+    result: SimulationResult,
+    schema_source_hash: str,
+    simulation_setup_hash: str,
+    source_meta: dict[str, Any],
+    config_snapshot: dict[str, Any],
+    sweep_setup_hash: str | None = None,
+    result_payload: dict[str, Any] | None = None,
+) -> tuple[int, int]:
+    """Persist one cache bundle inside a background IO worker and return ids."""
+    with get_unit_of_work() as uow:
+        cache_dataset = _ensure_simulation_cache_dataset(uow)
+        if cache_dataset.id is None:
+            raise ValueError("Failed to allocate cache dataset id.")
+        cache_dataset_id = int(cache_dataset.id)
+        bundle_id = _persist_simulation_result_bundle(
+            uow=uow,
+            dataset_id=cache_dataset_id,
+            result=result,
+            role="cache",
+            source_meta={
+                **dict(source_meta),
+                "sweep_setup_hash": sweep_setup_hash,
+            },
+            config_snapshot=config_snapshot,
+            schema_source_hash=schema_source_hash,
+            simulation_setup_hash=simulation_setup_hash,
+            include_data_records=False,
+            result_payload=result_payload,
+        )
+        uow.commit()
+    return (cache_dataset_id, bundle_id)
 
 
 def _build_setup_payload(
@@ -1210,14 +1336,12 @@ def _build_termination_compensation_plan(
 
 
 def _can_save_post_processed_results(
-    sweep: PortMatrixSweep | None,
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun | None,
     flow_spec: dict[str, Any] | None,
 ) -> bool:
     """Return whether post-processed results are ready for dataset persistence."""
-    return (
-        isinstance(sweep, PortMatrixSweep)
-        and isinstance(flow_spec, dict)
-        and str(flow_spec.get("run_kind", "single_result")) != "parameter_sweep"
+    return isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun)) and isinstance(
+        flow_spec, dict
     )
 
 
@@ -1335,13 +1459,39 @@ def _build_post_processed_sweep_explorer_payload(
         )
         for point in runtime_output.points
     )
-    return simulation_sweep_run_to_payload(
+    payload = simulation_sweep_run_to_payload(
         SimulationSweepRun(
             axes=tuple(runtime_output.axes),
             points=converted_points,
             representative_point_index=int(runtime_output.representative_point_index),
         )
     )
+    payload["port_labels"] = {
+        str(index + 1): str(label)
+        for index, label in enumerate(runtime_output.representative_sweep.labels)
+    }
+    return payload
+
+
+def _sweep_payload_port_options(
+    sweep_payload: Mapping[str, Any] | None,
+    *,
+    fallback_result: SimulationResult,
+) -> dict[int, str]:
+    """Resolve one sweep compare port-label mapping from payload metadata or result fallback."""
+    if not isinstance(sweep_payload, Mapping):
+        return _result_port_options(fallback_result)
+    raw_labels = sweep_payload.get("port_labels")
+    if not isinstance(raw_labels, Mapping):
+        return _result_port_options(fallback_result)
+    resolved: dict[int, str] = {}
+    for raw_port, raw_label in raw_labels.items():
+        try:
+            port = int(str(raw_port))
+        except Exception:
+            continue
+        resolved[port] = str(raw_label)
+    return resolved or _result_port_options(fallback_result)
 
 
 def _default_result_trace_selection(
@@ -1362,6 +1512,25 @@ def _default_result_trace_selection(
         "input_mode": SimulationResult.parse_mode_token(default_mode_token),
         "input_port": default_port,
     }
+
+
+def _default_sweep_result_trace_selection(
+    result: SimulationResult,
+    family: str,
+    *,
+    port_options: dict[int, str],
+    sweep_axis_index: int,
+) -> dict[str, Any]:
+    """Return one default trace-card payload for frequency-first sweep comparison."""
+    selection = dict(
+        _default_result_trace_selection(
+            result,
+            family,
+            port_options=port_options,
+        )
+    )
+    selection["sweep_axis_index"] = int(sweep_axis_index)
+    return selection
 
 
 def _render_result_family_explorer(
@@ -1809,6 +1978,22 @@ def _estimate_port_ground_cap_weights(
     return (weight_a / total, weight_b / total)
 
 
+def _execute_post_processing_pipeline_cpu(
+    request: PostProcessingRunRequest,
+) -> PostProcessingRunResult:
+    """Execute one post-processing run inside a CPU worker."""
+    return execute_post_processing_pipeline(
+        request,
+        estimate_auto_weights=lambda definition, port_a, port_b: (
+            _estimate_port_ground_cap_weights(
+                definition,
+                port_a=port_a,
+                port_b=port_b,
+            )
+        ),
+    )
+
+
 def _render_post_processing_panel(
     *,
     raw_result: SimulationResult,
@@ -1821,6 +2006,7 @@ def _render_post_processing_panel(
     schema_id: int | None = None,
     schema_name: str | None = None,
     append_status: Callable[[str, str], None] | None = None,
+    on_processing_start: Callable[[], None] | None = None,
     on_result: Callable[[PostProcessingRunResult | None], None] | None = None,
 ) -> None:
     """Render one dynamic card-list style Port-Level post-processing pipeline."""
@@ -2494,8 +2680,16 @@ def _render_post_processing_panel(
         invalidate_processed_state()
         render_step_cards.refresh()
 
-    def run_post_processing() -> None:
+    async def run_post_processing() -> None:
         output_container.clear()
+        run_button.disable()
+        run_button.props("loading")
+        if on_processing_start is not None:
+            on_processing_start()
+        with output_container:
+            ui.spinner(size="2em").classes("text-primary")
+            ui.label("Running post-processing pipeline...").classes("text-sm text-muted mt-2")
+        await asyncio.sleep(0)
         try:
             input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
             input_y_source_select.value = input_source
@@ -2503,25 +2697,20 @@ def _render_post_processing_panel(
                 input_source,
                 float(z0_input.value or 50.0),
             )
-            run_result = execute_post_processing_pipeline(
-                PostProcessingRunRequest(
-                    result=active_result,
-                    sweep_payload=active_sweep_payload,
-                    input_source=input_source,
-                    mode_filter=str(mode_filter_select.value or "base"),
-                    mode_token=str(mode_select.value or ""),
-                    reference_impedance_ohm=float(z0_input.value or 50.0),
-                    step_sequence=step_sequence,
-                    circuit_definition=circuit_definition,
-                    has_ptc_result=isinstance(ptc_result, SimulationResult),
-                ),
-                estimate_auto_weights=lambda definition, port_a, port_b: (
-                    _estimate_port_ground_cap_weights(
-                        definition,
-                        port_a=port_a,
-                        port_b=port_b,
-                    )
-                ),
+            request = PostProcessingRunRequest(
+                result=active_result,
+                sweep_payload=active_sweep_payload,
+                input_source=input_source,
+                mode_filter=str(mode_filter_select.value or "base"),
+                mode_token=str(mode_select.value or ""),
+                reference_impedance_ohm=float(z0_input.value or 50.0),
+                step_sequence=[dict(step) for step in step_sequence],
+                circuit_definition=circuit_definition,
+                has_ptc_result=isinstance(ptc_result, SimulationResult),
+            )
+            run_result = await run.cpu_bound(
+                _execute_post_processing_pipeline_cpu,
+                request,
             )
             sweep = run_result.sweep
             flow_spec = run_result.flow_spec
@@ -2540,6 +2729,7 @@ def _render_post_processing_panel(
                 f"hfss_comparable={hfss_comparable}."
             )
 
+            output_container.clear()
             with output_container:
                 ui.label("Pipeline output ready. Post Processing Result View is updated.").classes(
                     "text-sm text-positive"
@@ -2559,8 +2749,12 @@ def _render_post_processing_panel(
         except Exception as exc:
             invalidate_processed_state()
             log_info(f"Post Processing failed: {exc}")
+            output_container.clear()
             with output_container:
                 ui.label(f"Post Processing failed: {exc}").classes("text-sm text-danger")
+        finally:
+            run_button.props(remove="loading")
+            refresh_mode_selector()
 
     post_setup_select.on_value_change(on_post_setup_change)
     save_post_setup_button.on_click(lambda _e: on_save_post_setup_click())
@@ -2587,7 +2781,7 @@ def _render_post_processing_panel(
     z0_input.on("keydown.enter", lambda _e: invalidate_processed_state())
     z0_input.on("blur", lambda _e: invalidate_processed_state())
     add_step_button.on_click(lambda _e: add_step())
-    run_button.on("click", lambda _e: run_post_processing())
+    run_button.on("click", lambda _e: asyncio.create_task(run_post_processing()))
 
     refresh_mode_selector()
     with steps_container:
@@ -2752,17 +2946,24 @@ def _build_post_processed_y_data_records(
     *,
     dataset_id: int,
     sweep: PortMatrixSweep,
+    additional_axes: list[dict[str, Any]] | None = None,
+    parameter_suffix: str = "",
 ) -> list[DataRecord]:
     """Convert one post-processed Y sweep into real/imaginary DataRecord rows."""
     frequency_axis = [{"name": "frequency", "unit": "GHz", "values": list(sweep.frequencies_ghz)}]
+    if additional_axes:
+        frequency_axis.extend(dict(axis) for axis in additional_axes)
     records: list[DataRecord] = []
 
     for row_index, row_label in enumerate(sweep.labels):
         for col_index, col_label in enumerate(sweep.labels):
-            parameter_name = _format_post_processed_y_parameter_name(
-                row_label=row_label,
-                col_label=col_label,
-                mode=sweep.mode,
+            parameter_name = (
+                _format_post_processed_y_parameter_name(
+                    row_label=row_label,
+                    col_label=col_label,
+                    mode=sweep.mode,
+                )
+                + parameter_suffix
             )
             trace_values = sweep.trace(row_index, col_index)
             records.append(
@@ -2785,6 +2986,58 @@ def _build_post_processed_y_data_records(
                     values=[_finite_float_or_none(value.imag) for value in trace_values],
                 )
             )
+    return records
+
+
+def _build_post_processed_runtime_data_records(
+    *,
+    dataset_id: int,
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun,
+) -> list[DataRecord]:
+    """Materialize post-processed runtime output into dataset trace records."""
+    if isinstance(runtime_output, PortMatrixSweep):
+        return _build_post_processed_y_data_records(dataset_id=dataset_id, sweep=runtime_output)
+
+    axis_units = {axis.target_value_ref: axis.unit for axis in runtime_output.axes}
+    records: list[DataRecord] = []
+    for point in runtime_output.points:
+        parameter_suffix = _format_sweep_parameter_suffix(
+            axis_values=point.axis_values,
+            axis_units=axis_units,
+        )
+        additional_axes = [
+            {
+                "name": str(axis.target_value_ref),
+                "unit": str(axis.unit),
+                "values": [
+                    float(
+                        point.axis_values.get(
+                            axis.target_value_ref,
+                            axis.values[
+                                int(point.axis_indices[axis_position])
+                                if axis_position < len(point.axis_indices)
+                                else 0
+                            ],
+                        )
+                    )
+                ],
+                "index": (
+                    int(point.axis_indices[axis_position])
+                    if axis_position < len(point.axis_indices)
+                    else 0
+                ),
+                "axis_points": len(axis.values),
+            }
+            for axis_position, axis in enumerate(runtime_output.axes)
+        ]
+        records.extend(
+            _build_post_processed_y_data_records(
+                dataset_id=dataset_id,
+                sweep=point.sweep,
+                additional_axes=additional_axes,
+                parameter_suffix=parameter_suffix,
+            )
+        )
     return records
 
 
@@ -3700,6 +3953,7 @@ def _normalize_sweep_result_view_state(
     view_state: dict[str, Any],
     sweep_run: SimulationSweepRun,
     family_options: Mapping[str, str] | None = None,
+    port_options: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     """Normalize sweep result-view selectors against one sweep payload."""
     representative = sweep_run.representative_result
@@ -3718,7 +3972,11 @@ def _normalize_sweep_result_view_state(
     if metric not in metric_options:
         metric = _first_option_key(metric_options)
 
-    port_options = _result_port_options(representative)
+    resolved_port_options = (
+        {int(key): str(value) for key, value in port_options.items()}
+        if isinstance(port_options, Mapping) and port_options
+        else _result_port_options(representative)
+    )
     mode_options = _result_mode_options(representative)
     trace_options = _result_trace_options_for_family(family)
 
@@ -3730,7 +3988,7 @@ def _normalize_sweep_result_view_state(
         if isinstance(legacy, Mapping):
             trace_entries = [legacy]
 
-    default_port = next(iter(port_options)) if port_options else 1
+    default_port = next(iter(resolved_port_options)) if resolved_port_options else 1
     normalized_traces: list[dict[str, Any]] = []
     for raw_trace in trace_entries:
         if not isinstance(raw_trace, Mapping):
@@ -3751,9 +4009,9 @@ def _normalize_sweep_result_view_state(
 
         output_port = _coerce_int_value(raw_trace.get("output_port"), default_port)
         input_port = _coerce_int_value(raw_trace.get("input_port"), default_port)
-        if output_port not in port_options:
+        if output_port not in resolved_port_options:
             output_port = default_port
-        if input_port not in port_options:
+        if input_port not in resolved_port_options:
             input_port = default_port
         normalized_traces.append(
             {
@@ -3762,17 +4020,9 @@ def _normalize_sweep_result_view_state(
                 "output_port": output_port,
                 "input_mode": tuple(input_mode),
                 "input_port": input_port,
+                "sweep_axis_index": raw_trace.get("sweep_axis_index"),
             }
         )
-    if not normalized_traces:
-        normalized_traces = [
-            _default_result_trace_selection(
-                representative,
-                family,
-                port_options=port_options,
-            )
-        ]
-
     frequency_count = max(len(representative.frequencies_ghz), 1)
     frequency_index = _coerce_int_value(view_state.get("frequency_index"), 0)
     frequency_index = max(0, min(frequency_count - 1, frequency_index))
@@ -3784,6 +4034,30 @@ def _normalize_sweep_result_view_state(
     view_axis_target = str(view_state.get("view_axis_target_value_ref", "")).strip()
     if view_axis_target not in axis_keys:
         view_axis_target = axis_keys[0] if axis_keys else ""
+    compare_axis = next(
+        (axis for axis in sweep_run.axes if axis.target_value_ref == view_axis_target),
+        sweep_run.axes[0],
+    )
+    compare_axis_position = next(
+        idx
+        for idx, axis in enumerate(sweep_run.axes)
+        if axis.target_value_ref == compare_axis.target_value_ref
+    )
+    representative_point = sweep_run.points[sweep_run.representative_point_index]
+    representative_axis_index = _resolve_sweep_point_axis_index(
+        representative_point,
+        axis_position=compare_axis_position,
+        axis=compare_axis,
+    )
+    if not normalized_traces:
+        normalized_traces = [
+            _default_sweep_result_trace_selection(
+                representative,
+                family,
+                port_options=port_options,
+                sweep_axis_index=representative_axis_index,
+            )
+        ]
     raw_fixed_indices = view_state.get("fixed_axis_indices")
     fixed_indices_input = raw_fixed_indices if isinstance(raw_fixed_indices, Mapping) else {}
     fixed_axis_indices: dict[str, int] = {}
@@ -3791,12 +4065,21 @@ def _normalize_sweep_result_view_state(
         if axis.target_value_ref == view_axis_target:
             continue
         default_axis_index = len(axis.values) // 2
-        axis_index = _coerce_int_value(
+        axis_index = _coerce_sweep_axis_option_index(
+            axis,
             fixed_indices_input.get(axis.target_value_ref),
             default_axis_index,
         )
         axis_index = max(0, min(len(axis.values) - 1, axis_index))
         fixed_axis_indices[axis.target_value_ref] = axis_index
+
+    for trace in normalized_traces:
+        sweep_axis_index = _coerce_sweep_axis_option_index(
+            compare_axis,
+            trace.get("sweep_axis_index"),
+            representative_axis_index,
+        )
+        trace["sweep_axis_index"] = max(0, min(len(compare_axis.values) - 1, sweep_axis_index))
 
     normalized = {
         "family": family,
@@ -3804,6 +4087,7 @@ def _normalize_sweep_result_view_state(
         "z0": z0,
         "frequency_index": frequency_index,
         "view_axis_target_value_ref": view_axis_target,
+        "representative_axis_index": representative_axis_index,
         "fixed_axis_indices": fixed_axis_indices,
         "traces": normalized_traces,
         "trace_selection": dict(normalized_traces[0]),
@@ -3831,6 +4115,48 @@ def _sweep_axis_index_options(axis: SimulationSweepAxis) -> dict[int, str]:
     return options
 
 
+def _coerce_sweep_axis_option_index(
+    axis: SimulationSweepAxis,
+    raw_value: Any,
+    default_index: int,
+) -> int:
+    """Resolve one sweep-axis selector value from option key or rendered label text."""
+    raw_text = str(raw_value).strip()
+    if isinstance(raw_value, int):
+        if 0 <= raw_value < len(axis.values):
+            return raw_value
+    elif raw_text and raw_text.lstrip("-").isdigit():
+        resolved = int(raw_text)
+        if 0 <= resolved < len(axis.values):
+            return resolved
+
+    if raw_text:
+        normalized_text = re.sub(r"\s+", " ", raw_text).strip().casefold()
+        for axis_index, label in _sweep_axis_index_options(axis).items():
+            normalized_label = re.sub(r"\s+", " ", label).strip().casefold()
+            if normalized_text == normalized_label:
+                return axis_index
+    return max(0, min(len(axis.values) - 1, default_index))
+
+
+def _resolve_sweep_point_axis_index(
+    point: SimulationSweepPointResult,
+    *,
+    axis_position: int,
+    axis: SimulationSweepAxis,
+) -> int:
+    """Resolve one point's index on the requested sweep axis."""
+    if axis_position < len(point.axis_indices):
+        axis_index = int(point.axis_indices[axis_position])
+    else:
+        axis_value = point.axis_values.get(axis.target_value_ref, axis.values[0])
+        axis_index = min(
+            range(len(axis.values)),
+            key=lambda idx: abs(float(axis.values[idx]) - float(axis_value)),
+        )
+    return max(0, min(len(axis.values) - 1, axis_index))
+
+
 def _sweep_metric_series_for_point(
     *,
     result: SimulationResult,
@@ -3839,6 +4165,7 @@ def _sweep_metric_series_for_point(
     trace_selection: Mapping[str, Any],
     z0: float,
     dark_mode: bool,
+    port_label_by_index: Mapping[int, str] | None = None,
 ) -> tuple[list[float | None], str, str]:
     """Resolve one scalar metric series across frequency for one sweep point."""
     lead_selection: _ResultTraceSelection = {
@@ -3848,6 +4175,27 @@ def _sweep_metric_series_for_point(
         "input_mode": tuple(trace_selection.get("input_mode", (0,))),
         "input_port": int(trace_selection.get("input_port", 1)),
     }
+    cache_key = (
+        id(result),
+        family,
+        metric,
+        str(lead_selection["trace"]),
+        tuple(lead_selection["output_mode"]),
+        int(lead_selection["output_port"]),
+        tuple(lead_selection["input_mode"]),
+        int(lead_selection["input_port"]),
+        float(z0),
+        bool(dark_mode),
+        tuple(
+            sorted(
+                (int(port), str(label))
+                for port, label in (port_label_by_index or {}).items()
+            )
+        ),
+    )
+    cached = _SWEEP_SERIES_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     figure = _build_simulation_result_figure(
         result=result,
         view_family=family,
@@ -3860,6 +4208,7 @@ def _sweep_metric_series_for_point(
         reference_impedance_ohm=float(z0),
         dark_mode=dark_mode,
         trace_selections=[lead_selection],
+        port_label_by_index=dict(port_label_by_index) if port_label_by_index else None,
     )
     if not figure.data:
         return ([], "", "")
@@ -3874,7 +4223,12 @@ def _sweep_metric_series_for_point(
         resolved_values.append(value if np.isfinite(value) else None)
     trace_label = str(getattr(figure.data[0], "name", "") or "")
     y_axis_title = str(getattr(figure.layout.yaxis.title, "text", "") or "")
-    return (resolved_values, trace_label, y_axis_title)
+    return _cache_store_limited(
+        _SWEEP_SERIES_CACHE,
+        cache_key,
+        (resolved_values, trace_label, y_axis_title),
+        limit=_SWEEP_SERIES_CACHE_LIMIT,
+    )
 
 
 def _build_sweep_metric_rows(
@@ -3889,9 +4243,10 @@ def _build_sweep_metric_rows(
     z0: float,
     frequency_index: int,
     dark_mode: bool,
+    port_label_by_index: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
-    """Build one table+plot payload for one sweep slice (`view axis` + fixed axes)."""
-    sweep_run = simulation_sweep_run_from_payload(sweep_payload)
+    """Build one frequency-first multi-trace sweep compare payload."""
+    sweep_run = _cached_sweep_run_from_payload(sweep_payload)
     if not sweep_run.points:
         raise ValueError("Sweep payload has no points.")
 
@@ -3936,138 +4291,107 @@ def _build_sweep_metric_rows(
             )
         ]
 
-    representative_series, _, _ = _sweep_metric_series_for_point(
-        result=representative,
-        family=family,
-        metric=metric,
-        trace_selection=raw_trace_selections[0],
-        z0=z0,
-        dark_mode=dark_mode,
-    )
-    if not representative_series:
-        raise ValueError("Selected sweep metric has no plottable series.")
-    safe_frequency_index = max(0, min(len(representative_series) - 1, int(frequency_index)))
-
-    rows: list[dict[str, Any]] = []
-    x_values: list[float] = []
-    trace_plot_y_values: dict[str, list[float]] = {}
-    trace_labels: dict[str, str] = {}
+    figure = go.Figure()
+    trace_labels: list[str] = []
+    trace_details: list[dict[str, Any]] = []
     y_axis_title = ""
-
-    sliced_points: list[tuple[SimulationSweepPointResult, int, float]] = []
-    for point in sweep_run.points:
-        matches_slice = True
-        point_axis_indices: list[int] = []
-        for axis_position, axis in enumerate(sweep_run.axes):
-            if axis_position < len(point.axis_indices):
-                axis_index = int(point.axis_indices[axis_position])
-            else:
-                axis_value = point.axis_values.get(axis.target_value_ref, axis.values[0])
-                axis_index = min(
-                    range(len(axis.values)),
-                    key=lambda idx: abs(float(axis.values[idx]) - float(axis_value)),
-                )
-            axis_index = max(0, min(len(axis.values) - 1, axis_index))
-            point_axis_indices.append(axis_index)
-            if axis.target_value_ref == resolved_view_axis_target:
-                continue
-            if axis_index != resolved_fixed_axis_indices.get(axis.target_value_ref, axis_index):
-                matches_slice = False
-                break
-        if not matches_slice:
-            continue
-        view_axis_index = point_axis_indices[view_axis_position]
-        view_axis_value = float(
-            point.axis_values.get(view_axis.target_value_ref, view_axis.values[view_axis_index])
+    resolved_points: list[tuple[SimulationSweepPointResult, int, float]] = []
+    point_lookup = _cached_sweep_point_lookup(sweep_run)
+    for trace_index, resolved_trace_selection in enumerate(raw_trace_selections, start=1):
+        requested_axis_index = _coerce_int_value(
+            resolved_trace_selection.get("sweep_axis_index"),
+            sweep_run.representative_point_index if len(view_axis.values) == 1 else 0,
         )
-        sliced_points.append((point, view_axis_index, view_axis_value))
-
-    sliced_points.sort(key=lambda item: (item[1], int(item[0].point_index)))
-    if not sliced_points:
-        raise ValueError("No points match current slice selectors.")
-
-    for point, _axis_index, axis_value in sliced_points:
-        metric_values: dict[str, float | None] = {}
-        metric_text_by_trace: dict[str, str] = {}
-        x_values.append(axis_value)
-        for trace_index, resolved_trace_selection in enumerate(raw_trace_selections, start=1):
-            trace_key = f"trace_{trace_index}"
-            point_series, trace_label, axis_title = _sweep_metric_series_for_point(
-                result=point.result,
-                family=family,
-                metric=metric,
-                trace_selection=resolved_trace_selection,
-                z0=z0,
-                dark_mode=dark_mode,
+        requested_axis_index = max(0, min(len(view_axis.values) - 1, requested_axis_index))
+        requested_point_indices = []
+        for axis_position, axis in enumerate(sweep_run.axes):
+            if axis_position == view_axis_position:
+                requested_point_indices.append(requested_axis_index)
+                continue
+            requested_point_indices.append(
+                int(resolved_fixed_axis_indices.get(axis.target_value_ref, len(axis.values) // 2))
             )
-            if axis_title and not y_axis_title:
-                y_axis_title = axis_title
-            resolved_label = trace_label or f"Trace {trace_index}"
-            trace_labels[trace_key] = resolved_label
-            series_value = (
-                point_series[safe_frequency_index]
-                if safe_frequency_index < len(point_series)
-                else None
+        matching_point = point_lookup.get(tuple(requested_point_indices))
+        if matching_point is None:
+            continue
+        axis_value = float(
+            matching_point.axis_values.get(
+                view_axis.target_value_ref,
+                view_axis.values[requested_axis_index],
             )
-            metric_values[trace_key] = series_value
-            metric_text_by_trace[trace_key] = (
-                "N/A" if series_value is None else f"{float(series_value):.10g}"
-            )
-            trace_plot_y_values.setdefault(trace_key, []).append(
-                float(series_value) if series_value is not None else float("nan")
-            )
-
-        rows.append(
+        )
+        point_series, trace_label, axis_title = _sweep_metric_series_for_point(
+            result=matching_point.result,
+            family=family,
+            metric=metric,
+            trace_selection=resolved_trace_selection,
+            z0=z0,
+            dark_mode=dark_mode,
+            port_label_by_index=port_label_by_index,
+        )
+        if not point_series:
+            continue
+        if axis_title and not y_axis_title:
+            y_axis_title = axis_title
+        axis_value_token = _format_sweep_value_token(axis_value)
+        axis_value_label = (
+            f"{axis_value_token} {view_axis.unit}"
+            if str(view_axis.unit).strip()
+            else axis_value_token
+        )
+        base_label = trace_label or f"Trace {trace_index}"
+        resolved_label = f"{base_label} | {view_axis.target_value_ref}={axis_value_label}"
+        trace_labels.append(resolved_label)
+        trace_details.append(
             {
-                "point_index": int(point.point_index),
+                "trace_index": trace_index,
+                "point_index": int(matching_point.point_index),
+                "axis_index": requested_axis_index,
                 "axis_value": axis_value,
-                "metric_values": metric_values,
-                "metric_text_by_trace": metric_text_by_trace,
+                "axis_value_label": axis_value_label,
+                "trace_label": resolved_label,
             }
         )
+        figure.add_trace(
+            go.Scatter(
+                x=list(matching_point.result.frequencies_ghz),
+                y=list(point_series),
+                mode="lines",
+                name=resolved_label,
+                line={
+                    "color": _RESULT_TRACE_COLORS[(trace_index - 1) % len(_RESULT_TRACE_COLORS)],
+                    "width": 2,
+                },
+            )
+        )
+        resolved_points.append((matching_point, requested_axis_index, axis_value))
 
-    frequency_ghz = (
-        float(representative.frequencies_ghz[safe_frequency_index])
-        if representative.frequencies_ghz
-        else 0.0
-    )
+    if not figure.data:
+        raise ValueError("No sweep points match current compare-axis selectors.")
+
     metric_label = _result_metric_options_for_family(family).get(metric, metric)
     axis_label = (
         f"{view_axis.target_value_ref} ({view_axis.unit})"
         if str(view_axis.unit).strip()
         else view_axis.target_value_ref
     )
-    trace_title = ", ".join(str(trace_labels[trace_key]) for trace_key in sorted(trace_labels))
-    plot_title = f"{trace_title or metric_label} @ {frequency_ghz:.6g} GHz"
-    figure = go.Figure()
-    for trace_key in sorted(trace_plot_y_values):
-        figure.add_trace(
-            go.Scatter(
-                x=x_values,
-                y=trace_plot_y_values[trace_key],
-                mode="lines+markers",
-                name=trace_labels.get(trace_key, trace_key),
-            )
-        )
     theme_layout = dict(get_plotly_layout(dark=dark_mode))
     figure.update_layout(theme_layout)
     figure.update_layout(
-        title=plot_title,
-        xaxis_title=axis_label,
+        title=f"{metric_label} vs Frequency",
+        xaxis_title="Frequency (GHz)",
         yaxis_title=y_axis_title or metric_label,
     )
     return {
-        "rows": rows,
         "figure": figure,
         "axis_label": axis_label,
         "metric_label": metric_label,
-        "trace_labels": [trace_labels[trace_key] for trace_key in sorted(trace_labels)],
-        "frequency_ghz": frequency_ghz,
-        "frequency_index": safe_frequency_index,
+        "trace_labels": trace_labels,
+        "trace_details": trace_details,
         "view_axis_target_value_ref": view_axis.target_value_ref,
         "dimension": int(sweep_run.dimension),
         "point_count": int(sweep_run.point_count),
-        "slice_point_count": len(rows),
+        "slice_point_count": len(resolved_points),
         "fixed_axis_indices": resolved_fixed_axis_indices,
         "fixed_axis_details": [
             {
@@ -4090,17 +4414,21 @@ def _render_sweep_result_view_container(
     family_options: Mapping[str, str],
     title: str,
     empty_message: str,
+    header_message: str | None = None,
     summary_prefix: str | None = None,
     testid_prefix: str,
+    save_button_label: str | None = None,
+    on_save_click: Callable[[], None] | None = None,
+    save_enabled: bool = True,
 ) -> None:
-    """Render one sweep explorer from a canonical or adapted sweep payload."""
+    """Render one frequency-first sweep compare view from a canonical or adapted sweep payload."""
     container.clear()
     if not isinstance(sweep_payload, Mapping):
         with container:
             ui.label(empty_message).classes("text-sm text-muted")
         return
     try:
-        sweep_run = simulation_sweep_run_from_payload(sweep_payload)
+        sweep_run = _cached_sweep_run_from_payload(sweep_payload)
     except Exception as exc:
         with container:
             ui.label(f"Sweep payload decode failed: {exc}").classes("text-sm text-warning")
@@ -4114,27 +4442,28 @@ def _render_sweep_result_view_container(
         view_state=view_state,
         sweep_run=sweep_run,
         family_options=family_options,
+        port_options=_sweep_payload_port_options(
+            sweep_payload,
+            fallback_result=sweep_run.representative_result,
+        ),
     )
     family = str(normalized_state["family"])
     metric = str(normalized_state["metric"])
     z0_value = float(normalized_state["z0"])
-    frequency_index = int(normalized_state["frequency_index"])
     view_axis_target_value_ref = str(normalized_state["view_axis_target_value_ref"])
     fixed_axis_indices = dict(normalized_state["fixed_axis_indices"])
     traces = list(normalized_state["traces"])
     representative = sweep_run.representative_result
     metric_options = _result_metric_options_for_family(family)
     mode_options = _result_mode_options(representative)
-    port_options = _result_port_options(representative)
+    port_options = _sweep_payload_port_options(
+        sweep_payload,
+        fallback_result=representative,
+    )
     trace_options = _result_trace_options_for_family(family)
     axis_options = {
         axis.target_value_ref: _sweep_axis_display_label(axis) for axis in sweep_run.axes
     }
-    frequency_options = {
-        idx: f"{float(freq):.6g} GHz" for idx, freq in enumerate(representative.frequencies_ghz)
-    }
-    if not frequency_options:
-        frequency_options = {0: "0 GHz"}
     try:
         payload = _build_sweep_metric_rows(
             sweep_payload=sweep_payload,
@@ -4144,21 +4473,18 @@ def _render_sweep_result_view_container(
             view_axis_target_value_ref=view_axis_target_value_ref,
             fixed_axis_indices=fixed_axis_indices,
             z0=z0_value,
-            frequency_index=frequency_index,
+            frequency_index=0,
             dark_mode=bool(_user_storage_get("dark_mode", True)),
+            port_label_by_index=port_options,
         )
     except Exception as exc:
         with container:
             ui.label(f"Sweep view rendering failed: {exc}").classes("text-sm text-warning")
         return
-    view_state["frequency_index"] = int(payload["frequency_index"])
     view_state["view_axis_target_value_ref"] = str(payload["view_axis_target_value_ref"])
     view_state["fixed_axis_indices"] = dict(payload["fixed_axis_indices"])
-    rows = list(payload["rows"])
     axis_label = str(payload["axis_label"])
-    metric_label = str(payload["metric_label"])
-    trace_labels = list(payload["trace_labels"])
-    frequency_ghz = float(payload["frequency_ghz"])
+    trace_details = list(payload.get("trace_details", []))
     fixed_axis_details = list(payload["fixed_axis_details"])
     fixed_axis_summary = (
         "; ".join(
@@ -4177,89 +4503,97 @@ def _render_sweep_result_view_container(
     ) + (
         f"dim={int(payload['dimension'])} | "
         f"total={int(payload['point_count'])} points | "
-        f"slice={int(payload['slice_point_count'])} points | "
-        f"freq={frequency_ghz:.6g} GHz | "
-        f"view_axis={axis_label} | fixed={fixed_axis_summary}"
+        f"compare={axis_label} | "
+        f"selected={int(payload['slice_point_count'])} traces | "
+        f"fixed={fixed_axis_summary}"
     )
 
     with container:
-        ui.label(title).classes("text-sm font-bold text-fg")
-        ui.label(summary_line).classes("text-xs text-muted mb-2")
-        with ui.row().classes("w-full items-end gap-3 flex-wrap"):
-            family_select = (
-                ui.select(
-                    label="Family",
-                    options=dict(family_options),
-                    value=family,
-                )
-                .props("dense outlined options-dense")
-                .classes("w-44")
-            )
-            _with_test_id(family_select, f"{testid_prefix}-family-select")
-            metric_select = (
-                ui.select(
-                    label="Metric",
-                    options=metric_options,
-                    value=metric,
-                )
-                .props("dense outlined options-dense")
-                .classes("w-56")
-            )
-            _with_test_id(metric_select, f"{testid_prefix}-metric-select")
-            view_axis_select = (
-                ui.select(
-                    label="View Axis",
-                    options=axis_options,
-                    value=str(payload["view_axis_target_value_ref"]),
-                )
-                .props("dense outlined options-dense")
-                .classes("w-56")
-            )
-            _with_test_id(view_axis_select, f"{testid_prefix}-view-axis-select")
-            frequency_select = (
-                ui.select(
-                    label="Frequency",
-                    options=frequency_options,
-                    value=int(payload["frequency_index"]),
-                )
-                .props("dense outlined options-dense")
-                .classes("w-52")
-            )
-            _with_test_id(frequency_select, f"{testid_prefix}-frequency-select")
-            z0_input = (
-                ui.number(
-                    "Z0 (Ohm)",
-                    value=z0_value,
-                    format="%.6g",
-                )
-                .props(_Z0_CONTROL_PROPS)
-                .classes(_Z0_CONTROL_CLASSES)
-            )
-            _with_test_id(z0_input, f"{testid_prefix}-z0-input")
+        with _with_test_id(ui.column().classes("w-full gap-3"), f"{testid_prefix}-results-view"):
+            with ui.row().classes("w-full items-center justify-between gap-3 mb-2 flex-wrap"):
+                with ui.column().classes("gap-1"):
+                    ui.label(title).classes("text-sm font-bold text-fg")
+                    if header_message:
+                        ui.label(header_message).classes("text-xs text-muted")
+                    ui.label(summary_line).classes("text-xs text-muted")
+                if save_button_label is not None and on_save_click is not None:
+                    save_button = ui.button(
+                        save_button_label,
+                        icon="save",
+                        on_click=on_save_click,
+                    ).props("outline color=primary size=sm")
+                    _with_test_id(save_button, f"{testid_prefix}-save-button")
+                    if not save_enabled:
+                        save_button.disable()
 
-        with ui.row().classes("w-full items-end gap-3 flex-wrap mt-1"):
-            fixed_selects: list[tuple[str, Any]] = []
-            fixed_position = 0
-            for axis in sweep_run.axes:
-                if axis.target_value_ref == str(payload["view_axis_target_value_ref"]):
-                    continue
-                fixed_position += 1
-                fixed_select = (
+            with ui.row().classes("w-full items-end gap-3 flex-wrap mt-1"):
+                family_select = (
                     ui.select(
-                        label=f"Fixed: {axis.target_value_ref}",
-                        options=_sweep_axis_index_options(axis),
-                        value=int(
-                            payload["fixed_axis_indices"].get(
-                                axis.target_value_ref,
-                                len(axis.values) // 2,
-                            )
-                        ),
+                        label="Family",
+                        options=dict(family_options),
+                        value=family,
                     )
                     .props("dense outlined options-dense")
-                    .classes("w-72")
+                    .classes("w-44")
                 )
-                _with_test_id(fixed_select, f"{testid_prefix}-fixed-axis-select-{fixed_position}")
-                fixed_selects.append((axis.target_value_ref, fixed_select))
+                _with_test_id(family_select, f"{testid_prefix}-family-select")
+                metric_select = (
+                    ui.select(
+                        label="Metric",
+                        options=metric_options,
+                        value=metric,
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-56")
+                )
+                _with_test_id(metric_select, f"{testid_prefix}-metric-select")
+                view_axis_select = (
+                    ui.select(
+                        label="Compare Axis",
+                        options=axis_options,
+                        value=str(payload["view_axis_target_value_ref"]),
+                    )
+                    .props("dense outlined options-dense")
+                    .classes("w-56")
+                )
+                _with_test_id(view_axis_select, f"{testid_prefix}-view-axis-select")
+                z0_input = (
+                    ui.number(
+                        "Z0 (Ohm)",
+                        value=z0_value,
+                        format="%.6g",
+                    )
+                    .props(_Z0_CONTROL_PROPS)
+                    .classes(_Z0_CONTROL_CLASSES)
+                )
+                _with_test_id(z0_input, f"{testid_prefix}-z0-input")
+
+            with ui.row().classes("w-full items-end gap-3 flex-wrap mt-1"):
+                fixed_selects: list[tuple[str, Any]] = []
+                fixed_position = 0
+                for axis in sweep_run.axes:
+                    if axis.target_value_ref == str(payload["view_axis_target_value_ref"]):
+                        continue
+                    fixed_position += 1
+                    fixed_select = (
+                        ui.select(
+                            label=f"Fixed: {axis.target_value_ref}",
+                            options=_sweep_axis_index_options(axis),
+                            value=int(
+                                payload["fixed_axis_indices"].get(
+                                    axis.target_value_ref,
+                                    len(axis.values) // 2,
+                                )
+                            ),
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-72")
+                    )
+                    _with_test_id(
+                        fixed_select,
+                        f"{testid_prefix}-fixed-axis-select-{fixed_position}",
+                    )
+                    fixed_selects.append((axis.target_value_ref, fixed_select))
 
         def _rerender() -> None:
             _render_sweep_result_view_container(
@@ -4269,8 +4603,12 @@ def _render_sweep_result_view_container(
                 family_options=family_options,
                 title=title,
                 empty_message=empty_message,
+                header_message=header_message,
                 summary_prefix=summary_prefix,
                 testid_prefix=testid_prefix,
+                save_button_label=save_button_label,
+                on_save_click=on_save_click,
+                save_enabled=save_enabled,
             )
 
         family_select.on_value_change(lambda e: _on_sweep_family_change(str(e.value or "s")))
@@ -4283,12 +4621,6 @@ def _render_sweep_result_view_container(
                     "view_axis_target_value_ref",
                     str(e.value or payload["view_axis_target_value_ref"]),
                 ),
-                _rerender(),
-            )
-        )
-        frequency_select.on_value_change(
-            lambda e: (
-                view_state.__setitem__("frequency_index", _coerce_int_value(e.value, 0)),
                 _rerender(),
             )
         )
@@ -4318,16 +4650,42 @@ def _render_sweep_result_view_container(
         z0_input.on("keydown.enter", lambda _e: _commit_sweep_z0(z0_input.value))
         z0_input.on("blur", lambda _e: _commit_sweep_z0(z0_input.value))
 
+        compare_axis = next(
+            axis
+            for axis in sweep_run.axes
+            if axis.target_value_ref == str(payload["view_axis_target_value_ref"])
+        )
+
+        def _next_sweep_axis_index() -> int:
+            existing = {
+                _coerce_int_value(entry.get("sweep_axis_index"), 0)
+                for entry in list(view_state.get("traces", []))
+                if isinstance(entry, Mapping)
+            }
+            for axis_index in range(len(compare_axis.values)):
+                if axis_index not in existing:
+                    return axis_index
+            if not compare_axis.values:
+                return 0
+            return max(
+                0,
+                min(
+                    len(compare_axis.values) - 1,
+                    len(existing) % len(compare_axis.values),
+                ),
+            )
+
         with ui.row().classes("w-full items-center gap-3 mt-2"):
             add_trace_button = ui.button(
                 "Add Trace",
                 icon="add",
                 on_click=lambda: (
                     view_state["traces"].append(
-                        _default_result_trace_selection(
+                        _default_sweep_result_trace_selection(
                             representative,
                             family,
                             port_options=port_options,
+                            sweep_axis_index=_next_sweep_axis_index(),
                         )
                     ),
                     _rerender(),
@@ -4346,7 +4704,9 @@ def _render_sweep_result_view_container(
 
         for trace_idx, selection in enumerate(list(view_state.get("traces", [])), start=1):
             with _with_test_id(
-                ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4 mt-2"),
+                ui.card().classes(
+                    "w-full bg-elevated border border-border rounded-lg p-4 mt-2"
+                ),
                 f"{testid_prefix}-trace-card-{trace_idx}",
             ):
                 with ui.row().classes("w-full items-center gap-3 mb-2"):
@@ -4367,6 +4727,15 @@ def _render_sweep_result_view_container(
                             ),
                         ).props("flat color=negative round").classes("ml-auto")
                 with ui.row().classes("w-full gap-3 items-end flex-wrap"):
+                    sweep_value_select = (
+                        ui.select(
+                            label="Sweep Value",
+                            options=_sweep_axis_index_options(compare_axis),
+                            value=_coerce_int_value(selection.get("sweep_axis_index"), 0),
+                        )
+                        .props("dense outlined options-dense")
+                        .classes("w-56")
+                    )
                     trace_select = (
                         ui.select(
                             label="Trace",
@@ -4378,6 +4747,10 @@ def _render_sweep_result_view_container(
                     )
                     if trace_idx == 1:
                         _with_test_id(trace_select, f"{testid_prefix}-trace-select")
+                    _with_test_id(
+                        sweep_value_select,
+                        f"{testid_prefix}-sweep-value-select-{trace_idx}",
+                    )
                     _with_test_id(trace_select, f"{testid_prefix}-trace-select-{trace_idx}")
                     output_mode_select = (
                         ui.select(
@@ -4416,6 +4789,13 @@ def _render_sweep_result_view_container(
                         .classes("w-44")
                     )
 
+                sweep_value_select.on_value_change(
+                    lambda e, trace_index=trace_idx - 1: _update_trace(
+                        trace_index,
+                        field="sweep_axis_index",
+                        value=_coerce_int_value(e.value, 0),
+                    )
+                )
                 trace_select.on_value_change(
                     lambda e, trace_index=trace_idx - 1: _update_trace(
                         trace_index,
@@ -4457,46 +4837,29 @@ def _render_sweep_result_view_container(
             view_state["family"] = selected_family
             view_state["metric"] = _first_option_key(metric_choices)
             view_state["traces"] = [
-                _default_result_trace_selection(
+                _default_sweep_result_trace_selection(
                     representative,
                     selected_family,
                     port_options=port_options,
+                    sweep_axis_index=_coerce_int_value(
+                        view_state.get("representative_axis_index", 0),
+                        0,
+                    ),
                 )
             ]
             view_state["trace_selection"] = dict(view_state["traces"][0])
             _rerender()
 
-        table_rows = [
-            {
-                "point": int(row["point_index"]) + 1,
-                "axis_value": float(row["axis_value"]),
-                **{
-                    f"trace_{idx}": str(row["metric_text_by_trace"].get(f"trace_{idx}", "N/A"))
-                    for idx in range(1, len(trace_labels) + 1)
-                },
-            }
-            for row in rows
-        ]
-        table_columns = [
-            {"name": "point", "label": "Point", "field": "point", "sortable": True},
-            {"name": "axis_value", "label": axis_label, "field": "axis_value", "sortable": True},
-        ]
-        for idx, label in enumerate(trace_labels, start=1):
-            table_columns.append(
-                {
-                    "name": f"trace_{idx}",
-                    "label": f"{label} ({metric_label})",
-                    "field": f"trace_{idx}",
-                    "sortable": False,
-                }
-            )
-        sweep_table = ui.table(
-            columns=table_columns,
-            rows=table_rows,
-            row_key="point",
-            pagination=5,
-        ).classes("w-full mt-3")
-        _with_test_id(sweep_table, f"{testid_prefix}-table")
+        if trace_details:
+            with ui.row().classes("w-full gap-2 flex-wrap mt-3"):
+                for detail in trace_details:
+                    ui.badge(
+                        (
+                            f"Trace {int(detail['trace_index'])}: "
+                            f"{axis_label}={detail['axis_value_label']}"
+                        ),
+                        color="primary",
+                    ).props("outline")
         sweep_plot = ui.plotly(payload["figure"]).classes("w-full min-h-[340px] mt-3")
         _with_test_id(sweep_plot, f"{testid_prefix}-plot")
 
@@ -5109,7 +5472,20 @@ def _render_simulation_environment():
                     schema_id=active_record_id,
                     schema_name=active_record.name,
                     append_status=append_status,
+                    on_processing_start=_render_post_processing_results_pending,
                     on_result=handle_post_processing_result,
+                )
+
+        def _render_post_processing_results_pending() -> None:
+            if post_processing_results_container is None:
+                return
+            post_processing_results_container.clear()
+            with post_processing_results_container, ui.column().classes(
+                "w-full items-center justify-center gap-3 py-8"
+            ):
+                ui.spinner(size="2.25em").classes("text-primary")
+                ui.label("Updating Post Processing Result View...").classes(
+                    "text-sm text-muted"
                 )
 
         def _raw_result_provider(
@@ -5225,6 +5601,25 @@ def _render_simulation_environment():
                 return
 
             raw_save_callback = runtime_state.latest_raw_save_callback
+            if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
+                _render_sweep_result_view_container(
+                    container=simulation_results_container,
+                    sweep_payload=runtime_state.latest_simulation_sweep_payload,
+                    view_state=sweep_result_view_state,
+                    family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
+                    title="Parameter Sweep Compare",
+                    header_message=(
+                        "Simulation sweep view keeps Frequency on the x-axis and overlays "
+                        "multiple traces for selected sweep values."
+                    ),
+                    empty_message="Sweep compare view is available after a parameter sweep run.",
+                    testid_prefix="simulation-sweep",
+                    save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
+                    on_save_click=raw_save_callback,
+                    save_enabled=raw_save_callback is not None,
+                )
+                return
+
             _render_result_family_explorer(
                 container=simulation_results_container,
                 view_state=raw_view_state,
@@ -5239,16 +5634,18 @@ def _render_simulation_environment():
                 save_enabled=raw_save_callback is not None,
                 testid_prefix="raw-result-view",
             )
-            _render_simulation_sweep_result_view()
 
         def _save_post_processed_results_from_view() -> None:
-            sweep = runtime_state.latest_sweep
+            runtime_output = runtime_state.latest_post_processing_runtime
             flow_spec = runtime_state.latest_flow_spec
-            if not _can_save_post_processed_results(sweep, flow_spec):
+            if not _can_save_post_processed_results(runtime_output, flow_spec):
                 ui.notify("Run Post Processing first.", type="warning")
                 return
+            if not isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun)):
+                ui.notify("Post-processed runtime output is unavailable.", type="warning")
+                return
             _save_post_processed_results_dialog(
-                sweep=sweep,
+                runtime_output=runtime_output,
                 flow_spec=dict(flow_spec),
                 circuit_record=runtime_state.latest_circuit_record,
                 source_simulation_bundle_id=runtime_state.latest_source_simulation_bundle_id,
@@ -5261,9 +5658,10 @@ def _render_simulation_environment():
             if post_processing_results_container is None:
                 return
 
+            runtime_output = runtime_state.latest_post_processing_runtime
             sweep = runtime_state.latest_sweep
             flow_spec = runtime_state.latest_flow_spec
-            save_enabled = _can_save_post_processed_results(sweep, flow_spec)
+            save_enabled = _can_save_post_processed_results(runtime_output, flow_spec)
             context_line = None
             typed_sweep = sweep if isinstance(sweep, PortMatrixSweep) else None
             typed_flow_spec = flow_spec if isinstance(flow_spec, dict) else None
@@ -5294,6 +5692,47 @@ def _render_simulation_environment():
                     f"basis={', '.join(typed_sweep.labels)} | "
                     f"input={input_source}{preview_token} | {hfss_token}"
                 )
+            if isinstance(runtime_output, PortMatrixSweepRun):
+                try:
+                    sweep_payload = _build_post_processed_sweep_explorer_payload(
+                        runtime_output,
+                        reference_impedance_ohm=float(
+                            post_processed_sweep_view_state.get(
+                                "z0",
+                                post_view_state.get("z0", 50.0),
+                            )
+                            or 50.0
+                        ),
+                    )
+                except Exception as exc:
+                    post_processing_results_container.clear()
+                    with post_processing_results_container:
+                        ui.label(f"Post-processed sweep payload build failed: {exc}").classes(
+                            "text-sm text-warning"
+                        )
+                    return
+                _render_sweep_result_view_container(
+                    container=post_processing_results_container,
+                    sweep_payload=sweep_payload,
+                    view_state=post_processed_sweep_view_state,
+                    family_options=_POST_PROCESSED_SWEEP_COMPARE_FAMILY_OPTIONS,
+                    title="Parameter Sweep Compare",
+                    header_message=(
+                        "Post-processed sweep view keeps Frequency on the x-axis and overlays "
+                        "multiple traces for selected sweep values."
+                    ),
+                    empty_message=(
+                        "Post-processed sweep compare view is available after a "
+                        "parameter-sweep post-processing run."
+                    ),
+                    summary_prefix=context_line,
+                    testid_prefix="post-processed-sweep",
+                    save_button_label="Save Post-Processed Results",
+                    on_save_click=_save_post_processed_results_from_view,
+                    save_enabled=save_enabled,
+                )
+                return
+
             _render_result_family_explorer(
                 container=post_processing_results_container,
                 view_state=post_view_state,
@@ -5309,7 +5748,6 @@ def _render_simulation_environment():
                 context_line=context_line,
                 testid_prefix="post-result-view",
             )
-            _render_post_processed_sweep_result_view()
 
         def handle_post_processing_result(run_result: PostProcessingRunResult | None) -> None:
             if isinstance(run_result, PostProcessingRunResult):
@@ -6685,9 +7123,50 @@ def _render_simulation_environment():
                 async def run_sim():
                     harmonic_grid_hits: list[tuple[int, int, float, int]] = []
                     try:
+                        sim_button.disable()
+                        sim_button.props("loading")
+                        runtime_state.latest_simulation_result = None
+                        runtime_state.latest_circuit_record = None
+                        runtime_state.latest_source_simulation_bundle_id = None
+                        runtime_state.latest_schema_source_hash = None
+                        runtime_state.latest_simulation_setup_hash = None
+                        runtime_state.latest_sweep_setup_hash = None
+                        runtime_state.latest_simulation_sweep_payload = None
+                        handle_post_processing_result(None)
+                        simulation_results_container.clear()
+                        if simulation_sweep_results_container is not None:
+                            simulation_sweep_results_container.clear()
+                        post_processing_container.clear()
+                        post_processing_results_container.clear()
+                        if post_processing_sweep_results_container is not None:
+                            post_processing_sweep_results_container.clear()
+                        with simulation_results_container:
+                            ui.spinner(size="3em").classes("text-primary")
+                            ui.label("Preparing simulation...").classes("text-muted mt-2")
+                        if simulation_sweep_results_container is not None:
+                            with simulation_sweep_results_container:
+                                ui.label(
+                                    "Sweep Result View will refresh after the current run."
+                                ).classes("text-sm text-muted")
+                        with post_processing_container:
+                            ui.label(
+                                "Post Processing will be available after simulation completes."
+                            ).classes("text-sm text-muted")
+                        with post_processing_results_container:
+                            ui.label(
+                                "Run Post Processing to populate post-processed output traces."
+                            ).classes("text-sm text-muted")
+                        if post_processing_sweep_results_container is not None:
+                            with post_processing_sweep_results_container:
+                                ui.label(
+                                    "Post-processed sweep explorer will refresh after "
+                                    "post-processing completes."
+                                ).classes("text-sm text-muted")
+                        await asyncio.sleep(0)
                         # Always fetch latest schema from DB at run-time.
-                        latest_record, latest_circuit_def = _load_latest_circuit_definition(
-                            active_record_id
+                        latest_record, latest_circuit_def = await run.io_bound(
+                            _load_latest_circuit_definition,
+                            active_record_id,
                         )
                         latest_circuit_definition_ref["definition"] = latest_circuit_def
 
@@ -6941,45 +7420,6 @@ def _render_simulation_environment():
                             config.n_modulation_harmonics,
                         )
 
-                        # Show loading state
-                        sim_button.props("loading")
-                        runtime_state.latest_simulation_result = None
-                        runtime_state.latest_circuit_record = None
-                        runtime_state.latest_source_simulation_bundle_id = None
-                        runtime_state.latest_schema_source_hash = None
-                        runtime_state.latest_simulation_setup_hash = None
-                        runtime_state.latest_sweep_setup_hash = None
-                        runtime_state.latest_simulation_sweep_payload = None
-                        handle_post_processing_result(None)
-                        simulation_results_container.clear()
-                        if simulation_sweep_results_container is not None:
-                            simulation_sweep_results_container.clear()
-                        post_processing_container.clear()
-                        post_processing_results_container.clear()
-                        if post_processing_sweep_results_container is not None:
-                            post_processing_sweep_results_container.clear()
-                        with simulation_results_container:
-                            ui.spinner(size="3em").classes("text-primary")
-                            ui.label("Checking cached results...").classes("text-muted mt-2")
-                        if simulation_sweep_results_container is not None:
-                            with simulation_sweep_results_container:
-                                ui.label(
-                                    "Sweep Result View will refresh after the current run."
-                                ).classes("text-sm text-muted")
-                        with post_processing_container:
-                            ui.label(
-                                "Post Processing will be available after simulation completes."
-                            ).classes("text-sm text-muted")
-                        with post_processing_results_container:
-                            ui.label(
-                                "Run Post Processing to populate post-processed output traces."
-                            ).classes("text-sm text-muted")
-                        if post_processing_sweep_results_container is not None:
-                            with post_processing_sweep_results_container:
-                                ui.label(
-                                    "Post-processed sweep explorer will refresh after "
-                                    "post-processing completes."
-                                ).classes("text-sm text-muted")
                         simulation_run_id = f"sim-{uuid4().hex[:10]}"
                         runtime_state.set_log_context(
                             run_id=simulation_run_id,
@@ -7085,15 +7525,19 @@ def _render_simulation_environment():
                                 f"Sweep setup hash: {sweep_setup_hash}",
                             )
                         append_status("info", "Checking result cache...")
+                        simulation_results_container.clear()
+                        with simulation_results_container:
+                            ui.spinner(size="3em").classes("text-primary")
+                            ui.label("Checking cached results...").classes("text-muted mt-2")
+                        await asyncio.sleep(0)
 
                         cache_bundle_id: int | None = None
                         cache_result = None
-                        with get_unit_of_work() as uow:
-                            cache_result = _load_cached_simulation_result(
-                                uow,
-                                schema_source_hash=schema_source_hash,
-                                simulation_setup_hash=simulation_setup_hash,
-                            )
+                        cache_result = await run.io_bound(
+                            _load_cached_simulation_result_io,
+                            schema_source_hash=schema_source_hash,
+                            simulation_setup_hash=simulation_setup_hash,
+                        )
 
                         if cache_result is not None:
                             (
@@ -7290,31 +7734,22 @@ def _render_simulation_environment():
 
                             try:
                                 cache_dataset_id: int | None = None
-                                with get_unit_of_work() as uow:
-                                    cache_dataset = _ensure_simulation_cache_dataset(uow)
-                                    if cache_dataset.id is None:
-                                        raise ValueError("Failed to allocate cache dataset id.")
-                                    cache_dataset_id = int(cache_dataset.id)
-                                    cache_bundle_id = _persist_simulation_result_bundle(
-                                        uow=uow,
-                                        dataset_id=cache_dataset_id,
-                                        result=result,
-                                        role="cache",
-                                        source_meta={
-                                            "origin": "circuit_simulation",
-                                            "storage": "system_cache",
-                                            "run_id": simulation_run_id,
-                                            "circuit_id": latest_record.id,
-                                            "circuit_name": latest_record.name,
-                                            "sweep_setup_hash": sweep_setup_hash,
-                                        },
-                                        config_snapshot=setup_snapshot,
-                                        schema_source_hash=schema_source_hash,
-                                        simulation_setup_hash=simulation_setup_hash,
-                                        include_data_records=False,
-                                        result_payload=sweep_result_payload,
-                                    )
-                                    uow.commit()
+                                cache_dataset_id, cache_bundle_id = await run.io_bound(
+                                    _persist_simulation_result_bundle_io,
+                                    result=result,
+                                    schema_source_hash=schema_source_hash,
+                                    simulation_setup_hash=simulation_setup_hash,
+                                    source_meta={
+                                        "origin": "circuit_simulation",
+                                        "storage": "system_cache",
+                                        "run_id": simulation_run_id,
+                                        "circuit_id": latest_record.id,
+                                        "circuit_name": latest_record.name,
+                                    },
+                                    config_snapshot=setup_snapshot,
+                                    sweep_setup_hash=sweep_setup_hash,
+                                    result_payload=sweep_result_payload,
+                                )
                                 runtime_state.set_log_context(
                                     run_id=simulation_run_id,
                                     circuit_id=latest_record.id,
@@ -7439,6 +7874,7 @@ def _render_simulation_environment():
                                     "Sweep Result View is unavailable because simulation failed."
                                 ).classes("text-sm text-muted")
                     finally:
+                        sim_button.enable()
                         sim_button.props(remove="loading")
 
                 sim_button = (
@@ -7471,15 +7907,6 @@ def _render_simulation_environment():
                     ui.label("Run simulation to inspect raw result families.").classes(
                         "text-sm text-muted mt-2"
                     )
-                ui.separator().classes("my-4")
-                with _with_test_id(
-                    ui.column().classes("w-full gap-2"),
-                    "simulation-sweep-results-view",
-                ) as simulation_sweep_results_container:
-                    ui.icon("insights", size="sm").classes("text-primary")
-                    ui.label("Sweep Result View is available after a parameter sweep run.").classes(
-                        "text-sm text-muted"
-                    )
 
             with _with_test_id(
                 ui.card().classes("w-full bg-surface rounded-xl p-6"),
@@ -7508,16 +7935,6 @@ def _render_simulation_environment():
                     ui.label("Run Post Processing to view pipeline output traces.").classes(
                         "text-sm text-muted mt-2"
                     )
-                ui.separator().classes("my-4")
-                with _with_test_id(
-                    ui.column().classes("w-full gap-2"),
-                    "post-processing-sweep-results-view",
-                ) as post_processing_sweep_results_container:
-                    ui.icon("insights", size="sm").classes("text-primary")
-                    ui.label(
-                        "Post-processed sweep explorer is available after a "
-                        "parameter-sweep post-processing run."
-                    ).classes("text-sm text-muted")
 
     sim_env()
 
@@ -7704,7 +8121,7 @@ def _save_simulation_results_dialog(
 
 def _save_post_processed_results_dialog(
     *,
-    sweep: PortMatrixSweep,
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun,
     flow_spec: dict[str, Any],
     circuit_record: CircuitRecord | None,
     source_simulation_bundle_id: int | None,
@@ -7713,7 +8130,15 @@ def _save_post_processed_results_dialog(
     simulation_setup_hash: str | None,
 ) -> None:
     """Dialog for saving one post-processed Y sweep into a result bundle."""
-    bundle_records = _build_post_processed_y_data_records(dataset_id=0, sweep=sweep)
+    representative_sweep = (
+        runtime_output.representative_sweep
+        if isinstance(runtime_output, PortMatrixSweepRun)
+        else runtime_output
+    )
+    bundle_records = _build_post_processed_runtime_data_records(
+        dataset_id=0,
+        runtime_output=runtime_output,
+    )
     bundle_trace_count = len(
         {
             (
@@ -7728,7 +8153,10 @@ def _save_post_processed_results_dialog(
         ui.label("Save Post-Processed Results").classes("text-xl font-bold mb-4")
         ui.label(
             "This saves the processed port-level Y bundle "
-            f"({bundle_trace_count} trace(s), mode={SimulationResult.mode_token(sweep.mode)})."
+            "("
+            f"{bundle_trace_count} trace(s), "
+            f"mode={SimulationResult.mode_token(representative_sweep.mode)}"
+            ")."
         ).classes("text-sm text-muted mb-3")
 
         try:
@@ -7774,7 +8202,7 @@ def _save_post_processed_results_dialog(
                 )
                 bundle_source_meta, bundle_config_snapshot, bundle_result_payload = (
                     _build_post_processed_bundle_artifacts(
-                        sweep=sweep,
+                        sweep=representative_sweep,
                         flow_spec=flow_spec,
                         source_simulation_bundle_id=source_simulation_bundle_id,
                         source_bundle_snapshot=source_bundle_snapshot,
@@ -7794,9 +8222,9 @@ def _save_post_processed_results_dialog(
                             "circuit_name": circuit_name,
                         },
                         parameters={
-                            "start_ghz": float(sweep.frequencies_ghz[0]),
-                            "stop_ghz": float(sweep.frequencies_ghz[-1]),
-                            "points": len(sweep.frequencies_ghz),
+                            "start_ghz": float(representative_sweep.frequencies_ghz[0]),
+                            "stop_ghz": float(representative_sweep.frequencies_ghz[-1]),
+                            "points": len(representative_sweep.frequencies_ghz),
                         },
                     )
                     uow.datasets.add(dataset)
@@ -7811,9 +8239,9 @@ def _save_post_processed_results_dialog(
                     ds_id = int(selected_dataset_id)
                     ds_name = str(dataset_options[ds_id])
 
-                persisted_records = _build_post_processed_y_data_records(
+                persisted_records = _build_post_processed_runtime_data_records(
                     dataset_id=ds_id,
-                    sweep=sweep,
+                    runtime_output=runtime_output,
                 )
                 for record in persisted_records:
                     uow.data_records.add(record)
