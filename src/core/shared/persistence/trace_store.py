@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Literal, Protocol, TypedDict, cast, runtime_checkable
+from pathlib import Path, PurePosixPath
+from typing import Any, Literal, NotRequired, Protocol, TypedDict, cast, runtime_checkable
+from urllib.parse import urlparse
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -32,7 +33,8 @@ class TraceStoreRef(TypedDict):
     """Location reference for one trace payload inside a TraceStore backend."""
 
     backend: TraceStoreBackend
-    store_uri: str
+    store_key: str
+    store_uri: NotRequired[str]
     group_path: str
     array_path: str
     dtype: str
@@ -50,8 +52,22 @@ class TraceWriteResult:
 
 
 @runtime_checkable
+class TraceStoreBackendBinding(Protocol):
+    """Backend-specific locator contract kept inside persistence."""
+
+    backend: TraceStoreBackend
+
+    def build_store_key(self, *, design_id: int, batch_id: int) -> str: ...
+
+    def build_store_uri(self, *, store_key: str) -> str: ...
+
+
+@runtime_checkable
 class TraceStore(Protocol):
     """Slice-first contract for numeric trace payload storage."""
+
+    @property
+    def backend(self) -> TraceStoreBackend: ...
 
     def write_trace(
         self,
@@ -87,6 +103,52 @@ class MissingTraceStoreDependencyError(RuntimeError):
     """Raised when optional TraceStore runtime dependencies are unavailable."""
 
 
+@dataclass(frozen=True)
+class LocalZarrTraceStoreBackend:
+    """Backend-specific locator logic for local filesystem Zarr stores."""
+
+    root_path: Path
+    backend: Literal["local_zarr"] = "local_zarr"
+
+    def build_store_key(self, *, design_id: int, batch_id: int) -> str:
+        return _build_store_key(design_id=design_id, batch_id=batch_id)
+
+    def build_store_uri(self, *, store_key: str) -> str:
+        store_path = self.resolve_store_path(store_key=store_key)
+        project_root = DATABASE_PATH.parent.parent
+        try:
+            return store_path.relative_to(project_root).as_posix()
+        except ValueError:
+            return str(store_path)
+
+    def resolve_store_path(self, *, store_key: str) -> Path:
+        return self.root_path / _normalize_store_key(store_key)
+
+
+@dataclass(frozen=True)
+class S3ZarrTraceStoreBackend:
+    """Contract-only locator logic for a future S3-compatible Zarr backend."""
+
+    bucket: str
+    prefix: str = ""
+    backend: Literal["s3_zarr"] = "s3_zarr"
+    endpoint_url: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.bucket.strip():
+            raise ValueError("S3ZarrTraceStoreBackend.bucket is required.")
+
+    def build_store_key(self, *, design_id: int, batch_id: int) -> str:
+        base_key = _build_store_key(design_id=design_id, batch_id=batch_id)
+        if not self.prefix.strip():
+            return base_key
+        return _normalize_store_key(f"{self.prefix}/{base_key}")
+
+    def build_store_uri(self, *, store_key: str) -> str:
+        normalized_key = _normalize_store_key(store_key)
+        return f"s3://{self.bucket}/{normalized_key}"
+
+
 def get_trace_store_path() -> Path:
     """Return the configured local TraceStore root path."""
     TRACE_STORE_PATH.mkdir(parents=True, exist_ok=True)
@@ -100,6 +162,19 @@ def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
         raise ValueError(f"Unsupported TraceStore backend: {backend or '<missing>'}")
 
     store_uri = str(ref.get("store_uri", "")).strip()
+    store_key = _coerce_store_key(
+        backend=cast(TraceStoreBackend, backend),
+        raw_store_key=str(ref.get("store_key", "")).strip(),
+        raw_store_uri=store_uri,
+    )
+    if store_uri:
+        inferred_store_key = _coerce_store_key(
+            backend=cast(TraceStoreBackend, backend),
+            raw_store_key="",
+            raw_store_uri=store_uri,
+        )
+        if inferred_store_key and inferred_store_key != store_key:
+            raise ValueError("TraceStoreRef.store_key does not match TraceStoreRef.store_uri.")
     group_path = _normalize_group_path(str(ref.get("group_path", "")).strip())
     array_path = str(ref.get("array_path", "")).strip()
     dtype = str(ref.get("dtype", "")).strip()
@@ -107,8 +182,13 @@ def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
     shape = _coerce_int_list(ref.get("shape"), field_name="shape")
     chunk_shape = _coerce_int_list(ref.get("chunk_shape"), field_name="chunk_shape")
 
-    if not store_uri:
-        raise ValueError("TraceStoreRef.store_uri is required.")
+    normalized_store_uri = _normalize_store_uri(
+        backend=cast(TraceStoreBackend, backend),
+        store_key=store_key,
+        raw_store_uri=store_uri,
+    )
+    if not store_key:
+        raise ValueError("TraceStoreRef.store_key is required.")
     if not group_path:
         raise ValueError("TraceStoreRef.group_path is required.")
     if not array_path:
@@ -122,7 +202,8 @@ def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
 
     return TraceStoreRef(
         backend=cast(TraceStoreBackend, backend),
-        store_uri=store_uri,
+        store_key=store_key,
+        store_uri=normalized_store_uri,
         group_path=group_path,
         array_path=array_path,
         dtype=dtype,
@@ -136,13 +217,19 @@ class LocalZarrTraceStore:
     """Local-filesystem TraceStore backed by Zarr."""
 
     def __init__(self, root_path: Path | None = None):
-        self._root_path = Path(root_path) if root_path is not None else get_trace_store_path()
-        self._root_path.mkdir(parents=True, exist_ok=True)
+        resolved_root = Path(root_path) if root_path is not None else get_trace_store_path()
+        resolved_root.mkdir(parents=True, exist_ok=True)
+        self._backend_binding = LocalZarrTraceStoreBackend(root_path=resolved_root)
+
+    @property
+    def backend(self) -> TraceStoreBackend:
+        """Return the backend identifier for this TraceStore implementation."""
+        return self._backend_binding.backend
 
     @property
     def root_path(self) -> Path:
-        """Expose the resolved local root path for tests and callers."""
-        return self._root_path
+        """Expose the resolved local root path for local-backend tests."""
+        return self._backend_binding.root_path
 
     def write_trace(
         self,
@@ -163,7 +250,8 @@ class LocalZarrTraceStore:
 
         normalized_axes = _normalize_axes(axes, expected_shape=payload.shape)
         normalized_chunk_shape = _normalize_chunk_shape(payload.shape, chunk_shape)
-        store_path = self._store_path(design_id=design_id, batch_id=batch_id)
+        store_key = self._backend_binding.build_store_key(design_id=design_id, batch_id=batch_id)
+        store_path = self._backend_binding.resolve_store_path(store_key=store_key)
 
         root = zarr.open_group(store=store_path, mode="a")
         trace_group = _require_group(root, f"/traces/{trace_id}")
@@ -195,7 +283,8 @@ class LocalZarrTraceStore:
             ],
             store_ref=TraceStoreRef(
                 backend="local_zarr",
-                store_uri=self._store_uri_for_path(store_path),
+                store_key=store_key,
+                store_uri=self._backend_binding.build_store_uri(store_key=store_key),
                 group_path=f"/traces/{trace_id}",
                 array_path=array_path,
                 dtype=str(payload.dtype),
@@ -234,33 +323,13 @@ class LocalZarrTraceStore:
         normalized_ref = coerce_trace_store_ref(ref)
         return tuple(int(dimension) for dimension in normalized_ref["shape"])
 
-    def _store_path(self, *, design_id: int, batch_id: int) -> Path:
-        return (
-            self.root_path
-            / "designs"
-            / str(int(design_id))
-            / "batches"
-            / f"{int(batch_id)}.zarr"
-        )
-
-    def _store_uri_for_path(self, store_path: Path) -> str:
-        project_root = DATABASE_PATH.parent.parent
-        try:
-            return str(store_path.relative_to(project_root))
-        except ValueError:
-            return str(store_path)
-
     def _resolve_store_path(self, normalized_ref: TraceStoreRef) -> Path:
         if normalized_ref["backend"] != "local_zarr":
             raise NotImplementedError(
                 "LocalZarrTraceStore only handles local_zarr refs. "
                 "s3_zarr remains contract-safe only."
             )
-        store_uri = normalized_ref["store_uri"]
-        candidate = Path(store_uri)
-        if candidate.is_absolute():
-            return candidate
-        return DATABASE_PATH.parent.parent / store_uri
+        return self._backend_binding.resolve_store_path(store_key=normalized_ref["store_key"])
 
     def _open_trace_group(self, ref: Mapping[str, object]):
         zarr = _require_zarr()
@@ -363,6 +432,86 @@ def _normalize_selection(selection: TraceSelection, *, ndim: int) -> TraceSelect
     return (*selection, *([slice(None)] * (ndim - len(selection))))
 
 
+def _build_store_key(*, design_id: int, batch_id: int) -> str:
+    return f"designs/{int(design_id)}/batches/{int(batch_id)}.zarr"
+
+
+def _coerce_store_key(
+    *,
+    backend: TraceStoreBackend,
+    raw_store_key: str,
+    raw_store_uri: str,
+) -> str:
+    if raw_store_key:
+        return _normalize_store_key(raw_store_key)
+
+    if not raw_store_uri:
+        return ""
+
+    if backend == "local_zarr":
+        return _infer_local_store_key(raw_store_uri)
+    if backend == "s3_zarr":
+        return _infer_s3_store_key(raw_store_uri)
+    raise ValueError(f"Unsupported TraceStore backend: {backend}")
+
+
+def _normalize_store_uri(
+    *,
+    backend: TraceStoreBackend,
+    store_key: str,
+    raw_store_uri: str,
+) -> str:
+    if raw_store_uri:
+        return raw_store_uri
+
+    if backend == "local_zarr":
+        binding = LocalZarrTraceStoreBackend(root_path=get_trace_store_path())
+        return binding.build_store_uri(store_key=store_key)
+
+    return f"trace-store://{backend}/{store_key}"
+
+
+def _normalize_store_key(store_key: str) -> str:
+    normalized = str(PurePosixPath(store_key.replace("\\", "/"))).strip()
+    if not normalized or normalized == ".":
+        return ""
+
+    segments = [segment for segment in normalized.split("/") if segment and segment != "."]
+    if any(segment == ".." for segment in segments):
+        raise ValueError("TraceStoreRef.store_key cannot traverse parent directories.")
+    return "/".join(segments)
+
+
+def _infer_local_store_key(store_uri: str) -> str:
+    candidate = Path(store_uri)
+    trace_store_root = get_trace_store_path()
+    if candidate.is_absolute():
+        try:
+            return candidate.relative_to(trace_store_root).as_posix()
+        except ValueError:
+            pass
+
+    normalized_uri = store_uri.replace("\\", "/").strip("/")
+    for marker in ("/trace_store/", "trace_store/"):
+        if marker in normalized_uri:
+            return _normalize_store_key(normalized_uri.split(marker, 1)[1])
+    return _normalize_store_key(normalized_uri)
+
+
+def _infer_s3_store_key(store_uri: str) -> str:
+    parsed = urlparse(store_uri)
+    if parsed.scheme == "s3":
+        return _normalize_store_key(parsed.path.lstrip("/"))
+    if parsed.scheme == "trace-store":
+        backend = parsed.netloc.strip()
+        if backend != "s3_zarr":
+            raise ValueError(
+                "TraceStoreRef.store_uri trace-store backend mismatch; expected s3_zarr."
+            )
+        return _normalize_store_key(parsed.path.lstrip("/"))
+    return _normalize_store_key(store_uri)
+
+
 def _coerce_int_list(raw_value: object, *, field_name: str) -> list[int]:
     if not isinstance(raw_value, Sequence) or isinstance(raw_value, (str, bytes)):
         raise ValueError(f"TraceStoreRef.{field_name} must be a sequence of integers.")
@@ -384,12 +533,15 @@ __all__ = [
     "TRACE_STORE_PATH",
     "TRACE_STORE_SCHEMA_VERSION",
     "LocalZarrTraceStore",
+    "LocalZarrTraceStoreBackend",
     "MissingTraceStoreDependencyError",
+    "S3ZarrTraceStoreBackend",
     "TraceAxisMetadata",
     "TraceSelection",
     "TraceSelectionItem",
     "TraceStore",
     "TraceStoreBackend",
+    "TraceStoreBackendBinding",
     "TraceStoreRef",
     "TraceWriteResult",
     "coerce_trace_store_ref",

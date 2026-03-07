@@ -57,7 +57,7 @@ The target storage direction is:
 |---|---|---|
 | Metadata | `SQLite` / `PostgreSQL` | `DesignRecord`, `TraceRecord`, `TraceBatchRecord`, `AnalysisRunRecord`, `DerivedParameterRecord` |
 | Numeric payload | `Zarr` | S/Y/Z traces, sweep ND arrays, axes arrays |
-| Object backend | local FS / MinIO / S3 | TraceStore backend |
+| Object backend | local FS / MinIO / S3 | TraceStore backend (located via `TraceStoreRef.backend + store_key`; local path layout stays internal) |
 
 ## Dependency Management
 

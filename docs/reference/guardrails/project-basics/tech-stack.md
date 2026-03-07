@@ -57,7 +57,7 @@ tags:
 |---|---|---|
 | Metadata | `SQLite` / `PostgreSQL` | `DesignRecord`、`TraceRecord`、`TraceBatchRecord`、`AnalysisRunRecord`、`DerivedParameterRecord` |
 | Numeric payload | `Zarr` | S/Y/Z traces、sweep ND arrays、axes arrays |
-| Object backend | local FS / MinIO / S3 | TraceStore backend |
+| Object backend | local FS / MinIO / S3 | TraceStore backend（透過 `TraceStoreRef.backend + store_key` 定位；local path layout 不外漏） |
 
 ## 依賴管理
 

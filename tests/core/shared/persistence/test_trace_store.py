@@ -7,7 +7,10 @@ import numpy as np
 from core.shared.persistence.models import DataRecord
 from core.shared.persistence.trace_store import (
     LocalZarrTraceStore,
+    LocalZarrTraceStoreBackend,
+    S3ZarrTraceStoreBackend,
     TraceStore,
+    TraceStoreBackendBinding,
     coerce_trace_store_ref,
 )
 
@@ -16,6 +19,30 @@ def test_local_zarr_trace_store_satisfies_contract() -> None:
     store = LocalZarrTraceStore()
 
     assert isinstance(store, TraceStore)
+    assert store.backend == "local_zarr"
+
+
+def test_backend_bindings_keep_locator_logic_inside_persistence(tmp_path) -> None:
+    local_backend = LocalZarrTraceStoreBackend(root_path=tmp_path / "trace_store")
+    s3_backend = S3ZarrTraceStoreBackend(bucket="trace-bucket", prefix="tutorial")
+
+    assert isinstance(local_backend, TraceStoreBackendBinding)
+    assert isinstance(s3_backend, TraceStoreBackendBinding)
+
+    local_key = local_backend.build_store_key(design_id=42, batch_id=105)
+    assert local_key == "designs/42/batches/105.zarr"
+    assert local_backend.resolve_store_path(store_key=local_key) == (
+        tmp_path / "trace_store" / "designs/42/batches/105.zarr"
+    )
+    assert local_backend.build_store_uri(store_key=local_key).endswith(
+        "trace_store/designs/42/batches/105.zarr"
+    )
+
+    s3_key = s3_backend.build_store_key(design_id=42, batch_id=105)
+    assert s3_key == "tutorial/designs/42/batches/105.zarr"
+    assert s3_backend.build_store_uri(store_key=s3_key) == (
+        "s3://trace-bucket/tutorial/designs/42/batches/105.zarr"
+    )
 
 
 def test_local_zarr_trace_store_writes_trace_and_reads_slices(tmp_path) -> None:
@@ -38,6 +65,7 @@ def test_local_zarr_trace_store_writes_trace_and_reads_slices(tmp_path) -> None:
         {"name": "L_jun", "unit": "nH", "length": 3},
     ]
     assert write_result.store_ref["backend"] == "local_zarr"
+    assert write_result.store_ref["store_key"] == "designs/42/batches/105.zarr"
     assert write_result.store_ref["group_path"] == "/traces/9001"
     assert write_result.store_ref["array_path"] == "values"
     assert write_result.store_ref["shape"] == [4, 3]
@@ -62,6 +90,7 @@ def test_trace_store_ref_accepts_s3_backend_as_extension_direction() -> None:
     ref = coerce_trace_store_ref(
         {
             "backend": "s3_zarr",
+            "store_key": "designs/42/batches/105.zarr",
             "store_uri": "s3://trace-bucket/designs/42/batches/105.zarr",
             "group_path": "/traces/9001",
             "array_path": "values",
@@ -73,6 +102,25 @@ def test_trace_store_ref_accepts_s3_backend_as_extension_direction() -> None:
     )
 
     assert ref["backend"] == "s3_zarr"
+    assert ref["store_key"] == "designs/42/batches/105.zarr"
+
+
+def test_trace_store_ref_derives_store_key_from_legacy_local_store_uri() -> None:
+    ref = coerce_trace_store_ref(
+        {
+            "backend": "local_zarr",
+            "store_uri": "data/trace_store/designs/42/batches/105.zarr",
+            "group_path": "/traces/9001",
+            "array_path": "values",
+            "dtype": "float64",
+            "shape": [4001, 11],
+            "chunk_shape": [4001, 1],
+            "schema_version": "1.0",
+        }
+    )
+
+    assert ref["store_key"] == "designs/42/batches/105.zarr"
+    assert ref["store_uri"] == "data/trace_store/designs/42/batches/105.zarr"
 
 
 def test_data_record_uses_store_ref_shape_metadata_without_inline_values() -> None:
@@ -88,6 +136,7 @@ def test_data_record_uses_store_ref_shape_metadata_without_inline_values() -> No
         values=[],
         store_ref={
             "backend": "local_zarr",
+            "store_key": "designs/1/batches/2.zarr",
             "store_uri": "data/trace_store/designs/1/batches/2.zarr",
             "group_path": "/traces/3",
             "array_path": "values",

@@ -88,6 +88,13 @@ Trace numeric payload 的讀寫必須經由 TraceStore abstraction，而不是 U
 - local filesystem `Zarr`
 - S3-compatible `Zarr`（例如 MinIO / S3 endpoint）
 
+`TraceStoreRef` 必須維持 backend-owned locator contract：
+
+- `backend`：`local_zarr` / `s3_zarr`
+- `store_key`：backend-neutral store object key
+- `store_uri`：可保留為相容/debug locator，但視為 opaque，不可由 UI/app layer 解析 local layout
+- `group_path` / `array_path`：TraceStore 內部群組與 array 定位
+
 ### 6. Canonical Trace Contract
 
 - `TraceRecord` 的 canonical 單位是 **one logical observable over axes**
