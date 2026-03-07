@@ -133,6 +133,24 @@ Focus:
 - result navigation
 - responsibility split versus `TraceBatchRecord`
 
+Decision target for this workstream:
+
+- Current
+  - Characterization writes already land in the metadata DB, but the page layer still writes `TraceBatchRecord(bundle_type="characterization", role="analysis_run")` directly
+  - `AnalysisRunRecord` still lacks a formal repository boundary, so history and result navigation can drift back toward batch semantics
+- Target
+  - use `AnalysisRunRecord` as the logical persistence contract
+  - persist it through a repository adapter backed by existing `TraceBatchRecord(bundle_type="characterization", role="analysis_run")` rows
+  - make Characterization UI read and write the analysis-run repository instead of assembling generic batch rows directly
+  - keep `TraceBatchRecord` responsible for import / simulation / postprocess provenance rather than run-specific execution semantics
+- Why this is safe now
+  - no migration required
+  - no new physical table required
+  - no large numeric payload moves back into the metadata DB
+  - no regression to point-per-record canonical `TraceRecord`
+- Deferred
+  - if a dedicated physical `analysis_runs` table is needed later, that should happen in a separate migration workstream rather than in this phase-2 task
+
 ### Workstream E: Examples-Driven Validation Matrix
 
 Goal:

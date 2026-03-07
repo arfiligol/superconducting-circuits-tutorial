@@ -134,6 +134,24 @@ updated_by: codex
 - result navigation
 - 與 `TraceBatchRecord` 的責任切分
 
+Decision target for this workstream：
+
+- Current
+  - Characterization 寫入已落在 metadata DB，但 UI / page helper 仍直接操作 `TraceBatchRecord(bundle_type="characterization", role="analysis_run")`
+  - `AnalysisRunRecord` 仍缺正式 repository boundary，因此 history / result navigation 仍容易退回 batch semantics
+- Target
+  - 以 `AnalysisRunRecord` 作為 logical persistence contract
+  - 透過 repository adapter 將其持久化到既有 `TraceBatchRecord(bundle_type="characterization", role="analysis_run")`
+  - Characterization UI 改讀寫 analysis-run repository，而不是直接組 generic batch row
+  - `TraceBatchRecord` 繼續負責 import / simulation / postprocess provenance，不吸收 run-specific execution semantics
+- Why this is safe now
+  - 不需要 migration
+  - 不需要新增 physical table
+  - 不會把大型 numeric payload 放回 metadata DB
+  - 不會把 canonical `TraceRecord` 退回 point-per-record
+- Deferred
+  - 若未來需要獨立 physical table，再另開 migration workstream；這不屬於本 phase-2 task
+
 ### Workstream E: Examples-Driven Validation Matrix
 
 目標：

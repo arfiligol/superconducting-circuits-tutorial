@@ -1,7 +1,9 @@
 """Repositories for the persistence layer."""
 
+from core.shared.persistence.repositories.analysis_run_repository import AnalysisRunRepository
 from core.shared.persistence.repositories.circuit_repository import CircuitRepository
 from core.shared.persistence.repositories.contracts import (
+    AnalysisRunPersistenceContract,
     AnalysisRunSummary,
     DataRecordCharacterizationContract,
     ResultBundleAnalysisRunSummary,
@@ -32,6 +34,8 @@ from core.shared.persistence.repositories.result_bundle_repository import (
 from core.shared.persistence.repositories.tag_repository import TagRepository
 
 __all__ = [
+    "AnalysisRunPersistenceContract",
+    "AnalysisRunRepository",
     "AnalysisRunSummary",
     "CircuitRepository",
     "DataRecordCharacterizationContract",

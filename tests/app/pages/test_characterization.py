@@ -2,7 +2,7 @@
 
 from app.pages.characterization import (
     _build_analysis_run_availability,
-    _build_analysis_run_bundle_record,
+    _build_analysis_run_record,
     _build_analysis_run_ui_state,
     _build_fit_parameter_table,
     _build_mode_vs_ljun_dataframe,
@@ -21,31 +21,38 @@ from app.pages.characterization import (
 from app.services.characterization_runner import SweepSupportDiagnostic
 from app.services.result_artifact_registry import build_result_artifacts_for_analysis
 from core.shared.persistence.models import (
+    AnalysisRunRecord,
     DerivedParameter,
     DeviceType,
 )
 
 
-def test_build_analysis_run_bundle_record_captures_dataset_scope_input() -> None:
-    bundle = _build_analysis_run_bundle_record(
-        dataset_id=9,
+def test_build_analysis_run_record_captures_dataset_scope_input() -> None:
+    run_record = _build_analysis_run_record(
+        design_id=9,
         analysis_id="s21_resonance_fit",
         analysis_label="S21 Resonance Fit",
         run_id="char-test-run",
-        selected_bundle_id=None,
+        selected_trace_ids=[101, 102],
+        selected_batch_ids=[],
         selected_scope_token="all_dataset_records",
-        config_snapshot={"model": "notch", "f_min": 4.5},
+        selected_trace_mode_group="base",
+        config_payload={"model": "notch", "f_min": 4.5},
+        summary_payload={"selected_trace_count": 2},
     )
 
-    assert bundle.dataset_id == 9
-    assert bundle.bundle_type == "characterization"
-    assert bundle.role == "analysis_run"
-    assert bundle.status == "completed"
-    assert bundle.source_meta["analysis_id"] == "s21_resonance_fit"
-    assert bundle.source_meta["run_id"] == "char-test-run"
-    assert bundle.source_meta["input_bundle_id"] is None
-    assert bundle.source_meta["input_scope"] == "all_dataset_records"
-    assert bundle.config_snapshot == {"model": "notch", "f_min": 4.5}
+    assert isinstance(run_record, AnalysisRunRecord)
+    assert run_record.design_id == 9
+    assert run_record.analysis_id == "s21_resonance_fit"
+    assert run_record.analysis_label == "S21 Resonance Fit"
+    assert run_record.run_id == "char-test-run"
+    assert run_record.status == "completed"
+    assert run_record.input_trace_ids == [101, 102]
+    assert run_record.input_batch_ids == []
+    assert run_record.input_scope == "all_dataset_records"
+    assert run_record.trace_mode_group == "base"
+    assert run_record.config_payload == {"model": "notch", "f_min": 4.5}
+    assert run_record.summary_payload == {"selected_trace_count": 2}
 
 
 def test_build_analysis_run_ui_state_without_compatible_traces_disables_run() -> None:
@@ -416,7 +423,7 @@ def test_result_view_empty_state_message_reports_completed_run_without_artifacts
         selected_mode_label="All",
         selected_analysis_groups_raw={},
         selected_analysis_groups={},
-        latest_completed_run_bundle_id=42,
+        latest_completed_analysis_run_id=42,
     )
 
     assert "did not publish any result artifacts yet" in message
@@ -427,19 +434,19 @@ def test_latest_completed_analysis_run_summaries_keeps_latest_completed_bundle()
     latest = _latest_completed_analysis_run_summaries(
         [
             {
-                "bundle_id": 4,
+                "analysis_run_id": 4,
                 "analysis_id": "admittance_extraction",
                 "analysis_label": "Admittance Extraction",
                 "status": "completed",
             },
             {
-                "bundle_id": 5,
+                "analysis_run_id": 5,
                 "analysis_id": "squid_fitting",
                 "analysis_label": "SQUID Fitting",
                 "status": "failed",
             },
             {
-                "bundle_id": 6,
+                "analysis_run_id": 6,
                 "analysis_id": "squid_fitting",
                 "analysis_label": "SQUID Fitting",
                 "status": "completed",
@@ -448,7 +455,7 @@ def test_latest_completed_analysis_run_summaries_keeps_latest_completed_bundle()
     )
 
     assert sorted(latest) == ["admittance_extraction", "squid_fitting"]
-    assert int(latest["squid_fitting"]["bundle_id"]) == 6
+    assert int(latest["squid_fitting"]["analysis_run_id"]) == 6
 
 
 def test_completed_result_analysis_ids_include_completed_run_without_methods() -> None:
@@ -465,7 +472,7 @@ def test_completed_result_analysis_ids_include_completed_run_without_methods() -
         },
         latest_completed_runs={
             "squid_fitting": {
-                "bundle_id": 7,
+                "analysis_run_id": 7,
                 "analysis_id": "squid_fitting",
                 "status": "completed",
             }

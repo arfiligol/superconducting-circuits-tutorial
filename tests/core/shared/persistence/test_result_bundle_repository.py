@@ -3,6 +3,7 @@
 from sqlmodel import Session, SQLModel, create_engine
 
 from core.shared.persistence.models import (
+    AnalysisRunRecord,
     CircuitRecord,
     DesignRecord,
     TraceBatchRecord,
@@ -592,6 +593,114 @@ def test_result_bundle_repository_lists_primitive_analysis_run_summaries() -> No
                 "status": "failed",
             },
         ]
+
+
+def test_result_bundle_repository_analysis_runs_round_trip_via_logical_contract() -> None:
+    with _memory_session() as session:
+        design = DesignRepository(session).add(
+            DesignRecord(name="Analysis Run Design", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert design.id is not None
+
+        bundle_repo = ResultBundleRepository(session)
+        persisted = bundle_repo.analysis_runs.add(
+            AnalysisRunRecord(
+                design_id=design.id,
+                analysis_id="squid_fitting",
+                analysis_label="SQUID Fitting",
+                run_id="run-123",
+                status="completed",
+                input_trace_ids=[11, 12],
+                input_batch_ids=[7],
+                input_scope="all_dataset_records",
+                trace_mode_group="base",
+                config_payload={"model": "lc", "max_iter": 50},
+                summary_payload={"selected_trace_count": 2},
+            )
+        )
+        session.commit()
+
+        assert persisted.id is not None
+
+        stored_batch = bundle_repo.get(persisted.id)
+        assert stored_batch is not None
+        assert stored_batch.bundle_type == "characterization"
+        assert stored_batch.role == "analysis_run"
+        assert stored_batch.parent_batch_id is None
+        assert stored_batch.source_meta["input_trace_ids"] == [11, 12]
+        assert stored_batch.source_meta["input_batch_ids"] == [7]
+        assert stored_batch.config_snapshot == {"model": "lc", "max_iter": 50}
+        assert stored_batch.result_payload == {"selected_trace_count": 2}
+
+        loaded = bundle_repo.analysis_runs.get(persisted.id)
+        assert loaded is not None
+        assert loaded.design_id == design.id
+        assert loaded.analysis_id == "squid_fitting"
+        assert loaded.analysis_label == "SQUID Fitting"
+        assert loaded.run_id == "run-123"
+        assert loaded.input_trace_ids == [11, 12]
+        assert loaded.input_batch_ids == [7]
+        assert loaded.input_scope == "all_dataset_records"
+        assert loaded.trace_mode_group == "base"
+        assert loaded.config_payload == {"model": "lc", "max_iter": 50}
+        assert loaded.summary_payload == {"selected_trace_count": 2}
+
+        summaries = bundle_repo.analysis_runs.list_summaries_by_design(design.id)
+        assert summaries == [
+            {
+                "analysis_run_id": int(persisted.id),
+                "design_id": design.id,
+                "analysis_id": "squid_fitting",
+                "analysis_label": "SQUID Fitting",
+                "status": "completed",
+            }
+        ]
+
+
+def test_result_bundle_repository_analysis_runs_read_legacy_execution_payloads() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Legacy Analysis Run Dataset", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        bundle_repo = ResultBundleRepository(session)
+        bundle_repo.add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="characterization",
+                role="analysis_run",
+                status="completed",
+                source_meta={
+                    "analysis_id": "y11_fit",
+                    "analysis_label": "Y11 Fit",
+                    "run_id": "legacy-run",
+                    "input_bundle_id": 5,
+                    "input_scope": "all_dataset_records",
+                },
+                config_snapshot={
+                    "selected_trace_ids": [101, 102],
+                    "selected_trace_mode_group": "sideband",
+                    "selected_trace_count": 2,
+                    "fit_window": 4.2,
+                },
+                result_payload={},
+            )
+        )
+        session.commit()
+
+        loaded = bundle_repo.analysis_runs.get(1)
+        assert loaded is not None
+        assert loaded.analysis_id == "y11_fit"
+        assert loaded.run_id == "legacy-run"
+        assert loaded.input_batch_ids == [5]
+        assert loaded.input_trace_ids == [101, 102]
+        assert loaded.input_scope == "all_dataset_records"
+        assert loaded.trace_mode_group == "sideband"
+        assert loaded.config_payload == {"fit_window": 4.2}
+        assert loaded.summary_payload == {"selected_trace_count": 2}
 
 
 def test_circuit_repository_summary_page_supports_search_and_sort() -> None:

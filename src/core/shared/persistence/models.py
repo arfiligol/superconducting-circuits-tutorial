@@ -247,16 +247,22 @@ class TraceBatchRecord(SQLModel, table=True):
 
 
 class AnalysisRunRecord(SQLModel, table=False):
-    """Canonical analysis-run contract used while storage still reuses TraceBatch rows."""
+    """Canonical analysis-run contract backed by characterization TraceBatch rows."""
 
     id: int | None = None
     design_id: int
     analysis_id: str
+    analysis_label: str = ""
+    run_id: str = ""
     status: str
     input_trace_ids: list[int] = Field(default_factory=list)
     input_batch_ids: list[int] = Field(default_factory=list)
+    input_scope: str = ""
+    trace_mode_group: str = ""
     config_payload: dict = Field(default_factory=dict)
+    summary_payload: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: datetime | None = None
 
 
 class DerivedParameter(SQLModel, table=True):

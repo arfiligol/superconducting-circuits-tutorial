@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
+from core.shared.persistence.models import AnalysisRunRecord
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 TraceIndexRow = dict[str, str | int]
@@ -17,6 +18,19 @@ class AnalysisRunSummary(TypedDict):
     analysis_id: str
     analysis_label: str
     status: str
+
+
+@runtime_checkable
+class AnalysisRunPersistenceContract(Protocol):
+    """Logical analysis-run persistence API used by Characterization history flows."""
+
+    def add(self, analysis_run: AnalysisRunRecord) -> AnalysisRunRecord: ...
+
+    def get(self, id: int) -> AnalysisRunRecord | None: ...
+
+    def list_by_design(self, design_id: int) -> list[AnalysisRunRecord]: ...
+
+    def list_summaries_by_design(self, design_id: int) -> list[AnalysisRunSummary]: ...
 
 
 class TraceBatchSnapshot(TypedDict):

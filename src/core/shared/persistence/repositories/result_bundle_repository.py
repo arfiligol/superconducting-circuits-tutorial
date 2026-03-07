@@ -10,6 +10,7 @@ from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
 from core.shared.persistence.models import TraceBatchRecord, TraceBatchTraceLink, TraceRecord
+from core.shared.persistence.repositories.analysis_run_repository import AnalysisRunRepository
 from core.shared.persistence.repositories.contracts import (
     AnalysisRunSummary,
     ResultBundleAnalysisRunSummary,
@@ -92,6 +93,11 @@ class TraceBatchRepository:
 
     def __init__(self, session: Session):
         self._session = session
+
+    @property
+    def analysis_runs(self) -> AnalysisRunRepository:
+        """Expose the logical analysis-run repository over shared batch-backed storage."""
+        return AnalysisRunRepository(self._session)
 
     def get(self, id: int) -> TraceBatchRecord | None:
         """Get a trace batch by ID."""
@@ -240,47 +246,24 @@ class TraceBatchRepository:
 
     def list_analysis_run_summaries_by_design(self, design_id: int) -> list[AnalysisRunSummary]:
         """List primitive-only summaries for analysis runs under one design."""
-        legacy_rows = self.list_analysis_run_summaries_by_dataset(design_id)
-        return [
-            {
-                "analysis_run_id": int(row["bundle_id"]),
-                "design_id": int(row["dataset_id"]),
-                "analysis_id": str(row["analysis_id"]),
-                "analysis_label": str(row["analysis_label"]),
-                "status": str(row["status"]),
-            }
-            for row in legacy_rows
-        ]
+        return self.analysis_runs.list_summaries_by_design(design_id)
 
     def list_analysis_run_summaries_by_dataset(
         self,
         dataset_id: int,
     ) -> list[ResultBundleAnalysisRunSummary]:
         """List primitive-only summaries for characterization analysis runs."""
-        statement = self._dataset_statement(
-            dataset_id=dataset_id,
-            bundle_type="characterization",
-            role="analysis_run",
-        ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
-        batches = self._session.exec(statement).all()
-        summaries: list[ResultBundleAnalysisRunSummary] = []
-        for batch in batches:
-            if batch.id is None:
-                continue
-            source_meta = batch.source_meta if isinstance(batch.source_meta, dict) else {}
-            analysis_id = str(source_meta.get("analysis_id", "")).strip()
-            if not analysis_id:
-                continue
-            summaries.append(
-                {
-                    "bundle_id": int(batch.id),
-                    "dataset_id": int(batch.dataset_id),
-                    "analysis_id": analysis_id,
-                    "analysis_label": str(source_meta.get("analysis_label", analysis_id)),
-                    "status": str(batch.status),
-                }
-            )
-        return summaries
+        canonical_rows = self.analysis_runs.list_summaries_by_design(dataset_id)
+        return [
+            {
+                "bundle_id": int(row["analysis_run_id"]),
+                "dataset_id": int(row["design_id"]),
+                "analysis_id": str(row["analysis_id"]),
+                "analysis_label": str(row["analysis_label"]),
+                "status": str(row["status"]),
+            }
+            for row in canonical_rows
+        ]
 
     def find_completed_simulation_batch(
         self,

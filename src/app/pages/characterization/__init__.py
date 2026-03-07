@@ -50,7 +50,7 @@ from core.analysis.domain import (
     trace_record_parameter,
 )
 from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
+from core.shared.persistence.models import AnalysisRunRecord, ParameterDesignation
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -187,10 +187,16 @@ def _latest_completed_analysis_run_summaries(
         analysis_id = str(summary.get("analysis_id", "")).strip()
         if not analysis_id or str(summary.get("status", "")).strip() != "completed":
             continue
-        bundle_id = int(summary.get("bundle_id", 0) or 0)
+        analysis_run_id = int(
+            summary.get("analysis_run_id", summary.get("bundle_id", 0)) or 0
+        )
         current = latest_by_analysis.get(analysis_id)
-        current_bundle_id = int(current.get("bundle_id", 0) or 0) if current else 0
-        if current is None or bundle_id >= current_bundle_id:
+        current_analysis_run_id = (
+            int(current.get("analysis_run_id", current.get("bundle_id", 0)) or 0)
+            if current
+            else 0
+        )
+        if current is None or analysis_run_id >= current_analysis_run_id:
             latest_by_analysis[analysis_id] = dict(summary)
     return latest_by_analysis
 
@@ -534,32 +540,32 @@ def _to_int(value: object, default: int) -> int:
     return default
 
 
-def _build_analysis_run_bundle_record(
+def _build_analysis_run_record(
     *,
-    dataset_id: int,
+    design_id: int,
     analysis_id: str,
     analysis_label: str,
     run_id: str,
-    selected_bundle_id: int | None,
+    selected_trace_ids: Sequence[int],
+    selected_batch_ids: Sequence[int],
     selected_scope_token: str,
-    config_snapshot: dict[str, object],
-) -> ResultBundleRecord:
-    """Build a provenance bundle for one Characterization run."""
-    return ResultBundleRecord(
-        dataset_id=dataset_id,
-        bundle_type="characterization",
-        role="analysis_run",
+    selected_trace_mode_group: str,
+    config_payload: dict[str, object],
+    summary_payload: dict[str, object] | None = None,
+) -> AnalysisRunRecord:
+    """Build one logical analysis-run record for Characterization persistence."""
+    return AnalysisRunRecord(
+        design_id=design_id,
+        analysis_id=analysis_id,
+        analysis_label=analysis_label,
+        run_id=run_id,
         status="completed",
-        source_meta={
-            "origin": "characterization",
-            "analysis_id": analysis_id,
-            "analysis_label": analysis_label,
-            "run_id": run_id,
-            "input_bundle_id": selected_bundle_id,
-            "input_scope": selected_scope_token,
-        },
-        config_snapshot=config_snapshot,
-        result_payload={},
+        input_trace_ids=[int(trace_id) for trace_id in selected_trace_ids],
+        input_batch_ids=[int(batch_id) for batch_id in selected_batch_ids],
+        input_scope=selected_scope_token,
+        trace_mode_group=selected_trace_mode_group,
+        config_payload=dict(config_payload),
+        summary_payload=dict(summary_payload or {}),
     )
 
 
@@ -722,7 +728,7 @@ def _result_view_empty_state_message(
     selected_mode_label: str,
     selected_analysis_groups_raw: Mapping[str, list],
     selected_analysis_groups: Mapping[str, list],
-    latest_completed_run_bundle_id: int | None = None,
+    latest_completed_analysis_run_id: int | None = None,
 ) -> str:
     """Build one diagnosable empty-state message for Result View."""
     if selected_analysis_groups:
@@ -735,10 +741,10 @@ def _result_view_empty_state_message(
         return (
             f"No artifacts available for selected analysis under trace mode: {selected_mode_label}."
         )
-    if latest_completed_run_bundle_id is not None:
+    if latest_completed_analysis_run_id is not None:
         return (
             "Analysis completed but did not publish any result artifacts yet "
-            f"(latest run trace batch #{latest_completed_run_bundle_id})."
+            f"(latest analysis run #{latest_completed_analysis_run_id})."
         )
     return "No artifacts available for selected analysis."
 
@@ -1156,7 +1162,7 @@ def characterization_page():
 
                         ds_params = refresh_uow.derived_params.list_by_dataset(active_id)
                         analysis_run_summaries = (
-                            refresh_uow.result_bundles.list_analysis_run_summaries_by_dataset(
+                            refresh_uow.result_bundles.analysis_runs.list_summaries_by_design(
                                 active_id
                             )
                         )
@@ -1705,39 +1711,40 @@ def characterization_page():
                                                             ),
                                                         )
                                             with get_unit_of_work() as write_uow:
-                                                bundle = _build_analysis_run_bundle_record(
-                                                    dataset_id=ds.id,
+                                                analysis_run = _build_analysis_run_record(
+                                                    design_id=ds.id,
                                                     analysis_id=analysis_id,
                                                     analysis_label=str(
                                                         selected_run_analysis["label"]
                                                     ),
                                                     run_id=run_id,
-                                                    selected_bundle_id=None,
+                                                    selected_trace_ids=run_trace_ids,
+                                                    selected_batch_ids=[],
                                                     selected_scope_token=selected_scope_token,
-                                                    config_snapshot={
-                                                        **dict(config_state),
-                                                        "run_id": run_id,
-                                                        "selected_trace_ids": run_trace_ids,
-                                                        "selected_trace_mode_group": (
-                                                            selected_mode_group
-                                                        ),
+                                                    selected_trace_mode_group=selected_mode_group,
+                                                    config_payload=dict(config_state),
+                                                    summary_payload={
                                                         "selected_trace_count": len(run_trace_ids),
                                                     },
                                                 )
-                                                write_uow.result_bundles.add(bundle)
+                                                persisted_run = (
+                                                    write_uow.result_bundles.analysis_runs.add(
+                                                        analysis_run
+                                                    )
+                                                )
                                                 write_uow.commit()
-                                                if bundle.id is not None:
+                                                if persisted_run.id is not None:
                                                     runtime_state.set_log_context(
                                                         run_id=run_id,
                                                         dataset_id=ds.id,
                                                         analysis_id=analysis_id,
-                                                        bundle_id=bundle.id,
+                                                        bundle_id=persisted_run.id,
                                                     )
                                                     append_analysis_status(
                                                         "info",
                                                         (
-                                                            "Recorded analysis trace batch "
-                                                            f"#{bundle.id}."
+                                                            "Recorded analysis run "
+                                                            f"#{persisted_run.id}."
                                                         ),
                                                     )
 
@@ -2345,13 +2352,17 @@ def characterization_page():
                                             selected_trace_mode_filter,
                                             "All",
                                         )
-                                        latest_completed_run_bundle_id = None
+                                        latest_completed_analysis_run_id = None
                                         latest_completed_run = latest_completed_runs.get(
                                             selected_result_analysis_id
                                         )
                                         if latest_completed_run is not None:
-                                            latest_completed_run_bundle_id = int(
-                                                latest_completed_run.get("bundle_id", 0) or 0
+                                            latest_completed_analysis_run_id = int(
+                                                latest_completed_run.get(
+                                                    "analysis_run_id",
+                                                    latest_completed_run.get("bundle_id", 0),
+                                                )
+                                                or 0
                                             ) or None
                                         ui.label(
                                             _result_view_empty_state_message(
@@ -2360,8 +2371,8 @@ def characterization_page():
                                                     selected_analysis_groups_raw
                                                 ),
                                                 selected_analysis_groups=selected_analysis_groups,
-                                                latest_completed_run_bundle_id=(
-                                                    latest_completed_run_bundle_id
+                                                latest_completed_analysis_run_id=(
+                                                    latest_completed_analysis_run_id
                                                 ),
                                             )
                                         ).classes("text-sm text-muted mt-3")

@@ -4,6 +4,7 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from core.shared.persistence.models import DesignRecord
 from core.shared.persistence.repositories import (
+    AnalysisRunPersistenceContract,
     DataRecordCharacterizationContract,
     ResultBundleCharacterizationContract,
     ResultBundleDatasetSummaryContract,
@@ -49,6 +50,7 @@ def test_trace_batch_repository_satisfies_characterization_contracts() -> None:
         repo = TraceBatchRepository(session)
         assert isinstance(repo, TraceBatchCharacterizationContract)
         assert isinstance(repo, ResultBundleCharacterizationContract)
+        assert isinstance(repo.analysis_runs, AnalysisRunPersistenceContract)
         assert repo.count_traces(1) == 0
 
         rows, total = repo.list_trace_index_page(1)

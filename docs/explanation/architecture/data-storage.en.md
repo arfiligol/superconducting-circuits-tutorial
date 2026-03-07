@@ -99,6 +99,38 @@ That is the job of `TraceBatchRecord`:
 - lineage
 - status
 
+## Why AnalysisRunRecord must stay separate from TraceBatchRecord
+
+`TraceBatchRecord` answers:
+
+- where the traces came from, under which setup, and across which lineage boundary
+
+`AnalysisRunRecord` answers:
+
+- which Characterization analysis was executed
+- which input traces / input batches were used
+- which run configuration was used
+- what status and summary the run produced
+
+The minimal phase-2 landing is:
+
+- logical contract = `AnalysisRunRecord`
+- physical persistence = metadata DB rows backed by `TraceBatchRecord(bundle_type="characterization", role="analysis_run")`
+- repository boundary = `uow.result_bundles.analysis_runs`
+- Characterization history / result navigation should read and write the analysis-run contract instead of falling back to generic batch labels
+
+This preserves:
+
+- `TraceBatchRecord` as the provenance boundary for trace-producing flows
+- `AnalysisRunRecord` as the characterization execution boundary
+- the no-migration constraint for the current phase
+
+It does not mean:
+
+- numeric trace payload can move back into the metadata DB
+- point-per-record becomes the canonical `TraceRecord`
+- Characterization history/provenance can collapse back into generic batch semantics
+
 ## Why metadata DB and TraceStore must split
 
 If large numeric payload stays inside SQLite/PostgreSQL JSON/BLOB:
@@ -165,6 +197,8 @@ This model scales naturally:
 - does not branch by source kind
 - only checks trace compatibility and selected traces
 - produces `AnalysisRunRecord + DerivedParameterRecord`
+- `AnalysisRunRecord` may persist run config, input trace ids, input batch ids, status, and summary
+- numeric trace payload still belongs in the TraceStore; Characterization history must not regress into batch-only semantics
 
 ## Related
 

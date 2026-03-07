@@ -100,6 +100,38 @@ Characterization 的統一輸入其實不是：
 - lineage
 - status
 
+## Why AnalysisRunRecord must stay separate from TraceBatchRecord
+
+`TraceBatchRecord` 回答的是：
+
+- traces 是從哪個來源、哪個 setup、哪個 lineage 邊界來的
+
+`AnalysisRunRecord` 回答的是：
+
+- Characterization 執行了哪個 analysis
+- 用了哪些 input traces / input batches
+- 使用了什麼 run config
+- 這次 run 的狀態與摘要是什麼
+
+Phase-2 的最小可整合落地方向是：
+
+- logical contract = `AnalysisRunRecord`
+- physical persistence = metadata DB 中由 `TraceBatchRecord(bundle_type="characterization", role="analysis_run")` 承載
+- repository boundary = `uow.result_bundles.analysis_runs`
+- Characterization UI history / result navigation 應讀寫 analysis-run contract，而不是退回 generic batch label
+
+這樣可以同時保留：
+
+- `TraceBatchRecord` 作為 trace-producing flows 的 provenance boundary
+- `AnalysisRunRecord` 作為 characterization execution boundary
+- 現階段不做 migration 的要求
+
+這不代表：
+
+- 可以把 trace numeric payload 放回 metadata DB
+- 可以把 point-per-record 當 canonical `TraceRecord`
+- 可以把 Characterization history/provenance 簡化成模糊的 batch semantics
+
 ## Why metadata DB and TraceStore must split
 
 如果把大型 numeric payload 繼續放在 SQLite/PostgreSQL JSON/BLOB：
@@ -166,6 +198,8 @@ Characterization 的統一輸入其實不是：
 - 不區分來源
 - 只看 trace compatibility 與 selected traces
 - 產生 `AnalysisRunRecord + DerivedParameterRecord`
+- `AnalysisRunRecord` 可持久化 run config、input trace ids、input batch ids、status、summary
+- trace numeric payload 仍留在 TraceStore；Characterization history 不應回退成 generic batch-only 語意
 
 ## Related
 
