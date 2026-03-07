@@ -70,6 +70,13 @@ Minimum `ResultArtifact` fields:
     "choose a trace batch then rerun" as a primary interaction.
     Run Analysis trace candidates default to the design-level trace index, with trace-first compatibility.
 
+!!! important "Phase-3 cross-source contract"
+    When one `Design` contains compatible traces from `circuit`, `layout`, and `measurement`,
+    `/characterization` must treat them as one design-scoped selectable trace pool.
+    `source_kind` may affect presentation and provenance, but it must not fork the analysis model
+    or create separate run surfaces. The UI may show source coverage / provenance summaries,
+    but it must not regress into a source-specific picker.
+
 !!! note "Internal provenance"
     The system may still persist batch-level provenance (for example `input_bundle_id`)
     internally, but UI must not require users to understand or manipulate trace-batch internals.
@@ -131,7 +138,7 @@ Run Analysis UI must expose one of the following trace-first states per analysis
 
 Reasons must be machine-composable and include at least:
 
-- `No compatible traces in current scope`
+- `No compatible traces in current design scope`
 - `Select at least one trace to run.`
 
 Optional profile hints (non-blocking):
@@ -180,6 +187,9 @@ Before each run, users must be able to choose which traces will be analyzed.
 ### Data Boundary
 
 - trace table loads metadata only (`id`, `data_type`, `parameter`, `representation`)
+- trace table / scope summaries may carry source-provenance metadata (for example
+  `source_kind`, `stage_kind`, `bundle_id`), but those fields are for presentation
+  and lineage only; they must not fork analysis logic
 - analysis run receives selected trace ids only
 - compatibility evaluation must use metadata index only (payload must not be loaded)
 - `data_type` aliases must be normalized consistently (`y_params` ↔ `y_parameters`, `s_params` ↔ `s_parameters`)
@@ -395,9 +405,33 @@ Each completed run must create a new `Trace Batch`:
 
 - the phase-2 compatibility layer still persists this as `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
 - `config_snapshot` includes analysis config and selected trace ids
+- `summary_payload` should retain at least:
+  - `selected_trace_count`
+  - `selected_trace_mode_group`
+  - a selected-trace source summary (for example counts for circuit/layout/measurement)
+  - provenance batch ids / stage kinds when available
+
+!!! important "Do not regress analysis-run history into generic batch semantics"
+    Characterization history / provenance must stay on `AnalysisRunRecord` semantics.
+    Each history row should remain able to answer:
+    - which analysis run this was
+    - which selected traces were used
+    - that the input scope was the design-level trace scope
+    - what the source mix / provenance was
+    Generic batch labels or undifferentiated bundle lists are not sufficient.
 
 When selected traces come from a sweep design, `config_snapshot` should also preserve enough information to reconstruct the chosen sweep slice
 (for example selected trace ids, selected trace mode group, and the sweep-axis metadata carried by those traces).
+
+## Phase-3 Cross-Source Reuse Expectations
+
+- `layout` saved traces -> characterize must remain a first-class trace-first reuse path
+- `measurement` saved traces -> characterize must remain a first-class trace-first reuse path
+- `circuit` saved traces -> characterize must remain a first-class trace-first reuse path
+- When one `Design` contains more than one of those source families:
+  - availability is still decided by compatible traces only
+  - the UI must expose source coverage / provenance clearly
+  - run history must preserve which source mix was actually used
 
 ## Admittance Output Replacement Rule
 

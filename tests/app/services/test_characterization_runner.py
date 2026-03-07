@@ -202,6 +202,64 @@ def test_diagnose_analysis_sweep_support_accepts_trace_record_contract_for_2d_lj
     )
 
 
+def test_diagnose_analysis_sweep_support_stays_source_agnostic_for_saved_traces() -> None:
+    layout_trace = {
+        **_trace_record(
+            family="y_matrix",
+            parameter="Y_dm_dm",
+            representation="imag",
+            axes=[
+                {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0]},
+                {"name": "L_jun", "unit": "nH", "values": [1.0, 2.0]},
+            ],
+            values=[[0.1, 0.2], [0.3, 0.4]],
+            trace_id=31,
+        ),
+        "source_kind": "layout_simulation",
+        "stage_kind": "manual_export",
+    }
+    measurement_trace = {
+        **_trace_record(
+            family="y_matrix",
+            parameter="Y_dm_dm",
+            representation="imag",
+            axes=[
+                {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0]},
+                {"name": "L_jun", "unit": "nH", "values": [1.0, 2.0]},
+            ],
+            values=[[0.1, 0.2], [0.3, 0.4]],
+            trace_id=32,
+        ),
+        "source_kind": "measurement",
+        "stage_kind": "import",
+    }
+    circuit_trace = {
+        **_trace_record(
+            family="y_matrix",
+            parameter="Y_dm_dm",
+            representation="imag",
+            axes=[
+                {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0]},
+                {"name": "L_jun", "unit": "nH", "values": [1.0, 2.0]},
+            ],
+            values=[[0.1, 0.2], [0.3, 0.4]],
+            trace_id=33,
+        ),
+        "source_kind": "circuit_simulation",
+        "stage_kind": "manual_export",
+    }
+
+    diagnostic = _diagnose_analysis_sweep_support_from_records(
+        analysis_id="admittance_extraction",
+        records=[layout_trace, measurement_trace, circuit_trace],
+    )
+
+    assert diagnostic == SweepSupportDiagnostic(
+        status="sweep-ready",
+        reason="2D Freq x L_jun admittance sweeps are supported.",
+    )
+
+
 def test_diagnose_analysis_sweep_support_blocks_wrong_sweep_axis() -> None:
     wrong_axis_record = _record(
         data_type="y_parameters",

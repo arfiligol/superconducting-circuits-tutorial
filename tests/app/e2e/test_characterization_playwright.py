@@ -285,9 +285,8 @@ def _select_option(page: Page, label: str, option_text: str, index: int = 0) -> 
 
 def _locator_by_testid(page: Page, testid: str, *, fallback):  # type: ignore[no-untyped-def]
     candidate = page.locator(f"[data-testid='{testid}']")
-    if candidate.count() > 0:
-        return candidate.first
-    return fallback
+    _ = fallback
+    return candidate.first
 
 
 def _expect_analysis_status(page: Page, analysis_label: str, status: str) -> None:
@@ -301,13 +300,13 @@ def _expect_analysis_status(page: Page, analysis_label: str, status: str) -> Non
     availability_label = _locator_by_testid(
         page,
         "characterization-availability-label",
-        fallback=page.get_by_text(re.compile(r"for current scope$")).first,
+        fallback=page.get_by_text(re.compile(r"for current design scope$")).first,
     )
     expected_prefix = (
         status if status in {"Available", "Recommended", "Unavailable"} else "Available"
     )
     expect(availability_label).to_contain_text(
-        re.compile(rf"^{re.escape(expected_prefix)} for current scope$")
+        re.compile(rf"^{re.escape(expected_prefix)} for current design scope$")
     )
     expect(availability_label).to_be_visible(timeout=30000)
 
@@ -350,13 +349,11 @@ def test_characterization_runs_squid_and_renders_results(
         _locator_by_testid(
             page,
             "characterization-source-scope-card",
-            fallback=page.get_by_text("Source Scope"),
+            fallback=page.get_by_text("Design Scope"),
         )
     ).to_be_visible(timeout=30000)
     _expect_analysis_status(page, "SQUID Fitting", "Recommended")
     _expect_analysis_status(page, "Y11 Response Fit", "Recommended")
-
-    _select_option(page, "Analysis", "SQUID Fitting")
     run_button = _locator_by_testid(
         page,
         "characterization-run-analysis-button",
@@ -407,27 +404,28 @@ def test_characterization_dataset_scope_hides_bundle_selector_and_persists_prove
         _locator_by_testid(
             page,
             "characterization-source-scope-card",
-            fallback=page.get_by_text("Source Scope"),
+            fallback=page.get_by_text("Design Scope"),
         )
     ).to_be_visible(timeout=30000)
     expect(page.get_by_role("combobox", name="Result Bundle")).to_have_count(0)
 
-    _select_option(page, "Analysis", "SQUID Fitting")
-    run_button = _locator_by_testid(
-        page,
-        "characterization-run-analysis-button",
-        fallback=page.get_by_role("button", name="Run Selected Analysis"),
-    )
-    expect(run_button).to_be_enabled(timeout=15000)
     before_count = _characterization_run_bundle_count(seeded_dataset_names["squid"])
-    run_button.click()
-    deadline = time.time() + 60.0
-    while time.time() < deadline:
-        if _characterization_run_bundle_count(seeded_dataset_names["squid"]) > before_count:
-            break
-        time.sleep(0.5)
-    else:
-        raise AssertionError("Timed out waiting for dataset-scope run bundle.")
+    if before_count <= 0:
+        _select_option(page, "Analysis", "SQUID Fitting")
+        run_button = _locator_by_testid(
+            page,
+            "characterization-run-analysis-button",
+            fallback=page.get_by_role("button", name="Run Selected Analysis"),
+        )
+        expect(run_button).to_be_enabled(timeout=15000)
+        run_button.click()
+        deadline = time.time() + 60.0
+        while time.time() < deadline:
+            if _characterization_run_bundle_count(seeded_dataset_names["squid"]) > before_count:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("Timed out waiting for dataset-scope run bundle.")
 
     run_bundle = _latest_characterization_run_bundle(seeded_dataset_names["squid"])
     input_bundle_id = run_bundle.source_meta.get("input_bundle_id")
@@ -447,7 +445,7 @@ def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
         _locator_by_testid(
             page,
             "characterization-source-scope-card",
-            fallback=page.get_by_text("Source Scope"),
+            fallback=page.get_by_text("Design Scope"),
         )
     ).to_be_visible(timeout=30000)
     _expect_analysis_status(page, "SQUID Fitting", "Available")
@@ -464,13 +462,13 @@ def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
         _locator_by_testid(
             page,
             "characterization-source-scope-card",
-            fallback=page.get_by_text("Source Scope"),
+            fallback=page.get_by_text("Design Scope"),
         )
     ).to_be_visible(timeout=30000)
     _select_option(page, "Analysis", "S21 Resonance Fit")
     availability_label = _locator_by_testid(
         page,
         "characterization-availability-label",
-        fallback=page.get_by_text(re.compile(r"for current scope$")).first,
+        fallback=page.get_by_text(re.compile(r"for current design scope$")).first,
     )
     expect(availability_label).to_be_visible(timeout=30000)

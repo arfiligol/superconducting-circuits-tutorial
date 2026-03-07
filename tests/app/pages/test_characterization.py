@@ -1,6 +1,7 @@
 """Tests for Characterization page helpers."""
 
 from app.pages.characterization import (
+    _analysis_run_provenance_text,
     _build_analysis_run_availability,
     _build_analysis_run_record,
     _build_analysis_run_ui_state,
@@ -11,12 +12,14 @@ from app.pages.characterization import (
     _completed_result_analysis_ids,
     _filter_method_groups_by_trace_mode,
     _format_sweep_support_reason,
+    _format_trace_source_summary,
     _is_summary_scalar_parameter,
     _latest_completed_analysis_run_summaries,
     _result_view_controls_row_classes,
     _result_view_empty_state_message,
     _trace_mode_filter_options,
     _trace_mode_group_for_selected_rows,
+    _trace_source_summary_payload,
 )
 from app.services.characterization_runner import SweepSupportDiagnostic
 from app.services.result_artifact_registry import build_result_artifacts_for_analysis
@@ -51,8 +54,17 @@ def test_build_analysis_run_record_captures_dataset_scope_input() -> None:
     assert run_record.input_batch_ids == []
     assert run_record.input_scope == "all_dataset_records"
     assert run_record.trace_mode_group == "base"
-    assert run_record.config_payload == {"model": "notch", "f_min": 4.5}
-    assert run_record.summary_payload == {"selected_trace_count": 2}
+    assert run_record.config_payload == {
+        "model": "notch",
+        "f_min": 4.5,
+        "selected_trace_ids": [101, 102],
+        "selected_trace_count": 2,
+        "selected_trace_mode_group": "base",
+    }
+    assert run_record.summary_payload == {
+        "selected_trace_count": 2,
+        "selected_trace_mode_group": "base",
+    }
 
 
 def test_build_analysis_run_ui_state_without_compatible_traces_disables_run() -> None:
@@ -62,7 +74,7 @@ def test_build_analysis_run_ui_state_without_compatible_traces_disables_run() ->
     )
 
     assert ui_state.run_disabled is True
-    assert ui_state.availability_text == "Unavailable for current scope"
+    assert ui_state.availability_text == "Unavailable for current design scope"
 
 
 def test_build_analysis_run_ui_state_with_no_selection_disables_run() -> None:
@@ -82,7 +94,7 @@ def test_build_analysis_run_ui_state_with_selection_enables_run() -> None:
     )
 
     assert ui_state.run_disabled is False
-    assert ui_state.availability_text == "Available for current scope"
+    assert ui_state.availability_text == "Available for current design scope"
 
 
 def test_build_analysis_run_availability_with_profile_hints_is_available() -> None:
@@ -486,3 +498,79 @@ def test_result_view_controls_row_uses_single_row_desktop_contract() -> None:
     classes = _result_view_controls_row_classes()
     assert "flex-wrap" in classes
     assert "lg:flex-nowrap" in classes
+
+
+def test_trace_source_summary_payload_groups_cross_source_selected_rows() -> None:
+    payload = _trace_source_summary_payload(
+        [
+            {
+                "id": 101,
+                "source_kind": "layout_simulation",
+                "source_label": "Layout",
+                "stage_kind": "import",
+                "source_batch_id": 12,
+            },
+            {
+                "id": 102,
+                "source_kind": "measurement",
+                "source_label": "Measurement",
+                "stage_kind": "import",
+                "source_batch_id": 18,
+            },
+            {
+                "id": 103,
+                "source_kind": "layout_simulation",
+                "source_label": "Layout",
+                "stage_kind": "manual_export",
+                "source_batch_id": 14,
+            },
+        ]
+    )
+
+    assert payload == [
+        {
+            "source_kind": "layout_simulation",
+            "source_label": "Layout",
+            "trace_count": 2,
+            "stage_kinds": ["import", "manual_export"],
+            "source_batch_ids": [12, 14],
+        },
+        {
+            "source_kind": "measurement",
+            "source_label": "Measurement",
+            "trace_count": 1,
+            "stage_kinds": ["import"],
+            "source_batch_ids": [18],
+        },
+    ]
+    assert _format_trace_source_summary(payload) == "Layout 2 · Measurement 1"
+
+
+def test_analysis_run_provenance_text_prefers_persisted_source_summary() -> None:
+    run_record = AnalysisRunRecord(
+        id=12,
+        design_id=9,
+        analysis_id="y11_fit",
+        analysis_label="Y11 Response Fit",
+        run_id="char-12",
+        status="completed",
+        input_trace_ids=[101, 102, 103],
+        input_batch_ids=[],
+        input_scope="all_dataset_records",
+        trace_mode_group="base",
+        config_payload={},
+        summary_payload={
+            "selected_trace_count": 3,
+            "selected_source_summary": [
+                {
+                    "source_kind": "layout_simulation",
+                    "source_label": "Layout",
+                    "trace_count": 2,
+                    "stage_kinds": ["import", "manual_export"],
+                    "source_batch_ids": [12, 14],
+                }
+            ],
+        },
+    )
+
+    assert _analysis_run_provenance_text(run_record) == "Import, Manual Export · batches #12, #14"

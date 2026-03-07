@@ -30,8 +30,12 @@ from app.services.characterization_runner import (
     execute_analysis_run,
 )
 from app.services.characterization_trace_scope import (
+    TraceSourceSummary,
     count_scope_trace_records,
+    hydrate_trace_index_rows_with_provenance,
+    list_design_scope_source_summaries,
     list_scope_compatible_trace_index_page,
+    list_scope_compatible_trace_source_summaries,
 )
 from app.services.dataset_profile import (
     design_profile_summary_text,
@@ -335,22 +339,25 @@ def _build_analysis_run_ui_state(
     if not has_compatible_traces:
         return AnalysisRunUiState(
             has_compatible_traces=False,
-            availability_text="Unavailable for current scope",
+            availability_text="Unavailable for current design scope",
             availability_class="text-warning",
             run_disabled=True,
-            run_hint="No compatible traces found for the selected analysis in current scope.",
+            run_hint=(
+                "No compatible traces found for the selected analysis in current "
+                "design scope."
+            ),
         )
     if selected_trace_count <= 0:
         return AnalysisRunUiState(
             has_compatible_traces=True,
-            availability_text="Available for current scope (no traces selected)",
+            availability_text="Available for current design scope (no traces selected)",
             availability_class="text-positive",
             run_disabled=True,
             run_hint="Select at least one trace to run.",
         )
     return AnalysisRunUiState(
         has_compatible_traces=True,
-        availability_text="Available for current scope",
+        availability_text="Available for current design scope",
         availability_class="text-positive",
         run_disabled=False,
         run_hint="Ready to run selected analysis.",
@@ -367,7 +374,7 @@ def _build_analysis_run_availability(
     if not has_compatible_traces:
         return AnalysisRunAvailability(
             status="Unavailable",
-            reason="No compatible traces in current scope.",
+            reason="No compatible traces in current design scope.",
             has_compatible_traces=False,
             profile_hints=list(profile_hints),
         )
@@ -379,7 +386,9 @@ def _build_analysis_run_availability(
             profile_hints=list(profile_hints),
         )
     reason = (
-        "; ".join(profile_hints) if profile_hints else "Compatible traces found in current scope."
+        "; ".join(profile_hints)
+        if profile_hints
+        else "Compatible traces found in current design scope."
     )
     return AnalysisRunAvailability(
         status="Available",
@@ -415,6 +424,126 @@ def _trace_mode_group_for_selected_rows(rows: Sequence[dict[str, str | int]]) ->
         for row in rows
     )
     return ModeGroup.SIDEBAND.value if has_sideband else ModeGroup.BASE.value
+
+
+def _trace_source_summary_payload(
+    rows: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    """Aggregate selected-trace source provenance for persistence and history."""
+    grouped: dict[str, dict[str, object]] = {}
+    for row in rows:
+        source_kind = str(row.get("source_kind", "")).strip()
+        source_label = str(row.get("source_label", "")).strip()
+        stage_kind = str(row.get("stage_kind", "")).strip()
+        batch_id = row.get("source_batch_id")
+        trace_id = row.get("id")
+        if not source_kind or not isinstance(trace_id, int):
+            continue
+        summary = grouped.setdefault(
+            source_kind,
+            {
+                "source_kind": source_kind,
+                "source_label": source_label or source_kind.replace("_", " ").title(),
+                "trace_ids": set(),
+                "stage_kinds": set(),
+                "source_batch_ids": set(),
+            },
+        )
+        trace_ids = summary["trace_ids"]
+        if isinstance(trace_ids, set):
+            trace_ids.add(int(trace_id))
+        stage_kinds = summary["stage_kinds"]
+        if isinstance(stage_kinds, set) and stage_kind:
+            stage_kinds.add(stage_kind)
+        source_batch_ids = summary["source_batch_ids"]
+        if isinstance(source_batch_ids, set) and isinstance(batch_id, int) and batch_id > 0:
+            source_batch_ids.add(int(batch_id))
+
+    payload: list[dict[str, object]] = []
+    for source_kind in sorted(grouped):
+        summary = grouped[source_kind]
+        trace_ids = summary["trace_ids"]
+        stage_kinds = summary["stage_kinds"]
+        source_batch_ids = summary["source_batch_ids"]
+        payload.append(
+            {
+                "source_kind": source_kind,
+                "source_label": summary["source_label"],
+                "trace_count": len(trace_ids) if isinstance(trace_ids, set) else 0,
+                "stage_kinds": sorted(str(item) for item in stage_kinds)
+                if isinstance(stage_kinds, set)
+                else [],
+                "source_batch_ids": sorted(int(item) for item in source_batch_ids)
+                if isinstance(source_batch_ids, set)
+                else [],
+            }
+        )
+    return payload
+
+
+def _format_trace_source_summary(
+    source_summaries: Sequence[Mapping[str, object] | TraceSourceSummary],
+) -> str:
+    """Render concise source-count text for scope and history summaries."""
+    chunks: list[str] = []
+    for summary in source_summaries:
+        if isinstance(summary, TraceSourceSummary):
+            label = str(summary.source_label).strip()
+            trace_count = int(summary.trace_count)
+        else:
+            label = str(summary.get("source_label", "")).strip()
+            trace_count = int(summary.get("trace_count", 0) or 0)
+        if not label:
+            continue
+        chunks.append(f"{label} {trace_count}")
+    return " · ".join(chunks)
+
+
+def _analysis_run_selected_trace_count(run_record: AnalysisRunRecord) -> int:
+    """Return persisted selected-trace count with summary fallback."""
+    if run_record.input_trace_ids:
+        return len(run_record.input_trace_ids)
+    raw_value = run_record.summary_payload.get("selected_trace_count", 0)
+    return int(raw_value) if isinstance(raw_value, int | float) else 0
+
+
+def _analysis_run_source_summary(run_record: AnalysisRunRecord) -> list[dict[str, object]]:
+    """Load persisted selected-source summary from one analysis run."""
+    raw_value = run_record.summary_payload.get("selected_source_summary")
+    if not isinstance(raw_value, list):
+        return []
+    return [dict(item) for item in raw_value if isinstance(item, Mapping)]
+
+
+def _analysis_run_scope_text(run_record: AnalysisRunRecord) -> str:
+    """Render a stable design-scope label for analysis history."""
+    if str(run_record.input_scope).strip() == "all_dataset_records":
+        return "Design traces"
+    scope_token = str(run_record.input_scope).replace("_", " ").strip()
+    return scope_token.title() if scope_token else "Design traces"
+
+
+def _analysis_run_provenance_text(run_record: AnalysisRunRecord) -> str:
+    """Render concise provenance text while keeping run/history boundary explicit."""
+    source_summary = _analysis_run_source_summary(run_record)
+    if source_summary:
+        stage_labels: list[str] = []
+        batch_ids: list[int] = []
+        for summary in source_summary:
+            for stage_kind in summary.get("stage_kinds", []):
+                stage_text = str(stage_kind).replace("_", " ").strip().title()
+                if stage_text and stage_text not in stage_labels:
+                    stage_labels.append(stage_text)
+            for batch_id in summary.get("source_batch_ids", []):
+                if isinstance(batch_id, int) and batch_id not in batch_ids:
+                    batch_ids.append(batch_id)
+        stage_text = ", ".join(stage_labels) if stage_labels else "Trace-first provenance"
+        if batch_ids:
+            return f"{stage_text} · batches #{', #'.join(str(batch_id) for batch_id in batch_ids)}"
+        return stage_text
+    if run_record.input_batch_ids:
+        return "Batches " + ", ".join(f"#{batch_id}" for batch_id in run_record.input_batch_ids)
+    return "Design-scope trace selection"
 
 
 def _param_trace_mode_group(param: object) -> str:
@@ -554,6 +683,28 @@ def _build_analysis_run_record(
     summary_payload: dict[str, object] | None = None,
 ) -> AnalysisRunRecord:
     """Build one logical analysis-run record for Characterization persistence."""
+    normalized_config_payload = dict(config_payload)
+    normalized_config_payload.setdefault(
+        "selected_trace_ids",
+        [int(trace_id) for trace_id in selected_trace_ids],
+    )
+    normalized_config_payload.setdefault(
+        "selected_trace_count",
+        len([int(trace_id) for trace_id in selected_trace_ids]),
+    )
+    normalized_config_payload.setdefault(
+        "selected_trace_mode_group",
+        selected_trace_mode_group,
+    )
+    normalized_summary_payload = dict(summary_payload or {})
+    normalized_summary_payload.setdefault(
+        "selected_trace_count",
+        len([int(trace_id) for trace_id in selected_trace_ids]),
+    )
+    normalized_summary_payload.setdefault(
+        "selected_trace_mode_group",
+        selected_trace_mode_group,
+    )
     return AnalysisRunRecord(
         design_id=design_id,
         analysis_id=analysis_id,
@@ -564,8 +715,8 @@ def _build_analysis_run_record(
         input_batch_ids=[int(batch_id) for batch_id in selected_batch_ids],
         input_scope=selected_scope_token,
         trace_mode_group=selected_trace_mode_group,
-        config_payload=dict(config_payload),
-        summary_payload=dict(summary_payload or {}),
+        config_payload=normalized_config_payload,
+        summary_payload=normalized_summary_payload,
     )
 
 
@@ -1144,6 +1295,8 @@ def characterization_page():
                         ds = refresh_uow.datasets.get(active_id)
                         if not ds:
                             return
+                        active_design_id = int(ds.id) if ds.id is not None else None
+                        active_design_name = str(ds.name)
 
                         dataset_profile_index = (
                             refresh_uow.data_records.list_distinct_index_for_profile(active_id)
@@ -1161,10 +1314,17 @@ def characterization_page():
                         )
 
                         ds_params = refresh_uow.derived_params.list_by_dataset(active_id)
+                        analysis_run_records = (
+                            refresh_uow.result_bundles.analysis_runs.list_by_design(active_id)
+                        )
                         analysis_run_summaries = (
                             refresh_uow.result_bundles.analysis_runs.list_summaries_by_design(
                                 active_id
                             )
+                        )
+                        design_source_summaries = list_design_scope_source_summaries(
+                            uow=refresh_uow,
+                            dataset_id=active_id,
                         )
                         method_params = _group_by_method(ds_params)
                         analyses = list_dataset_analyses()
@@ -1367,10 +1527,23 @@ def characterization_page():
                                 limit=max(1, len(selected_ids)),
                                 offset=0,
                             )
-                            return rows
+                            return hydrate_trace_index_rows_with_provenance(
+                                uow=refresh_uow,
+                                dataset_id=active_id,
+                                rows=rows,
+                            )
 
                         def set_selected_trace_ids(updated_ids: set[int]) -> None:
                             runtime_state.set_selected_trace_ids(trace_scope_key, updated_ids)
+
+                        def current_compatible_source_summaries() -> list[TraceSourceSummary]:
+                            return list_scope_compatible_trace_source_summaries(
+                                uow=refresh_uow,
+                                dataset_id=active_id,
+                                selected_bundle_id=selected_bundle_id,
+                                analysis_requires=selected_analysis_requires,
+                                mode_filter=_current_mode_filter(),
+                            )
 
                         def current_sweep_support_diagnostic() -> (
                             SweepSupportDiagnostic | None
@@ -1466,8 +1639,9 @@ def characterization_page():
                                     ui.label("Design Scope").classes("text-lg font-bold text-fg")
                                 ui.label(
                                     "Design-centric scope is active. Run Analysis uses the "
-                                    "selected design's trace index and applies trace-first "
-                                    "compatibility filtering."
+                                    "selected design's trace index, keeps one analysis model "
+                                    "across circuit/layout/measurement traces, and applies "
+                                    "trace-first compatibility filtering."
                                 ).classes("text-sm text-muted mt-2")
                                 with ui.row().classes("w-full gap-4 mt-3 flex-wrap"):
                                     with ui.column().classes(
@@ -1493,6 +1667,59 @@ def characterization_page():
                                         ui.label(str(provenance_bundle_count)).classes(
                                             "text-sm text-fg"
                                         )
+                                ui.label(
+                                    "Source coverage is provenance only. Availability and run "
+                                    "gating still depend on compatible traces, not on source kind."
+                                ).classes("text-xs text-muted mt-3")
+                                with ui.row().classes("w-full gap-4 mt-3 flex-wrap"):
+                                    with ui.column().classes(
+                                        "bg-bg rounded-lg border border-border p-3 "
+                                        "min-w-[280px] flex-1"
+                                    ):
+                                        ui.label("Design Sources").classes(
+                                            "text-xs text-muted font-bold uppercase"
+                                        )
+                                        if design_source_summaries:
+                                            for summary in design_source_summaries:
+                                                source_summary_text = (
+                                                    f"{summary.source_label}: "
+                                                    f"{summary.trace_count} trace(s) across "
+                                                    f"{summary.batch_count} batch(es) "
+                                                    f"[{summary.stage_summary}]"
+                                                )
+                                                ui.label(
+                                                    source_summary_text
+                                                ).classes("text-sm text-fg")
+                                        else:
+                                            ui.label(
+                                                "No saved trace provenance found yet."
+                                            ).classes(
+                                                "text-sm text-muted"
+                                            )
+                                    with ui.column().classes(
+                                        "bg-bg rounded-lg border border-border p-3 "
+                                        "min-w-[280px] flex-1"
+                                    ):
+                                        ui.label("Compatible Sources").classes(
+                                            "text-xs text-muted font-bold uppercase"
+                                        )
+                                        compatible_source_summaries = (
+                                            current_compatible_source_summaries()
+                                        )
+                                        if compatible_source_summaries:
+                                            for summary in compatible_source_summaries:
+                                                compatible_source_text = (
+                                                    f"{summary.source_label}: "
+                                                    f"{summary.trace_count} compatible trace(s) "
+                                                    f"[{summary.stage_summary}]"
+                                                )
+                                                ui.label(
+                                                    compatible_source_text
+                                                ).classes("text-sm text-fg")
+                                        else:
+                                            ui.label(
+                                                "No compatible traces in current design scope."
+                                            ).classes("text-sm text-muted")
 
                             with _with_test_id(
                                 ui.card().classes("w-full bg-surface rounded-xl p-6"),
@@ -1509,9 +1736,11 @@ def characterization_page():
                                     has_selected_traces = len(current_selected_trace_ids()) > 0
                                     sweep_diagnostic = current_sweep_support_diagnostic()
                                     if not ui_state.has_compatible_traces:
-                                        availability_text = "Unavailable for current scope"
+                                        availability_text = "Unavailable for current design scope"
                                         availability_class = "text-warning"
-                                        reason_text = "No compatible traces in current scope."
+                                        reason_text = (
+                                            "No compatible traces in current design scope."
+                                        )
                                         run_disabled = True
                                     elif (
                                         sweep_diagnostic is not None
@@ -1522,7 +1751,7 @@ def characterization_page():
                                         reason_text = ui_state.run_hint
                                         run_disabled = True
                                     elif selected_run_availability.status == "Recommended":
-                                        availability_text = "Recommended for current scope"
+                                        availability_text = "Recommended for current design scope"
                                         availability_class = "text-positive"
                                         reason_text = (
                                             "Select at least one trace to run."
@@ -1531,7 +1760,7 @@ def characterization_page():
                                         )
                                         run_disabled = not has_selected_traces
                                     else:
-                                        availability_text = "Available for current scope"
+                                        availability_text = "Available for current design scope"
                                         availability_class = ui_state.availability_class
                                         reason_text = (
                                             "Select at least one trace to run."
@@ -1539,6 +1768,20 @@ def characterization_page():
                                             else selected_run_availability.reason
                                         )
                                         run_disabled = not has_selected_traces
+
+                                    compatible_source_text = _format_trace_source_summary(
+                                        current_compatible_source_summaries()
+                                    )
+                                    if compatible_source_text and ui_state.has_compatible_traces:
+                                        base_reason = str(reason_text).strip()
+                                        compatibility_reason = (
+                                            f"Compatible sources: {compatible_source_text}."
+                                        )
+                                        reason_text = (
+                                            f"{base_reason}; {compatibility_reason}"
+                                            if base_reason
+                                            else compatibility_reason
+                                        )
 
                                     if (
                                         sweep_diagnostic is not None
@@ -1589,7 +1832,7 @@ def characterization_page():
                                         run_id = f"char-{uuid4().hex[:10]}"
                                         runtime_state.set_log_context(
                                             run_id=run_id,
-                                            dataset_id=ds.id,
+                                            dataset_id=active_design_id,
                                             analysis_id=analysis_id,
                                         )
                                         run_trace_ids = sorted(current_selected_trace_ids())
@@ -1635,13 +1878,27 @@ def characterization_page():
                                             )
                                             return
 
+                                        selected_trace_rows = current_selected_trace_rows()
+                                        selected_source_summary = _trace_source_summary_payload(
+                                            selected_trace_rows
+                                        )
+                                        selected_mode_group = _trace_mode_group_for_selected_rows(
+                                            selected_trace_rows
+                                        )
                                         run_button.props("loading")
                                         append_analysis_status(
                                             "info",
                                             (
                                                 f"Running {selected_run_analysis['label']} on "
-                                                f"design {ds.name} (id={ds.id}) with "
-                                                f"{len(run_trace_ids)} trace(s)."
+                                                f"design {active_design_name} "
+                                                f"(id={active_design_id}) with "
+                                                f"{len(run_trace_ids)} trace(s)"
+                                                + (
+                                                    " from "
+                                                    f"{_format_trace_source_summary(selected_source_summary)}."
+                                                    if selected_source_summary
+                                                    else "."
+                                                )
                                             ),
                                         )
                                         if (
@@ -1653,21 +1910,16 @@ def characterization_page():
                                                 _format_sweep_support_reason(sweep_diagnostic),
                                             )
                                         try:
-                                            if ds.id is None:
+                                            if active_design_id is None:
                                                 raise ValueError("Active design id is missing.")
 
-                                            selected_mode_group = (
-                                                _trace_mode_group_for_selected_rows(
-                                                    current_selected_trace_rows()
-                                                )
-                                            )
                                             job_started_at = datetime.now()
                                             heartbeat_warned = False
                                             run_task = asyncio.create_task(
                                                 run.cpu_bound(
                                                     execute_analysis_run,
                                                     analysis_id=analysis_id,
-                                                    dataset_id=ds.id,
+                                                    dataset_id=active_design_id,
                                                     config_state=config_state,
                                                     trace_record_ids=run_trace_ids,
                                                     trace_mode_group=selected_mode_group,
@@ -1712,7 +1964,7 @@ def characterization_page():
                                                         )
                                             with get_unit_of_work() as write_uow:
                                                 analysis_run = _build_analysis_run_record(
-                                                    design_id=ds.id,
+                                                    design_id=active_design_id,
                                                     analysis_id=analysis_id,
                                                     analysis_label=str(
                                                         selected_run_analysis["label"]
@@ -1725,6 +1977,9 @@ def characterization_page():
                                                     config_payload=dict(config_state),
                                                     summary_payload={
                                                         "selected_trace_count": len(run_trace_ids),
+                                                        "selected_source_summary": (
+                                                            selected_source_summary
+                                                        ),
                                                     },
                                                 )
                                                 persisted_run = (
@@ -1736,7 +1991,7 @@ def characterization_page():
                                                 if persisted_run.id is not None:
                                                     runtime_state.set_log_context(
                                                         run_id=run_id,
-                                                        dataset_id=ds.id,
+                                                        dataset_id=active_design_id,
                                                         analysis_id=analysis_id,
                                                         bundle_id=persisted_run.id,
                                                     )
@@ -1750,7 +2005,7 @@ def characterization_page():
 
                                             post_run_selection = (
                                                 _sync_result_view_selection_after_run(
-                                                    dataset_id=ds.id,
+                                                    dataset_id=active_design_id,
                                                     analysis=selected_run_analysis,
                                                 )
                                             )
@@ -1941,6 +2196,13 @@ def characterization_page():
                                         limit=page_size,
                                         offset=page_offset,
                                     )
+                                    hydrated_visible_trace_rows = (
+                                        hydrate_trace_index_rows_with_provenance(
+                                            uow=refresh_uow,
+                                            dataset_id=active_id,
+                                            rows=visible_trace_rows,
+                                        )
+                                    )
 
                                     with ui.row().classes("w-full gap-3 items-end flex-wrap mb-2"):
                                         filter_input = (
@@ -2033,10 +2295,17 @@ def characterization_page():
                                                 if _trace_row_mode_key(row) == "sideband"
                                                 else "Base"
                                             ),
+                                            "source": str(row.get("source_label", "Untracked")),
                                             "parameter": str(row["parameter"]),
                                             "representation": str(row["representation"]),
+                                            "provenance": str(
+                                                row.get(
+                                                    "provenance_label",
+                                                    "Untracked trace provenance",
+                                                )
+                                            ),
                                         }
-                                        for row in visible_trace_rows
+                                        for row in hydrated_visible_trace_rows
                                     ]
                                     trace_selection_columns = [
                                         {
@@ -2068,11 +2337,25 @@ def characterization_page():
                                             "sortable": True,
                                         },
                                         {
+                                            "name": "source",
+                                            "label": "Source",
+                                            "field": "source",
+                                            "align": "left",
+                                            "sortable": False,
+                                        },
+                                        {
                                             "name": "representation",
                                             "label": "Representation",
                                             "field": "representation",
                                             "align": "left",
                                             "sortable": True,
+                                        },
+                                        {
+                                            "name": "provenance",
+                                            "label": "Provenance",
+                                            "field": "provenance",
+                                            "align": "left",
+                                            "sortable": False,
                                         },
                                     ]
                                     trace_table = (
@@ -2191,6 +2474,109 @@ def characterization_page():
                                     "w-full gap-2"
                                 )
                                 render_analysis_status()
+
+                            with _with_test_id(
+                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                "characterization-run-history-card",
+                            ):
+                                with ui.row().classes(
+                                    "w-full items-center justify-between gap-3 flex-wrap mb-3"
+                                ):
+                                    with ui.row().classes("items-center gap-2"):
+                                        ui.icon("history", size="sm").classes("text-primary")
+                                        ui.label("Run History").classes(
+                                            "text-lg font-bold text-fg"
+                                        )
+                                    ui.label(
+                                        "Each row is one persisted analysis run with explicit "
+                                        "trace-first scope and provenance."
+                                    ).classes("text-sm text-muted")
+                                if not analysis_run_records:
+                                    ui.label(
+                                        "No analysis run recorded for this design yet."
+                                    ).classes(
+                                        "text-sm text-muted"
+                                    )
+                                else:
+                                    history_rows = [
+                                        {
+                                            "run": (
+                                                f"#{run_record.id}"
+                                                if run_record.id is not None
+                                                else str(run_record.run_id or "pending")
+                                            ),
+                                            "analysis": str(
+                                                run_record.analysis_label
+                                                or run_record.analysis_id
+                                            ),
+                                            "status": str(run_record.status).title(),
+                                            "scope": _analysis_run_scope_text(run_record),
+                                            "traces": _analysis_run_selected_trace_count(
+                                                run_record
+                                            ),
+                                            "sources": (
+                                                _format_trace_source_summary(
+                                                    _analysis_run_source_summary(run_record)
+                                                )
+                                                or "Unspecified"
+                                            ),
+                                            "provenance": _analysis_run_provenance_text(
+                                                run_record
+                                            ),
+                                        }
+                                        for run_record in reversed(analysis_run_records[-10:])
+                                    ]
+                                    ui.table(
+                                        columns=[
+                                            {
+                                                "name": "run",
+                                                "label": "Run",
+                                                "field": "run",
+                                                "align": "left",
+                                            },
+                                            {
+                                                "name": "analysis",
+                                                "label": "Analysis",
+                                                "field": "analysis",
+                                                "align": "left",
+                                            },
+                                            {
+                                                "name": "status",
+                                                "label": "Status",
+                                                "field": "status",
+                                                "align": "left",
+                                            },
+                                            {
+                                                "name": "scope",
+                                                "label": "Scope",
+                                                "field": "scope",
+                                                "align": "left",
+                                            },
+                                            {
+                                                "name": "traces",
+                                                "label": "Traces",
+                                                "field": "traces",
+                                                "align": "left",
+                                            },
+                                            {
+                                                "name": "sources",
+                                                "label": "Sources",
+                                                "field": "sources",
+                                                "align": "left",
+                                            },
+                                            {
+                                                "name": "provenance",
+                                                "label": "Provenance",
+                                                "field": "provenance",
+                                                "align": "left",
+                                            },
+                                        ],
+                                        rows=history_rows,
+                                        row_key="run",
+                                        pagination=0,
+                                    ).classes("w-full").props(
+                                        "dense flat bordered separator=horizontal"
+                                    )
 
                             with _with_test_id(
                                 ui.card().classes("w-full bg-surface rounded-xl p-6"),

@@ -79,6 +79,12 @@ updated_by: codex
     使用者應只對 `Design` 操作。`Design Scope` 不再暴露「選 trace batch 再分析」入口。
     Run Analysis 的 trace 候選來源預設為 design-level trace index，並採 trace-first 相容性判定。
 
+!!! important "Phase-3 cross-source contract"
+    若同一個 `Design` 內同時存在來自 `circuit` / `layout` / `measurement` 的相容 traces，
+    `/characterization` 必須把它們視為同一個 design scope 下的可選 trace pool，
+    不得因 `source_kind` 不同而切成不同分析模型或不同 run surface。
+    UI 應呈現 source coverage / provenance summary，但不得退回 source-specific picker。
+
 !!! note "Internal provenance"
     系統仍可在內部維持 `input_bundle_id` 等 provenance；但 UI 不應要求使用者理解或操作 trace batch 細節。
 
@@ -138,7 +144,7 @@ Run Analysis UI 必須顯示每個 analysis 的狀態（trace-first）：
 
 Reason 必須可機器組合，最少包含：
 
-- `No compatible traces in current scope`
+- `No compatible traces in current design scope`
 - `Select at least one trace to run.`
 
 可選的 profile 提示（不阻擋 run）：
@@ -187,6 +193,8 @@ Reason 必須可機器組合，最少包含：
 ### Data Boundary
 
 - Trace table 僅載入 metadata（`id`, `data_type`, `parameter`, `representation`）
+- Trace table / scope summary 可附帶 source / provenance metadata（例如 `source_kind`, `stage_kind`, `bundle_id`），
+  但那些欄位只用於呈現與 lineage，不可成為分析模型分叉條件
 - run 時只傳 selected trace ids 給 analysis service
 - compatibility 判定只能使用 metadata index（不得讀取 payload）
 - `data_type` alias 必須一致正規化（例如：`y_params` ↔ `y_parameters`、`s_params` ↔ `s_parameters`）
@@ -401,9 +409,33 @@ analysis 可用性必須以「當前 design scope 的 compatible traces」為準
 
 - phase-2 相容層目前仍落在 `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
 - `config_snapshot` 應包含本次 analysis config 與 selected trace ids
+- `summary_payload` 應至少保留：
+  - `selected_trace_count`
+  - `selected_trace_mode_group`
+  - selected trace 的 source summary（例如 circuit/layout/measurement 各自用了多少 compatible traces）
+  - 若可得，對應 provenance batch ids / stage kinds
+
+!!! important "analysis-run boundary 不可退回 generic batch semantics"
+    Characterization history / provenance 必須以 `AnalysisRunRecord` 語意呈現，
+    至少能區分：
+    - 哪次 analysis run
+    - 用了哪些 selected traces
+    - input scope 是 design-level trace scope
+    - 來源組成與 provenance 是什麼
+    不可只剩下模糊的 batch label 或 generic bundle list。
 
 若輸入 traces 來自 sweep design，`config_snapshot` 還應保留足以回推 sweep slice 的資訊
 （例如選到的 trace ids、trace mode group，以及 trace 自身攜帶的 sweep axes metadata）。
+
+## Phase-3 Cross-Source Reuse Expectations
+
+- `layout` saved traces -> characterize：必須視為正式 trace-first reuse path
+- `measurement` saved traces -> characterize：必須視為正式 trace-first reuse path
+- `circuit` saved traces -> characterize：必須視為正式 trace-first reuse path
+- 同一個 `Design` 若同時存在上述來源：
+  - availability 仍只由 compatible traces 決定
+  - UI 應清楚標示 source coverage / provenance
+  - run history 應保留這次 run 實際用了哪些來源
 
 ## Admittance Output Replacement Rule
 
