@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -151,6 +152,11 @@ class S3ZarrTraceStoreBackend:
 
 def get_trace_store_path() -> Path:
     """Return the configured local TraceStore root path."""
+    override = str(os.getenv("SC_TRACE_STORE_ROOT", "")).strip()
+    if override:
+        path = Path(override).expanduser().resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        return path
     TRACE_STORE_PATH.mkdir(parents=True, exist_ok=True)
     return TRACE_STORE_PATH
 

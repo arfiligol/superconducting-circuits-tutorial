@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 from typing import Any, cast
 
-from sqlalchemy import String, asc, case, desc, func, not_, or_
+from sqlalchemy import String, asc, case, delete, desc, func, not_, or_
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
@@ -150,6 +150,16 @@ class TraceBatchRepository:
         """Add a new trace batch."""
         self._session.add(batch)
         return batch
+
+    def delete(self, batch: TraceBatchRecord) -> None:
+        """Delete one trace batch and its membership links."""
+        if batch.id is not None:
+            self._session.exec(
+                delete(TraceBatchTraceLink).where(
+                    TraceBatchTraceLink.result_bundle_id == batch.id  # type: ignore[arg-type]
+                )
+            )
+        self._session.delete(batch)
 
     def _dataset_statement(
         self,

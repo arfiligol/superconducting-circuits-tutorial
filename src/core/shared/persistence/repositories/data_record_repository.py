@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import String, asc, case, desc, func, not_, or_
+from sqlalchemy import String, asc, case, delete, desc, func, not_, or_
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
@@ -320,6 +320,12 @@ class TraceRepository:
 
     def delete(self, trace: TraceRecord) -> None:
         """Delete a trace."""
+        if trace.id is not None:
+            self._session.exec(
+                delete(TraceBatchTraceLink).where(
+                    TraceBatchTraceLink.data_record_id == trace.id  # type: ignore[arg-type]
+                )
+            )
         self._session.delete(trace)
 
     def reorder_id(self, old_id: int, new_id: int) -> TraceRecord:

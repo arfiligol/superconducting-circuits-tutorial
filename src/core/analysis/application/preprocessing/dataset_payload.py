@@ -26,7 +26,7 @@ class DataPayload:
 
 @dataclass(frozen=True)
 class DatasetPayload:
-    """Dataset payload destined for SQLite storage."""
+    """Preprocessed ingest payload destined for design/trace persistence."""
 
     source_meta: dict
     parameters: dict

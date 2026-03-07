@@ -1,4 +1,4 @@
-"""Service for importing HFSS data directly to SQLite database."""
+"""Service for importing HFSS data into design/trace-first persistence."""
 
 from pathlib import Path
 
@@ -30,7 +30,7 @@ def import_hfss_to_database(
     l_jun: float | None = None,
 ) -> None:
     """
-    Import an HFSS file directly to SQLite database.
+    Import an HFSS file into the design/trace persistence path.
 
     Args:
         file_path: Path to the HFSS CSV file

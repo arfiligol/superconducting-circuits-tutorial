@@ -64,6 +64,15 @@ An ingest/import should create:
     Ingested `TraceRecord`s should keep lightweight metadata plus a `store_ref` into the `TraceStore`;
     selection stays metadata-only, and numeric payload is materialized only when a consumer needs it.
 
+### Layout HFSS ingest contract
+
+- After layout CSV preprocessing, the result must be materialized as canonical ND `TraceRecord`s
+- `TraceRecord.axes` in the metadata DB should keep only `name/unit/length`
+- `TraceRecord.store_ref` must point to the numeric authority
+- Frequency / bias axis arrays and trace values must be written into the `TraceStore`
+- `TraceBatchRecord(source_kind=layout_simulation, stage_kind=raw)` keeps import provenance and setup summary
+- Layout numeric matrices must not remain primarily in metadata DB JSON as the working SoT
+
 ## Related
 
 - [Design / Trace Schema](dataset-record.en.md)

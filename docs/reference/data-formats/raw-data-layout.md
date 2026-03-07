@@ -65,6 +65,15 @@ ingest/import 完成後應產生：
     ingest 後的 `TraceRecord` 應以輕量 metadata + `store_ref` 指向 `TraceStore`；
     selection 走 metadata，真正需要 numeric payload 時再 materialize。
 
+### Layout HFSS ingest contract
+
+- layout CSV preprocess 完成後，必須先 materialize 成 canonical ND `TraceRecord`
+- `TraceRecord.axes` 在 metadata DB 只保留 `name/unit/length`
+- `TraceRecord.store_ref` 指向正式 numeric authority
+- frequency / bias axis arrays 與 trace values 都必須寫進 `TraceStore`
+- `TraceBatchRecord(source_kind=layout_simulation, stage_kind=raw)` 負責保留 import provenance / setup summary
+- 不得再把 layout numeric matrix 主要存回 metadata DB JSON 作為 working SoT
+
 ## Related
 
 - [Design / Trace Schema](dataset-record.md)
