@@ -6,6 +6,7 @@ from core.analysis.application.dto.data_record_dtos import (
     DataRecordDetailDTO,
     DataRecordSummaryDTO,
 )
+from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.analysis.domain import normalize_trace_record
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import DataRecord
@@ -69,7 +70,7 @@ class DataRecordManagementService:
         )
 
     def _to_detail(self, record: object) -> DataRecordDetailDTO:
-        normalized_record = normalize_trace_record(record)
+        normalized_record = materialize_trace_record(record)
         return DataRecordDetailDTO(
             id=cast(int, normalized_record.id),
             dataset_id=cast(int, normalized_record.dataset_id),

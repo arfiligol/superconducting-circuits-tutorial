@@ -62,6 +62,8 @@ ingest/import 完成後應產生：
 !!! important "Raw file is provenance, not the working trace authority"
     raw 檔負責保留來源完整性；
     plotting / Characterization / compare 不應直接依賴 raw file parser 在 UI 當場重讀。
+    ingest 後的 `TraceRecord` 應以輕量 metadata + `store_ref` 指向 `TraceStore`；
+    selection 走 metadata，真正需要 numeric payload 時再 materialize。
 
 ## Related
 

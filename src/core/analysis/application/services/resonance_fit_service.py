@@ -9,6 +9,7 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
+from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.analysis.domain import (
     normalize_trace_record,
     trace_record_data_type,
@@ -96,7 +97,7 @@ class ResonanceFitService:
             normalized_record.representation: normalized_record
             for record in detailed_records
             if record is not None
-            for normalized_record in [normalize_trace_record(record)]
+            for normalized_record in [materialize_trace_record(record)]
         }
 
         f_axis = None

@@ -12,6 +12,7 @@ from app.services.dataset_profile import (
     design_profile_summary_text,
     normalize_dataset_profile,
 )
+from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.repositories import TraceIndexPageQuery
 from core.shared.visualization.figure_builders import (
@@ -178,11 +179,15 @@ def raw_data_page() -> None:
                     with plot_container:
                         ui.label("Trace not found.").classes("text-danger")
                     return
+                materialized_record = materialize_trace_record(record)
 
-                if len(record.axes) == 2 and record.data_type == "s_params":
-                    fig = build_heatmap(record, dark=_safe_dark_mode())
+                if (
+                    len(materialized_record.axes) == 2
+                    and materialized_record.data_type == "s_params"
+                ):
+                    fig = build_heatmap(materialized_record, dark=_safe_dark_mode())
                 else:
-                    fig = build_line_chart(record, dark=_safe_dark_mode())
+                    fig = build_line_chart(materialized_record, dark=_safe_dark_mode())
 
             with plot_container:
                 ui.plotly(fig).classes("w-full h-full").style("min-height: 400px;")

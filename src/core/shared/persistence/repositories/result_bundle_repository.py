@@ -313,6 +313,17 @@ class TraceBatchRepository:
         """Legacy wrapper for attaching existing DataRecord rows to a bundle."""
         self.attach_traces(batch_id=bundle_id, trace_ids=data_record_ids)
 
+    def detach_trace(self, trace_id: int) -> None:
+        """Remove a trace from all batches before deleting or replacing it."""
+        trace_id_col = cast(Any, TraceBatchTraceLink.data_record_id)
+        statement = sa_select(TraceBatchTraceLink).where(trace_id_col == trace_id)
+        for link in self._session.execute(statement).scalars():
+            self._session.delete(link)
+
+    def delete(self, batch: TraceBatchRecord) -> None:
+        """Delete one batch record."""
+        self._session.delete(batch)
+
     def list_traces(self, batch_id: int) -> list[TraceRecord]:
         """List all TraceRecord rows attached to one batch."""
         statement = (

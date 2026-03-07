@@ -13,6 +13,7 @@ from core.analysis.application.analysis.fitting.modes import (
     fit_squid_model_with_Ls,
     fit_squid_model_with_Ls_fixed_C,
 )
+from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.analysis.domain.schemas.fitting import AnalysisEntry
 from core.analysis.domain.services.data_conversion import convert_data_record_to_dataframe
 from core.analysis.infrastructure.visualization.dataframe_display import print_dataframe_table
@@ -65,7 +66,10 @@ def extract_modes(dataset: DatasetRecord) -> pd.DataFrame | None:
         logger.error("Y11 imaginary data record not found in %s", dataset.name)
         return None
 
-    df_raw = convert_data_record_to_dataframe(data_record, value_label="im(Y) []")
+    df_raw = convert_data_record_to_dataframe(
+        materialize_trace_record(data_record),
+        value_label="im(Y) []",
+    )
     df_modes = extract_modes_from_dataframe(df_raw)
     if df_modes is None:
         return None

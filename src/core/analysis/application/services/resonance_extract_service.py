@@ -12,6 +12,7 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
+from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.analysis.domain import (
     normalize_trace_record,
     trace_record_data_type,
@@ -81,7 +82,7 @@ class ResonanceExtractService:
         for rec in detailed_records:
             if rec is None:
                 continue
-            record = normalize_trace_record(rec)
+            record = materialize_trace_record(rec)
 
             y_vals = np.array(record.values, dtype=float)
             if not record.axes or not record.axes[0].get("values"):

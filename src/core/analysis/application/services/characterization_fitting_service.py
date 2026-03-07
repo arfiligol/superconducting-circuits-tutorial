@@ -21,6 +21,7 @@ from core.analysis.application.services.fit_result_persistence import (
     persist_y11_fit_outputs,
 )
 from core.analysis.application.services.squid_fitting import FitModel
+from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.analysis.domain import (
     normalize_trace_record,
     trace_record_data_type,
@@ -173,7 +174,10 @@ class CharacterizationFittingService:
                 raise ValueError("No compatible Y11 imaginary trace found in selected scope.")
 
             y11_records.sort(key=lambda record: int(record.id or 0))
-            return str(dataset.name), y11_records[0]
+            selected_record = uow.data_records.get(int(y11_records[0].id or 0))
+            if selected_record is None:
+                raise ValueError("Selected Y11 trace could not be reloaded.")
+            return str(dataset.name), materialize_trace_record(selected_record)
 
     @staticmethod
     def _is_y11_imaginary_record(record: object) -> bool:

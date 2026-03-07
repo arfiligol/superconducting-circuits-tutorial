@@ -61,6 +61,8 @@ An ingest/import should create:
 !!! important "Raw file is provenance, not the working trace authority"
     Raw files preserve source integrity.
     Plotting / Characterization / compare flows should not depend on reparsing raw files live inside the UI.
+    Ingested `TraceRecord`s should keep lightweight metadata plus a `store_ref` into the `TraceStore`;
+    selection stays metadata-only, and numeric payload is materialized only when a consumer needs it.
 
 ## Related
 
