@@ -108,6 +108,7 @@ class TraceRecord(SQLModel, table=True):
     representation: str
     axes: list = Field(default_factory=list, sa_column=Column(JSON))
     values: list = Field(default_factory=list, sa_column=Column(JSON))
+    store_ref: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="data_records")
@@ -120,6 +121,40 @@ class TraceRecord(SQLModel, table=True):
     def family(self) -> str:
         """Canonical alias for the observable family."""
         return self.data_type
+
+    def trace_shape(self) -> tuple[int, ...]:
+        """Return shape metadata without forcing inline payload materialization."""
+        if isinstance(self.store_ref, dict):
+            raw_shape = self.store_ref.get("shape")
+            if isinstance(raw_shape, list) and raw_shape:
+                return tuple(int(dimension) for dimension in raw_shape)
+
+        shape: list[int] = []
+        current: object = self.values
+        while isinstance(current, list):
+            shape.append(len(current))
+            if not current:
+                break
+            current = current[0]
+        return tuple(shape)
+
+    def axis_length(self, index: int) -> int:
+        """Return one axis length from inline metadata or TraceStore-derived metadata."""
+        if index >= len(self.axes):
+            return 0
+        axis = self.axes[index]
+        if not isinstance(axis, dict):
+            return 0
+        raw_length = axis.get("length")
+        if raw_length is not None:
+            return int(raw_length)
+        raw_values = axis.get("values")
+        if isinstance(raw_values, list):
+            return len(raw_values)
+        shape = self.trace_shape()
+        if index < len(shape):
+            return int(shape[index])
+        return 0
 
     @family.setter
     def family(self, value: str) -> None:

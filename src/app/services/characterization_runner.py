@@ -45,13 +45,13 @@ def _is_l_jun_axis(name: str) -> bool:
 
 
 def _is_sweep_record(record: DataRecord) -> bool:
-    value_ndim = _value_ndim(record.values)
+    shape = record.trace_shape()
+    value_ndim = len(shape) if shape else _value_ndim(record.values)
     if value_ndim > 1:
         return True
     if len(record.axes) <= 1:
         return False
-    axis_values = record.axes[1].get("values", [])
-    return isinstance(axis_values, list) and len(axis_values) > 1
+    return record.axis_length(1) > 1
 
 
 def _load_selected_records(
@@ -85,7 +85,9 @@ def _diagnose_analysis_sweep_support_from_records(
     if not sweep_records:
         return None
 
-    max_ndim = max(_value_ndim(record.values) for record in sweep_records)
+    max_ndim = max(
+        len(record.trace_shape()) or _value_ndim(record.values) for record in sweep_records
+    )
     second_axis_names = {_axis_name(record, 1) for record in sweep_records if len(record.axes) > 1}
     has_non_l_jun_second_axis = any(
         axis_name and not _is_l_jun_axis(axis_name) for axis_name in second_axis_names
@@ -130,7 +132,9 @@ def _diagnose_analysis_sweep_support_from_records(
         if not s21_sweep_records:
             return None
 
-        s21_max_ndim = max(_value_ndim(record.values) for record in s21_sweep_records)
+        s21_max_ndim = max(
+            len(record.trace_shape()) or _value_ndim(record.values) for record in s21_sweep_records
+        )
         if s21_max_ndim > 2:
             return SweepSupportDiagnostic(
                 status="blocked",

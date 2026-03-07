@@ -11,6 +11,17 @@ from core.shared.persistence.models import (
     ResultBundleRecord,
     Tag,
 )
+from core.shared.persistence.trace_store import (
+    TRACE_STORE_PATH,
+    TRACE_STORE_SCHEMA_VERSION,
+    LocalZarrTraceStore,
+    TraceAxisMetadata,
+    TraceStore,
+    TraceStoreRef,
+    TraceWriteResult,
+    coerce_trace_store_ref,
+    get_trace_store_path,
+)
 from core.shared.persistence.unit_of_work import SqliteUnitOfWork, get_unit_of_work
 
 __all__ = [  # noqa: RUF022
@@ -27,6 +38,16 @@ __all__ = [  # noqa: RUF022
     "ResultBundleDataLink",
     "ResultBundleRecord",
     "Tag",
+    # TraceStore
+    "LocalZarrTraceStore",
+    "TRACE_STORE_PATH",
+    "TRACE_STORE_SCHEMA_VERSION",
+    "TraceAxisMetadata",
+    "TraceStore",
+    "TraceStoreRef",
+    "TraceWriteResult",
+    "coerce_trace_store_ref",
+    "get_trace_store_path",
     # Unit of Work
     "SqliteUnitOfWork",
     "get_unit_of_work",
