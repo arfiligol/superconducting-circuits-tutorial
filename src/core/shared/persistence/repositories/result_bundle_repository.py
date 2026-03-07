@@ -330,10 +330,6 @@ class TraceBatchRepository:
         for link in self._session.execute(statement).scalars():
             self._session.delete(link)
 
-    def delete(self, batch: TraceBatchRecord) -> None:
-        """Delete one batch record."""
-        self._session.delete(batch)
-
     def list_traces(self, batch_id: int) -> list[TraceRecord]:
         """List all TraceRecord rows attached to one batch."""
         statement = (

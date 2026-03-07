@@ -703,11 +703,14 @@ def _save_raw_simulation_results(page: Page, *, dataset_name: str) -> None:
         fallback_text="Simulation Results",
     )
     raw_results_card.get_by_role("button", name="Save Raw Simulation Results").click()
-    expect(page.get_by_text("Save Simulation Results")).to_be_visible(timeout=30000)
-    name_input = page.get_by_role("textbox", name="New Dataset Name")
+    dialog = page.locator('[role="dialog"]').last
+    expect(dialog.get_by_text("Save Simulation Results", exact=True)).to_be_visible(
+        timeout=30000
+    )
+    name_input = dialog.get_by_role("textbox", name="New Dataset Name")
     name_input.click()
     name_input.fill(dataset_name)
-    page.get_by_role("button", name="Save").last.click()
+    dialog.get_by_role("button", name="Save").click()
     expect(page.get_by_text(re.compile(r"Saved .* trace\(s\) to:", re.IGNORECASE))).to_be_visible(
         timeout=30000
     )
@@ -720,11 +723,14 @@ def _save_post_processed_results(page: Page, *, dataset_name: str) -> None:
         fallback_text="Post Processing Results",
     )
     post_results_card.get_by_role("button", name="Save Post-Processed Results").click()
-    expect(page.get_by_text("Save Post-Processed Results")).to_be_visible(timeout=30000)
-    name_input = page.get_by_role("textbox", name="New Dataset Name")
+    dialog = page.locator('[role="dialog"]').last
+    expect(dialog.get_by_text("Save Post-Processed Results", exact=True)).to_be_visible(
+        timeout=30000
+    )
+    name_input = dialog.get_by_role("textbox", name="New Dataset Name")
     name_input.click()
     name_input.fill(dataset_name)
-    page.get_by_role("button", name="Save").last.click()
+    dialog.get_by_role("button", name="Save").click()
     expect(
         page.get_by_text(re.compile(r"Saved .* post-processed trace", re.IGNORECASE))
     ).to_be_visible(timeout=30000)
@@ -794,7 +800,7 @@ def _open_characterization_dataset_scope(
         _card_by_testid(
             page,
             "characterization-source-scope-card",
-            fallback_text="Source Scope",
+            fallback_text="Design Scope",
         )
     ).to_be_visible(timeout=30000)
     _select_option(page, "Analysis", analysis_label)
@@ -1666,9 +1672,9 @@ def test_phase2_validation_matrix_characterization_over_saved_traces(
         raise AssertionError("Timed out waiting for characterization over saved traces.")
 
     run_bundle = _latest_characterization_run_bundle(saved_dataset.dataset_name)
-    selected_trace_ids = run_bundle.config_snapshot.get("selected_trace_ids")
-    assert isinstance(selected_trace_ids, list)
-    assert len(selected_trace_ids) > 0
+    input_trace_ids = run_bundle.source_meta.get("input_trace_ids")
+    assert isinstance(input_trace_ids, list)
+    assert len(input_trace_ids) > 0
     assert run_bundle.source_meta.get("input_scope") == "all_dataset_records"
     page.screenshot(path=str(_VALIDATION_MATRIX_SCREENSHOT_PATH), full_page=True)
 
