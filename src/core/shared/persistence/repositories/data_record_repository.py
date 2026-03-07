@@ -1,4 +1,4 @@
-"""Repository for DataRecord operations."""
+"""Repository for TraceRecord operations."""
 
 from collections.abc import Sequence
 from typing import Any, cast
@@ -8,36 +8,55 @@ from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import DataRecord, DatasetRecord
+from core.shared.persistence.models import DesignRecord, TraceBatchTraceLink, TraceRecord
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
-class DataRecordRepository:
-    """Repository for DataRecord operations."""
+def _canonical_trace_row(row: dict[str, str | int]) -> dict[str, str | int]:
+    """Translate legacy row keys into trace-first row keys."""
+    return {
+        "id": int(row["id"]),
+        "family": str(row["data_type"]),
+        "parameter": str(row["parameter"]),
+        "representation": str(row["representation"]),
+    }
+
+
+class TraceRepository:
+    """Repository for trace metadata operations."""
 
     def __init__(self, session: Session):
         self._session = session
 
-    def get(self, id: int) -> DataRecord | None:
-        """Get data record by ID."""
-        return self._session.get(DataRecord, id)
+    def get(self, id: int) -> TraceRecord | None:
+        """Get a trace by ID."""
+        return self._session.get(TraceRecord, id)
 
-    def list_by_dataset(self, dataset_id: int) -> list[DataRecord]:
-        """List all data records for a dataset."""
-        statement = select(DataRecord).where(DataRecord.dataset_id == dataset_id)
+    def list_by_design(self, design_id: int) -> list[TraceRecord]:
+        """List all traces for one design."""
+        statement = select(TraceRecord).where(TraceRecord.dataset_id == design_id)
         return list(self._session.exec(statement).all())
 
+    def list_by_dataset(self, dataset_id: int) -> list[TraceRecord]:
+        """Legacy dataset-scoped wrapper."""
+        return self.list_by_design(dataset_id)
+
+    def list_index_by_design(self, design_id: int) -> list[dict[str, str | int]]:
+        """List lightweight trace metadata for one design."""
+        legacy_rows = self.list_index_by_dataset(design_id)
+        return [_canonical_trace_row(row) for row in legacy_rows]
+
     def list_index_by_dataset(self, dataset_id: int) -> list[dict[str, str | int]]:
-        """List lightweight record metadata for one dataset (without axis/value payloads)."""
+        """List lightweight record metadata for one dataset."""
         statement = (
             select(
-                DataRecord.id,
-                DataRecord.data_type,
-                DataRecord.parameter,
-                DataRecord.representation,
+                TraceRecord.id,
+                TraceRecord.data_type,
+                TraceRecord.parameter,
+                TraceRecord.representation,
             )
-            .where(DataRecord.dataset_id == dataset_id)
-            .order_by(DataRecord.id)  # type: ignore[arg-type]
+            .where(TraceRecord.dataset_id == dataset_id)
+            .order_by(TraceRecord.id)  # type: ignore[arg-type]
         )
         rows = self._session.execute(statement).all()
         return [
@@ -51,20 +70,24 @@ class DataRecordRepository:
             if record_id is not None
         ]
 
+    def count_by_design(self, design_id: int) -> int:
+        """Count all traces under one design."""
+        return self.count_by_dataset(design_id)
+
     def count_by_dataset(self, dataset_id: int) -> int:
         """Count all records under one dataset."""
-        dataset_id_col = cast(Any, DataRecord.dataset_id)
+        dataset_id_col = cast(Any, TraceRecord.dataset_id)
         statement = sa_select(func.count()).where(dataset_id_col == dataset_id)
         return int(self._session.execute(statement).scalar_one())
 
-    def list_distinct_index_for_profile(self, dataset_id: int) -> list[dict[str, str]]:
-        """List distinct (data_type, parameter) pairs for profile inference."""
-        dataset_id_col = cast(Any, DataRecord.dataset_id)
-        data_type_col = cast(Any, DataRecord.data_type)
-        parameter_col = cast(Any, DataRecord.parameter)
+    def list_distinct_index_for_profile(self, design_id: int) -> list[dict[str, str]]:
+        """List distinct (family, parameter) pairs for profile inference."""
+        dataset_id_col = cast(Any, TraceRecord.dataset_id)
+        data_type_col = cast(Any, TraceRecord.data_type)
+        parameter_col = cast(Any, TraceRecord.parameter)
         statement = (
             sa_select(data_type_col, parameter_col)
-            .where(dataset_id_col == dataset_id)
+            .where(dataset_id_col == design_id)
             .distinct()
             .order_by(data_type_col, parameter_col)
         )
@@ -72,10 +95,22 @@ class DataRecordRepository:
         return [
             {
                 "data_type": str(data_type),
+                "family": str(data_type),
                 "parameter": str(parameter),
             }
             for data_type, parameter in rows
         ]
+
+    def list_index_page_by_design(
+        self,
+        design_id: int,
+        *,
+        query: TraceIndexPageQuery | None = None,
+        **kwargs: object,
+    ) -> tuple[list[dict[str, str | int]], int]:
+        """List one page of canonical trace metadata rows for a design."""
+        rows, total = self.list_index_page_by_dataset(design_id, query=query, **kwargs)
+        return ([_canonical_trace_row(row) for row in rows], total)
 
     def list_index_page_by_dataset(
         self,
@@ -108,11 +143,11 @@ class DataRecordRepository:
             limit = query.limit
             offset = query.offset
 
-        id_col = cast(Any, DataRecord.id)
-        data_type_col = cast(Any, DataRecord.data_type)
-        parameter_col = cast(Any, DataRecord.parameter)
-        representation_col = cast(Any, DataRecord.representation)
-        dataset_id_col = cast(Any, DataRecord.dataset_id)
+        id_col = cast(Any, TraceRecord.id)
+        data_type_col = cast(Any, TraceRecord.data_type)
+        parameter_col = cast(Any, TraceRecord.parameter)
+        representation_col = cast(Any, TraceRecord.representation)
+        dataset_id_col = cast(Any, TraceRecord.dataset_id)
 
         statement = sa_select(
             id_col,
@@ -153,6 +188,7 @@ class DataRecordRepository:
             )
         elif data_type:
             statement = statement.where(data_type_col == data_type)
+
         normalized_parameters = [
             str(item).strip() for item in parameters or [] if str(item).strip()
         ]
@@ -170,6 +206,7 @@ class DataRecordRepository:
             )
         if representation:
             statement = statement.where(representation_col == representation)
+
         normalized_mode_filter = str(mode_filter or "").strip().lower()
         if normalized_mode_filter == "base":
             statement = statement.where(not_(sideband_predicate))
@@ -205,13 +242,27 @@ class DataRecordRepository:
             total_rows,
         )
 
+    def list_summary_by_design(self, design_id: int) -> list[dict[str, object]]:
+        """List summary rows for one design without loading large axes/value payloads."""
+        return [
+            {
+                "id": row["id"],
+                "design_id": row["dataset_id"],
+                "family": row["data_type"],
+                "parameter": row["parameter"],
+                "representation": row["representation"],
+                "created_at": row["created_at"],
+            }
+            for row in self.list_summary_by_dataset(design_id)
+        ]
+
     def list_summary_by_dataset(self, dataset_id: int) -> list[dict[str, object]]:
         """List summary rows for one dataset without loading large axes/value payloads."""
-        id_col = cast(Any, DataRecord.id)
-        dataset_id_col = cast(Any, DataRecord.dataset_id)
-        data_type_col = cast(Any, DataRecord.data_type)
-        parameter_col = cast(Any, DataRecord.parameter)
-        representation_col = cast(Any, DataRecord.representation)
+        id_col = cast(Any, TraceRecord.id)
+        dataset_id_col = cast(Any, TraceRecord.dataset_id)
+        data_type_col = cast(Any, TraceRecord.data_type)
+        parameter_col = cast(Any, TraceRecord.parameter)
+        representation_col = cast(Any, TraceRecord.representation)
 
         statement = (
             sa_select(
@@ -244,14 +295,14 @@ class DataRecordRepository:
             if record_id is not None
         ]
 
-    def add(self, record: DataRecord) -> DataRecord:
-        """Add a new data record."""
-        self._session.add(record)
-        return record
+    def add(self, trace: TraceRecord) -> TraceRecord:
+        """Add a new trace."""
+        self._session.add(trace)
+        return trace
 
-    def list_all(self, *, include_hidden: bool = False) -> list[DataRecord]:
-        """List all data records, excluding hidden-dataset rows by default."""
-        statement = select(DataRecord).order_by(DataRecord.id)  # type: ignore[arg-type]
+    def list_all(self, *, include_hidden: bool = False) -> list[TraceRecord]:
+        """List all traces, excluding hidden-design rows by default."""
+        statement = select(TraceRecord).order_by(TraceRecord.id)  # type: ignore[arg-type]
         records = list(self._session.exec(statement).all())
         if include_hidden:
             return records
@@ -260,48 +311,42 @@ class DataRecordRepository:
 
         dataset_ids = {record.dataset_id for record in records}
         hidden_dataset_ids = {
-            dataset.id
-            for dataset in self._session.exec(select(DatasetRecord)).all()
-            if dataset.id is not None and dataset.source_meta.get("system_hidden")
-            if dataset.id in dataset_ids
+            design.id
+            for design in self._session.exec(select(DesignRecord)).all()
+            if design.id is not None and design.source_meta.get("system_hidden")
+            if design.id in dataset_ids
         }
         return [record for record in records if record.dataset_id not in hidden_dataset_ids]
 
-    def delete(self, record: DataRecord) -> None:
-        """Delete a data record."""
-        self._session.delete(record)
+    def delete(self, trace: TraceRecord) -> None:
+        """Delete a trace."""
+        self._session.delete(trace)
 
-    def reorder_id(self, old_id: int, new_id: int) -> DataRecord:
-        """Change data record ID."""
+    def reorder_id(self, old_id: int, new_id: int) -> TraceRecord:
+        """Change trace ID."""
         if self.get(new_id):
             raise ValueError(f"Target ID {new_id} already exists.")
 
-        record = self.get(old_id)
-        if not record:
+        trace = self.get(old_id)
+        if not trace:
             raise ValueError(f"Source ID {old_id} not found.")
 
-        # Since it's a leaf node, we can likely just update the ID directly
-        # But SQLModel objects might track PK identity.
-        # Direct SQL update is safer to avoid session confusion.
         from sqlmodel import update
 
-        from core.shared.persistence.models import DataRecord, ResultBundleDataLink
-
         self._session.exec(
-            update(ResultBundleDataLink)
-            .where(ResultBundleDataLink.data_record_id == old_id)  # type: ignore[arg-type]
+            update(TraceBatchTraceLink)
+            .where(TraceBatchTraceLink.data_record_id == old_id)  # type: ignore[arg-type]
             .values(data_record_id=new_id)
         )
-
         self._session.exec(
-            update(DataRecord).where(DataRecord.id == old_id).values(id=new_id)  # type: ignore[arg-type]
+            update(TraceRecord).where(TraceRecord.id == old_id).values(id=new_id)  # type: ignore[arg-type]
         )
 
-        # Return new object
-        # We need to refresh or get new one. Old object is stale.
-        # But wait, we need to return valid object.
-        self._session.expire(record)  # Expire old one
+        self._session.expire(trace)
         updated = self.get(new_id)
         if updated is None:
-            raise ValueError(f"Failed to reload record after reordering id to {new_id}.")
+            raise ValueError(f"Failed to reload trace after reordering id to {new_id}.")
         return updated
+
+
+DataRecordRepository = TraceRepository

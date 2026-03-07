@@ -1,4 +1,9 @@
-"""SQLModel table definitions for persistence layer."""
+"""SQLModel table definitions for the persistence layer.
+
+Canonical naming follows the Design / Trace / TraceBatch / AnalysisRun
+architecture. Physical table names remain legacy-shaped until a dedicated
+schema migration workstream lands.
+"""
 
 from datetime import datetime
 from enum import Enum
@@ -7,9 +12,6 @@ from typing import Optional
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
 
-# ===================
-# Enums
-# ===================
 class DeviceType(str, Enum):
     """Device type for derived parameters."""
 
@@ -19,11 +21,8 @@ class DeviceType(str, Enum):
     OTHER = "other"
 
 
-# ===================
-# Many-to-Many Link Table
-# ===================
-class DatasetTagLink(SQLModel, table=True):
-    """Link table for DatasetRecord <-> Tag many-to-many relationship."""
+class DesignTagLink(SQLModel, table=True):
+    """Link table for DesignRecord <-> Tag many-to-many relationships."""
 
     __tablename__ = "dataset_tags"  # type: ignore[assignment]
 
@@ -31,8 +30,8 @@ class DatasetTagLink(SQLModel, table=True):
     tag_id: int = Field(foreign_key="tags.id", primary_key=True)
 
 
-class ResultBundleDataLink(SQLModel, table=True):
-    """Link table for ResultBundleRecord <-> DataRecord membership."""
+class TraceBatchTraceLink(SQLModel, table=True):
+    """Link table for TraceBatchRecord <-> TraceRecord membership."""
 
     __tablename__ = "result_bundle_data_links"  # type: ignore[assignment]
 
@@ -40,49 +39,40 @@ class ResultBundleDataLink(SQLModel, table=True):
     data_record_id: int = Field(foreign_key="data_records.id", primary_key=True)
 
 
-# ===================
-# Tag
-# ===================
 class Tag(SQLModel, table=True):
-    """Tag for organizing and searching datasets."""
+    """Tag for organizing and searching design-scoped records."""
 
     __tablename__ = "tags"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
 
-    # Relationships
-    datasets: list["DatasetRecord"] = Relationship(back_populates="tags", link_model=DatasetTagLink)
+    datasets: list["DesignRecord"] = Relationship(
+        back_populates="tags",
+        link_model=DesignTagLink,
+    )
 
 
-# ===================
-# DatasetRecord (Collection)
-# ===================
-class DatasetRecord(SQLModel, table=True):
-    """Dataset collection containing multiple DataRecords."""
+class DesignRecord(SQLModel, table=True):
+    """Canonical design container for traces, batches, and derived results."""
 
     __tablename__ = "dataset_records"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
 
-    # Source metadata
+    # Legacy column layout is kept intact for now. `source_meta` is the current
+    # storage location for design-scoped metadata until the schema migration lands.
     source_meta: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    # {"origin": "layout_simulation", "solver": "hfss", "raw_file": "..."}
-
-    # Simulation/measurement parameters
     parameters: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    # {"L_jun_nH": 0.5, "freq_range_ghz": [1, 10]}
-
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Relationships
-    tags: list["Tag"] = Relationship(back_populates="datasets", link_model=DatasetTagLink)
-    data_records: list["DataRecord"] = Relationship(
+    tags: list["Tag"] = Relationship(back_populates="datasets", link_model=DesignTagLink)
+    data_records: list["TraceRecord"] = Relationship(
         back_populates="dataset",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
-    result_bundles: list["ResultBundleRecord"] = Relationship(
+    result_bundles: list["TraceBatchRecord"] = Relationship(
         back_populates="dataset",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
@@ -95,50 +85,59 @@ class DatasetRecord(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
 
+    @property
+    def design_meta(self) -> dict:
+        """Canonical alias for design-scoped metadata."""
+        return self.source_meta
 
-# ===================
-# DataRecord (Single Data)
-# ===================
-class DataRecord(SQLModel, table=True):
-    """Single data record (e.g., Y11 imaginary part)."""
+    @design_meta.setter
+    def design_meta(self, value: dict) -> None:
+        self.source_meta = dict(value)
+
+
+class TraceRecord(SQLModel, table=True):
+    """Canonical trace metadata record for one logical observable over axes."""
 
     __tablename__ = "data_records"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
 
-    # Data type and parameter
-    data_type: str  # s_params | y_params | z_params
-    parameter: str  # S11, Y21, C12
-    representation: str  # real | imaginary | amplitude | phase
-
-    # Axis definitions and values
+    data_type: str
+    parameter: str
+    representation: str
     axes: list = Field(default_factory=list, sa_column=Column(JSON))
-    # [{"name": "frequency", "unit": "GHz", "values": [...]}]
-
     values: list = Field(default_factory=list, sa_column=Column(JSON))
-    # [0.01, 0.02, ...] or [[...], [...]]
-
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Relationship
-    dataset: Optional["DatasetRecord"] = Relationship(back_populates="data_records")
-    result_bundles: list["ResultBundleRecord"] = Relationship(
+    dataset: Optional["DesignRecord"] = Relationship(back_populates="data_records")
+    result_bundles: list["TraceBatchRecord"] = Relationship(
         back_populates="data_records",
-        link_model=ResultBundleDataLink,
+        link_model=TraceBatchTraceLink,
     )
 
+    @property
+    def family(self) -> str:
+        """Canonical alias for the observable family."""
+        return self.data_type
 
-# ===================
-# ResultBundleRecord (One Run / Import / Analysis Batch)
-# ===================
-class ResultBundleRecord(SQLModel, table=True):
-    """One run, import, or analysis batch inside a dataset."""
+    @family.setter
+    def family(self, value: str) -> None:
+        self.data_type = value
+
+
+class TraceBatchRecord(SQLModel, table=True):
+    """Generalized batch/provenance boundary for imports, runs, and projections."""
 
     __tablename__ = "result_bundle_records"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+    parent_batch_id: int | None = Field(
+        default=None,
+        foreign_key="result_bundle_records.id",
+        index=True,
+    )
 
     bundle_type: str = Field(index=True)
     role: str = Field(default="cache", index=True)
@@ -154,71 +153,112 @@ class ResultBundleRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
 
-    dataset: Optional["DatasetRecord"] = Relationship(back_populates="result_bundles")
-    data_records: list["DataRecord"] = Relationship(
+    dataset: Optional["DesignRecord"] = Relationship(back_populates="result_bundles")
+    data_records: list["TraceRecord"] = Relationship(
         back_populates="result_bundles",
-        link_model=ResultBundleDataLink,
+        link_model=TraceBatchTraceLink,
     )
 
+    @property
+    def provenance_payload(self) -> dict:
+        """Canonical alias for provenance metadata."""
+        return self.source_meta
 
-# ===================
-# DerivedParameter
-# ===================
+    @provenance_payload.setter
+    def provenance_payload(self, value: dict) -> None:
+        self.source_meta = dict(value)
+
+    @property
+    def setup_payload(self) -> dict:
+        """Canonical alias for setup/configuration metadata."""
+        return self.config_snapshot
+
+    @setup_payload.setter
+    def setup_payload(self, value: dict) -> None:
+        self.config_snapshot = dict(value)
+
+    @property
+    def summary_payload(self) -> dict:
+        """Canonical alias for summary/result metadata."""
+        return self.result_payload
+
+    @summary_payload.setter
+    def summary_payload(self, value: dict) -> None:
+        self.result_payload = dict(value)
+
+    @property
+    def source_kind(self) -> str:
+        """Best-effort canonical source kind derived from legacy storage."""
+        raw_value = self.source_meta.get("source_kind", self.bundle_type)
+        return str(raw_value).strip()
+
+    @source_kind.setter
+    def source_kind(self, value: str) -> None:
+        payload = dict(self.source_meta)
+        payload["source_kind"] = value
+        self.source_meta = payload
+
+    @property
+    def stage_kind(self) -> str:
+        """Best-effort canonical stage kind derived from legacy storage."""
+        raw_value = self.source_meta.get("stage_kind", self.role)
+        return str(raw_value).strip()
+
+    @stage_kind.setter
+    def stage_kind(self, value: str) -> None:
+        payload = dict(self.source_meta)
+        payload["stage_kind"] = value
+        self.source_meta = payload
+
+
+class AnalysisRunRecord(SQLModel, table=False):
+    """Canonical analysis-run contract used while storage still reuses TraceBatch rows."""
+
+    id: int | None = None
+    design_id: int
+    analysis_id: str
+    status: str
+    input_trace_ids: list[int] = Field(default_factory=list)
+    input_batch_ids: list[int] = Field(default_factory=list)
+    config_payload: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class DerivedParameter(SQLModel, table=True):
-    """Physical parameter derived from data analysis."""
+    """Physical parameter derived from trace analysis."""
 
     __tablename__ = "derived_parameters"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
 
-    # Device type
     device_type: DeviceType
-
-    # Parameter info
-    name: str  # f_resonance, Q_factor, g_coupling
+    name: str
     value: float
     unit: str | None = None
-
-    # Extraction method
-    method: str | None = None  # "S11_min", "model_fit", "manual"
-
-    # Extra metadata
+    method: str | None = None
     extra: dict = Field(default_factory=dict, sa_column=Column(JSON))
-
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Relationship
-    dataset: Optional["DatasetRecord"] = Relationship(back_populates="derived_params")
+    dataset: Optional["DesignRecord"] = Relationship(back_populates="derived_params")
 
 
-# ===================
-# ParameterDesignation
-# ===================
 class ParameterDesignation(SQLModel, table=True):
-    """Semantic designation for an extracted parameter (e.g., f_q, anharmonicity)."""
+    """Semantic designation for an extracted parameter."""
 
     __tablename__ = "parameter_designations"  # type: ignore[assignment]
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
 
-    # The semantic name assigned by the user
     designated_name: str = Field(index=True)
-
-    # Coordinates to resolve the actual value from DerivedParameter / AnalysisResult
-    source_analysis_type: str  # e.g., "Admittance Zero-Crossing"
-    source_parameter_name: str  # e.g., "mode_1_ghz"
-
+    source_analysis_type: str
+    source_parameter_name: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Relationship
-    dataset: Optional["DatasetRecord"] = Relationship(back_populates="designations")
+    dataset: Optional["DesignRecord"] = Relationship(back_populates="designations")
 
 
-# ===================
-# CircuitRecord
-# ===================
 class CircuitRecord(SQLModel, table=True):
     """Schema definition for a superconducting circuit."""
 
@@ -226,8 +266,13 @@ class CircuitRecord(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(unique=True, index=True)
-
-    # JSON string representation of the CircuitDefinition components and topology
     definition_json: str = Field(sa_column=Column(JSON))
-
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+# Legacy aliases retained until callers fully migrate to canonical names.
+DatasetTagLink = DesignTagLink
+ResultBundleDataLink = TraceBatchTraceLink
+DatasetRecord = DesignRecord
+DataRecord = TraceRecord
+ResultBundleRecord = TraceBatchRecord

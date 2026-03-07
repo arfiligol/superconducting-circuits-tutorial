@@ -1,36 +1,43 @@
-"""Repository for DatasetRecord operations."""
+"""Repository for DesignRecord operations."""
 
 from datetime import datetime
 from typing import Any
 
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import DatasetRecord, DatasetTagLink, Tag
+from core.shared.persistence.models import (
+    DerivedParameter,
+    DesignRecord,
+    DesignTagLink,
+    Tag,
+    TraceBatchRecord,
+    TraceRecord,
+)
 
 
-class DatasetRepository:
-    """Repository for DatasetRecord operations."""
+class DesignRepository:
+    """Repository for design-scoped persistence operations."""
 
     def __init__(self, session: Session):
         self._session = session
 
-    def get(self, id: int) -> DatasetRecord | None:
-        """Get dataset by ID."""
-        return self._session.get(DatasetRecord, id)
+    def get(self, id: int) -> DesignRecord | None:
+        """Get a design by ID."""
+        return self._session.get(DesignRecord, id)
 
-    def get_by_name(self, name: str) -> DatasetRecord | None:
-        """Get dataset by unique name."""
-        statement = select(DatasetRecord).where(DatasetRecord.name == name)
+    def get_by_name(self, name: str) -> DesignRecord | None:
+        """Get a design by unique name."""
+        statement = select(DesignRecord).where(DesignRecord.name == name)
         return self._session.exec(statement).first()
 
     @staticmethod
-    def _is_hidden(dataset: DatasetRecord) -> bool:
-        """Return whether this dataset should stay hidden from normal listings."""
-        return bool(dataset.source_meta.get("system_hidden"))
+    def _is_hidden(design: DesignRecord) -> bool:
+        """Return whether this design should stay hidden from normal listings."""
+        return bool(design.source_meta.get("system_hidden"))
 
-    def list_all(self, *, include_hidden: bool = False) -> list[DatasetRecord]:
-        """List datasets, excluding system-hidden containers by default."""
-        statement = select(DatasetRecord).order_by(DatasetRecord.id)  # type: ignore[arg-type]
+    def list_all(self, *, include_hidden: bool = False) -> list[DesignRecord]:
+        """List designs, excluding system-hidden containers by default."""
+        statement = select(DesignRecord).order_by(DesignRecord.id)  # type: ignore[arg-type]
         records = list(self._session.exec(statement).all())
         if include_hidden:
             return records
@@ -46,7 +53,7 @@ class DatasetRepository:
         offset: int = 0,
         include_hidden: bool = False,
     ) -> tuple[list[dict[str, int | str | datetime]], int]:
-        """List one page of dataset summaries for UI tables/cards."""
+        """List one page of design summaries for UI tables/cards."""
         records = self.list_all(include_hidden=include_hidden)
 
         search_text = search.strip().lower()
@@ -74,109 +81,93 @@ class DatasetRepository:
             total,
         )
 
-    def list_by_tag(self, tag_name: str, *, include_hidden: bool = False) -> list[DatasetRecord]:
-        """List datasets with a specific tag."""
+    def list_by_tag(self, tag_name: str, *, include_hidden: bool = False) -> list[DesignRecord]:
+        """List designs with a specific tag."""
         statement = (
-            select(DatasetRecord)
-            .join(DatasetTagLink, DatasetRecord.id == DatasetTagLink.dataset_id)  # type: ignore[arg-type]
-            .join(Tag, DatasetTagLink.tag_id == Tag.id)  # type: ignore[arg-type]
+            select(DesignRecord)
+            .join(DesignTagLink, DesignRecord.id == DesignTagLink.dataset_id)  # type: ignore[arg-type]
+            .join(Tag, DesignTagLink.tag_id == Tag.id)  # type: ignore[arg-type]
             .where(Tag.name == tag_name)
-            .order_by(DatasetRecord.id)  # type: ignore[arg-type]
+            .order_by(DesignRecord.id)  # type: ignore[arg-type]
         )
         records = list(self._session.exec(statement).all())
         if include_hidden:
             return records
         return [record for record in records if not self._is_hidden(record)]
 
-    def add(self, dataset: DatasetRecord) -> DatasetRecord:
-        """Add a new dataset."""
-        self._session.add(dataset)
-        return dataset
+    def add(self, design: DesignRecord) -> DesignRecord:
+        """Add a new design."""
+        self._session.add(design)
+        return design
 
-    def update_source_meta(self, dataset_id: int, source_meta: dict[str, Any]) -> DatasetRecord:
-        """Replace one dataset's source_meta payload."""
-        dataset = self.get(dataset_id)
-        if dataset is None:
-            raise ValueError(f"Dataset ID {dataset_id} not found.")
-        dataset.source_meta = dict(source_meta)
-        self._session.add(dataset)
-        return dataset
+    def update_design_meta(self, design_id: int, design_meta: dict[str, Any]) -> DesignRecord:
+        """Replace one design's metadata payload."""
+        design = self.get(design_id)
+        if design is None:
+            raise ValueError(f"Design ID {design_id} not found.")
+        design.design_meta = dict(design_meta)
+        self._session.add(design)
+        return design
 
-    def delete(self, dataset: DatasetRecord) -> None:
-        """Delete a dataset."""
-        self._session.delete(dataset)
+    def update_source_meta(self, dataset_id: int, source_meta: dict[str, Any]) -> DesignRecord:
+        """Legacy wrapper for dataset-scoped callers."""
+        return self.update_design_meta(dataset_id, source_meta)
 
-    def reorder_id(self, old_id: int, new_id: int) -> DatasetRecord:
-        """Change dataset ID and update all dependencies."""
-        # 1. Check existence
+    def delete(self, design: DesignRecord) -> None:
+        """Delete a design."""
+        self._session.delete(design)
+
+    def reorder_id(self, old_id: int, new_id: int) -> DesignRecord:
+        """Change a design ID and update all dependencies."""
         if self.get(new_id):
             raise ValueError(f"Target ID {new_id} already exists.")
 
-        dataset = self.get(old_id)
-        if not dataset:
+        design = self.get(old_id)
+        if not design:
             raise ValueError(f"Source ID {old_id} not found.")
 
-        # 2. Create new record with specific ID AND TEMP NAME
-        # Name is unique, so we must use a temp name until old one is deleted
-        temp_name = f"{dataset.name}_TEMP_{new_id}"
-
-        new_dataset = DatasetRecord(
+        temp_name = f"{design.name}_TEMP_{new_id}"
+        new_design = DesignRecord(
             id=new_id,
             name=temp_name,
-            source_meta=dataset.source_meta,
-            parameters=dataset.parameters,
-            created_at=dataset.created_at,
+            source_meta=design.source_meta,
+            parameters=design.parameters,
+            created_at=design.created_at,
         )
-        self._session.add(new_dataset)
-        self._session.flush()  # Ensure new ID is available
+        self._session.add(new_design)
+        self._session.flush()
 
-        # 3. Update dependencies (DataRecord)
-        # We need to import models here or rely on relationship names if using ORM,
-        # but raw update is cleaner for batch updates.
         from sqlmodel import update
 
-        from core.shared.persistence.models import (
-            DataRecord,
-            DatasetTagLink,
-            DerivedParameter,
-            ResultBundleRecord,
-        )
-
         self._session.exec(
-            update(DataRecord)
-            .where(DataRecord.dataset_id == old_id)  # type: ignore[arg-type]
+            update(TraceRecord)
+            .where(TraceRecord.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
         )
-
-        # 4. Update dependencies (DerivedParameter)
         self._session.exec(
             update(DerivedParameter)
             .where(DerivedParameter.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
         )
-
-        # 5. Update dependencies (ResultBundleRecord)
         self._session.exec(
-            update(ResultBundleRecord)
-            .where(ResultBundleRecord.dataset_id == old_id)  # type: ignore[arg-type]
+            update(TraceBatchRecord)
+            .where(TraceBatchRecord.dataset_id == old_id)  # type: ignore[arg-type]
+            .values(dataset_id=new_id)
+        )
+        self._session.exec(
+            update(DesignTagLink)
+            .where(DesignTagLink.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
         )
 
-        # 6. Update dependencies (DatasetTagLink)
-        self._session.exec(
-            update(DatasetTagLink)
-            .where(DatasetTagLink.dataset_id == old_id)  # type: ignore[arg-type]
-            .values(dataset_id=new_id)
-        )
-
-        # 7. Delete old record
-        original_name = dataset.name
-        self._session.delete(dataset)
-        self._session.flush()  # Ensure deletion happens before rename
-
-        # 8. Restore original name
-        new_dataset.name = original_name
-        self._session.add(new_dataset)
+        original_name = design.name
+        self._session.delete(design)
         self._session.flush()
 
-        return new_dataset
+        new_design.name = original_name
+        self._session.add(new_design)
+        self._session.flush()
+        return new_design
+
+
+DatasetRepository = DesignRepository

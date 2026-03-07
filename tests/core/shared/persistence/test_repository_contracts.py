@@ -2,15 +2,20 @@
 
 from sqlmodel import Session, SQLModel, create_engine
 
-from core.shared.persistence.models import DatasetRecord
+from core.shared.persistence.models import DesignRecord
 from core.shared.persistence.repositories import (
     DataRecordCharacterizationContract,
-    DataRecordRepository,
     ResultBundleCharacterizationContract,
     ResultBundleDatasetSummaryContract,
     ResultBundleRepository,
+    ResultBundleSnapshotContract,
+    TraceBatchCharacterizationContract,
+    TraceBatchDesignSummaryContract,
+    TraceBatchRepository,
+    TraceBatchSnapshotContract,
+    TraceCharacterizationContract,
+    TraceRepository,
 )
-from core.shared.persistence.repositories.contracts import ResultBundleSnapshotContract
 
 
 def _memory_session() -> Session:
@@ -19,52 +24,64 @@ def _memory_session() -> Session:
     return Session(engine)
 
 
-def test_data_record_repository_satisfies_characterization_contract() -> None:
+def test_trace_repository_satisfies_canonical_characterization_contract() -> None:
     with _memory_session() as session:
-        dataset = DatasetRecord(name="Contract Dataset", source_meta={}, parameters={})
-        session.add(dataset)
+        design = DesignRecord(name="Contract Design", source_meta={}, parameters={})
+        session.add(design)
         session.commit()
-        session.refresh(dataset)
-        assert dataset.id is not None
+        session.refresh(design)
+        assert design.id is not None
 
-        repo = DataRecordRepository(session)
+        repo = TraceRepository(session)
 
+        assert isinstance(repo, TraceCharacterizationContract)
         assert isinstance(repo, DataRecordCharacterizationContract)
-        assert repo.count_by_dataset(dataset.id) == 0
-        assert repo.list_distinct_index_for_profile(dataset.id) == []
+        assert repo.count_by_design(design.id) == 0
+        assert repo.list_distinct_index_for_profile(design.id) == []
 
-        rows, total = repo.list_index_page_by_dataset(dataset.id)
+        rows, total = repo.list_index_page_by_design(design.id)
         assert rows == []
         assert total == 0
 
 
-def test_result_bundle_repository_satisfies_characterization_contract() -> None:
+def test_trace_batch_repository_satisfies_characterization_contracts() -> None:
     with _memory_session() as session:
-        repo = ResultBundleRepository(session)
+        repo = TraceBatchRepository(session)
+        assert isinstance(repo, TraceBatchCharacterizationContract)
         assert isinstance(repo, ResultBundleCharacterizationContract)
-        assert repo.count_data_records(1) == 0
+        assert repo.count_traces(1) == 0
 
-        rows, total = repo.list_data_record_index_page(1)
+        rows, total = repo.list_trace_index_page(1)
         assert rows == []
         assert total == 0
 
 
-def test_result_bundle_repository_satisfies_dataset_summary_contract() -> None:
+def test_trace_batch_repository_satisfies_design_summary_contracts() -> None:
     with _memory_session() as session:
-        dataset = DatasetRecord(name="Summary Contract Dataset", source_meta={}, parameters={})
-        session.add(dataset)
+        design = DesignRecord(name="Summary Contract Design", source_meta={}, parameters={})
+        session.add(design)
         session.commit()
-        session.refresh(dataset)
-        assert dataset.id is not None
+        session.refresh(design)
+        assert design.id is not None
 
-        repo = ResultBundleRepository(session)
+        repo = TraceBatchRepository(session)
+        assert isinstance(repo, TraceBatchDesignSummaryContract)
         assert isinstance(repo, ResultBundleDatasetSummaryContract)
-        assert repo.count_by_dataset(dataset.id) == 0
-        assert repo.list_analysis_run_summaries_by_dataset(dataset.id) == []
+        assert repo.count_by_design(design.id) == 0
+        assert repo.list_analysis_run_summaries_by_design(design.id) == []
 
 
-def test_result_bundle_repository_satisfies_snapshot_contract() -> None:
+def test_trace_batch_repository_satisfies_snapshot_contracts() -> None:
     with _memory_session() as session:
-        repo = ResultBundleRepository(session)
+        repo = TraceBatchRepository(session)
+        assert isinstance(repo, TraceBatchSnapshotContract)
         assert isinstance(repo, ResultBundleSnapshotContract)
+        assert repo.get_trace_batch_snapshot(1) is None
         assert repo.get_snapshot(1) is None
+
+
+def test_legacy_aliases_still_expose_canonical_repositories() -> None:
+    with _memory_session():
+        assert TraceRepository is not None
+        assert TraceBatchRepository is not None
+        assert ResultBundleRepository is TraceBatchRepository

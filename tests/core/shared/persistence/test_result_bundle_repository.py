@@ -1,21 +1,41 @@
-"""Tests for result-bundle persistence helpers."""
+"""Tests for design/trace/trace-batch persistence helpers."""
 
 from sqlmodel import Session, SQLModel, create_engine
 
 from core.shared.persistence.models import (
     CircuitRecord,
-    DataRecord,
-    DatasetRecord,
-    ResultBundleRecord,
+    DesignRecord,
+    TraceBatchRecord,
+    TraceRecord,
+)
+from core.shared.persistence.models import (
+    DesignRecord as DatasetRecord,
+)
+from core.shared.persistence.models import (
+    TraceBatchRecord as ResultBundleRecord,
+)
+from core.shared.persistence.models import (
+    TraceRecord as DataRecord,
 )
 from core.shared.persistence.repositories.circuit_repository import CircuitRepository
 from core.shared.persistence.repositories.data_record_repository import (
-    DataRecordRepository,
+    TraceRepository,
 )
-from core.shared.persistence.repositories.dataset_repository import DatasetRepository
+from core.shared.persistence.repositories.data_record_repository import (
+    TraceRepository as DataRecordRepository,
+)
+from core.shared.persistence.repositories.dataset_repository import (
+    DesignRepository,
+)
+from core.shared.persistence.repositories.dataset_repository import (
+    DesignRepository as DatasetRepository,
+)
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 from core.shared.persistence.repositories.result_bundle_repository import (
-    ResultBundleRepository,
+    TraceBatchRepository,
+)
+from core.shared.persistence.repositories.result_bundle_repository import (
+    TraceBatchRepository as ResultBundleRepository,
 )
 
 
@@ -312,7 +332,9 @@ def test_data_record_repository_characterization_contract_methods() -> None:
 
         assert data_repo.count_by_dataset(dataset.id) == 3
         distinct = data_repo.list_distinct_index_for_profile(dataset.id)
-        assert {"data_type": "y_parameters", "parameter": "Y11"} in distinct
+        assert any(
+            row["family"] == "y_parameters" and row["parameter"] == "Y11" for row in distinct
+        )
 
         base_rows, base_total = data_repo.list_index_page_by_dataset(
             dataset.id,
@@ -589,3 +611,86 @@ def test_circuit_repository_summary_page_supports_search_and_sort() -> None:
         )
         assert total == 3
         assert [row["name"] for row in page_rows] == ["Alpha", "Beta"]
+
+
+def test_design_trace_batch_repository_exposes_canonical_snapshot_and_lineage() -> None:
+    with _memory_session() as session:
+        design = DesignRepository(session).add(
+            DesignRecord(name="Canonical Batch Design", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert design.id is not None
+
+        batch_repo = TraceBatchRepository(session)
+        parent = batch_repo.add(
+            TraceBatchRecord(
+                dataset_id=design.id,
+                bundle_type="circuit_simulation",
+                role="cache",
+                status="completed",
+                source_meta={"source_kind": "circuit_simulation", "stage_kind": "raw"},
+                config_snapshot={"setup_version": "1.0"},
+                result_payload={"trace_count": 2},
+            )
+        )
+        session.flush()
+        assert parent.id is not None
+
+        child = batch_repo.add(
+            TraceBatchRecord(
+                dataset_id=design.id,
+                parent_batch_id=parent.id,
+                bundle_type="simulation_postprocess",
+                role="derived_from_simulation",
+                status="completed",
+                source_meta={"source_kind": "circuit_simulation", "stage_kind": "postprocess"},
+                config_snapshot={"setup_kind": "circuit_simulation.postprocess"},
+                result_payload={"trace_count": 1},
+            )
+        )
+        session.commit()
+        assert child.id is not None
+
+        snapshot = batch_repo.get_trace_batch_snapshot(child.id)
+        assert snapshot is not None
+        assert snapshot["design_id"] == design.id
+        assert snapshot["parent_batch_id"] == parent.id
+        assert snapshot["source_kind"] == "circuit_simulation"
+        assert snapshot["stage_kind"] == "postprocess"
+        assert snapshot["setup_kind"] == "circuit_simulation.postprocess"
+
+        children = batch_repo.list_child_batches(parent.id)
+        assert [row.id for row in children] == [child.id]
+
+
+def test_trace_repository_returns_canonical_trace_index_rows() -> None:
+    with _memory_session() as session:
+        design = DesignRepository(session).add(
+            DesignRecord(name="Canonical Trace Design", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert design.id is not None
+
+        trace_repo = TraceRepository(session)
+        trace_repo.add(
+            TraceRecord(
+                dataset_id=design.id,
+                data_type="y_parameters",
+                parameter="Y11",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
+        session.commit()
+
+        rows, total = trace_repo.list_index_page_by_design(design.id)
+        assert total == 1
+        assert rows == [
+            {
+                "id": 1,
+                "family": "y_parameters",
+                "parameter": "Y11",
+                "representation": "imaginary",
+            }
+        ]

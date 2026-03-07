@@ -1,4 +1,4 @@
-"""Repository for ResultBundleRecord operations."""
+"""Repository for TraceBatchRecord operations."""
 
 from collections.abc import Sequence
 from copy import deepcopy
@@ -9,56 +9,141 @@ from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import (
-    DataRecord,
-    ResultBundleDataLink,
-    ResultBundleRecord,
-)
+from core.shared.persistence.models import TraceBatchRecord, TraceBatchTraceLink, TraceRecord
 from core.shared.persistence.repositories.contracts import (
+    AnalysisRunSummary,
     ResultBundleAnalysisRunSummary,
     ResultBundleSnapshot,
+    TraceBatchSnapshot,
 )
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
-class ResultBundleRepository:
-    """Repository for ResultBundleRecord operations."""
+def _legacy_trace_row(row: dict[str, str | int]) -> dict[str, str | int]:
+    """Return a legacy-compatible trace row payload."""
+    return {
+        "id": int(row["id"]),
+        "data_type": str(row["data_type"]),
+        "parameter": str(row["parameter"]),
+        "representation": str(row["representation"]),
+    }
+
+
+def _canonical_trace_row(row: dict[str, str | int]) -> dict[str, str | int]:
+    """Translate legacy row keys into trace-first row keys."""
+    return {
+        "id": int(row["id"]),
+        "family": str(row["data_type"]),
+        "parameter": str(row["parameter"]),
+        "representation": str(row["representation"]),
+    }
+
+
+def _resolved_source_kind(batch: TraceBatchRecord) -> str:
+    """Best-effort canonical source kind from legacy bundle fields."""
+    payload_value = batch.source_meta.get("source_kind")
+    if isinstance(payload_value, str) and payload_value.strip():
+        return payload_value.strip()
+    if batch.bundle_type == "simulation_postprocess":
+        return "circuit_simulation"
+    if batch.bundle_type == "characterization":
+        return "analysis"
+    return str(batch.bundle_type).strip()
+
+
+def _resolved_stage_kind(batch: TraceBatchRecord) -> str:
+    """Best-effort canonical stage kind from legacy bundle fields."""
+    payload_value = batch.source_meta.get("stage_kind")
+    if isinstance(payload_value, str) and payload_value.strip():
+        return payload_value.strip()
+    if batch.bundle_type == "circuit_simulation" and batch.role == "cache":
+        return "raw"
+    if batch.bundle_type == "simulation_postprocess":
+        return "postprocess"
+    return str(batch.role).strip()
+
+
+def _resolved_setup_kind(batch: TraceBatchRecord) -> str | None:
+    """Best-effort setup kind value for the canonical snapshot contract."""
+    value = batch.config_snapshot.get("setup_kind")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+
+    source_kind = _resolved_source_kind(batch)
+    stage_kind = _resolved_stage_kind(batch)
+    if source_kind and stage_kind:
+        return f"{source_kind}.{stage_kind}"
+    return None
+
+
+def _resolved_setup_version(batch: TraceBatchRecord) -> str | None:
+    """Best-effort setup version value for the canonical snapshot contract."""
+    value = batch.config_snapshot.get("setup_version")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    source_value = batch.source_meta.get("schema_version")
+    if isinstance(source_value, str) and source_value.strip():
+        return source_value.strip()
+    return None
+
+
+class TraceBatchRepository:
+    """Repository for trace-batch metadata and membership operations."""
 
     def __init__(self, session: Session):
         self._session = session
 
-    def get(self, id: int) -> ResultBundleRecord | None:
-        """Get a result bundle by ID."""
-        return self._session.get(ResultBundleRecord, id)
+    def get(self, id: int) -> TraceBatchRecord | None:
+        """Get a trace batch by ID."""
+        return self._session.get(TraceBatchRecord, id)
 
-    def get_snapshot(self, id: int) -> ResultBundleSnapshot | None:
-        """Get one detached primitive snapshot for provenance reads."""
-        bundle = self._session.get(ResultBundleRecord, id)
-        if bundle is None or bundle.id is None:
+    def get_trace_batch_snapshot(self, id: int) -> TraceBatchSnapshot | None:
+        """Get one detached canonical snapshot for lineage/provenance reads."""
+        batch = self._session.get(TraceBatchRecord, id)
+        if batch is None or batch.id is None:
             return None
         return {
-            "id": int(bundle.id),
-            "dataset_id": int(bundle.dataset_id),
-            "bundle_type": str(bundle.bundle_type),
-            "role": str(bundle.role),
-            "status": str(bundle.status),
-            "schema_source_hash": (
-                str(bundle.schema_source_hash) if bundle.schema_source_hash is not None else None
-            ),
-            "simulation_setup_hash": (
-                str(bundle.simulation_setup_hash)
-                if bundle.simulation_setup_hash is not None
-                else None
-            ),
-            "source_meta": deepcopy(bundle.source_meta),
-            "config_snapshot": deepcopy(bundle.config_snapshot),
-            "result_payload": deepcopy(bundle.result_payload),
+            "id": int(batch.id),
+            "design_id": int(batch.dataset_id),
+            "source_kind": _resolved_source_kind(batch),
+            "stage_kind": _resolved_stage_kind(batch),
+            "status": str(batch.status),
+            "parent_batch_id": batch.parent_batch_id,
+            "setup_kind": _resolved_setup_kind(batch),
+            "setup_version": _resolved_setup_version(batch),
+            "provenance_payload": deepcopy(batch.source_meta),
+            "setup_payload": deepcopy(batch.config_snapshot),
+            "summary_payload": deepcopy(batch.result_payload),
         }
 
-    def add(self, bundle: ResultBundleRecord) -> ResultBundleRecord:
-        """Add a new result bundle."""
-        self._session.add(bundle)
-        return bundle
+    def get_snapshot(self, id: int) -> ResultBundleSnapshot | None:
+        """Get one detached legacy snapshot for provenance reads."""
+        batch = self._session.get(TraceBatchRecord, id)
+        if batch is None or batch.id is None:
+            return None
+        return {
+            "id": int(batch.id),
+            "dataset_id": int(batch.dataset_id),
+            "bundle_type": str(batch.bundle_type),
+            "role": str(batch.role),
+            "status": str(batch.status),
+            "schema_source_hash": (
+                str(batch.schema_source_hash) if batch.schema_source_hash is not None else None
+            ),
+            "simulation_setup_hash": (
+                str(batch.simulation_setup_hash)
+                if batch.simulation_setup_hash is not None
+                else None
+            ),
+            "source_meta": deepcopy(batch.source_meta),
+            "config_snapshot": deepcopy(batch.config_snapshot),
+            "result_payload": deepcopy(batch.result_payload),
+        }
+
+    def add(self, batch: TraceBatchRecord) -> TraceBatchRecord:
+        """Add a new trace batch."""
+        self._session.add(batch)
+        return batch
 
     def _dataset_statement(
         self,
@@ -68,35 +153,72 @@ class ResultBundleRepository:
         role: str | None = None,
         include_cache: bool = True,
     ):
-        statement = select(ResultBundleRecord).where(ResultBundleRecord.dataset_id == dataset_id)
+        statement = select(TraceBatchRecord).where(TraceBatchRecord.dataset_id == dataset_id)
         if bundle_type:
-            statement = statement.where(ResultBundleRecord.bundle_type == bundle_type)
+            statement = statement.where(TraceBatchRecord.bundle_type == bundle_type)
         if role:
-            statement = statement.where(ResultBundleRecord.role == role)
+            statement = statement.where(TraceBatchRecord.role == role)
         elif not include_cache:
-            statement = statement.where(ResultBundleRecord.role != "cache")
+            statement = statement.where(TraceBatchRecord.role != "cache")
         return statement
 
-    def list_by_dataset(self, dataset_id: int) -> list[ResultBundleRecord]:
+    def list_by_design(self, design_id: int) -> list[TraceBatchRecord]:
+        """List all trace batches under one design."""
+        return self.list_by_dataset(design_id)
+
+    def list_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List all result bundles under one dataset."""
-        statement = self._dataset_statement(dataset_id=dataset_id).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
+        statement = self._dataset_statement(dataset_id=dataset_id).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
 
-    def list_cache_by_dataset(self, dataset_id: int) -> list[ResultBundleRecord]:
+    def list_cache_by_design(self, design_id: int) -> list[TraceBatchRecord]:
+        """List cache-role batches under one design."""
+        return self.list_cache_by_dataset(design_id)
+
+    def list_cache_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List cache-role bundles under one dataset."""
         statement = self._dataset_statement(
             dataset_id=dataset_id,
             role="cache",
-        ).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
+        ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
 
-    def list_provenance_by_dataset(self, dataset_id: int) -> list[ResultBundleRecord]:
+    def list_provenance_by_design(self, design_id: int) -> list[TraceBatchRecord]:
+        """List non-cache provenance batches under one design."""
+        return self.list_provenance_by_dataset(design_id)
+
+    def list_provenance_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List non-cache provenance bundles under one dataset."""
         statement = self._dataset_statement(
             dataset_id=dataset_id,
             include_cache=False,
-        ).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
+        ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
+
+    def list_child_batches(self, parent_batch_id: int) -> list[TraceBatchRecord]:
+        """List immediate child batches for one parent batch."""
+        statement = (
+            select(TraceBatchRecord)
+            .where(TraceBatchRecord.parent_batch_id == parent_batch_id)
+            .order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        )
+        return list(self._session.exec(statement).all())
+
+    def count_by_design(
+        self,
+        design_id: int,
+        *,
+        bundle_type: str | None = None,
+        role: str | None = None,
+        include_cache: bool = True,
+    ) -> int:
+        """Count batches under one design with optional semantic filters."""
+        return self.count_by_dataset(
+            design_id,
+            bundle_type=bundle_type,
+            role=role,
+            include_cache=include_cache,
+        )
 
     def count_by_dataset(
         self,
@@ -116,6 +238,20 @@ class ResultBundleRepository:
         count_statement = sa_select(func.count()).select_from(statement.subquery())
         return int(self._session.execute(count_statement).scalar_one())
 
+    def list_analysis_run_summaries_by_design(self, design_id: int) -> list[AnalysisRunSummary]:
+        """List primitive-only summaries for analysis runs under one design."""
+        legacy_rows = self.list_analysis_run_summaries_by_dataset(design_id)
+        return [
+            {
+                "analysis_run_id": int(row["bundle_id"]),
+                "design_id": int(row["dataset_id"]),
+                "analysis_id": str(row["analysis_id"]),
+                "analysis_label": str(row["analysis_label"]),
+                "status": str(row["status"]),
+            }
+            for row in legacy_rows
+        ]
+
     def list_analysis_run_summaries_by_dataset(
         self,
         dataset_id: int,
@@ -125,26 +261,40 @@ class ResultBundleRepository:
             dataset_id=dataset_id,
             bundle_type="characterization",
             role="analysis_run",
-        ).order_by(ResultBundleRecord.id)  # type: ignore[arg-type]
-        bundles = self._session.exec(statement).all()
+        ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        batches = self._session.exec(statement).all()
         summaries: list[ResultBundleAnalysisRunSummary] = []
-        for bundle in bundles:
-            if bundle.id is None:
+        for batch in batches:
+            if batch.id is None:
                 continue
-            source_meta = bundle.source_meta if isinstance(bundle.source_meta, dict) else {}
+            source_meta = batch.source_meta if isinstance(batch.source_meta, dict) else {}
             analysis_id = str(source_meta.get("analysis_id", "")).strip()
             if not analysis_id:
                 continue
             summaries.append(
                 {
-                    "bundle_id": int(bundle.id),
-                    "dataset_id": int(bundle.dataset_id),
+                    "bundle_id": int(batch.id),
+                    "dataset_id": int(batch.dataset_id),
                     "analysis_id": analysis_id,
                     "analysis_label": str(source_meta.get("analysis_label", analysis_id)),
-                    "status": str(bundle.status),
+                    "status": str(batch.status),
                 }
             )
         return summaries
+
+    def find_completed_simulation_batch(
+        self,
+        *,
+        design_id: int,
+        schema_source_hash: str,
+        simulation_setup_hash: str,
+    ) -> TraceBatchRecord | None:
+        """Find one completed circuit-simulation batch by formal identity."""
+        return self.find_simulation_cache(
+            dataset_id=design_id,
+            schema_source_hash=schema_source_hash,
+            simulation_setup_hash=simulation_setup_hash,
+        )
 
     def find_simulation_cache(
         self,
@@ -152,58 +302,70 @@ class ResultBundleRepository:
         dataset_id: int,
         schema_source_hash: str,
         simulation_setup_hash: str,
-    ) -> ResultBundleRecord | None:
+    ) -> TraceBatchRecord | None:
         """Find one completed circuit-simulation cache bundle by formal identity."""
         statement = (
-            select(ResultBundleRecord)
-            .where(ResultBundleRecord.dataset_id == dataset_id)
-            .where(ResultBundleRecord.bundle_type == "circuit_simulation")
-            .where(ResultBundleRecord.role == "cache")
-            .where(ResultBundleRecord.status == "completed")
-            .where(ResultBundleRecord.schema_source_hash == schema_source_hash)
-            .where(ResultBundleRecord.simulation_setup_hash == simulation_setup_hash)
-            .order_by(ResultBundleRecord.id.desc())  # type: ignore[union-attr]
+            select(TraceBatchRecord)
+            .where(TraceBatchRecord.dataset_id == dataset_id)
+            .where(TraceBatchRecord.bundle_type == "circuit_simulation")
+            .where(TraceBatchRecord.role == "cache")
+            .where(TraceBatchRecord.status == "completed")
+            .where(TraceBatchRecord.schema_source_hash == schema_source_hash)
+            .where(TraceBatchRecord.simulation_setup_hash == simulation_setup_hash)
+            .order_by(TraceBatchRecord.id.desc())  # type: ignore[union-attr]
         )
         return self._session.exec(statement).first()
 
-    def attach_data_records(self, *, bundle_id: int, data_record_ids: list[int]) -> None:
-        """Attach existing DataRecord rows to a bundle."""
-        for data_record_id in data_record_ids:
+    def attach_traces(self, *, batch_id: int, trace_ids: list[int]) -> None:
+        """Attach existing TraceRecord rows to a batch."""
+        for trace_id in trace_ids:
             self._session.add(
-                ResultBundleDataLink(
-                    result_bundle_id=bundle_id,
-                    data_record_id=data_record_id,
+                TraceBatchTraceLink(
+                    result_bundle_id=batch_id,
+                    data_record_id=trace_id,
                 )
             )
 
-    def list_data_records(self, bundle_id: int) -> list[DataRecord]:
-        """List all DataRecord rows attached to one bundle."""
+    def attach_data_records(self, *, bundle_id: int, data_record_ids: list[int]) -> None:
+        """Legacy wrapper for attaching existing DataRecord rows to a bundle."""
+        self.attach_traces(batch_id=bundle_id, trace_ids=data_record_ids)
+
+    def list_traces(self, batch_id: int) -> list[TraceRecord]:
+        """List all TraceRecord rows attached to one batch."""
         statement = (
-            select(DataRecord)
+            select(TraceRecord)
             .join(
-                ResultBundleDataLink,
-                DataRecord.id == ResultBundleDataLink.data_record_id,  # type: ignore[arg-type]
+                TraceBatchTraceLink,
+                TraceRecord.id == TraceBatchTraceLink.data_record_id,  # type: ignore[arg-type]
             )
-            .where(ResultBundleDataLink.result_bundle_id == bundle_id)
-            .order_by(DataRecord.id)  # type: ignore[arg-type]
+            .where(TraceBatchTraceLink.result_bundle_id == batch_id)
+            .order_by(TraceRecord.id)  # type: ignore[arg-type]
         )
         return list(self._session.exec(statement).all())
+
+    def list_data_records(self, bundle_id: int) -> list[TraceRecord]:
+        """Legacy wrapper for bundle-linked DataRecord rows."""
+        return self.list_traces(bundle_id)
+
+    def list_trace_index(self, batch_id: int) -> list[dict[str, str | int]]:
+        """List lightweight metadata for batch-linked traces only."""
+        return [_canonical_trace_row(row) for row in self.list_data_record_index(batch_id)]
 
     def list_data_record_index(self, bundle_id: int) -> list[dict[str, str | int]]:
         """List lightweight metadata for bundle-linked DataRecord rows only."""
         statement = (
             select(
-                DataRecord.id,
-                DataRecord.data_type,
-                DataRecord.parameter,
-                DataRecord.representation,
+                TraceRecord.id,
+                TraceRecord.data_type,
+                TraceRecord.parameter,
+                TraceRecord.representation,
             )
             .join(
-                ResultBundleDataLink,
-                DataRecord.id == ResultBundleDataLink.data_record_id,  # type: ignore[arg-type]
+                TraceBatchTraceLink,
+                TraceRecord.id == TraceBatchTraceLink.data_record_id,  # type: ignore[arg-type]
             )
-            .where(ResultBundleDataLink.result_bundle_id == bundle_id)
-            .order_by(DataRecord.id)  # type: ignore[arg-type]
+            .where(TraceBatchTraceLink.result_bundle_id == bundle_id)
+            .order_by(TraceRecord.id)  # type: ignore[arg-type]
         )
         rows = self._session.exec(statement).all()
         return [
@@ -217,11 +379,26 @@ class ResultBundleRepository:
             if record_id is not None
         ]
 
+    def count_traces(self, batch_id: int) -> int:
+        """Count trace membership rows for one batch."""
+        return self.count_data_records(batch_id)
+
     def count_data_records(self, bundle_id: int) -> int:
         """Count trace membership rows for one bundle."""
-        bundle_col = cast(Any, ResultBundleDataLink.result_bundle_id)
+        bundle_col = cast(Any, TraceBatchTraceLink.result_bundle_id)
         statement = sa_select(func.count()).where(bundle_col == bundle_id)
         return int(self._session.execute(statement).scalar_one())
+
+    def list_trace_index_page(
+        self,
+        batch_id: int,
+        *,
+        query: TraceIndexPageQuery | None = None,
+        **kwargs: object,
+    ) -> tuple[list[dict[str, str | int]], int]:
+        """List one page of canonical batch-linked trace metadata rows."""
+        rows, total = self.list_data_record_index_page(batch_id, query=query, **kwargs)
+        return ([_canonical_trace_row(row) for row in rows], total)
 
     def list_data_record_index_page(
         self,
@@ -254,12 +431,12 @@ class ResultBundleRepository:
             limit = query.limit
             offset = query.offset
 
-        id_col = cast(Any, DataRecord.id)
-        data_type_col = cast(Any, DataRecord.data_type)
-        parameter_col = cast(Any, DataRecord.parameter)
-        representation_col = cast(Any, DataRecord.representation)
-        bundle_col = cast(Any, ResultBundleDataLink.result_bundle_id)
-        link_record_col = cast(Any, ResultBundleDataLink.data_record_id)
+        id_col = cast(Any, TraceRecord.id)
+        data_type_col = cast(Any, TraceRecord.data_type)
+        parameter_col = cast(Any, TraceRecord.parameter)
+        representation_col = cast(Any, TraceRecord.representation)
+        bundle_col = cast(Any, TraceBatchTraceLink.result_bundle_id)
+        link_record_col = cast(Any, TraceBatchTraceLink.data_record_id)
 
         statement = (
             sa_select(
@@ -269,7 +446,7 @@ class ResultBundleRepository:
                 representation_col,
             )
             .join(
-                ResultBundleDataLink,
+                TraceBatchTraceLink,
                 id_col == link_record_col,
             )
             .where(bundle_col == bundle_id)
@@ -307,6 +484,7 @@ class ResultBundleRepository:
             )
         elif data_type:
             statement = statement.where(data_type_col == data_type)
+
         normalized_parameters = [
             str(item).strip() for item in parameters or [] if str(item).strip()
         ]
@@ -324,6 +502,7 @@ class ResultBundleRepository:
             )
         if representation:
             statement = statement.where(representation_col == representation)
+
         normalized_mode_filter = str(mode_filter or "").strip().lower()
         if normalized_mode_filter == "base":
             statement = statement.where(not_(sideband_predicate))
@@ -357,3 +536,6 @@ class ResultBundleRepository:
             ],
             total_rows,
         )
+
+
+ResultBundleRepository = TraceBatchRepository

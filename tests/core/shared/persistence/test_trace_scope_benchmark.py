@@ -7,8 +7,8 @@ from time import perf_counter
 
 from sqlmodel import Session, SQLModel, create_engine
 
-from core.shared.persistence.models import DataRecord, DatasetRecord
-from core.shared.persistence.repositories.data_record_repository import DataRecordRepository
+from core.shared.persistence.models import DesignRecord, TraceRecord
+from core.shared.persistence.repositories.data_record_repository import TraceRepository
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
@@ -18,15 +18,15 @@ def _memory_session() -> Session:
     return Session(engine)
 
 
-def _seed_large_dataset(session: Session, *, total: int) -> DatasetRecord:
-    dataset = DatasetRecord(name=f"LargeDataset_{total}", source_meta={}, parameters={})
-    session.add(dataset)
+def _seed_large_design(session: Session, *, total: int) -> DesignRecord:
+    design = DesignRecord(name=f"LargeDesign_{total}", source_meta={}, parameters={})
+    session.add(design)
     session.flush()
-    assert dataset.id is not None
+    assert design.id is not None
 
     rows = [
-        DataRecord(
-            dataset_id=dataset.id,
+        TraceRecord(
+            dataset_id=design.id,
             data_type="y_parameters",
             parameter=f"Y11 [om=(0,), im=({index % 5},)]" if index % 3 == 0 else "Y11",
             representation="imaginary",
@@ -38,16 +38,16 @@ def _seed_large_dataset(session: Session, *, total: int) -> DatasetRecord:
     ]
     session.add_all(rows)
     session.commit()
-    return dataset
+    return design
 
 
 def test_large_trace_scope_query_returns_paged_rows_under_baseline_time() -> None:
     """JTWPA-scale trace metadata queries should stay on paged path."""
     with _memory_session() as session:
-        dataset = _seed_large_dataset(session, total=10_000)
-        assert dataset.id is not None
+        design = _seed_large_design(session, total=10_000)
+        assert design.id is not None
 
-        repo = DataRecordRepository(session)
+        repo = TraceRepository(session)
         query = TraceIndexPageQuery(
             search="Y11",
             mode_filter="base",
@@ -58,11 +58,10 @@ def test_large_trace_scope_query_returns_paged_rows_under_baseline_time() -> Non
         )
 
         started = perf_counter()
-        rows, total = repo.list_index_page_by_dataset(dataset.id, query=query)
+        rows, total = repo.list_index_page_by_design(design.id, query=query)
         elapsed = perf_counter() - started
 
-        # One-third of rows are sideband and excluded by mode_filter="base".
         assert total == 6_666
         assert len(rows) == 20
-        # Baseline guardrail: keep metadata paging query within a practical budget.
+        assert all("family" in row for row in rows)
         assert elapsed < 1.5
