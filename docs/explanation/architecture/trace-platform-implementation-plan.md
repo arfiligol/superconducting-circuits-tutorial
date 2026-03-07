@@ -10,8 +10,8 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Design/Trace/TraceStore architecture implementation plan and multi-agent execution split
-version: v0.1.0
+scope: Design/Trace/TraceStore architecture phase-2 execution plan and multi-agent execution split
+version: v0.2.0
 last_updated: 2026-03-08
 updated_by: codex
 ---
@@ -19,177 +19,206 @@ updated_by: codex
 # Trace Platform Implementation Plan
 
 本頁不是 migration plan。  
-它是這次架構重整的 **execution plan**，讓 Integrator / Contributors 在 context compaction 後仍能快速接手。
+它是 **下一階段 active execution plan**，讓 Integrator / Contributors 在 context compaction 後能直接接手。
+
+## Phase Status
+
+### Phase 1 Completed
+
+以下基礎工作已完成並進入 `main`：
+
+- SoT docs / guardrails / architecture terminology 已切到 `DesignRecord / TraceRecord / TraceBatchRecord / TraceStore`
+- persistence contract 已有 canonical naming，並保留 legacy aliases
+- local `Zarr` TraceStore baseline 已落地
+- circuit simulation write path 已能把 numeric payload 寫入 local TraceStore
+- simulation result views 已能從 `TraceRecord + TraceStore` authority 讀取
+- characterization consumer 已能接受新 `TraceRecord`-like contract
+- JosephsonCircuits.jl examples 已覆蓋新 write/read path 的核心回歸
+
+本頁不再重複列出上述已完成 workstreams。
+
+### Phase 2 Active
+
+接下來的工作重點是把「circuit simulation 已打通的新架構」擴展為完整平台語意。
 
 ## Goal
 
-把現有 `Dataset/DataRecord/ResultBundle + SQLite large payload` 的實作，收斂為：
+讓系統真正達到：
 
-- `DesignRecord`
-- `TraceRecord`
-- `TraceBatchRecord`
-- `AnalysisRunRecord`
-- `TraceStore` (`Zarr`)
-
-並確保：
-
-- Simulation
-- Post-Processing
-- Characterization
-- JosephsonCircuits.jl 官方 examples
-
-都能在新架構下端到端工作。
+- `DesignRecord` 成為統一 root container
+- `TraceRecord` 成為 layout / circuit / measurement 的統一分析單位
+- `TraceBatchRecord` 成為 import / simulation / preprocess / postprocess 的統一 provenance boundary
+- `TraceStore` 保持 local-first，但 backend abstraction 明確支援未來 `S3 / MinIO` extension
+- `Characterization` 對來源保持 source-agnostic，只依賴 trace compatibility
 
 ## Non-Goals
 
 - 不做歷史資料 migration
-- 不做舊資料雙寫長期維護
-- 不先做 PostgreSQL deployment
-- 不先做全部 layout/measurement ingest 重寫
+- 不做 DB physical table rename / migration
+- 不先做 live S3/MinIO integration
+- 不先重寫全部 UI hierarchy
+- 不以 point-per-record 取代 canonical ND `TraceRecord`
 
 ## Success Criteria
 
-1. JosephsonCircuits.jl 官方 examples 跑完後，能寫入新 metadata schema 與 Zarr TraceStore。
-2. Simulation Result View 能從 `TraceRecord + TraceStore` 正常讀 raw sweep。
-3. Post-Processing 能寫入新的 `TraceBatchRecord(stage=postprocess)` 與 post-processed traces。
-4. Characterization 能直接吃新 `TraceRecord`，至少通過現有 circuit-simulation-derived examples。
-5. 測試不再以舊 `DataRecord/ResultBundle` 名詞作為新功能新增的唯一 SoT。
+1. `Raw Data` / `Characterization` / 相關 UI 主要語言收斂到 `Design / Trace / Trace Batch`
+2. layout / measurement ingest 也能寫入 `TraceBatchRecord + TraceRecord + TraceStore`
+3. Characterization 對 layout / circuit / measurement 三種來源維持同一套 trace-first model
+4. TraceStore backend abstraction 對 local 與 `s3_zarr` 都有正式 contract
+5. examples-driven regression 不再只覆蓋 circuit simulation，也覆蓋 ingest + characterize path
 
-## Workstreams
+## Active Workstreams
 
-### Workstream A: Metadata Schema Rename + Contracts
-
-目標：
-
-- `DatasetRecord -> DesignRecord`
-- `DataRecord -> TraceRecord`
-- `ResultBundleRecord -> TraceBatchRecord`
-- 明確引入 `AnalysisRunRecord`
-
-重點：
-
-- repository/UoW/contracts 同步收斂
-- 名稱與責任邊界一致
-
-### Workstream B: TraceStore (Zarr) Abstraction
+### Workstream A: Product Vocabulary and UI Semantics
 
 目標：
 
-- 實作 local `Zarr` baseline
-- 導入 `TraceStoreRef`
-- UI/service 不直接碰 backend-specific path logic
+- 將使用者可見語言從 `Dataset/DataRecord/ResultBundle` 收斂到：
+  - `Design`
+  - `Trace`
+  - `Trace Batch`
+- 清掉 UI / docs / service layer 中殘留的舊語意
 
 重點：
 
-- chunked ND trace writes
-- slice-first reads
-- local backend 先落地
-- contract 保留 S3-compatible extension
+- `Raw Data`
+- `Characterization`
+- trace selection / result navigation
+- 只改語意與查詢介面，不做大型頁面重排
 
-### Workstream C: Circuit Simulation Write Path
+### Workstream B: Layout and Measurement Ingest
 
 目標：
 
-- raw simulation / sweep 寫入 `TraceBatchRecord + TraceRecord + TraceStore`
-- post-processed outputs 也走同一條架構
+- layout simulation ingest
+- measurement ingest
+
+都能產出：
+
+- `TraceBatchRecord`
+- `TraceRecord`
+- `TraceStore` payload
 
 重點：
 
-- 不丟 sweep metadata
-- raw 與 postprocess lineage 清楚
-- examples 能跑通
+- import contract generalized
+- trace-first materialization
+- 與 circuit simulation 同一 characterization path
 
-### Workstream D: Result Views
+### Workstream C: TraceStore Backend Boundary
 
 目標：
 
-- Simulation Results
-- Post Processing Results
-
-都能從新 `TraceRecord + TraceStore` 正常讀取與 compare。
+- 把目前 local `Zarr` baseline 收斂成正式 backend abstraction
+- contract 明確支持：
+  - `local_zarr`
+  - `s3_zarr`
 
 重點：
 
-- UI 不做 full-read then slice
-- slice read 走 `TraceStore`
-- 現有 compare interaction 保持可用
+- `TraceStoreRef` contract 穩定
+- backend-specific path logic 不外漏到 UI/app layer
+- local filesystem 與 object storage layout 保持一致語意
 
-### Workstream E: Characterization
+### Workstream D: Analysis Run Persistence Decision
 
 目標：
 
-- Characterization 改為直接依賴新 `TraceRecord`
-- 保留 trace-first
-- 對 circuit-derived examples 完成驗證
+- 決定 `AnalysisRunRecord` 是否維持 contract-only
+- 或升級成正式 persistence object
 
 重點：
 
-- 不再依賴舊 storage shape 假設
-- `2D Freq x L_jun` 路徑先確保通
+- characterization history
+- run provenance
+- result navigation
+- 與 `TraceBatchRecord` 的責任切分
+
+### Workstream E: Examples-Driven Validation Matrix
+
+目標：
+
+- 建立下一階段的正式 regression matrix
+
+至少包含：
+
+- circuit simulation examples
+- post-process save/read
+- characterization over saved traces
+- layout/measurement ingest path（當其落地後）
 
 ## Recommended Multi-Agent Split
 
-### 1. Metadata Contract Agent
+### 1. Design Semantics Agent
 
 Allowed Files:
 
-- persistence models
-- repository contracts
-- repository tests
-- data format docs
+- raw-data / characterization UI
+- trace scope / selection services
+- related docs / tests
 
-### 2. TraceStore Agent
-
-Allowed Files:
-
-- persistence database/store abstractions
-- new TraceStore modules
-- storage tests
-- data handling / tech stack docs
-
-### 3. Simulation Write Path Agent
+### 2. Layout Ingest Agent
 
 Allowed Files:
 
-- simulation page/service/application save path
-- post-processing save path
-- simulation tests / josephson E2E
+- layout import / preprocess services
+- persistence write path
+- ingest tests
 
-### 4. Result View Agent
-
-Allowed Files:
-
-- simulation result-view code
-- result-view tests / josephson E2E
-
-### 5. Characterization Agent
+### 3. Measurement Ingest Agent
 
 Allowed Files:
 
-- characterization page/services
-- analysis-run integration
-- characterization tests / E2E
+- measurement import / preprocess services
+- persistence write path
+- ingest tests
+
+### 4. TraceStore Backend Agent
+
+Allowed Files:
+
+- TraceStore abstraction
+- storage contracts
+- backend tests
+- data handling / tech stack docs if needed
+
+### 5. Analysis Run Contract Agent
+
+Allowed Files:
+
+- characterization persistence contracts
+- analysis run repositories / docs / tests
+
+### 6. Validation Matrix Agent
+
+Allowed Files:
+
+- examples-driven E2E / integration tests
+- supporting fixtures only
 
 ## Integration Order
 
-1. metadata contracts
-2. TraceStore abstraction
-3. simulation write path
-4. result views
-5. characterization
+1. product vocabulary / UI semantics
+2. TraceStore backend boundary
+3. layout ingest
+4. measurement ingest
+5. analysis-run persistence decision
+6. validation matrix expansion
 
 ## Required Regression Set
 
 最少必跑：
 
 1. `uv run ruff check .`
-2. `uv run pytest`
-3. JosephsonCircuits.jl 官方 examples 對應的 app flows
-4. 至少一條 post-processing sweep save + characterization regression
+2. targeted `pytest` for touched architecture slices
+3. JosephsonCircuits.jl app flows
+4. 新增 ingest path 的 trace write/read regression
+5. characterization over saved traces regression
 
 ## Acceptance Notes for Integrator
 
-- 先看 contract docs 是否被違反，再看 code
-- 若 contributor 仍沿用舊名詞實作新功能，視為未完成收斂
-- 若 UI 讀取 path 還是 full-read then slice，視為 TraceStore 任務未完成
-- 若 examples 無法在新 schema 下產出完整 traces，視為寫入路徑未完成
+- 已完成的 phase-1 workstreams 不要重新打開，除非新 phase 明確需要擴張其 contract
+- 優先檢查 contributor 是否仍引入新的 legacy naming
+- 若 ingest path 仍把大型 numeric payload 主要存進 metadata DB，視為未符合架構
+- 若 UI/app layer 直接碰 backend-specific TraceStore path，視為 backend boundary 未完成
+- 若 validation 仍只證明「circuit simulation 可跑」，而未覆蓋 cross-source trace model，視為 phase-2 未完成
