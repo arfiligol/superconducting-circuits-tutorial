@@ -20,6 +20,7 @@ from app.pages.simulation import (
     _build_result_bundle_data_records,
     _build_s_parameter_data_records,
     _build_simulation_result_figure,
+    _build_simulation_workflow_context_lines,
     _build_sweep_metric_rows,
     _build_sweep_result_bundle_data_records,
     _build_termination_compensation_plan,
@@ -59,6 +60,7 @@ from app.services.simulation_setup_manager import (
     rename_setup,
     save_setup_as,
 )
+from core.shared.persistence.models import CircuitRecord
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
     PortMatrixSweepPoint,
@@ -818,6 +820,25 @@ def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:
 def test_z0_control_tokens_are_shared_across_views() -> None:
     assert _Z0_CONTROL_PROPS == "dense outlined"
     assert _Z0_CONTROL_CLASSES == "w-32"
+
+
+def test_simulation_workflow_context_lines_mark_compare_as_inspect_only() -> None:
+    context_lines = _build_simulation_workflow_context_lines(
+        circuit_record=CircuitRecord(id=7, name="Flux JPA", definition_json="{}"),
+        source_kind="circuit_simulation",
+        stage_kind="raw",
+        run_kind="single_run",
+        provenance_tokens=("live_solver_runtime", "save-path=Save Raw Simulation Results"),
+    )
+
+    assert "Current Design Scope: live schema Flux JPA (Schema #7)" in context_lines
+    assert (
+        "TraceStore-first authority is active for result inspection on this page." in context_lines
+    )
+    assert "source=circuit_simulation" in context_lines[2]
+    assert "stage=raw" in context_lines[2]
+    assert "run=single_run" in context_lines[2]
+    assert "Cross-source compare is inspect-only here and stays blocked" in context_lines[3]
 
 
 def test_result_family_explorer_z0_commits_on_enter_or_blur_without_value_change_render() -> None:

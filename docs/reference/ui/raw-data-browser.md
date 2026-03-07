@@ -55,6 +55,7 @@ updated_by: codex
 - 欄位排序（sorting，透過點擊欄位標題）
 - 欄位過濾（至少包含 `data_type`, `representation`）
 - row click 選取 trace
+- design-scope source context（至少包含 `source_kind`, `stage_kind`, `trace batch`）
 
 !!! note "排序控制"
     若 table 欄位已可點擊排序，不應再額外放 `Sort By` / `Order` selector。
@@ -62,6 +63,13 @@ updated_by: codex
 !!! warning "禁止全量 payload 預載"
     預覽表格只顯示 trace metadata（`id`, `data_type`, `parameter`, `representation`）。
     不可一次把 `axes` / `values` 全部送進前端。
+
+!!! important "Cross-source browse contract"
+    若同一個 `Design` 內同時存在 circuit / layout / measurement traces，
+    本頁必須能清楚區分每筆 trace 屬於哪個 `source_kind`、哪個 `stage_kind`、
+    以及哪個 `TraceBatchRecord` provenance boundary。
+    這些欄位只能來自 trace-first / TraceBatch metadata path，
+    不得靠 inline numeric payload 或 backend-specific store locator 拼湊。
 
 ## Design Summary Contract
 
@@ -76,6 +84,25 @@ updated_by: codex
 
 !!! warning "禁止互動寫入"
     Raw Data Browser 不得出現 `Auto Suggest`、`Save Metadata` 或等價可寫入按鈕/表單。
+
+### Cross-source Workflow Summary
+
+`Design Summary` 必須額外提供：
+
+- `Current Design Scope`
+- `Trace source summary`（每種 source 的 trace / batch 計數）
+- `Latest provenance summary`（最近 batch 的來源與 stage）
+- `Compare readiness`
+
+!!! important "Compare readiness"
+    compare readiness 必須用明確狀態呈現：
+    - `Ready`：同 design scope 內至少有兩種 source traces 可供使用者區分與後續 compare
+    - `Inspect only`：目前只有單一 source，或只有 provenance 可看但還不適合 compare
+    - `Blocked`：目前缺少 trace-first compare 所需的最小條件
+
+!!! warning "不可模糊隱藏"
+    若 compare 尚未 fully expose，本頁必須顯示明確 empty-state / blocked-state，
+    不可只是不顯示 cross-source 區塊。
 
 ## Visualization Preview Contract
 
@@ -97,6 +124,11 @@ updated_by: codex
 !!! important "與 Characterization 的關係"
     Characterization analysis availability 會讀取 design-level profile summary。
     metadata 寫入需從 Dashboard 完成，Raw Data 僅負責顯示摘要狀態。
+
+!!! important "Compare authority"
+    本頁顯示的 compare-ready / inspect-only 判斷只能依賴 design-scope trace metadata、
+    `TraceBatchRecord` provenance、以及 trace-first compatibility。
+    不可把 metadata DB 內的大型 numeric payload 或 point-per-record projection 當主要 authority。
 
 ## Performance SLO (UI Layer)
 

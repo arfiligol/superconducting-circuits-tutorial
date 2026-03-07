@@ -55,6 +55,7 @@ After selecting a design, the `Trace Preview` table must provide:
 - column sorting via clickable table headers
 - column filtering (at minimum `data_type`, `representation`)
 - row-click trace selection
+- design-scope source context (at minimum `source_kind`, `stage_kind`, and `trace batch`)
 
 !!! note "Sorting controls"
     If header-click sorting is available in the table, do not add extra `Sort By` / `Order` selectors.
@@ -62,6 +63,13 @@ After selecting a design, the `Trace Preview` table must provide:
 !!! warning "No bulk payload preload"
     Preview tables should only render metadata (`id`, `data_type`, `parameter`, `representation`).
     Do not send full `axes` / `values` payloads to the frontend in one batch.
+
+!!! important "Cross-source browse contract"
+    If one `Design` contains circuit, layout, and measurement traces at the same time,
+    this page must clearly distinguish each trace by `source_kind`, `stage_kind`,
+    and the owning `TraceBatchRecord` provenance boundary.
+    These fields must come from the trace-first / TraceBatch metadata path,
+    not from inline numeric payloads or backend-specific store locators.
 
 ## Design Summary Contract
 
@@ -76,6 +84,25 @@ After selecting a design, the `Trace Preview` table must provide:
 
 !!! warning "No write interactions"
     Raw Data Browser must not render `Auto Suggest`, `Save Metadata`, or equivalent write controls.
+
+### Cross-source Workflow Summary
+
+`Design Summary` must additionally expose:
+
+- `Current Design Scope`
+- `Trace source summary` (trace and batch counts per source)
+- `Latest provenance summary` (latest batch source and stage)
+- `Compare readiness`
+
+!!! important "Compare readiness"
+    Compare readiness must use an explicit state:
+    - `Ready`: at least two source kinds exist in the same design scope
+    - `Inspect only`: only one source is currently available, or provenance is visible but compare is not appropriate yet
+    - `Blocked`: the design scope is still missing the minimum trace-first compare inputs
+
+!!! warning "Do not hide the state"
+    If compare is not fully exposed yet, the page must show a clear empty-state / blocked-state
+    instead of silently omitting the cross-source section.
 
 ## Visualization Preview Contract
 
@@ -97,6 +124,11 @@ After selecting a design, the `Trace Preview` table must provide:
 !!! important "Relation to Characterization"
     Characterization analysis availability consumes the design-level profile summary.
     Metadata writes must happen on Dashboard; Raw Data only presents summary state.
+
+!!! important "Compare authority"
+    Compare-ready / inspect-only state on this page must rely on design-scoped trace metadata,
+    `TraceBatchRecord` provenance, and trace-first compatibility only.
+    Do not treat large numeric payload in the metadata DB or point-per-record projections as the authority.
 
 ## Performance SLO (UI Layer)
 

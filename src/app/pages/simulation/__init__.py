@@ -477,11 +477,7 @@ def _trace_store_bundle_from_result_points(
     }
     resolved_modes = tuple(
         sorted(
-            mode_indices
-            or {
-                tuple(mode)
-                for mode in representative_result.available_mode_indices
-            }
+            mode_indices or {tuple(mode) for mode in representative_result.available_mode_indices}
         )
     )
     return _TraceStoreResultBundle(
@@ -609,10 +605,7 @@ def _cached_trace_store_bundle_from_sweep_payload(
         "simulation_sweep",
         id(payload),
         tuple(
-            sorted(
-                (int(port), str(label))
-                for port, label in (port_label_by_index or {}).items()
-            )
+            sorted((int(port), str(label)) for port, label in (port_label_by_index or {}).items())
         ),
     )
     cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
@@ -2300,6 +2293,7 @@ def _render_result_family_explorer(
     on_save_click: Callable[[], None] | None = None,
     save_enabled: bool = True,
     context_line: str | None = None,
+    context_lines: tuple[str, ...] = (),
     family_source_options: dict[str, dict[str, str]] | None = None,
     family_source_labels: dict[str, str] | None = None,
     testid_prefix: str | None = None,
@@ -2322,8 +2316,11 @@ def _render_result_family_explorer(
                     if not save_enabled:
                         save_button.disable()
 
-            if context_line:
-                ui.label(context_line).classes("text-xs text-muted mb-2")
+            resolved_context_lines = [
+                line for line in ((context_line,) if context_line else ()) + context_lines if line
+            ]
+            for line in resolved_context_lines:
+                ui.label(line).classes("text-xs text-muted mb-1")
 
             family_tabs = list(family_options.items())
             family_keys = {family for family, _ in family_tabs}
@@ -2784,9 +2781,9 @@ def _render_post_processing_panel(
             return ptc_result
         return raw_result
 
-    def _active_input_bundle(source: str, reference_impedance_ohm: float) -> tuple[
-        SimulationResult, dict[str, Any] | None
-    ]:
+    def _active_input_bundle(
+        source: str, reference_impedance_ohm: float
+    ) -> tuple[SimulationResult, dict[str, Any] | None]:
         if resolve_input_bundle is not None:
             return resolve_input_bundle(source, reference_impedance_ohm)
         return (_active_input_result(source), None)
@@ -3976,12 +3973,8 @@ def _build_post_processed_bundle_artifacts(
                     "bundle_id": source_simulation_bundle_id,
                     "run_kind": "parameter_sweep",
                 },
-                "sweep_axes": json.loads(
-                    json.dumps(resolved_sweep_payload.get("sweep_axes", []))
-                ),
-                "point_count": int(
-                    resolved_sweep_payload.get("point_count", len(source_points))
-                ),
+                "sweep_axes": json.loads(json.dumps(resolved_sweep_payload.get("sweep_axes", []))),
+                "point_count": int(resolved_sweep_payload.get("point_count", len(source_points))),
                 "representative_point_index": representative_point_index,
                 "points": [
                     _build_post_processed_sweep_point_metadata(
@@ -4960,10 +4953,7 @@ def _sweep_metric_series_for_point(
         float(z0),
         bool(dark_mode),
         tuple(
-            sorted(
-                (int(port), str(label))
-                for port, label in (port_label_by_index or {}).items()
-            )
+            sorted((int(port), str(label)) for port, label in (port_label_by_index or {}).items())
         ),
     )
     cached = _SWEEP_SERIES_CACHE.get(cache_key)
@@ -5199,6 +5189,7 @@ def _render_sweep_result_view_container(
     save_button_label: str | None = None,
     on_save_click: Callable[[], None] | None = None,
     save_enabled: bool = True,
+    context_lines: tuple[str, ...] = (),
 ) -> None:
     """Render one frequency-first sweep compare view from a canonical or adapted sweep payload."""
     container.clear()
@@ -5238,8 +5229,7 @@ def _render_sweep_result_view_container(
     port_options = dict(sweep_source.port_options)
     trace_options = _result_trace_options_for_family(family)
     axis_options = {
-        axis.target_value_ref: _sweep_axis_display_label(axis)
-        for axis in sweep_source.axes
+        axis.target_value_ref: _sweep_axis_display_label(axis) for axis in sweep_source.axes
     }
     try:
         payload = _build_sweep_metric_rows(
@@ -5276,9 +5266,7 @@ def _render_sweep_result_view_container(
         if fixed_axis_details
         else "-"
     )
-    summary_line = (
-        f"{summary_prefix} | " if summary_prefix else ""
-    ) + (
+    summary_line = (f"{summary_prefix} | " if summary_prefix else "") + (
         f"dim={int(payload['dimension'])} | "
         f"total={int(payload['point_count'])} points | "
         f"compare={axis_label} | "
@@ -5293,6 +5281,9 @@ def _render_sweep_result_view_container(
                     ui.label(title).classes("text-sm font-bold text-fg")
                     if header_message:
                         ui.label(header_message).classes("text-xs text-muted")
+                    for line in context_lines:
+                        if line:
+                            ui.label(line).classes("text-xs text-muted")
                     ui.label(summary_line).classes("text-xs text-muted")
                 if save_button_label is not None and on_save_click is not None:
                     save_button = ui.button(
@@ -5388,6 +5379,7 @@ def _render_sweep_result_view_container(
                 save_button_label=save_button_label,
                 on_save_click=on_save_click,
                 save_enabled=save_enabled,
+                context_lines=context_lines,
             )
 
         family_select.on_value_change(lambda e: _on_sweep_family_change(str(e.value or "s")))
@@ -5483,9 +5475,7 @@ def _render_sweep_result_view_container(
 
         for trace_idx, selection in enumerate(list(view_state.get("traces", [])), start=1):
             with _with_test_id(
-                ui.card().classes(
-                    "w-full bg-elevated border border-border rounded-lg p-4 mt-2"
-                ),
+                ui.card().classes("w-full bg-elevated border border-border rounded-lg p-4 mt-2"),
                 f"{testid_prefix}-trace-card-{trace_idx}",
             ):
                 with ui.row().classes("w-full items-center gap-3 mb-2"):
@@ -5641,6 +5631,46 @@ def _render_sweep_result_view_container(
                     ).props("outline")
         sweep_plot = ui.plotly(payload["figure"]).classes("w-full min-h-[340px] mt-3")
         _with_test_id(sweep_plot, f"{testid_prefix}-plot")
+
+
+def _build_simulation_workflow_context_lines(
+    *,
+    circuit_record: CircuitRecord | None,
+    source_kind: str,
+    stage_kind: str,
+    run_kind: str,
+    provenance_tokens: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    """Build product-facing workflow lines without exposing backend-specific locators."""
+    if circuit_record is not None and circuit_record.id is not None:
+        design_scope = (
+            f"Current Design Scope: live schema {circuit_record.name} "
+            f"(Schema #{int(circuit_record.id)})"
+        )
+    elif circuit_record is not None:
+        design_scope = f"Current Design Scope: live schema {circuit_record.name}"
+    else:
+        design_scope = "Current Design Scope: live simulation runtime"
+
+    provenance = [token for token in provenance_tokens if token]
+    provenance_line = "Trace Batch Provenance: " + " | ".join(
+        (
+            f"source={source_kind}",
+            f"stage={stage_kind}",
+            f"run={run_kind}",
+            *provenance,
+        )
+    )
+    return (
+        design_scope,
+        "TraceStore-first authority is active for result inspection on this page.",
+        provenance_line,
+        (
+            "Cross-source compare is inspect-only here and stays blocked until traces are "
+            "saved into the same Design scope. Use Raw Data or Characterization for "
+            "trace-first compare."
+        ),
+    )
 
 
 def _summarize_simulation_error(error: Exception | str) -> tuple[str, str]:
@@ -6259,13 +6289,12 @@ def _render_simulation_environment():
             if post_processing_results_container is None:
                 return
             post_processing_results_container.clear()
-            with post_processing_results_container, ui.column().classes(
-                "w-full items-center justify-center gap-3 py-8"
+            with (
+                post_processing_results_container,
+                ui.column().classes("w-full items-center justify-center gap-3 py-8"),
             ):
                 ui.spinner(size="2.25em").classes("text-primary")
-                ui.label("Updating Post Processing Result View...").classes(
-                    "text-sm text-muted"
-                )
+                ui.label("Updating Post Processing Result View...").classes("text-sm text-muted")
 
         def _raw_result_provider(
             _reference_impedance: float,
@@ -6314,6 +6343,13 @@ def _render_simulation_environment():
                 trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
                     runtime_state.latest_simulation_sweep_payload,
                 )
+            context_lines = _build_simulation_workflow_context_lines(
+                circuit_record=active_record,
+                source_kind="circuit_simulation",
+                stage_kind="raw",
+                run_kind="parameter_sweep",
+                provenance_tokens=("live_solver_runtime", "save-path=Save Raw Simulation Results"),
+            )
             _render_sweep_result_view_container(
                 container=simulation_sweep_results_container,
                 sweep_payload=runtime_state.latest_simulation_sweep_payload,
@@ -6321,7 +6357,12 @@ def _render_simulation_environment():
                 view_state=sweep_result_view_state,
                 family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
                 title="Sweep Result View",
-                empty_message="Sweep Result View is available after a parameter sweep run.",
+                empty_message=(
+                    "Sweep Result View is available after a parameter sweep run. "
+                    "Cross-source compare stays blocked here until the traces are "
+                    "saved into a Design."
+                ),
+                context_lines=context_lines,
                 testid_prefix="simulation-sweep",
             )
 
@@ -6330,6 +6371,22 @@ def _render_simulation_environment():
                 return
             runtime_output = runtime_state.latest_post_processing_runtime
             flow_spec = runtime_state.latest_flow_spec
+            typed_flow_spec = flow_spec if isinstance(flow_spec, Mapping) else {}
+            post_sweep_context_lines = _build_simulation_workflow_context_lines(
+                circuit_record=active_record,
+                source_kind="circuit_simulation",
+                stage_kind="postprocess",
+                run_kind="parameter_sweep",
+                provenance_tokens=(
+                    f"input={typed_flow_spec.get('input_y_source', 'raw_y')!s}",
+                    (
+                        f"source-bundle=#{int(runtime_state.latest_source_simulation_bundle_id)}"
+                        if runtime_state.latest_source_simulation_bundle_id is not None
+                        else "source-bundle=live_runtime"
+                    ),
+                    "save-path=Save Post-Processed Results",
+                ),
+            )
             if not isinstance(runtime_output, PortMatrixSweepRun):
                 _render_sweep_result_view_container(
                     container=post_processing_sweep_results_container,
@@ -6339,8 +6396,11 @@ def _render_simulation_environment():
                     title="Post-Processed Sweep Result View",
                     empty_message=(
                         "Post-processed sweep explorer is available after a "
-                        "parameter-sweep post-processing run."
+                        "parameter-sweep post-processing run. "
+                        "Cross-source compare stays blocked here until the traces are "
+                        "saved into a Design."
                     ),
+                    context_lines=post_sweep_context_lines,
                     testid_prefix="post-processed-sweep",
                 )
                 return
@@ -6382,10 +6442,13 @@ def _render_simulation_environment():
                 title="Post-Processed Sweep Result View",
                 empty_message=(
                     "Post-processed sweep explorer is available after a "
-                    "parameter-sweep post-processing run."
+                    "parameter-sweep post-processing run. "
+                    "Cross-source compare stays blocked here until the traces are "
+                    "saved into a Design."
                 ),
                 summary_prefix=summary_prefix,
                 testid_prefix="post-processed-sweep",
+                context_lines=post_sweep_context_lines,
             )
 
         def render_simulation_result_view() -> None:
@@ -6396,6 +6459,16 @@ def _render_simulation_environment():
             if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
                 trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
                     runtime_state.latest_simulation_sweep_payload,
+                )
+                context_lines = _build_simulation_workflow_context_lines(
+                    circuit_record=active_record,
+                    source_kind="circuit_simulation",
+                    stage_kind="raw",
+                    run_kind="parameter_sweep",
+                    provenance_tokens=(
+                        "live_solver_runtime",
+                        "save-path=Save Raw Simulation Results",
+                    ),
                 )
                 _render_sweep_result_view_container(
                     container=simulation_results_container,
@@ -6413,9 +6486,17 @@ def _render_simulation_environment():
                     save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
                     on_save_click=raw_save_callback,
                     save_enabled=raw_save_callback is not None,
+                    context_lines=context_lines,
                 )
                 return
 
+            raw_context_lines = _build_simulation_workflow_context_lines(
+                circuit_record=active_record,
+                source_kind="circuit_simulation",
+                stage_kind="raw",
+                run_kind="single_run",
+                provenance_tokens=("live_solver_runtime", "save-path=Save Raw Simulation Results"),
+            )
             _render_result_family_explorer(
                 container=simulation_results_container,
                 view_state=raw_view_state,
@@ -6424,10 +6505,14 @@ def _render_simulation_environment():
                 family_source_options=_RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY,
                 family_source_labels=_RAW_RESULT_MATRIX_SOURCE_LABEL_BY_FAMILY,
                 header_message="Raw quick-inspect view from latest simulation run.",
-                empty_message="Run simulation to inspect raw result traces.",
+                empty_message=(
+                    "Run simulation to inspect raw result traces. "
+                    "Cross-source compare becomes available only after saving into a Design."
+                ),
                 save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
                 on_save_click=raw_save_callback,
                 save_enabled=raw_save_callback is not None,
+                context_lines=raw_context_lines,
                 testid_prefix="raw-result-view",
             )
 
@@ -6461,6 +6546,29 @@ def _render_simulation_environment():
             context_line = None
             typed_sweep = sweep if isinstance(sweep, PortMatrixSweep) else None
             typed_flow_spec = flow_spec if isinstance(flow_spec, dict) else None
+            post_context_lines = _build_simulation_workflow_context_lines(
+                circuit_record=active_record,
+                source_kind="circuit_simulation",
+                stage_kind="postprocess",
+                run_kind=(
+                    "parameter_sweep"
+                    if isinstance(runtime_output, PortMatrixSweepRun)
+                    else "single_run"
+                ),
+                provenance_tokens=(
+                    (
+                        f"input={typed_flow_spec.get('input_y_source', 'raw_y')!s}"
+                        if isinstance(typed_flow_spec, dict)
+                        else "input=raw_y"
+                    ),
+                    (
+                        f"source-bundle=#{int(runtime_state.latest_source_simulation_bundle_id)}"
+                        if runtime_state.latest_source_simulation_bundle_id is not None
+                        else "source-bundle=live_runtime"
+                    ),
+                    "save-path=Save Post-Processed Results",
+                ),
+            )
             if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
                 step_count = len(typed_flow_spec.get("steps", []))
                 input_source = str(typed_flow_spec.get("input_y_source", "raw_y"))
@@ -6527,6 +6635,7 @@ def _render_simulation_environment():
                     save_button_label="Save Post-Processed Results",
                     on_save_click=_save_post_processed_results_from_view,
                     save_enabled=save_enabled,
+                    context_lines=post_context_lines,
                 )
                 return
 
@@ -6543,6 +6652,7 @@ def _render_simulation_environment():
                 on_save_click=_save_post_processed_results_from_view,
                 save_enabled=save_enabled,
                 context_line=context_line,
+                context_lines=post_context_lines,
                 testid_prefix="post-result-view",
             )
 

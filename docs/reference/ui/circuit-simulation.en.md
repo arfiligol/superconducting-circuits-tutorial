@@ -380,6 +380,26 @@ Expected model:
     Dataset metadata must not alter solver setup submission on this page.
     No metadata write button or form may exist in `/simulation`.
 
+## Cross-source Design Workflow Visibility
+
+`/simulation` does not need a page-hierarchy rewrite, but the result area and save flow must clearly expose:
+
+- `Current Design Scope`
+- the current trace `source_kind`
+- the active trace-batch provenance / stage
+- whether the current path is `inspect-only` or already part of the cross-source design workflow
+
+!!! important "Inspect-first boundary"
+    The live simulation result view may remain inspect-first.
+    But if cross-source compare is not fully exposed directly on `/simulation`,
+    the page must show an explicit blocked state that tells users compare happens only
+    after saving into the same design scope and then following the trace-first / TraceStore-first
+    path in `Raw Data` or `Characterization`.
+
+!!! warning "No backend locator leakage"
+    The page may state that TraceStore-first authority is active,
+    but it must not expose backend-specific `store_uri` or local path layout as the main provenance UI.
+
 ## Post Processing
 
 `Post Processing` is a simulation-after pipeline. It must:

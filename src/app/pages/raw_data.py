@@ -12,6 +12,10 @@ from app.services.dataset_profile import (
     design_profile_summary_text,
     normalize_dataset_profile,
 )
+from app.services.design_trace_workflow import (
+    DesignTraceWorkflowSummary,
+    summarize_design_trace_workflow,
+)
 from core.analysis.application.services.trace_record_materializer import materialize_trace_record
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.repositories import TraceIndexPageQuery
@@ -39,6 +43,46 @@ _RECORD_SORT_FIELDS = {"id", "data_type", "parameter", "representation"}
 _HEADER_CLASSES = "text-primary text-weight-bold text-uppercase tracking-wide"
 
 
+def _compare_status_badge(status: str) -> tuple[str, str]:
+    normalized = str(status).strip().lower()
+    if normalized == "ready":
+        return ("Ready", "text-positive")
+    if normalized == "inspect-only":
+        return ("Inspect only", "text-warning")
+    return ("Blocked", "text-danger")
+
+
+def _augment_record_rows(
+    rows: list[dict[str, Any]],
+    workflow_summary: DesignTraceWorkflowSummary | None,
+) -> list[dict[str, Any]]:
+    if workflow_summary is None:
+        return rows
+
+    augmented_rows: list[dict[str, Any]] = []
+    for row in rows:
+        memberships = workflow_summary.trace_membership_by_id.get(int(row["id"]), ())
+        augmented_rows.append(
+            {
+                **row,
+                "source_kind": (
+                    ", ".join(dict.fromkeys(item.source_kind for item in memberships))
+                    or "unbatched"
+                ),
+                "stage_kind": (
+                    ", ".join(dict.fromkeys(item.stage_kind for item in memberships)) or "-"
+                ),
+                "trace_batch": ", ".join(f"#{item.batch_id}" for item in memberships) or "-",
+                "provenance_summary": (
+                    memberships[-1].provenance_summary
+                    if memberships
+                    else "No TraceBatch provenance linked yet."
+                ),
+            }
+        )
+    return augmented_rows
+
+
 def _total_pages(total_rows: int, page_size: int) -> int:
     return max(1, math.ceil(total_rows / max(1, page_size)))
 
@@ -60,7 +104,9 @@ def raw_data_page() -> None:
     selected_dataset_id: int | None = None
     selected_record_id: int | None = None
     detail_container: ui.column | None = None
+    plot_context_container: ui.column | None = None
     plot_container: ui.column | None = None
+    active_workflow_summary: DesignTraceWorkflowSummary | None = None
 
     dataset_state: dict[str, Any] = {
         "search": "",
@@ -109,7 +155,11 @@ def raw_data_page() -> None:
             dataset_state["total"] = total
         return rows
 
-    def _load_record_page(dataset_id: int) -> list[dict[str, Any]]:
+    def _load_record_page(
+        dataset_id: int,
+        *,
+        workflow_summary: DesignTraceWorkflowSummary | None = None,
+    ) -> list[dict[str, Any]]:
         query = TraceIndexPageQuery(
             search=str(record_state["search"]),
             sort_by=str(record_state["sort_by"]),
@@ -144,7 +194,7 @@ def raw_data_page() -> None:
                     query=query,
                 )
             record_state["total"] = total
-        return rows
+        return _augment_record_rows(rows, workflow_summary)
 
     def _selected_record_visible(rows: list[dict[str, Any]]) -> bool:
         if selected_record_id is None:
@@ -161,6 +211,9 @@ def raw_data_page() -> None:
                 control.disable()
 
     def render_plot() -> None:
+        nonlocal active_workflow_summary
+        if plot_context_container is not None:
+            plot_context_container.clear()
         if plot_container is None:
             return
         plot_container.clear()
@@ -188,6 +241,34 @@ def raw_data_page() -> None:
                     fig = build_heatmap(materialized_record, dark=_safe_dark_mode())
                 else:
                     fig = build_line_chart(materialized_record, dark=_safe_dark_mode())
+
+            memberships = (
+                active_workflow_summary.trace_membership_by_id.get(selected_record_id, ())
+                if active_workflow_summary is not None
+                else ()
+            )
+            if plot_context_container is not None:
+                with (
+                    plot_context_container,
+                    ui.column().classes(
+                        "w-full gap-2 rounded-lg border border-border bg-bg p-3 mb-3"
+                    ),
+                ):
+                    ui.label("Selected Trace Provenance").classes(
+                        "text-sm font-bold text-fg uppercase"
+                    )
+                    if memberships:
+                        latest = memberships[-1]
+                        ui.label(
+                            f"Trace Source Kind: {latest.source_kind} | "
+                            f"Trace Stage: {latest.stage_kind} | "
+                            f"Trace Batch: #{latest.batch_id}"
+                        ).classes("text-xs text-muted")
+                        ui.label(latest.provenance_summary).classes("text-xs text-muted")
+                    else:
+                        ui.label(
+                            "No TraceBatch provenance is linked to the selected trace yet."
+                        ).classes("text-xs text-warning")
 
             with plot_container:
                 ui.plotly(fig).classes("w-full h-full").style("min-height: 400px;")
@@ -320,7 +401,7 @@ def raw_data_page() -> None:
 
     @ui.refreshable
     def render_dataset_detail() -> None:
-        nonlocal selected_record_id
+        nonlocal active_workflow_summary, selected_record_id
         if detail_container is None:
             return
         detail_container.clear()
@@ -334,16 +415,30 @@ def raw_data_page() -> None:
 
         with get_unit_of_work() as uow:
             dataset = uow.datasets.get(selected_dataset_id)
+            workflow_summary = (
+                summarize_design_trace_workflow(
+                    design_id=int(dataset.id),
+                    design_name=str(dataset.name),
+                    trace_repo=uow.data_records,
+                    trace_batch_repo=uow.result_bundles,
+                )
+                if dataset is not None and dataset.id is not None
+                else None
+            )
         if dataset is None:
             with detail_container:
                 ui.label("Design not found.").classes("text-danger")
             return
+        active_workflow_summary = workflow_summary
 
-        record_rows = _load_record_page(selected_dataset_id)
+        record_rows = _load_record_page(selected_dataset_id, workflow_summary=workflow_summary)
         if not _selected_record_visible(record_rows):
             selected_record_id = None
 
         persisted_profile = normalize_dataset_profile(dataset.source_meta)
+        compare_status_label, compare_status_classes = _compare_status_badge(
+            workflow_summary.compare_status if workflow_summary is not None else "blocked"
+        )
 
         with detail_container:
             with ui.row().classes("w-full justify-between items-center mb-3 flex-wrap gap-3"):
@@ -361,6 +456,9 @@ def raw_data_page() -> None:
             with ui.column().classes("w-full gap-2 rounded-lg border border-border bg-bg p-3 mb-3"):
                 ui.label("Design Summary").classes("text-sm font-bold text-fg uppercase")
                 ui.label(
+                    f"Current Design Scope: {dataset.name} (Design #{int(dataset.id or 0)})"
+                ).classes("text-xs text-muted")
+                ui.label(
                     design_profile_summary_text(
                         {
                             "device_type": persisted_profile["device_type"],
@@ -368,6 +466,20 @@ def raw_data_page() -> None:
                             "source": persisted_profile["source"],
                         }
                     )
+                ).classes("text-xs text-muted")
+                with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
+                    ui.label(f"Compare Readiness: {compare_status_label}").classes(
+                        f"text-xs {compare_status_classes}"
+                    )
+                    ui.label(
+                        workflow_summary.compare_message
+                        if workflow_summary is not None
+                        else "No design workflow summary is available."
+                    ).classes("text-xs text-muted")
+                ui.label(
+                    workflow_summary.trace_store_read_path
+                    if workflow_summary is not None
+                    else "TraceStore-first read path summary unavailable."
                 ).classes("text-xs text-muted")
                 with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
                     ui.label(
@@ -379,6 +491,33 @@ def raw_data_page() -> None:
                         icon="dashboard",
                         on_click=lambda: ui.navigate.to("/dashboard"),
                     ).props("outline color=primary no-caps")
+
+            with ui.column().classes("w-full gap-2 rounded-lg border border-border bg-bg p-3 mb-3"):
+                ui.label("Trace Source Summary").classes("text-sm font-bold text-fg uppercase")
+                if workflow_summary is None or not workflow_summary.source_summaries:
+                    ui.label(
+                        "Blocked: this design does not have persisted TraceBatch provenance yet."
+                    ).classes("text-xs text-warning")
+                else:
+                    for source_summary in workflow_summary.source_summaries:
+                        with ui.row().classes(
+                            "w-full items-start justify-between gap-3 "
+                            "rounded-md border border-border/60 p-2 flex-wrap"
+                        ):
+                            with ui.column().classes("gap-1"):
+                                ui.label(source_summary.source_kind).classes(
+                                    "text-sm font-semibold text-fg"
+                                )
+                                ui.label(
+                                    f"Stages: {', '.join(source_summary.stage_kinds)}"
+                                ).classes("text-xs text-muted")
+                                ui.label(source_summary.latest_provenance_summary).classes(
+                                    "text-xs text-muted"
+                                )
+                            ui.label(
+                                f"{source_summary.trace_count} traces across "
+                                f"{source_summary.batch_count} batches"
+                            ).classes("text-xs text-muted")
 
             record_columns = [
                 {
@@ -410,6 +549,30 @@ def raw_data_page() -> None:
                     "label": "Repr",
                     "field": "representation",
                     "sortable": True,
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
+                },
+                {
+                    "name": "source_kind",
+                    "label": "Source",
+                    "field": "source_kind",
+                    "sortable": False,
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
+                },
+                {
+                    "name": "stage_kind",
+                    "label": "Stage",
+                    "field": "stage_kind",
+                    "sortable": False,
+                    "align": "left",
+                    "headerClasses": _HEADER_CLASSES,
+                },
+                {
+                    "name": "trace_batch",
+                    "label": "Trace Batch",
+                    "field": "trace_batch",
+                    "sortable": False,
                     "align": "left",
                     "headerClasses": _HEADER_CLASSES,
                 },
@@ -486,6 +649,8 @@ def raw_data_page() -> None:
             ui.label("Visualization Preview").classes(
                 "text-sm font-semibold text-muted tracking-wider mt-3 mb-2 uppercase"
             )
+            nonlocal plot_context_container
+            plot_context_container = ui.column().classes("w-full")
             nonlocal plot_container
             plot_container = ui.column().classes(
                 "w-full app-plotly-container min-h-[400px] flex items-center justify-center"
@@ -511,7 +676,12 @@ def raw_data_page() -> None:
         render_dataset_detail.refresh()
 
     def content() -> None:
-        nonlocal detail_container, record_search_input, record_type_select, record_repr_select
+        nonlocal \
+            detail_container, \
+            plot_context_container, \
+            record_search_input, \
+            record_type_select, \
+            record_repr_select
         ui.label("Raw Data Browser").classes("text-2xl font-bold text-fg mb-4")
 
         with ui.column().classes("w-full gap-6"):

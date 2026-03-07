@@ -342,6 +342,25 @@ sweep run 成功後，bundle `result_payload` 需包含：
     dataset metadata 不得影響本頁 solver setup 提交流程；
     本頁不可提供任何 metadata 寫入按鈕或表單。
 
+## Cross-source Design Workflow Visibility
+
+`/simulation` 不需要重寫 page hierarchy，但結果區與 save flow 必須清楚顯示：
+
+- `Current Design Scope`
+- 目前 trace 的 `source_kind`
+- 目前 trace batch 的 provenance / stage
+- 這條路徑是 `inspect-only` 還是已可進入 cross-source design workflow
+
+!!! important "Inspect-first boundary"
+    simulation runtime result view 可以維持 inspect-first；
+    但若 cross-source compare 尚未直接在 `/simulation` fully expose，
+    必須明確顯示 blocked-state，告知 compare 需在 save 到同一個 design scope 後，
+    由 trace-first / TraceStore-first path 於 `Raw Data` / `Characterization` 進行。
+
+!!! warning "No backend locator leakage"
+    本頁可顯示 TraceStore-first authority 已啟用，但不可把 backend-specific
+    `store_uri` / local path layout 當成使用者可理解的主要 provenance UI。
+
 ## Post Processing
 
 `Post Processing` 是 simulation 後處理管線，必須遵守：
