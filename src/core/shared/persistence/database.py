@@ -3,6 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlmodel import Session, create_engine
 
 # Database file location
@@ -37,4 +38,34 @@ def init_db() -> None:
         Tag,
     )
 
-    SQLModel.metadata.create_all(get_engine())
+    engine = get_engine()
+    SQLModel.metadata.create_all(engine)
+    _ensure_legacy_sqlite_compat_columns(engine)
+
+
+def _ensure_legacy_sqlite_compat_columns(engine) -> None:
+    """Add newly introduced columns when working against an older local SQLite file."""
+    compat_columns = {
+        "data_records": {
+            "store_ref": "ALTER TABLE data_records ADD COLUMN store_ref JSON DEFAULT '{}'",
+        },
+        "result_bundle_records": {
+            "parent_batch_id": (
+                "ALTER TABLE result_bundle_records "
+                "ADD COLUMN parent_batch_id INTEGER"
+            ),
+        },
+    }
+    with engine.begin() as connection:
+        dialect_name = connection.dialect.name
+        if dialect_name != "sqlite":
+            return
+        for table_name, columns in compat_columns.items():
+            existing_columns = {
+                str(row[1])
+                for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+            }
+            for column_name, statement in columns.items():
+                if column_name in existing_columns:
+                    continue
+                connection.execute(text(statement))

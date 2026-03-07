@@ -236,6 +236,7 @@ def trace_record_values(record: object) -> object:
 def normalize_trace_record(record: object) -> NormalizedTraceRecord:
     """Project one trace-like object into the canonical analysis shape."""
     raw_id = _field(record, "id")
+    raw_store_ref = _field(record, "store_ref")
     return NormalizedTraceRecord(
         id=int(raw_id) if raw_id is not None else None,
         dataset_id=trace_record_dataset_id(record),
@@ -244,7 +245,7 @@ def normalize_trace_record(record: object) -> NormalizedTraceRecord:
         representation=trace_record_representation(record),
         axes=trace_record_axes(record),
         values=trace_record_values(record),
-        store_ref=_field(record, "store_ref") if isinstance(_field(record, "store_ref"), Mapping) else None,
+        store_ref=raw_store_ref if isinstance(raw_store_ref, Mapping) else None,
     )
 
 
