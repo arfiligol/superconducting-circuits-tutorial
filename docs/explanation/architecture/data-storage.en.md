@@ -1,7 +1,6 @@
 ---
 aliases:
   - Data Storage Architecture
-  - Storage Model
 tags:
   - diataxis/explanation
   - audience/team
@@ -10,101 +9,164 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: Dataset-centric storage model and cross-page data flow
-version: v0.1.0
-last_updated: 2026-03-06
+scope: Design/Trace/TraceStore mental model and storage responsibility split
+version: v1.0.0
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
 # Data Storage
 
-This page explains the storage model at a conceptual level.
-Use this page for architecture understanding; use Reference pages for strict schema details.
+This page explains:
+
+- why the system needs `DesignRecord`
+- why traces must be the shared analysis unit
+- why the metadata DB and numeric TraceStore must be separated
 
 ## Core Mental Model
 
-The system is **dataset-centric**:
+The project follows a **Design-centric + Trace-first + external TraceStore** architecture:
 
-- `DatasetRecord` is the root container
-- `DataRecord` stores trace-level data
-- `ResultBundleRecord` stores one run/import/analysis provenance unit
-- `ResultBundleDataLink` links bundles to traces
-- `DerivedParameter` stores extracted physics parameters
+- `DesignRecord` is the root container
+- `TraceRecord` is the trace authority
+- `TraceBatchRecord` is the setup / provenance / lineage boundary
+- `AnalysisRunRecord` is the characterization execution boundary
+- `DerivedParameterRecord` stores extracted physics outputs
+- `TraceStore` (`Zarr`) stores ND numeric payload
 
 ```mermaid
 flowchart TB
-    Dataset["DatasetRecord (root container)"]
-    Profile["source_meta.dataset_profile (summary/hints)"]
-    Trace["DataRecord[] (trace authority)"]
-    Bundle["ResultBundleRecord[] (run/import/analysis provenance)"]
-    Link["ResultBundleDataLink[] (bundle-trace linkage)"]
-    Derived["DerivedParameter[] (physics extraction)"]
+    Design["DesignRecord"]
+    Asset["DesignAssetRecord"]
+    Batch["TraceBatchRecord"]
+    Trace["TraceRecord"]
+    Store["TraceStore (Zarr)"]
+    Analysis["AnalysisRunRecord"]
+    Derived["DerivedParameterRecord"]
 
-    Dataset --> Profile
-    Dataset --> Trace
-    Dataset --> Bundle
-    Bundle --> Link
-    Link --> Trace
-    Dataset --> Derived
+    Design --> Asset
+    Design --> Batch
+    Design --> Trace
+    Design --> Analysis
+    Design --> Derived
+    Batch --> Trace
+    Trace --> Store
+    Analysis --> Trace
+    Analysis --> Derived
 ```
 
-!!! important "Trace-first authority"
-    Analysis executability is decided by trace compatibility and selected trace ids.
-    `dataset_profile` is summary/recommendation metadata, not sole run authority.
+## Why Design-centric
 
-## Responsibility Layers
+The product wants to answer questions such as:
 
-### 1) Dataset layer (container)
+- what is the difference between layout and circuit results?
+- what is the difference between measurement and simulation?
+- for one design, which traces from which source can be characterized together?
 
-- Owns source metadata, tags, and high-level profile
-- Does not replace trace-level eligibility checks
+So the top-level container should be:
 
-### 2) Trace layer (observable data)
+- one design scope
+- containing multiple source families of traces
 
-- Stores actual curves/matrices (`Y11(f)`, `S21(f)`, `Zin(f, bias)`, etc.)
-- Acts as direct input for analysis and result views
+## Why Trace-first
 
-### 3) Bundle layer (provenance/reproducibility)
+The shared Characterization input is not:
 
-- Records how each run was produced (config, scope, source, status)
-- Sweep, post-process, and characterization all belong here
+- a circuit-only model
+- a layout-only model
+- a measurement-only model
 
-### 4) Derived layer (physics outputs)
+It is:
 
-- Stores extracted quantities (resonance, Q, fit outputs, etc.)
-- Should not be treated as raw trace authority unless explicitly contracted
+- **compatible S/Y/Z matrix traces**
 
-## Runtime Flow (High-Level)
+That is why UI, plotting, compare, and analysis should all use `TraceRecord` as the standard unit.
 
-```mermaid
-flowchart LR
-    Input["Simulation / Layout / Measurement"] --> TraceIn["DataRecord traces"]
-    TraceIn --> BundleRun["ResultBundleRecord (run provenance)"]
-    BundleRun --> Analysis["Characterization / Fitting / Extraction"]
-    Analysis --> DerivedOut["DerivedParameter"]
-    Analysis --> BundleRun
-```
+## Why TraceBatchRecord exists
 
-## Read This Together with Reference
+If you only store `TraceRecord`, you still do not know:
 
-- [Dataset Record Schema](../../reference/data-formats/dataset-record.en.md)
-- [Analysis Result Schema](../../reference/data-formats/analysis-result.en.md)
-- [Circuit Netlist Schema](../../reference/data-formats/circuit-netlist.en.md)
-- [Data Formats Overview](../../reference/data-formats/index.en.md)
+- whether the trace came from layout import or circuit simulation
+- what sweep/setup was used
+- what post-processing steps were applied
+- which upstream raw batch it came from
 
-## Common Misunderstandings
+That is the job of `TraceBatchRecord`:
 
-1. "Dataset profile alone decides analysis availability."  
-No. It is a hint layer; run authority is still trace-first.
+- generalized setup
+- source kind
+- stage kind
+- lineage
+- status
 
-2. "ResultBundle is an independent cache store detached from Dataset."  
-No. Bundles are still dataset-owned provenance units.
+## Why metadata DB and TraceStore must split
 
-3. "DerivedParameter can always be reused as raw trace input."  
-No, unless an analysis contract explicitly allows it.
+If large numeric payload stays inside SQLite/PostgreSQL JSON/BLOB:
+
+- sweep payload grows the DB too quickly
+- slice reads are poor
+- object-storage extension becomes awkward
+- UI/analysis tends to become full-read then slice
+
+After the split:
+
+- the metadata DB handles queries, indexes, lineage, and setup
+- the TraceStore handles chunked ND arrays
+
+## Why canonical TraceRecord should stay ND
+
+The natural meaning of a trace is:
+
+- one observable over axes
+
+Examples:
+
+- `Imag(Y_dm_dm)` over `frequency`
+- `Imag(Y_dm_dm)` over `(frequency, L_jun)`
+
+Splitting every sweep point into its own canonical record may feel intuitive, but it causes:
+
+- metadata explosion
+- fragmented provenance
+- regrouping overhead before Characterization can work
+
+Recommended split:
+
+- canonical = ND `TraceRecord`
+- point/slice materialization = projection/cache/export
+
+## Local to Server to Object Storage
+
+This model scales naturally:
+
+1. current
+   - metadata: `SQLite`
+   - numeric: local `Zarr`
+2. future server
+   - metadata: `PostgreSQL`
+   - numeric: local or shared `Zarr`
+3. storage extension
+   - metadata: `PostgreSQL`
+   - numeric: `S3-compatible Zarr` (MinIO / S3)
+
+## What this means for current features
+
+### Simulation
+- creates `TraceBatchRecord(source_kind=circuit_simulation, stage_kind=raw)`
+- materializes `TraceRecord`
+- writes numeric payload into the TraceStore
+
+### Post-Processing
+- derives a new `TraceBatchRecord` from an upstream simulation batch
+- creates new post-processed traces
+- does not overwrite raw traces
+
+### Characterization
+- does not branch by source kind
+- only checks trace compatibility and selected traces
+- produces `AnalysisRunRecord + DerivedParameterRecord`
 
 ## Related
 
-- [Architecture Overview](index.en.md)
-- [Pipeline Data Flow](pipeline/data-flow.en.md)
-- [Characterization UI](../../reference/ui/characterization.en.md)
+- [Design / Trace Schema](../../reference/data-formats/dataset-record.en.md)
+- [Query Indexing Strategy](../../reference/data-formats/query-indexing-strategy.en.md)

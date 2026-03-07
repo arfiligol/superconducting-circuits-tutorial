@@ -9,83 +9,114 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "High-frequency DataRecord/ResultBundle query paths and index strategy (without changing DB architecture direction)"
-version: v1.0.0
-last_updated: 2026-03-05
+scope: "metadata DB query strategy and TraceStore slice-read performance strategy"
+version: v2.0.0
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
 # Query Indexing Strategy
 
-This page defines high-frequency query paths and index strategy to:
+This page defines the performance responsibility split for the target architecture:
 
-1. Keep the current `SQLModel + UnitOfWork + Repository` architecture unchanged.
-2. Maintain predictable latency for large-data pages (Raw Data / Characterization).
-3. Document priority index candidates before any schema migration.
+1. the **metadata DB** handles queries, indexes, relationships, and lineage
+2. the **TraceStore** (`Zarr`) handles ND numeric payload and slice reads
+3. large trace-value performance must no longer be pushed back into SQLite/PostgreSQL JSON/BLOB payloads
 
-!!! important "Scope boundary"
-    This page is a **query strategy contract**, not a migration script.
-    Any new index must still go through the normal DB migration workflow.
+## Metadata DB Hot Paths
 
-## High-Frequency Query Paths
+### Design / Trace paths
 
-### DataRecord paths (trace-first)
-
-| Repo API | Usage | Primary filter/sort |
+| Repo API | Usage | Main filter/sort |
 |---|---|---|
-| `count_by_dataset(dataset_id)` | Characterization/Raw Data scope summary | `dataset_id` |
-| `list_distinct_index_for_profile(dataset_id)` | dataset-profile hint inference | `dataset_id` + distinct over `data_type/parameter/representation` |
-| `list_index_page_by_dataset(dataset_id, query=...)` | Trace table paging/filtering/sorting | `dataset_id`, `data_type`, `parameter`, `representation`, `mode_filter`, `search`, `sort_by` |
+| `count_by_design(design_id)` | design scope summary | `design_id` |
+| `list_trace_index_page(design_id, query=...)` | Raw Data / Characterization / compare trace selection | `design_id`, `family`, `parameter`, `representation`, `source_kind`, `stage_kind` |
+| `list_distinct_trace_index(...)` | trace compatibility / UI filter options | `design_id`, `family/parameter/representation` |
 
-### ResultBundle paths (cache/provenance split)
+### TraceBatch paths
 
-| Repo API | Usage | Primary filter/sort |
+| Repo API | Usage | Main filter/sort |
 |---|---|---|
-| `list_by_dataset(dataset_id)` | all bundles under dataset (debug/provenance) | `dataset_id`, `id` |
-| `list_cache_by_dataset(dataset_id)` | simulation cache management | `dataset_id`, `role=cache` |
-| `list_provenance_by_dataset(dataset_id)` | UI-visible provenance bundles | `dataset_id`, `role!=cache` |
-| `count_by_dataset(..., include_cache=...)` | Source Scope / summary counters | `dataset_id`, `bundle_type`, `role` |
-| `list_data_record_index_page(bundle_id, query=...)` | bundle-scoped trace paging | `result_bundle_id` + trace query filters |
+| `list_batches_by_design(design_id)` | provenance timeline | `design_id`, `source_kind`, `stage_kind`, `created_at` |
+| `get_batch_lineage(batch_id)` | postprocess / analysis lineage | `parent_batch_id` |
+| `list_traces_by_batch(batch_id)` | batch-scoped trace lookup | `trace_batch_id` |
 
-## Current Indexed Fields (Model Layer)
+### Analysis paths
 
-Current explicit indexes in `SQLModel`:
+| Repo API | Usage | Main filter/sort |
+|---|---|---|
+| `list_analysis_runs_by_design(design_id)` | Characterization history | `design_id`, `analysis_id`, `created_at` |
+| `list_derived_parameters_by_design(design_id)` | result tables / dashboards | `design_id`, `analysis_run_id`, `name` |
 
-- `dataset_records.name`
-- `data_records.dataset_id`
-- `result_bundle_records.dataset_id`
-- `result_bundle_records.bundle_type`
-- `result_bundle_records.role`
-- `result_bundle_records.status`
-- `result_bundle_records.schema_source_hash`
-- `result_bundle_records.simulation_setup_hash`
+## Metadata Index Direction
 
-References:
-- [`models.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/shared/persistence/models.py)
-- [`data_record_repository.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/shared/persistence/repositories/data_record_repository.py)
-- [`result_bundle_repository.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/shared/persistence/repositories/result_bundle_repository.py)
+Priority index candidates:
 
-## Priority Index Candidates (next phase)
+1. `trace_records(design_id, family, parameter, representation)`
+2. `trace_batch_records(design_id, source_kind, stage_kind, created_at)`
+3. `trace_batch_records(parent_batch_id)`
+4. `trace_batch_trace_links(trace_batch_id, trace_record_id)`
+5. `analysis_run_records(design_id, analysis_id, created_at)`
 
-!!! note "Candidates, not mandatory yet"
-    Validate these in dedicated migration tasks before applying.
+## TraceStore Read Strategy
 
-1. `data_records(dataset_id, data_type, parameter, representation)`
-   For multi-filter `list_index_page_by_dataset`.
-2. `result_bundle_data_links(result_bundle_id, data_record_id)`
-   For bundle-scoped trace paging joins.
-3. `result_bundle_records(dataset_id, role, bundle_type, status)`
-   For provenance/cache summary and listing.
+!!! important "Do not full-read then slice"
+    If UI / Characterization only needs an ND slice, read that slice directly from `Zarr`.
+    Do not load the entire array with `[:]` and then slice it in Python memory.
 
-## Monitoring Guidance
+### Common access pattern
 
-1. Track P95 query latency on JTWPA-scale datasets.
-2. Log execution time for `count_*` and `list_*_page` APIs.
-3. Prioritize compound indexes when `search + mode_filter` combinations regress.
+Simulation / Post-Processing UI often needs to:
+
+- fix sweep coordinates
+- keep `X = frequency`
+- compare multiple traces across selected sweep values
+
+Recommended chunking direction:
+
+- small chunks on sweep dims
+- contiguous chunks on the frequency dim
+
+For a trace shaped as:
+
+```text
+(sweep_a, sweep_b, frequency)
+```
+
+reasonable chunk choices include:
+
+```text
+(1, 1, 4001)
+```
+
+or
+
+```text
+(1, 1, 512)
+```
+
+### Why canonical ND still scales
+
+A canonical ND `TraceRecord` does not mean every read must load the full ND array.
+If chunking and axis order follow real access patterns, only the required chunks are read.
+
+## S3 / MinIO Direction
+
+The same strategy applies when the TraceStore backend becomes S3-compatible:
+
+- metadata filtering happens in the DB first
+- numeric payload uses chunked slice reads
+- app/service code must not depend on local-path-only logic
+
+## Validation Direction
+
+When implementing this architecture, prioritize verification that:
+
+1. official JosephsonCircuits.jl examples can write `DesignRecord + TraceBatchRecord + TraceRecord + Zarr`
+2. UI compare / Characterization paths read only the required slices instead of full arrays
+3. raw and post-processed sweeps align under the same trace-first query model
 
 ## Related
 
-- [Dataset Record](dataset-record.en.md)
-- [Analysis Result](analysis-result.en.md)
-- [Characterization UI](../ui/characterization.en.md)
-- [Data Handling Guardrail](../guardrails/code-quality/data-handling.en.md)
+- [Design / Trace Schema](dataset-record.en.md)
+- [Data Storage](../../explanation/architecture/data-storage.en.md)

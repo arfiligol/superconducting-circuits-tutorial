@@ -90,6 +90,7 @@ nav = [
       { "Overview" = "explanation/architecture/index.md" },
       { "Clean Architecture" = "explanation/architecture/design-decisions/clean-architecture.md" },
       { "Data Storage" = "explanation/architecture/data-storage.md" },
+      { "Trace Platform Plan" = "explanation/architecture/trace-platform-implementation-plan.md" },
       { "Pipeline" = [
         { "Overview" = "explanation/architecture/pipeline/index.md" },
         { "Data Flow" = "explanation/architecture/pipeline/data-flow.md" },
@@ -148,9 +149,10 @@ nav = [
     ] },
     { "Data Formats" = [
       { "Overview" = "reference/data-formats/index.md" },
-      { "Dataset Record" = "reference/data-formats/dataset-record.md" },
+      { "Design / Trace Schema" = "reference/data-formats/dataset-record.md" },
       { "Circuit Netlist" = "reference/data-formats/circuit-netlist.md" },
       { "Raw Data Layout" = "reference/data-formats/raw-data-layout.md" },
+      { "Query Indexing Strategy" = "reference/data-formats/query-indexing-strategy.md" },
       { "Analysis Result" = "reference/data-formats/analysis-result.md" },
     ] },
     { "Guardrails" = [

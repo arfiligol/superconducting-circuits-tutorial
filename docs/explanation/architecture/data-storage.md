@@ -10,217 +10,164 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: Dataset-centric 資料儲存心智模型與跨頁面資料流
-version: v0.2.0
-last_updated: 2026-03-07
+scope: Design/Trace/TraceStore 心智模型與資料責任分層
+version: v1.0.0
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
 # Data Storage
 
-這頁回答的不是「欄位怎麼定義」，而是「整個系統如何理解與保存資料」。
+本頁回答的是：
 
-Reference 會定義 schema；本頁則提供高層可理解模型，幫助你判斷資料應該落在哪一層。
+- 為什麼系統需要 `DesignRecord`
+- 為什麼 trace 應該是統一分析單位
+- 為什麼 metadata DB 與 numeric TraceStore 必須分離
 
 ## Core Mental Model
 
-本專案採 **Dataset-centric architecture**：
+本專案採 **Design-centric + Trace-first + external TraceStore** architecture：
 
-- `DatasetRecord` 是 root container
-- `DataRecord` 是 trace（曲線/矩陣）資料
-- `ResultBundleRecord` 是一次 run/import/analysis 的 provenance 容器
-- `ResultBundleDataLink` 是 bundle 與 traces 的關聯
-- `DerivedParameter` 是由分析提取出的物理參數
+- `DesignRecord` 是 root container
+- `TraceRecord` 是 trace authority
+- `TraceBatchRecord` 是 setup / provenance / lineage boundary
+- `AnalysisRunRecord` 是 characterization execution boundary
+- `DerivedParameterRecord` 是物理萃取結果
+- `TraceStore`（`Zarr`）保存 ND numeric payload
 
 ```mermaid
 flowchart TB
-    Dataset["DatasetRecord (root container)"]
-    Profile["source_meta.dataset_profile (summary/hints)"]
-    Trace["DataRecord[] (trace authority)"]
-    Bundle["ResultBundleRecord[] (run/import/analysis provenance)"]
-    Link["ResultBundleDataLink[] (bundle-trace linkage)"]
-    Derived["DerivedParameter[] (physics extraction)"]
+    Design["DesignRecord"]
+    Asset["DesignAssetRecord"]
+    Batch["TraceBatchRecord"]
+    Trace["TraceRecord"]
+    Store["TraceStore (Zarr)"]
+    Analysis["AnalysisRunRecord"]
+    Derived["DerivedParameterRecord"]
 
-    Dataset --> Profile
-    Dataset --> Trace
-    Dataset --> Bundle
-    Bundle --> Link
-    Link --> Trace
-    Dataset --> Derived
+    Design --> Asset
+    Design --> Batch
+    Design --> Trace
+    Design --> Analysis
+    Design --> Derived
+    Batch --> Trace
+    Trace --> Store
+    Analysis --> Trace
+    Analysis --> Derived
 ```
 
-!!! important "Trace-first authority"
-    是否能跑 analysis，核心依據是 trace 相容性與 selected trace ids。
-    `dataset_profile` 是摘要與建議，不是唯一 run authority。
+## Why Design-centric
 
-## Data Topology by Responsibility
+你的產品想回答的是：
 
-### 1) Dataset layer（container）
+- layout 與 circuit 的差異是什麼？
+- measurement 與 simulation 的差異是什麼？
+- 對同一個設計，哪種來源的 traces 可以拿來做同一套 characterization？
 
-- 管理資料集合、來源 metadata、tag、高層 profile
-- 不直接取代 trace-level 的可執行判斷
+所以最高層 container 不能只是一批 dataset records，而應該是：
 
-### 2) Trace layer（observable data）
+- 一個 design scope
+- 其中容納多種來源 traces
 
-- 保存可分析的實際曲線：`Y11(f)`、`S21(f)`、`Zin(f, bias)` 等
-- 是 Analysis、Result View、後續流程的直接輸入素材
+## Why Trace-first
 
-### 3) Bundle layer（provenance and reproducibility）
+Characterization 的統一輸入其實不是：
 
-- 描述每次運行如何產生結果（設定、來源、scope、狀態）
-- sweep / post-process / characterization 都屬於 bundle contract 的一部分
+- circuit 專屬資料模型
+- layout 專屬資料模型
+- measurement 專屬資料模型
 
-!!! important "Sweep authority stays in bundle payload"
-    parameter sweep 的 canonical source of truth 應保留在 bundle payload。
-    UI 顯示用的 representative point 只是 quick-inspect projection，不是唯一 authority。
+而是：
 
-!!! note "Post-processed sweep is a different node"
-    若 post-processing 作用在 raw sweep 上，產生的是另一個 `simulation_postprocess` bundle。
-    它必須保留自己的 provenance 與 sweep metadata，不能覆寫 raw simulation sweep 的 authority。
+- **相容的 S/Y/Z matrix traces**
 
-### 4) Derived layer（physics）
+因此 UI、plotting、compare、analysis 都應以 `TraceRecord` 為標準操作單位。
 
-- 保存萃取結果（例如 resonance、Q、擬合參數）
-- 由 trace 透過分析方法得到，不應反過來當 raw trace authority
+## Why TraceBatchRecord exists
 
-## Runtime Flow (High-Level)
+如果只有 `TraceRecord`，你仍然不知道：
 
-```mermaid
-flowchart LR
-    Input["Simulation / Layout / Measurement"] --> TraceIn["DataRecord traces"]
-    TraceIn --> BundleRun["ResultBundleRecord (run provenance)"]
-    BundleRun --> Analysis["Characterization / Fitting / Extraction"]
-    Analysis --> DerivedOut["DerivedParameter"]
-    Analysis --> BundleRun
-```
+- 這批 traces 是 layout import 還是 circuit simulation？
+- sweep setup 是什麼？
+- post-processing steps 是什麼？
+- 上游是哪一批 raw traces？
 
-!!! note "為什麼 Characterization UI 預設 dataset-centric"
-    UI 以 Dataset 作為主要操作入口，但實際 run 仍在 trace 層做相容性與選取。
-    這樣可以兼顧使用直覺與運行嚴謹性。
+這就是 `TraceBatchRecord` 的責任：
 
-## Post-Processed Sweep Point Materialization Strategy
+- generalized setup
+- source kind
+- stage kind
+- lineage
+- status
 
-這裡討論的是一個刻意保留的產品/架構決策：
-當 post-processing 來源是 parameter sweep 時，保存結果是否應同步把每個 sweep 點的
-post-processed values 全量 materialize 成 durable snapshot。
+## Why metadata DB and TraceStore must split
 
-### Current
+如果把大型 numeric payload 繼續放在 SQLite/PostgreSQL JSON/BLOB：
 
-目前契約的重點是：
+- sweep payload 會讓 DB 快速膨脹
+- slice read 很差
+- object storage extension 不自然
+- UI/analysis 容易變成 full-read then slice
 
-- raw sweep 的 canonical authority 仍在 `ResultBundleRecord.result_payload`
-- `simulation_postprocess` bundle 保存 canonical provenance、flow/config snapshot、
-  以及足以重播上游 sweep + post-processing 的 replay handles
-- `DataRecord` 仍是 projection/index 化視圖，而不是 bundle authority 的替代品
+把責任拆開後：
 
-目前策略已解決：
+- metadata DB 負責查詢、索引、lineage、setup
+- TraceStore 負責 chunked ND arrays
 
-- 可回推來源 sweep bundle、設定快照與分析 scope
-- 可在不複製整份高維 payload 的前提下保留 replayability
-- 可維持 `DataRecord as projection` 與 raw/post-process 分離節點的既有邊界
+## Why canonical TraceRecord should stay ND
 
-目前策略尚未解決：
+一條 trace 的自然語意是：
 
-- 離線或跨版本消費者若要求「不經 replay 即可讀出每個 post-processed sweep 點」
-- 將 post-processed sweep 視為 immutable frozen snapshot artifact 的產品語意
-- read path 想直接取得完整 processed points 時的低延遲需求
+- one observable over axes
 
-### Option A
+例如：
 
-對每次 post-processed sweep save 都 eager materialize every point，將完整 processed values
-直接保存進 `simulation_postprocess` bundle payload。
+- `Imag(Y_dm_dm)` over `frequency`
+- `Imag(Y_dm_dm)` over `(frequency, L_jun)`
 
-成本與影響：
+把 sweep 每個點都拆成 canonical record，看起來直覺，但會造成：
 
-- storage size：近似再複製一份 sweep 結果，成本隨 `point_count x family_count x matrix_size x frequency_samples`
-  放大；對高維 sweep 最敏感
-- write latency：save path 必須等待所有 processed points 序列化完成，保存時間與失敗面積都變大
-- replay/read complexity：read path 對 snapshot-only consumer 較簡單，但 writer、reader、projection
-  都需要處理「有 materialized points / 無 materialized points」雙路徑
-- downstream compatibility：對需要自包含 artifact 的下游較友善，但現有 bundle consumer 需新增大型 payload
-  處理邏輯，且歷史資料仍是非 materialized 舊格式
+- metadata 爆量
+- provenance 很碎
+- Characterization 反而要先 regroup
 
-契約層影響：
+所以建議：
 
-- schema change：需要，至少要新增明確的 materialized-point payload 契約
-- migration：不應假設已批准；若採 additive rollout，可避免強制回填，但必須接受新舊 bundle 並存
-- new bundle subtype：不一定需要，但若 full snapshot 變成獨立 artifact 語意，沿用既有 subtype 會模糊責任
-- new projection strategy：不需要，`DataRecord` 仍可維持 projection；只是 read path 會偏向 snapshot payload
+- canonical = ND `TraceRecord`
+- point/slice materialization = projection/cache/export
 
-### Option B
+## Local to Server to Object Storage
 
-維持 replay-first base contract，不要求每次 save 都 materialize every point；若未來真的需要
-self-contained frozen artifact，再以顯式 snapshot 契約另行擴充。
+這套模型天然支持演進：
 
-成本與影響：
+1. 現階段
+   - metadata: `SQLite`
+   - numeric: local `Zarr`
+2. 未來 server
+   - metadata: `PostgreSQL`
+   - numeric: local or shared `Zarr`
+3. storage extension
+   - metadata: `PostgreSQL`
+   - numeric: `S3-compatible Zarr`（MinIO / S3）
 
-- storage size：維持目前最小增量，只保存 provenance、config snapshot、replay handles 與既有 projection
-- write latency：接近目前 save path，避免把高維 processed payload 變成同步保存必要條件
-- replay/read complexity：需要保留 replay/read path，但責任清楚，bundle authority 與 projection 不混用
-- downstream compatibility：現有 consumer 可延續目前語意；未來若新增 snapshot artifact，可由需要的 consumer opt-in
+## What this means for current features
 
-契約層影響：
+### Simulation
+- 產生 `TraceBatchRecord(source_kind=circuit_simulation, stage_kind=raw)`
+- materialize `TraceRecord`
+- numeric payload 進 TraceStore
 
-- schema change：目前不需要強制 schema 擴張；先把 base contract 寫清楚即可
-- migration：目前不需要；也不得預設歷史 bundle 具備 full snapshot 語意
-- new bundle subtype：base contract 不需要；若未來批准 full snapshot/export artifact，建議用新 subtype
-  或等價的顯式 artifact 契約，而不是默默改寫 `simulation_postprocess`
-- new projection strategy：不需要；繼續使用 `DataRecord as projection`
+### Post-Processing
+- 從上游 simulation batch 派生新的 `TraceBatchRecord`
+- 建立新的 post-processed traces
+- 不覆寫 raw traces
 
-### Recommended
-
-推薦 **Option B: replay-first base contract + future explicit snapshot opt-in**。
-
-理由：
-
-- 它保留目前已建立的 canonical authority 邊界，不回退 raw sweep authority 與 `DataRecord as projection`
-- 它是最小安全方案：先把 save 的保證限定為 provenance、replayability、可追蹤的 projection，
-  不把 full snapshot 承諾偷渡進既有 subtype
-- 它把昂貴的 storage/write 成本留給真正有需求的場景，而不是讓所有 post-processed sweep save
-  一律承擔
-
-推薦決策（目前）：
-
-- schema change：`No`，先以文件明確界定 base contract
-- migration：`No`，不得假設已批准
-- new bundle subtype：`No`，僅在未來明確批准 self-contained snapshot/export artifact 時再新增
-- new projection strategy：`No`，延續既有 `DataRecord` projection 與 bundle-link model
-
-### Guardrail Candidates
-
-適合升級成 Guardrails 的條目：
-
-- `simulation_postprocess` save 預設保證 replayability，不預設保證每個 sweep 點 full snapshot
-- raw sweep canonical authority 必須留在 `ResultBundleRecord.result_payload`
-- `DataRecord` 只能作為 projection/index 視圖，不能被重新定義為 post-processed sweep 唯一 SoT
-- 若產品要引入 self-contained snapshot/export artifact，必須走顯式契約審查，且不得默默覆寫既有 subtype 語意
-- 未批准 migration 前，不得假設歷史 post-process bundles 可被當作 fully materialized snapshot 讀取
-
-## How to Read with Reference Pages
-
-需要欄位細節、型別或 JSON 範例時，請看 Reference：
-
-- [Dataset Record Schema](../../reference/data-formats/dataset-record.md)
-- [Analysis Result Schema](../../reference/data-formats/analysis-result.md)
-- [Circuit Netlist Schema](../../reference/data-formats/circuit-netlist.md)
-- [Data Formats Overview](../../reference/data-formats/index.md)
-
-## Common Misunderstandings
-
-1. 「Dataset profile 決定分析可不可跑」  
-不是。profile 主要是 hint；run authority 仍是 trace-first。
-
-2. 「ResultBundle 是獨立資料庫，不附屬 Dataset」  
-不是。bundle 仍附屬 dataset；只是承擔 provenance 與重現性。
-
-3. 「DerivedParameter 可以當作下一輪 raw trace 輸入」  
-預設不行，除非某分析明確宣告這個契約。
-
-4. 「representative point 就是整個 sweep 的正式保存內容」
-不是。representative point 只能幫 UI 快速檢視；完整 sweep authority 仍應保留在 bundle payload。
+### Characterization
+- 不區分來源
+- 只看 trace compatibility 與 selected traces
+- 產生 `AnalysisRunRecord + DerivedParameterRecord`
 
 ## Related
 
-- [Architecture Overview](index.md)
-- [Pipeline Data Flow](pipeline/data-flow.md)
-- [Characterization UI](../../reference/ui/characterization.md)
+- [Design / Trace Schema](../../reference/data-formats/dataset-record.md)
+- [Query Indexing Strategy](../../reference/data-formats/query-indexing-strategy.md)

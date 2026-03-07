@@ -1,291 +1,246 @@
 ---
 aliases:
   - "Dataset Record Schema"
+  - "Design / Trace Schema"
 tags:
   - audience/team
   - sot/true
 status: stable
 owner: docs-team
 audience: team
-scope: "DatasetRecord SQLite Schema definition and usage"
-version: v1.5.0
-last_updated: 2026-03-07
+scope: "Target schema for DesignRecord / TraceRecord / TraceBatchRecord / TraceStoreRef"
+version: v2.0.0
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
-# Dataset Record Schema
+# Design / Trace Schema
 
-`DatasetRecord` is the core data storage format for managing simulation and measurement data.
+!!! note "Historical path"
+    This file still uses the historical path `dataset-record.en.md`, but the SoT terminology now follows the
+    `DesignRecord / TraceRecord / TraceBatchRecord` architecture.
 
-## Concept
+## Core Model
 
+```text
+DesignRecord
+├── DesignAssetRecord[]        # circuit definition / layout source / measurement source
+├── TraceBatchRecord[]         # import / simulation / preprocess / postprocess batches
+├── TraceRecord[]              # analyzable traces (1D / 2D / ND)
+├── AnalysisRunRecord[]        # characterization / fitting runs
+└── DerivedParameterRecord[]   # extracted physics parameters
 ```
-DatasetRecord (Collection)
-├── name: "PF6FQ_Q0_XY"
-├── tags: [PF6FQ, Q0, XY_Line]
-├── source_meta: {origin, solver, raw_file}
-├── parameters: {L_jun_nH: 0.5}
-│
-├── DataRecord[] (Data)
-│   ├── Y11 real
-│   ├── Y11 imag
-│   └── S11 mag
-│
-└── DerivedParameter[] (Extracted)
-    ├── f_resonance: 5.12 GHz
-    └── Q_factor: 1200
-```
+
+## Design Principles
+
+1. `DesignRecord` is the top-level container.
+2. `TraceRecord` is the standard unit consumed by plotting, Characterization, and comparison flows.
+3. `TraceBatchRecord` carries setup, source kind, lineage, and status.
+4. metadata DB and numeric payload must remain separate.
+5. numeric payload is stored in `TraceStore` (`Zarr`) and may use either local or S3-compatible backends.
 
 ---
 
-## Schema Definition
+## DesignRecord
 
-### DatasetRecord
+A `DesignRecord` represents one design/device/project scope and may contain:
 
-Collection that contains multiple `DataRecord` entries.
+- circuit simulation traces
+- layout simulation traces
+- measurement traces
+- post-processed traces
+- characterization outputs
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | int | Auto | Primary key |
-| `name` | str | ✅ | Unique identifier (e.g., `PF6FQ_Q0_XY`) |
-| `source_meta` | JSON | - | Source information |
-| `parameters` | JSON | - | Simulation/measurement parameters |
-| `created_at` | datetime | Auto | Creation timestamp |
+|---|---|---|---|
+| `id` | int | Auto | primary key |
+| `name` | str | ✅ | design identifier |
+| `design_meta` | JSON | - | design-level metadata / tags / summary |
+| `created_at` | datetime | Auto | creation time |
 
-**source_meta example**:
+!!! important "Source mix is allowed"
+    One design may contain `circuit_simulation`, `layout_simulation`, and `measurement` data together,
+    or only any subset of them.
+
+---
+
+## DesignAssetRecord
+
+Design-level source artifact.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | int | Auto | primary key |
+| `design_id` | int | ✅ | owning DesignRecord |
+| `asset_type` | str | ✅ | `circuit_definition` / `layout_source` / `measurement_source` |
+| `version` | str | - | revision / import version |
+| `content_payload` | JSON | ✅ | source-form document or import manifest |
+
+!!! important "Circuit Definition stays document-first"
+    The atomic unit for Circuit Definition remains a revisioned source document,
+    not a decomposed set of component/topology relational rows.
+
+---
+
+## TraceRecord
+
+`TraceRecord` means **one logical observable over axes**.
+
+It may be:
+
+- 1D: `Imag(Y_dm_dm)` over `frequency`
+- 2D: `Imag(Y_dm_dm)` over `(frequency, L_jun)`
+- ND: `Imag(Y_dm_dm)` over `(frequency, A, B, ...)`
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | int | Auto | primary key |
+| `design_id` | int | ✅ | owning DesignRecord |
+| `family` | str | ✅ | `s_matrix` / `y_matrix` / `z_matrix` / equivalent canonical family |
+| `parameter` | str | ✅ | `Y11`, `Y_dm_dm`, `S21`, etc. |
+| `representation` | str | ✅ | `real`, `imaginary`, `magnitude`, `phase` |
+| `axes` | JSON | ✅ | axis definitions and order |
+| `trace_meta` | JSON | - | units, basis labels, source annotations, etc. |
+| `store_ref` | JSON | ✅ | locator for TraceStore payload |
+
+### Axes Contract
+
+```json
+[
+  {"name": "frequency", "unit": "GHz", "length": 4001},
+  {"name": "L_jun", "unit": "nH", "length": 11}
+]
+```
+
+### TraceStoreRef Contract
 
 ```json
 {
-  "origin": "layout_simulation",
-  "solver": "hfss_driven",
-  "raw_file": "data/raw/layout_simulation/admittance/PF6FQ.csv",
-  "dataset_profile": {
-    "schema_version": "1.0",
-    "device_type": "squid",
-    "capabilities": [
-      "y_parameter_characterization",
-      "y11_response_fitting",
-      "squid_characterization"
-    ],
-    "source": "manual_override"
-  }
+  "backend": "local_zarr",
+  "store_uri": "data/trace_store/designs/42/batches/105.zarr",
+  "group_path": "/traces/9001",
+  "array_path": "values",
+  "dtype": "float64",
+  "shape": [4001, 11],
+  "chunk_shape": [4001, 1],
+  "schema_version": "1.0"
 }
 ```
 
-**origin values**:
-- `circuit_simulation` - JosephsonCircuits.jl circuit simulation
-- `layout_simulation` - HFSS/Q3D EM simulation
-- `measurement` - Experimental measurement
+**Allowed direction for `backend`**
 
-### dataset_profile (source_meta sub-contract)
+- `local_zarr`
+- `s3_zarr`
 
-`source_meta.dataset_profile` is a dataset-level summary and recommendation contract, not
-trace-level run authority.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `schema_version` | str | ✅ | currently `1.0` |
-| `device_type` | str | ✅ | `unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other` |
-| `capabilities` | list[str] | ✅ | canonical capability keys |
-| `source` | str | ✅ | `inferred` / `template` / `manual_override` |
-
-!!! note "Current implementation (2026-03-04)"
-    Characterization UI still renders profile-derived `Recommended/Available` hints and
-    keeps `required_capabilities` / `excluded_capabilities` fields as recommendation signals.
-
-!!! important "Contract (Trace-first authority)"
-    Executability and run input scope must be decided by trace compatibility plus user-selected
-    trace ids. `dataset_profile.capabilities` is recommendation/default/hint metadata only and
-    must not hard-block runs by itself.
-
-!!! warning "Backward compatibility"
-    Legacy datasets without `dataset_profile` should fall back to `inferred`,
-    derived from existing DataRecord metadata, so current workflows remain usable.
-
-!!! note "Current behavior (2026-03-04)"
-    Previous builds exposed metadata write entry points on `/raw-data` and `/simulation`.
-
-!!! important "Metadata entry contract (Dashboard-only)"
-    The only editable entry for `source_meta.dataset_profile` is Pipeline `/dashboard`.
-    `/raw-data` and `/simulation` must remain read-only summary surfaces for metadata.
+!!! important "Canonical ND trace"
+    A sweep point must not automatically become its own canonical `TraceRecord`.
+    If UI / export / cache paths need point-level materialization, treat it as a projection contract.
 
 ---
 
-### DataRecord
+## TraceBatchRecord
 
-Single data record (e.g., Y11 imaginary part).
+`TraceBatchRecord` is the setup and provenance boundary for one import / simulation / preprocess / postprocess run.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | int | Auto | Primary key |
-| `dataset_id` | int | ✅ | Parent DatasetRecord |
-| `data_type` | str | ✅ | `s_params`, `y_params`, `z_params` |
-| `parameter` | str | ✅ | `S11`, `Y21`, `C12`, etc. |
-| `representation` | str | ✅ | `real`, `imaginary`, `amplitude`, `phase` |
-| `axes` | JSON | ✅ | Axis definitions |
-| `values` | JSON | ✅ | Value array |
+|---|---|---|---|
+| `id` | int | Auto | primary key |
+| `design_id` | int | ✅ | owning DesignRecord |
+| `source_kind` | str | ✅ | `circuit_simulation` / `layout_simulation` / `measurement` |
+| `stage_kind` | str | ✅ | `import` / `raw` / `preprocess` / `postprocess` |
+| `parent_batch_id` | int | - | upstream batch lineage |
+| `asset_record_id` | int | - | related source asset |
+| `status` | str | ✅ | `running` / `completed` / `failed` |
+| `setup_kind` | str | ✅ | for example `circuit_simulation.raw` |
+| `setup_version` | str | ✅ | setup payload version |
+| `setup_payload` | JSON | ✅ | source/setup/post-processing contract |
+| `provenance_payload` | JSON | ✅ | lineage / source refs / summaries |
+| `summary_payload` | JSON | - | optional UI summary |
+
+!!! important "Generalized setup layer"
+    `TraceBatchRecord` is the shared setup/provenance abstraction for circuit/layout/measurement.
+    Differences belong in `source_kind + stage_kind + setup_payload`, not in parallel top-level models.
 
 ---
 
-### ResultBundleRecord and ResultBundleDataLink
+## TraceBatchTraceLink
 
-`ResultBundleRecord` models one run/import/analysis batch, and `ResultBundleDataLink`
-models bundle-to-trace membership (`DataRecord` linkage).
+Batch-to-trace membership.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | int | Auto | Primary key |
-| `dataset_id` | int | ✅ | Parent Dataset |
-| `bundle_type` | str | ✅ | e.g. `circuit_simulation` / `simulation_postprocess` / `characterization` |
-| `role` | str | ✅ | e.g. `manual_export` / `derived_from_simulation` / `analysis_run` |
-| `status` | str | ✅ | e.g. `completed` |
-| `source_meta` | JSON | ✅ | Source description and provenance index |
-| `config_snapshot` | JSON | ✅ | Run input snapshot |
-| `result_payload` | JSON | - | Optional compact payload |
-
-!!! important "Bundle scope contract"
-    Characterization UI is dataset-centric and defaults to `All Dataset Records`.
-    When internal provenance points to one specific `ResultBundleRecord`, only traces linked
-    through `ResultBundleDataLink` may be analyzed; UI should not force explicit bundle operations.
-
-!!! important "Provenance contract"
-    `source_meta` + `config_snapshot` must be sufficient to reconstruct analysis input.
-    At minimum: input bundle (nullable for full-dataset scope) and selected trace ids.
-
-### Simulation post-process provenance (new)
-
-When `bundle_type=simulation_postprocess`, `config_snapshot` should include:
-
-- `input_y_source`: `raw_y` or `ptc_y`
-- `hfss_comparable`: `true` / `false`
-- `hfss_not_comparable_reason`: human-readable reason when `hfss_comparable=false`
-
-!!! important "Raw/processed semantic alignment"
-    `hfss_comparable` describes only whether the post-processed output satisfies
-    HFSS-comparison preconditions. It does not mean Raw Result View `S` is rewritten.
-
-### Simulation Post-Process over Sweep (Current Contract)
-
-If a `simulation_postprocess` bundle is derived from a source simulation bundle with `run_kind=parameter_sweep`,
-the minimum contract should include:
-
-- `source_meta.source_simulation_bundle_id`
-- `source_meta.source_run_kind = "parameter_sweep"`
-- `config_snapshot.sweep_setup_hash`
-- full post-processing flow spec in `config_snapshot`
-- `result_payload.run_kind = "parameter_sweep"`
-- `result_payload.sweep_axes`
-- `result_payload.point_count`
-- `result_payload.points[]`
-  - each point includes at least `source_point_index`
-  - `axis_indices`
-  - `axis_values`
-  - the post-processed point result, or a stable handle that reconstructs that point result
-- `result_payload.representative_point_index`
-
-!!! important "Representative point is projection only"
-    `representative_point_index` is quick-inspect projection only.
-    Without full `sweep_axes` / `points[]` / point metadata, the bundle must not claim to be the complete post-processed sweep authority.
-
-!!! important "Post-processed sweep save contract"
-    When post-processing is derived from a sweep run, the minimum save guarantee is
-    canonical provenance, flow/config snapshot, and replay handles.
-    That does not automatically mean every post-processed sweep point is durably stored
-    as fully materialized values inside the bundle payload.
-
-!!! note "Snapshot artifact requires separate approval"
-    If product requirements later need a self-contained frozen snapshot/export artifact,
-    it should be introduced through an additive contract decision rather than by
-    reinterpreting existing `simulation_postprocess` bundles as full snapshots.
-
-### Simulation sweep provenance (new)
-
-When `bundle_type=circuit_simulation` and the run is a sweep, `result_payload` should include:
-
-- `run_kind`: `parameter_sweep`
-- `sweep_axes`: axis definitions (target/unit/values per axis)
-- `point_count`: total number of sweep points
-- `points`: per-point `axis_values` and per-point simulation result
-
-`config_snapshot` should include:
-
-- `sweep_setup_hash`
-- full sweep setup snapshot (at minimum, `axes`)
-
-!!! important "Canonical vs projection"
-    Sweep run authority is canonical in `ResultBundleRecord.result_payload`.
-    `DataRecord` acts as projection/index-oriented views (optionally with sweep-axis metadata)
-    for querying and analysis flows.
-    High-dimensional sweep data should not rely on UI-materialized traces as the only SoT.
+|---|---|---|---|
+| `trace_batch_id` | int | ✅ | owning TraceBatchRecord |
+| `trace_record_id` | int | ✅ | linked TraceRecord |
 
 ---
 
-### Tag
+## AnalysisRunRecord
 
-Tag system for organizing and searching.
+Execution boundary for characterization / fitting / extraction.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | int | Auto | Primary key |
-| `name` | str | ✅ | Tag name (unique) |
+|---|---|---|---|
+| `id` | int | Auto | primary key |
+| `design_id` | int | ✅ | owning DesignRecord |
+| `analysis_id` | str | ✅ | for example `admittance_extraction` |
+| `input_trace_ids` | JSON | ✅ | selected trace ids |
+| `config_payload` | JSON | ✅ | analysis config |
+| `status` | str | ✅ | `running` / `completed` / `failed` |
+| `input_batch_ids` | JSON | - | optional source batch refs |
+
+!!! important "Trace-first authority"
+    Characterization consumes `TraceRecord` uniformly and does not branch into separate circuit/layout/measurement analysis models.
 
 ---
 
-### DerivedParameter
+## DerivedParameterRecord
 
-Physical parameters extracted from DataRecord.
+Physics extraction output.
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | int | Auto | Primary key |
-| `dataset_id` | int | ✅ | Parent DatasetRecord |
-| `device_type` | str | ✅ | `resonator`, `qubit`, `jpa`, `other` |
-| `name` | str | ✅ | Parameter name |
-| `value` | float | ✅ | Numeric value |
-| `unit` | str | - | Unit |
-| `method` | str | - | Extraction method |
-
-**Supported parameters**:
-
-| Device Type | Parameters |
-|-------------|------------|
-| **All** | `f_resonance`, `Q_factor`, `C_eff`, `L_eff` |
-| **Qubit** | `f_qubit`, `detuning`, `g_coupling`, `anharmonicity` |
-| **JPA** | `f_pump`, `pump_type`, `gain_dB`, `bandwidth`, `P_saturation` |
+|---|---|---|---|
+| `id` | int | Auto | primary key |
+| `design_id` | int | ✅ | owning DesignRecord |
+| `analysis_run_id` | int | ✅ | source AnalysisRunRecord |
+| `name` | str | ✅ | parameter name |
+| `value` | float | ✅ | value |
+| `unit` | str | - | unit |
+| `extra` | JSON | - | sweep provenance / fit metadata |
 
 ---
 
-## Database Location
+## TraceStore Direction
 
-```
-data/database.db    # SQLite database file
+`TraceStore` uses `Zarr` and keeps backend abstraction explicit:
+
+- current baseline: local filesystem
+- storage extension target: S3-compatible endpoints (for example MinIO / S3)
+
+### Recommended Local Layout
+
+```text
+data/trace_store/
+└── designs/
+    └── <design_id>/
+        └── batches/
+            └── <batch_id>.zarr/
+                └── traces/
+                    └── <trace_id>/
+                        └── values
 ```
 
----
+### S3-Compatible Direction
 
-## CLI Usage
+The same `TraceStoreRef` contract must support:
 
-```bash
-# Import HFSS CSV with tags
-uv run sc-import-hfss data.csv --name PF6FQ_Q0_XY --tags PF6FQ,Q0
+- `file://...`
+- `s3://bucket/...`
+- MinIO S3 endpoints
 
-# List all datasets
-uv run sc-db list
-
-
-# Analyze specific dataset
-uv run sc-analyze PF6FQ_Q0_XY --data Y11:imag
-```
-
----
-
-## Python Model
-
-Defined in `src/core/shared/persistence/models.py`.
+UI, Characterization, and repositories must not depend on backend-specific path logic.
 
 ## Related
 
-- [Data Handling](../guardrails/code-quality/data-handling.en.md) - Data handling rules
-- [Raw Data Layout](raw-data-layout.en.md) - Raw data directory structure
-- [Circuit Netlist](circuit-netlist.en.md) - Netlist-parameter sweep target definition
-- [Circuit Simulation UI](../ui/circuit-simulation.en.md) - Source/bias sweep setup and Result View rendering contract
+- [Data Storage](../../explanation/architecture/data-storage.en.md)
+- [Query Indexing Strategy](query-indexing-strategy.en.md)
+- [Raw Data Layout](raw-data-layout.en.md)

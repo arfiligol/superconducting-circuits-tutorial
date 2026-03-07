@@ -9,22 +9,24 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Architecture 說明索引，涵蓋 Clean Architecture、Pipeline、Circuit Simulation、Visualization Backend
-version: v0.2.0
-last_updated: 2026-03-06
+scope: Architecture 說明索引，涵蓋 Clean Architecture、Data Storage、Trace Platform Plan、Pipeline、Circuit Simulation
+version: v0.3.0
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
 # Architecture
 
-這個區塊整理目前系統的架構觀點，聚焦「為什麼這樣設計」。
+這個區塊整理目前系統的架構觀點，聚焦「為什麼這樣設計」與「接下來怎麼做」。
 
 ## Sections
 
 - [Clean Architecture](design-decisions/clean-architecture.md)
   分層邊界、依賴方向、組合位置。
 - [Data Storage](data-storage.md)
-  Dataset-centric 資料拓撲與 trace/bundle/derived 的責任分層。
+  `DesignRecord / TraceRecord / TraceBatchRecord / TraceStore` 的責任分層。
+- [Trace Platform Implementation Plan](trace-platform-implementation-plan.md)
+  docs-first 後的實作切分、驗收條件與 multi-agent 分工。
 - [Pipeline](pipeline/index.md)
   分析與可視化一體化的資料與執行流程。
 - [Circuit Simulation](circuit-simulation/index.md)

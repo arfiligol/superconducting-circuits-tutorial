@@ -2,37 +2,46 @@
 aliases:
   - "Project Overview"
 tags:
-  - audience/team
-  - sot/true
-status: stable
-owner: docs-team
-audience: team
-scope: "Project mission, scope, and target audience"
-version: v2.0.0
-last_updated: 2026-02-08
-updated_by: docs-team
+  - diataxis/reference
+  - status/draft
+  - topic/governance
 ---
 
 # Project Overview
 
-Core mission, scope, and target audience.
+The project goal has expanded from a tutorial website into a bilingual **superconducting-circuit design data platform** plus documentation system.
 
 ## Mission
 
-Create a high-quality, bilingual (Traditional Chinese/English) **superconducting circuits tutorial site**, covering the full workflow from HFSS/VNA data import to `JosephsonCircuits.jl` simulation and analysis.
+Build a high-quality bilingual (Traditional Chinese / English) platform where users can, within a single `Design` scope:
+
+- define and simulate circuits
+- import and analyze layout simulation traces
+- import and analyze measurement traces
+- run one shared Characterization workflow over compatible S/Y/Z matrix traces
+- compare layout / circuit / measurement outputs
 
 ## Scope
 
-- **Data Sources**: HFSS Admittance/Phase data, VNA S-parameter.
-- **Core Simulation**: `JosephsonCircuits.jl` (Julia).
-- **Analysis Tools**: Python CLI scripts (Squid fitting, Plotting).
-- **Documentation**: Zensical, Bilingual (zh-TW / en).
+- **Data sources**
+  - circuit simulation (`JosephsonCircuits.jl`)
+  - layout simulation (HFSS/Q3D and similar tools)
+  - measurement (for example VNA)
+- **Unified analysis input**
+  - S/Y/Z matrix traces
+- **Core UI**
+  - Schema Editor
+  - Circuit Simulation
+  - Post-Processing
+  - Characterization
+- **Documentation**
+  - Zensical, bilingual (zh-TW / en)
 
 ## Target Audience
 
-- **Researchers** and **Students** in Quantum Computing / Superconducting Circuits.
-- Users converting HFSS simulation results to circuit parameters.
-- Learners interested in JPA/SQUID circuit analysis.
+- researchers and students working on superconducting circuits / quantum hardware
+- users comparing layout / circuit / measurement differences
+- developers building trace-first characterization workflows
 
 ---
 
@@ -40,13 +49,15 @@ Create a high-quality, bilingual (Traditional Chinese/English) **superconducting
 
 ```markdown
 ## Project Goal
-- **Mission**: Create a high-quality, bilingual (Traditional Chinese/English) tutorial for superconducting circuits simulation.
+- **Mission**: Build a bilingual superconducting-circuit design data platform plus tutorial/docs system.
 - **Scope**:
-    - **Data Sources**: HFSS (Admittance/Phase), VNA (S-param).
+    - **Sources**: circuit simulation, layout simulation, and measurement.
     - **Simulation**: `JosephsonCircuits.jl` (Julia).
-    - **Analysis**: Python CLI scripts (SQUID fitting, Plotting).
+    - **Analysis**: one characterization workflow over compatible S/Y/Z matrix traces.
+    - **Storage direction**: metadata DB + external trace store.
 - **Core Values**:
-    - **Scientific Accuracy**: All equations and physics explanations must be rigorous.
-    - **Bilingual**: Primary content in **Traditional Chinese (zh-TW)**.
-- **Target Audience**: Researchers/Students (PhD/Master level).
+    - **Scientific Accuracy**: physics and equations must remain rigorous.
+    - **Trace-first analysis**: characterization operates on trace compatibility, not source-kind-specific UI rules.
+    - **Bilingual**: primary content remains **Traditional Chinese (zh-TW)** with synced English pages.
+- **Target Audience**: researchers, students, and developers working on superconducting-circuit simulation and analysis workflows.
 ```

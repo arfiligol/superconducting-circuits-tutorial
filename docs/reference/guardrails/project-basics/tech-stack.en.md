@@ -2,46 +2,62 @@
 aliases:
   - "Tech Stack"
 tags:
-  - audience/team
-  - sot/true
-status: stable
-owner: docs-team
-audience: team
-scope: "Technology stack and tools"
-version: v2.3.0
-last_updated: 2026-02-27
-updated_by: docs-team
+  - diataxis/reference
+  - status/draft
+  - topic/governance
 ---
 
 # Tech Stack
 
-The project uses a **Python + Julia** hybrid architecture.
+This project is converging toward a **Python + Julia + Zarr Trace Store** scientific data platform.
 
-## Languages & Tools
+## Languages and Responsibilities
 
 ### Python
 
-| Tool | Usage |
-| :--- | :--- |
-| `uv` | Environment & dependency management |
-| `pandas`, `numpy` | Data processing & numerical analysis |
-| `plotly` | Interactive visualization |
-| `nicegui` | Web UI framework (pages and interactive components) |
-| `CodeMirror` (via `nicegui.ui.codemirror`) | WebUI code editor used by Schema Editor |
-| `Ruff WebAssembly` (`@astral-sh/ruff-wasm`) | Browser-side Python formatter for Schema Editor |
-| `Panzoom` (frontend JS) | SVG zoom and pan interaction layer for Live Preview |
-| `rich` | Colored logging & CLI output |
-| `typer` | CLI framework (built on Click) |
-| `zensical` | Documentation generation |
-| `ruff`, `basedpyright` | Linting, Formatting, Type Checking |
-| `pytest` | Automated testing |
+| Tool | Purpose |
+|---|---|
+| `uv` | environment and dependency management |
+| `numpy`, `pandas` | numeric and tabular processing |
+| `plotly` | interactive visualization |
+| `nicegui` | Web UI and local app shell |
+| `CodeMirror` (via `nicegui.ui.codemirror`) | schema editor |
+| `Ruff WebAssembly` (`@astral-sh/ruff-wasm`) | browser-side formatting |
+| `Panzoom` | SVG zoom/pan interaction |
+| `rich` | colored logging and CLI output |
+| `typer` | CLI framework |
+| `zensical` | documentation build |
+| `ruff`, `basedpyright` | lint / type check |
+| `pytest`, `Playwright` | automation and E2E verification |
+| `zarr` | trace numeric payload storage (chunked ND arrays) |
+| `fsspec`, `s3fs` | TraceStore backend abstraction (local / S3-compatible) |
+| `sqlmodel`, `sqlalchemy` | metadata DB and repository/UoW |
 
 ### Julia
 
-| Tool | Usage |
-| :--- | :--- |
+| Tool | Purpose |
+|---|---|
 | `juliaup` | Julia version management |
-| `JosephsonCircuits.jl` | Core simulation engine |
+| `JosephsonCircuits.jl` | core superconducting-circuit simulation engine |
+
+## Storage Strategy
+
+The target storage direction is:
+
+1. **Metadata DB**
+   - current: `SQLite`
+   - future server/deployment: `PostgreSQL`
+2. **Numeric Trace Store**
+   - current: local filesystem `Zarr`
+   - future storage extension: `S3-compatible Zarr` (for example MinIO / S3 endpoints)
+
+## Storage Responsibility Split
+
+| Layer | Target Technology | Responsibility |
+|---|---|---|
+| Metadata | `SQLite` / `PostgreSQL` | `DesignRecord`, `TraceRecord`, `TraceBatchRecord`, `AnalysisRunRecord`, `DerivedParameterRecord` |
+| Numeric payload | `Zarr` | S/Y/Z traces, sweep ND arrays, axes arrays |
+| Object backend | local FS / MinIO / S3 | TraceStore backend |
 
 ## Dependency Management
 
@@ -54,17 +70,26 @@ The project uses a **Python + Julia** hybrid architecture.
 
 ```markdown
 ## Tech Stack
-- **Python** (Managed by `uv`):
-    - **Data**: `pandas`, `numpy` (Core).
-    - **Vis**: `plotly` (Interactive), `matplotlib` (Static).
-    - **WebUI**: `nicegui` (UI framework), `ui.codemirror` / CodeMirror (Code Editor), `Ruff WebAssembly` (browser formatter), `Panzoom` (SVG zoom/pan interaction).
-    - **CLI**: `typer` (Framework).
-    - **Logging**: `rich` (Colored output).
-    - **GUI**: `nicegui` (Native App).
-- **Julia** (Managed by `juliaup`):
-    - **Sim**: `JosephsonCircuits.jl` (Core Engine).
-- **Docs**: `zensical` (Static Site).
-- **Config Files**:
+- **Python** (managed by `uv`):
+    - **Data / Numeric**: `numpy`, `pandas`
+    - **Trace Storage**: `zarr`
+    - **Storage Backends**: `fsspec`, `s3fs`
+    - **DB / ORM**: `sqlmodel`, `sqlalchemy`
+    - **Vis**: `plotly`
+    - **WebUI**: `nicegui`, `ui.codemirror`, `Ruff WebAssembly`, `Panzoom`
+    - **CLI**: `typer`
+    - **Logging**: `rich`
+    - **Testing**: `pytest`, `Playwright`
+- **Julia** (managed by `juliaup`):
+    - **Sim**: `JosephsonCircuits.jl`
+- **Docs**: `zensical`
+- **Metadata DB direction**:
+    - current: `SQLite`
+    - deployment target: `PostgreSQL`
+- **Numeric Trace Store direction**:
+    - current: local `Zarr`
+    - extension target: S3-compatible `Zarr` (for example MinIO / S3 endpoint)
+- **Config files**:
     - Python: `pyproject.toml`
     - Julia: `Project.toml`
 ```

@@ -8,30 +8,26 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "數據處理規範：原始數據唯讀、路徑常數、資料庫存取"
-version: v1.1.0
-last_updated: 2026-01-28
-updated_by: docs-team
+scope: "數據處理規範：原始數據唯讀、metadata DB / TraceStore 分工、Unit of Work、Zarr backend 邊界"
+version: v2.0.0
+last_updated: 2026-03-08
+updated_by: codex
 ---
 
 # Data Handling
 
-數據處理與路徑規範。
+數據處理與儲存規範。
 
 ## Directory Structure
 
-```
+```text
 data/
-├── raw/                    # 原始數據 (唯讀)
+├── raw/                        # 原始數據 (唯讀)
 │   ├── measurement/
-│   │   └── flux_dependence/
 │   ├── circuit_simulation/
 │   └── layout_simulation/
-│       ├── admittance/
-│       └── phase/
-├── processed/
-│   └── reports/            # 分析輸出
-└── database.db             # SQLite 資料庫
+├── trace_store/               # Zarr TraceStore（local backend）
+└── database.db                # metadata DB（SQLite；未來可換 PostgreSQL）
 ```
 
 ## Rules
@@ -42,47 +38,76 @@ data/
 
 - 不修改原始檔案
 - 不刪除原始檔案
-- 轉換結果必須寫入 **SQLite 資料庫**
+- ingest / import / simulation / post-processing 的輸出不得回寫到 raw tree
 
-### 2. Use Path Helpers
+### 2. Metadata vs Numeric Payload
 
-使用 `src/core/shared/persistence/database.py` 提供的常數：
+資料責任分工必須明確：
 
-```python
-from core.shared.persistence.database import DATABASE_PATH
-```
+- **Metadata DB**
+  - `DesignRecord`
+  - `TraceRecord`
+  - `TraceBatchRecord`
+  - `AnalysisRunRecord`
+  - `DerivedParameterRecord`
+- **TraceStore**
+  - trace numeric payload
+  - axes arrays
+  - sweep ND arrays
 
-### 3. Database Access (Unit of Work)
+!!! important "No large numeric payload in metadata DB"
+    大型 trace values 不應作為主要 payload 存入 SQLite/PostgreSQL JSON/BLOB。
+    metadata DB 負責索引、lineage、setup、查詢；numeric payload 應進入 `Zarr` TraceStore。
 
-所有資料庫存取必須透過 Unit of Work 模式：
+### 3. Use Path / Store Helpers
+
+不得硬編碼 DB 或 TraceStore 路徑。
+
+- metadata DB path 必須由 persistence helper 提供
+- TraceStore backend（local / S3-compatible）必須透過抽象層決定
+
+### 4. Database Access (Unit of Work)
+
+所有 metadata DB 存取必須透過 Unit of Work：
 
 ```python
 from core.shared.persistence import get_unit_of_work
 
-# ✅ 正確：使用 UoW
 with get_unit_of_work() as uow:
-    dataset = uow.datasets.get_by_name("PF6FQ_Q0_XY")
-    uow.datasets.add(new_dataset)
+    design = uow.designs.get_by_name("PF6FQ_Q0")
+    uow.traces.add(new_trace)
     uow.commit()
-
-# ❌ 錯誤：直接操作 Session
-session = get_session()
-session.query(DatasetRecord).filter_by(...)
 ```
 
-### 4. Output Locations
+### 5. TraceStore Access
+
+Trace numeric payload 的讀寫必須經由 TraceStore abstraction，而不是 UI/CLI 直接碰 backend 細節。
+
+允許的 backend 方向：
+
+- local filesystem `Zarr`
+- S3-compatible `Zarr`（例如 MinIO / S3 endpoint）
+
+### 6. Canonical Trace Contract
+
+- `TraceRecord` 的 canonical 單位是 **one logical observable over axes**
+- 可為 1D / 2D / ND
+- sweep point 不應自動視為一筆 canonical trace record
+- point/slice level materialization 僅可作 projection / cache / export 契約
+
+### 7. Output Locations
 
 | 類型 | 目標位置 |
 |------|----------|
-| 數據紀錄 | `data/database.db` (SQLite) |
-| 分析報告 | `data/processed/reports/` |
-| 圖表 | `data/processed/reports/` |
+| metadata records | metadata DB |
+| trace numeric payload | TraceStore (`Zarr`) |
+| reports / exports | `data/processed/reports/` 或明確 export path |
 
 ## Related
 
-- [Dataset Record Schema](../../data-formats/dataset-record.md) - 資料庫 Schema
-- [Raw Data Layout](../../data-formats/raw-data-layout.md) - 目錄結構詳情
-- [Script Authoring](script-authoring.md) - 腳本撰寫規範
+- [Design / Trace Schema](../../data-formats/dataset-record.md)
+- [Raw Data Layout](../../data-formats/raw-data-layout.md)
+- [Data Storage](../../../explanation/architecture/data-storage.md)
 
 ---
 
@@ -91,13 +116,25 @@ session.query(DatasetRecord).filter_by(...)
 ```markdown
 ## Data Handling
 - **Immutable**: `data/raw/` is READ-ONLY.
-- **Paths**: NEVER hardcode paths.
-    - **MUST** import from `core.shared.persistence.database`.
-- **Database**: Use Unit of Work pattern.
-    - **MUST** use `with get_unit_of_work() as uow:` for all DB operations.
-    - **NEVER** access Session directly in CLI/UI code.
-    - **MUST** call `uow.commit()` explicitly.
-- **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
-- **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
-- **Legacy**: JSON-based intermediate storage is removed. Do not create new JSON pipelines.
+- **Storage split**:
+    - metadata goes to the metadata DB
+    - numeric trace payload goes to the TraceStore (`Zarr`)
+- **Paths**: NEVER hardcode metadata DB or TraceStore paths/backends.
+- **Database**:
+    - MUST use Unit of Work for metadata DB operations.
+    - NEVER access Session directly in CLI/UI code.
+    - MUST call `uow.commit()` explicitly.
+- **TraceStore**:
+    - MUST go through a TraceStore abstraction.
+    - MUST support local `Zarr` as the baseline direction.
+    - MUST keep S3-compatible `Zarr` as an extension-safe target.
+- **Canonical trace contract**:
+    - `TraceRecord` is one logical observable over axes.
+    - ND traces are allowed and preferred over point-fragmented canonical storage.
+    - point/slice materialization is projection/cache/export, not the only SoT.
+- **Flow**:
+    - Raw -> Import/Simulation/Post-Processing -> metadata DB + TraceStore -> Characterization / Reports
+- **Legacy**:
+    - Do not create new JSON-only numeric pipelines.
+    - Do not treat SQLite/PostgreSQL JSON/BLOB as the long-term primary numeric trace store.
 ```

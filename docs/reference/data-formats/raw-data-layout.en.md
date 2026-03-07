@@ -1,7 +1,6 @@
 ---
 aliases:
   - Raw Data Layout
-  - Raw Source Layout
 tags:
   - diataxis/reference
   - audience/team
@@ -10,70 +9,60 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: Project-first source-folder contract and ingest auto-classification boundary for data/raw
-version: v0.3.0
-last_updated: 2026-03-04
-updated_by: docs-team
+scope: raw-source layout and Design/Trace ingest boundaries
+version: v1.0.0
+last_updated: 2026-03-08
+updated_by: codex
 ---
 
 # Raw Data Layout
 
-`data/raw/` stores externally produced source files (measurement exports and simulation exports).
-The raw-layout contract is **project-folder-first**, not phase/admittance subfolder-first.
+`data/raw/` only stores external source files.  
+It is not the direct working format for UI or Characterization; the trace-first workflow must consume ingested `TraceRecord`s.
 
-## Directory structure (project-first)
-
-```text
-data/raw/
-└── <project_name>/
-    ├── *.csv
-    ├── *.txt
-    └── ...
-```
-
-Example:
+## Source Categories
 
 ```text
 data/raw/
-└── PF6FQ_Q0/
-    ├── PF6FQ_Q0_XY_Im_Y11.csv
-    ├── PF6FQ_Q0_Readout_ang_rad_S21.csv
-    └── PF6FQ_Q0_flux_sweep.txt
+├── measurement/
+├── layout_simulation/
+└── imported/
 ```
 
-## Auto-classification and preprocess routing
+!!! note "Circuit simulation is not a raw-file source"
+    `circuit_simulation` normally produces `TraceBatchRecord + TraceRecord + TraceStore payload` directly inside the application,
+    rather than writing into `data/raw/` and ingesting again later.
 
-CLI/UI ingest can classify and route files based on filename and column signals:
+## Project-first / Design-first layout
 
-| Rule type | Description |
-|---|---|
-| Filename semantics | for example `Y11`, `S21`, `Re_`, `Im_`, `ang`, `cang`, `deg`, `rad` |
-| Representation inference | phase / unwrapped_phase / real / imaginary / magnitude |
-| Skip policy | files not matching the selected processor can be skipped instead of hard-failing |
+External sources should be grouped by design/project:
 
-!!! important "No manual phase/admittance folder split required"
-    The data-format contract does not require folders such as `admittance/` or `phase/`.
-    Type decisions are made during ingest.
+```text
+data/raw/
+└── <design_name>/
+    ├── layout/
+    │   ├── *.csv
+    │   └── *.txt
+    └── measurement/
+        ├── *.csv
+        └── *.s2p
+```
 
-!!! note "Raw vs Trace responsibilities"
-    `data/raw/` stores source files only.
-    Analysis reads ingested `DataRecord` traces from SQLite.
+## Ingest Boundary
 
-## Rules
+An ingest/import should create:
 
-1. **Immutable by default**: treat imported raw files as read-only.
-2. **Project-first**: organize by project first, then let ingest classify.
-3. **Filename readability**: include parameter/representation/unit hints in filenames.
-4. **Source fidelity**: keep files as exported by instruments/solvers (no in-place manual reshaping).
+1. `DesignRecord`
+2. `DesignAssetRecord`
+3. `TraceBatchRecord`
+4. `TraceRecord`
+5. `TraceStore` numeric payload
 
-## Relationship to DatasetRecord
-
-- `DatasetRecord.source_meta.raw_file` / `raw_files` can reference source files.
-- Ingestion creates `DataRecord` traces and a logical Trace Index used by Characterization/Simulation views.
-- `dataset_profile` is dataset-level summary metadata and does not replace trace-level compatibility checks.
+!!! important "Raw file is provenance, not the working trace authority"
+    Raw files preserve source integrity.
+    Plotting / Characterization / compare flows should not depend on reparsing raw files live inside the UI.
 
 ## Related
 
-- [Dataset Record](dataset-record.en.md)
-- [Analysis Result](analysis-result.en.md)
-- [Pipeline Data Flow](../../explanation/architecture/pipeline/data-flow.en.md)
+- [Design / Trace Schema](dataset-record.en.md)
+- [Data Storage](../../explanation/architecture/data-storage.en.md)

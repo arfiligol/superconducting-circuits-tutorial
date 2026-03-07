@@ -10,83 +10,114 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "高頻 DataRecord/ResultBundle 查詢路徑與索引策略（不改 DB 架構方向）"
-version: v1.0.0
-last_updated: 2026-03-05
+scope: "metadata DB 查詢策略與 TraceStore slice-read 效能策略"
+version: v2.0.0
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
 # Query Indexing Strategy
 
-本頁定義高頻查詢路徑與索引策略，目的在於：
+本頁定義 target architecture 下的效能責任分工：
 
-1. 維持現有 `SQLModel + UnitOfWork + Repository` 架構不變。
-2. 讓大資料量頁面（Raw Data / Characterization）有可預期延遲。
-3. 在不立即改 schema 的前提下，先明確「應監控與優先補索引」的路徑。
+1. **metadata DB** 處理查詢、索引、關聯、lineage。
+2. **TraceStore (`Zarr`)** 處理 ND numeric payload 與 slice read。
+3. 不應再把大型 trace values 的主要效能問題推回 SQLite/PostgreSQL JSON/BLOB。
 
-!!! important "邊界"
-    本頁是 **查詢策略與優先級契約**，不是 migration 指令。
-    若要新增索引，請走正常 DB migration 流程，並同步更新本頁。
+## Metadata DB Hot Paths
 
-## 高頻查詢路徑
-
-### DataRecord 路徑（Trace-first）
+### Design / Trace 路徑
 
 | Repo API | 使用情境 | 主要 filter/sort |
 |---|---|---|
-| `count_by_dataset(dataset_id)` | Characterization/Raw Data scope summary | `dataset_id` |
-| `list_distinct_index_for_profile(dataset_id)` | dataset profile hint 推導 | `dataset_id` + `data_type/parameter/representation` distinct |
-| `list_index_page_by_dataset(dataset_id, query=...)` | Trace table 分頁/篩選/排序 | `dataset_id`, `data_type`, `parameter`, `representation`, `mode_filter`, `search`, `sort_by` |
+| `count_by_design(design_id)` | Design scope summary | `design_id` |
+| `list_trace_index_page(design_id, query=...)` | Raw Data / Characterization / compare trace selection | `design_id`, `family`, `parameter`, `representation`, `source_kind`, `stage_kind` |
+| `list_distinct_trace_index(...)` | trace compatibility / UI filter options | `design_id`, `family/parameter/representation` |
 
-### ResultBundle 路徑（provenance/cache 分流）
+### TraceBatch 路徑
 
 | Repo API | 使用情境 | 主要 filter/sort |
 |---|---|---|
-| `list_by_dataset(dataset_id)` | Dataset 下所有 bundles（除錯/追蹤） | `dataset_id`, `id` |
-| `list_cache_by_dataset(dataset_id)` | Simulation cache 管理 | `dataset_id`, `role=cache` |
-| `list_provenance_by_dataset(dataset_id)` | UI 顯示可追蹤結果批次 | `dataset_id`, `role!=cache` |
-| `count_by_dataset(..., include_cache=...)` | Source Scope / summary counters | `dataset_id`, `bundle_type`, `role` |
-| `list_data_record_index_page(bundle_id, query=...)` | bundle-scoped trace paging | `result_bundle_id` + trace query filters |
+| `list_batches_by_design(design_id)` | provenance timeline | `design_id`, `source_kind`, `stage_kind`, `created_at` |
+| `get_batch_lineage(batch_id)` | postprocess / analysis lineage | `parent_batch_id` |
+| `list_traces_by_batch(batch_id)` | batch-scoped trace lookup | `trace_batch_id` |
 
-## 現況索引（模型層）
+### Analysis 路徑
 
-目前 `SQLModel` 明確宣告的索引重點：
+| Repo API | 使用情境 | 主要 filter/sort |
+|---|---|---|
+| `list_analysis_runs_by_design(design_id)` | Characterization history | `design_id`, `analysis_id`, `created_at` |
+| `list_derived_parameters_by_design(design_id)` | result tables / dashboards | `design_id`, `analysis_run_id`, `name` |
 
-- `dataset_records.name`
-- `data_records.dataset_id`
-- `result_bundle_records.dataset_id`
-- `result_bundle_records.bundle_type`
-- `result_bundle_records.role`
-- `result_bundle_records.status`
-- `result_bundle_records.schema_source_hash`
-- `result_bundle_records.simulation_setup_hash`
+## Metadata Index Direction
 
-參考：
-- [`models.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/shared/persistence/models.py)
-- [`data_record_repository.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/shared/persistence/repositories/data_record_repository.py)
-- [`result_bundle_repository.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/shared/persistence/repositories/result_bundle_repository.py)
+優先索引候選：
 
-## 優先索引候選（下一階段）
+1. `trace_records(design_id, family, parameter, representation)`
+2. `trace_batch_records(design_id, source_kind, stage_kind, created_at)`
+3. `trace_batch_records(parent_batch_id)`
+4. `trace_batch_trace_links(trace_batch_id, trace_record_id)`
+5. `analysis_run_records(design_id, analysis_id, created_at)`
 
-!!! note "候選，非立即強制"
-    以下是針對高頻 query 的優先候選，需在 migration 任務中驗證後實施。
+## TraceStore Read Strategy
 
-1. `data_records(dataset_id, data_type, parameter, representation)`
-   適用 `list_index_page_by_dataset` 多條件過濾。
-2. `result_bundle_data_links(result_bundle_id, data_record_id)`
-   適用 bundle-scoped trace paging join。
-3. `result_bundle_records(dataset_id, role, bundle_type, status)`
-   適用 provenance/cache summary 與列表。
+!!! important "Do not full-read then slice"
+    UI / Characterization 若只需要某個 ND slice，應直接對 `Zarr` 做 slice read。
+    不可先 `[:]` 全讀，再在 Python 記憶體內切片。
 
-## 監控建議
+### Common Access Pattern
 
-1. JTWPA 等大資料案例記錄 P95 query latency。
-2. 追蹤 `count_*` 與 `list_*_page` 的 DB 執行時間。
-3. 若 `search + mode_filter` 組合顯著退化，優先補複合索引或調整查詢策略。
+Simulation / Post-Processing UI 常見路徑：
+
+- 固定 sweep coordinates
+- `X = frequency`
+- 多條 traces 比較不同 sweep values
+
+建議 chunking direction：
+
+- sweep dims 用小 chunk
+- frequency dim 用連續 chunk
+
+例如 trace shape:
+
+```text
+(sweep_a, sweep_b, frequency)
+```
+
+可考慮 chunk:
+
+```text
+(1, 1, 4001)
+```
+
+或
+
+```text
+(1, 1, 512)
+```
+
+### Why canonical ND still scales
+
+canonical `TraceRecord` 為 ND，不代表每次都讀完整 ND array。
+只要 chunking 與 axis order 對齊 access pattern，就能只讀需要的 chunks。
+
+## S3 / MinIO Direction
+
+當 TraceStore backend 改為 S3-compatible 時，效能策略仍相同：
+
+- metadata query 先在 DB 完成
+- numeric payload 以 chunked slice read 存取
+- app/service 層不得耦合 local-path-only 邏輯
+
+## Validation Direction
+
+實作此架構時，優先驗證：
+
+1. JosephsonCircuits.jl 官方 examples 跑完後，能正確寫入 `DesignRecord + TraceBatchRecord + TraceRecord + Zarr`
+2. UI compare / Characterization path 只讀必要 slices，不做整體 full-read
+3. post-processed sweep 與 raw sweep 都能對齊同一套 trace-first query model
 
 ## Related
 
-- [Dataset Record](dataset-record.md)
-- [Analysis Result](analysis-result.md)
-- [Characterization UI](../ui/characterization.md)
-- [Data Handling Guardrail](../guardrails/code-quality/data-handling.md)
+- [Design / Trace Schema](dataset-record.md)
+- [Data Storage](../../explanation/architecture/data-storage.md)
