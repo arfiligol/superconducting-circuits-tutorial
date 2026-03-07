@@ -15,7 +15,14 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 import pytest
-from playwright.sync_api import Page, expect, sync_playwright
+from playwright.sync_api import (
+    Page,
+    expect,
+    sync_playwright,
+)
+from playwright.sync_api import (
+    TimeoutError as PlaywrightTimeoutError,
+)
 
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import CircuitRecord, ResultBundleRecord
@@ -642,30 +649,36 @@ def _select_card_option(
     option_text: str,
     index: int = 0,
 ) -> None:  # type: ignore[no-untyped-def]
-    select = card.get_by_role("combobox", name=label).nth(index)
-    expect(select).to_be_visible(timeout=15000)
-    select.click()
     desired = re.sub(r"\s+", "", option_text).lower()
-    page.keyboard.type(option_text)
-    page.keyboard.press("Enter")
-    current_value = (select.input_value() or "").strip()
-    current_normalized = re.sub(r"\s+", "", current_value).lower()
-    if current_normalized == desired or desired in current_normalized:
-        return
-
-    select.click()
-    controls_id = select.get_attribute("aria-controls")
-    option_scope = page.locator(f"#{controls_id}") if controls_id else page.locator("body")
-    options = option_scope.get_by_role("option")
-    for idx_option in range(options.count()):
-        option_text_value = options.nth(idx_option).inner_text()
-        normalized = re.sub(r"\s+", "", option_text_value).lower()
-        if normalized == desired or desired in normalized:
-            options.nth(idx_option).click()
+    option_pattern = re.compile(re.escape(option_text), re.IGNORECASE)
+    for _attempt in range(3):
+        select = card.get_by_role("combobox", name=label).nth(index)
+        expect(select).to_be_visible(timeout=15000)
+        select.click()
+        page.keyboard.type(option_text)
+        page.keyboard.press("Enter")
+        current_value = (select.input_value() or "").strip()
+        current_normalized = re.sub(r"\s+", "", current_value).lower()
+        if current_normalized == desired or desired in current_normalized:
             return
 
-    option_pattern = re.compile(re.escape(option_text), re.IGNORECASE)
-    options.filter(has_text=option_pattern).first.click()
+        select.click()
+        controls_id = select.get_attribute("aria-controls")
+        option_scope = page.locator(f"#{controls_id}") if controls_id else page.locator("body")
+        options = option_scope.get_by_role("option")
+        try:
+            for idx_option in range(options.count()):
+                option_text_value = options.nth(idx_option).inner_text()
+                normalized = re.sub(r"\s+", "", option_text_value).lower()
+                if normalized == desired or desired in normalized:
+                    options.nth(idx_option).click()
+                    return
+            options.filter(has_text=option_pattern).first.click()
+            return
+        except PlaywrightTimeoutError:
+            continue
+
+    raise AssertionError(f"Failed to select {option_text!r} for {label!r}")
 
 
 def _locator_by_testid(page: Page, testid: str, *, fallback):  # type: ignore[no-untyped-def]

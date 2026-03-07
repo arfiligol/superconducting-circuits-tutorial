@@ -1096,6 +1096,61 @@ def _load_cached_simulation_result(
     except Exception:
         return None
 
+    if not is_trace_batch_bundle_payload(bundle.result_payload):
+        source_meta = dict(bundle.source_meta) if isinstance(bundle.source_meta, dict) else {}
+        design_id = int(source_meta.get("circuit_id") or bundle.dataset_id)
+        design_name = str(
+            source_meta.get("circuit_name")
+            or source_meta.get("design_name")
+            or source_meta.get("dataset_name")
+            or f"design-{design_id}"
+        )
+        provenance_payload = {
+            **source_meta,
+            "schema_source_hash": schema_source_hash,
+            "simulation_setup_hash": simulation_setup_hash,
+            "run_kind": "parameter_sweep" if sweep_payload is not None else "single_run",
+        }
+        trace_specs = build_raw_simulation_trace_specs(
+            result=result,
+            sweep_payload=sweep_payload,
+        )
+        bundle.source_meta = {
+            **source_meta,
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "design_id": design_id,
+            "design_name": design_name,
+        }
+        bundle.result_payload = persist_trace_batch_bundle(
+            bundle_id=int(bundle.id or 0),
+            design_id=design_id,
+            design_name=design_name,
+            source_kind="circuit_simulation",
+            stage_kind="raw",
+            setup_kind="circuit_simulation.raw",
+            setup_payload=(
+                dict(bundle.config_snapshot) if isinstance(bundle.config_snapshot, dict) else {}
+            ),
+            provenance_payload=provenance_payload,
+            trace_specs=trace_specs,
+            summary_payload={
+                "trace_count": len(trace_specs),
+                "run_kind": provenance_payload["run_kind"],
+                "frequency_points": len(result.frequencies_ghz),
+                "point_count": (
+                    int(sweep_payload.get("point_count", 0))
+                    if isinstance(sweep_payload, Mapping)
+                    else 1
+                ),
+                "representative_point_index": (
+                    int(sweep_payload.get("representative_point_index", 0))
+                    if isinstance(sweep_payload, Mapping)
+                    else 0
+                ),
+            },
+        )
+        uow.commit()
+
     if bundle.id is None:
         return None
 
