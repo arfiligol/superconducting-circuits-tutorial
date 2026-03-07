@@ -40,7 +40,12 @@ from app.services.result_artifact_registry import (
     artifacts_in_category,
     build_result_artifacts_for_analysis,
 )
-from core.analysis.domain import ModeGroup, ParameterKey
+from core.analysis.domain import (
+    ModeGroup,
+    ParameterKey,
+    trace_record_data_type,
+    trace_record_parameter,
+)
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import ParameterDesignation, ResultBundleRecord
 
@@ -297,6 +302,19 @@ def _effective_analysis_requires(
         # Current fit execution path is fixed to S21.
         resolved_requires["parameter"] = "S21"
     return resolved_requires
+
+
+def _normalize_profile_trace_index_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> list[dict[str, str]]:
+    """Normalize profile inference input so TraceRecord rows map to canonical trace kinds."""
+    return [
+        {
+            "data_type": trace_record_data_type(row),
+            "parameter": trace_record_parameter(row),
+        }
+        for row in rows
+    ]
 
 
 def _build_analysis_run_ui_state(
@@ -1148,7 +1166,9 @@ def characterization_page():
                             return
                         dataset_profile = normalize_dataset_profile(
                             ds.source_meta,
-                            record_index=dataset_profile_index,
+                            record_index=_normalize_profile_trace_index_rows(
+                                dataset_profile_index
+                            ),
                         )
 
                         analysis_scope_compatibility: dict[str, AnalysisScopeCompatibility] = {}

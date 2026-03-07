@@ -6,6 +6,7 @@ from core.analysis.application.dto.data_record_dtos import (
     DataRecordDetailDTO,
     DataRecordSummaryDTO,
 )
+from core.analysis.domain import normalize_trace_record
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import DataRecord
 
@@ -18,7 +19,7 @@ class DataRecordManagementService:
         with get_unit_of_work() as uow:
             if dataset_id is not None:
                 summary_rows = uow.data_records.list_summary_by_dataset(dataset_id)
-                return [DataRecordSummaryDTO.model_validate(row) for row in summary_rows]
+                return [self._to_summary(row) for row in summary_rows]
 
             records = uow.data_records.list_all()
             return [self._to_summary(r) for r in records]
@@ -56,26 +57,28 @@ class DataRecordManagementService:
             ordered = self._sort_records(records, sort_by)
             return self._reassign_sequential_ids(uow, ordered)
 
-    def _to_summary(self, record: DataRecord) -> DataRecordSummaryDTO:
+    def _to_summary(self, record: object) -> DataRecordSummaryDTO:
+        normalized_record = normalize_trace_record(record)
         return DataRecordSummaryDTO(
-            id=cast(int, record.id),
-            dataset_id=record.dataset_id,
-            data_type=record.data_type,
-            parameter=record.parameter,
-            representation=record.representation,
-            created_at=record.created_at,
+            id=cast(int, normalized_record.id),
+            dataset_id=cast(int, normalized_record.dataset_id),
+            data_type=normalized_record.data_type,
+            parameter=normalized_record.parameter,
+            representation=normalized_record.representation,
+            created_at=getattr(record, "created_at", None),
         )
 
-    def _to_detail(self, record: DataRecord) -> DataRecordDetailDTO:
+    def _to_detail(self, record: object) -> DataRecordDetailDTO:
+        normalized_record = normalize_trace_record(record)
         return DataRecordDetailDTO(
-            id=cast(int, record.id),
-            dataset_id=record.dataset_id,
-            data_type=record.data_type,
-            parameter=record.parameter,
-            representation=record.representation,
-            axes=record.axes,
-            values=record.values,
-            created_at=record.created_at,
+            id=cast(int, normalized_record.id),
+            dataset_id=cast(int, normalized_record.dataset_id),
+            data_type=normalized_record.data_type,
+            parameter=normalized_record.parameter,
+            representation=normalized_record.representation,
+            axes=normalized_record.axes,
+            values=cast(list, normalized_record.values),
+            created_at=getattr(record, "created_at", None),
         )
 
     def _sort_records(

@@ -9,6 +9,12 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
+from core.analysis.domain import (
+    normalize_trace_record,
+    trace_record_data_type,
+    trace_record_dataset_id,
+    trace_record_parameter,
+)
 from core.analysis.domain.math.s_parameters import (
     MultiResonanceVectorFitter,
     fit_notch_s21,
@@ -59,13 +65,17 @@ class ResonanceFitService:
         all_records = self.data_record_service.list_records(dataset.id)
         if record_ids is not None:
             selected_ids = set(record_ids)
-            all_records = [record for record in all_records if record.id in selected_ids]
+            all_records = [
+                record
+                for record in all_records
+                if normalize_trace_record(record).id in selected_ids
+            ]
         s_records = [
             r
             for r in all_records
-            if r.dataset_id == dataset.id
-            and r.data_type in ("s_parameters", "s_params")
-            and r.parameter == parameter
+            if trace_record_dataset_id(r) == dataset.id
+            and trace_record_data_type(r) == "s_parameters"
+            and trace_record_parameter(r) == parameter
         ]
 
         if not s_records:
@@ -75,9 +85,19 @@ class ResonanceFitService:
 
         # We need to construct the complex S21 and freq axis
         # First, reconstruct the records
-        detailed_records = [self.data_record_service.get_record(r.id) for r in s_records]
+        detailed_records = [
+            self.data_record_service.get_record(int(trace_id))
+            for record in s_records
+            for trace_id in [normalize_trace_record(record).id]
+            if trace_id is not None
+        ]
 
-        reps = {r.representation: r for r in detailed_records if r is not None}
+        reps = {
+            normalized_record.representation: normalized_record
+            for record in detailed_records
+            if record is not None
+            for normalized_record in [normalize_trace_record(record)]
+        }
 
         f_axis = None
         s21_complex = None
@@ -129,7 +149,10 @@ class ResonanceFitService:
 
             # Try to extract L_jun values from axes[1]
             any_rep = next(iter(reps.values()))
-            if len(any_rep.axes) > 1 and any_rep.axes[1].get("name") in ("L_jun", "l_jun"):
+            if len(any_rep.axes) > 1 and str(any_rep.axes[1].get("name", "")).lower() in {
+                "l_jun",
+                "l_ind",
+            }:
                 l_jun_values = [float(v) for v in any_rep.axes[1]["values"]]
             else:
                 l_jun_values = None
@@ -143,6 +166,7 @@ class ResonanceFitService:
                 bias_indices = [bias_index]
             else:
                 bias_indices = list(range(n_biases))
+
         # Base frequency axis (Hz)
         f_base = f_axis.flatten() * 1e9
 

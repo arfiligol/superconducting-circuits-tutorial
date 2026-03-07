@@ -13,7 +13,11 @@ from core.analysis.application.services.characterization_fitting_service import 
 )
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
-from core.shared.persistence import DataRecord, get_unit_of_work
+from core.analysis.domain import (
+    NormalizedTraceRecord,
+    normalize_trace_record,
+)
+from core.shared.persistence import get_unit_of_work
 
 
 @dataclass(frozen=True)
@@ -26,15 +30,15 @@ class SweepSupportDiagnostic:
 
 def _value_ndim(values: object) -> int:
     """Infer nested list dimensionality without loading numerical libraries."""
-    if not isinstance(values, list) or not values:
+    if not isinstance(values, Sequence) or isinstance(values, str | bytes) or not values:
         return 1
     first = values[0]
-    if isinstance(first, list):
+    if isinstance(first, Sequence) and not isinstance(first, str | bytes):
         return 1 + _value_ndim(first)
     return 1
 
 
-def _axis_name(record: DataRecord, index: int) -> str:
+def _axis_name(record: NormalizedTraceRecord, index: int) -> str:
     if index >= len(record.axes):
         return ""
     return str(record.axes[index].get("name", "")).strip().lower()
@@ -44,7 +48,7 @@ def _is_l_jun_axis(name: str) -> bool:
     return name in {"l_jun", "l_ind"}
 
 
-def _is_sweep_record(record: DataRecord) -> bool:
+def _is_sweep_record(record: NormalizedTraceRecord) -> bool:
     shape = record.trace_shape()
     value_ndim = len(shape) if shape else _value_ndim(record.values)
     if value_ndim > 1:
@@ -57,20 +61,23 @@ def _is_sweep_record(record: DataRecord) -> bool:
 def _load_selected_records(
     dataset_id: int,
     trace_record_ids: Sequence[int] | None,
-) -> list[DataRecord]:
+) -> list[NormalizedTraceRecord]:
     with get_unit_of_work() as uow:
-        records = list(uow.data_records.list_by_dataset(dataset_id))
+        records = [
+            normalize_trace_record(record)
+            for record in uow.data_records.list_by_dataset(dataset_id)
+        ]
         if trace_record_ids is None:
             return records
         selected_ids = {int(record_id) for record_id in trace_record_ids}
         return [record for record in records if int(record.id or 0) in selected_ids]
 
 
-def _selected_s21_records(records: Iterable[DataRecord]) -> list[DataRecord]:
+def _selected_s21_records(records: Iterable[NormalizedTraceRecord]) -> list[NormalizedTraceRecord]:
     return [
         record
         for record in records
-        if str(record.data_type) in {"s_parameters", "s_params"}
+        if str(record.data_type) == "s_parameters"
         and str(record.parameter).strip().upper() == "S21"
     ]
 
@@ -78,10 +85,11 @@ def _selected_s21_records(records: Iterable[DataRecord]) -> list[DataRecord]:
 def _diagnose_analysis_sweep_support_from_records(
     *,
     analysis_id: str,
-    records: Sequence[DataRecord],
+    records: Sequence[NormalizedTraceRecord | object],
 ) -> SweepSupportDiagnostic | None:
     """Classify parameter-sweep support for one analysis against selected records."""
-    sweep_records = [record for record in records if _is_sweep_record(record)]
+    normalized_records = [normalize_trace_record(record) for record in records]
+    sweep_records = [record for record in normalized_records if _is_sweep_record(record)]
     if not sweep_records:
         return None
 
@@ -127,7 +135,9 @@ def _diagnose_analysis_sweep_support_from_records(
 
     if analysis_id == "s21_resonance_fit":
         s21_sweep_records = [
-            record for record in _selected_s21_records(records) if _is_sweep_record(record)
+            record
+            for record in _selected_s21_records(normalized_records)
+            if _is_sweep_record(record)
         ]
         if not s21_sweep_records:
             return None

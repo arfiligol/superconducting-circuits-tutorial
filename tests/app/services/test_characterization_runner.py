@@ -34,6 +34,37 @@ def _record(
     )
 
 
+def _trace_record(
+    *,
+    family: str,
+    parameter: str,
+    representation: str,
+    axes: list[dict[str, object]],
+    values: object,
+    dataset_id: int = 1,
+    trace_id: int | None = None,
+) -> dict[str, object]:
+    axis_values = {str(axis["name"]): list(axis.get("values", [])) for axis in axes}
+    stored_axes = [
+        {
+            "name": axis["name"],
+            "unit": axis.get("unit", ""),
+            "length": len(axis_values[str(axis["name"])]),
+        }
+        for axis in axes
+    ]
+    return {
+        "id": trace_id,
+        "design_id": dataset_id,
+        "family": family,
+        "parameter": parameter,
+        "representation": representation,
+        "axes": stored_axes,
+        "axis_values": axis_values,
+        "store_ref": {"values": values},
+    }
+
+
 def test_execute_analysis_run_dispatches_admittance_extraction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -143,6 +174,29 @@ def test_diagnose_analysis_sweep_support_marks_y11_and_squid_ready_for_2d_ljun()
         reason="2D Freq x L_jun sweeps are supported.",
     )
     assert admittance_support == SweepSupportDiagnostic(
+        status="sweep-ready",
+        reason="2D Freq x L_jun admittance sweeps are supported.",
+    )
+
+
+def test_diagnose_analysis_sweep_support_accepts_trace_record_contract_for_2d_ljun() -> None:
+    y_trace = _trace_record(
+        family="y_matrix",
+        parameter="Y_dm_dm",
+        representation="imag",
+        axes=[
+            {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0]},
+            {"name": "L_jun", "unit": "nH", "values": [1.0, 2.0]},
+        ],
+        values=[[0.1, 0.2], [0.3, 0.4]],
+    )
+
+    diagnostic = _diagnose_analysis_sweep_support_from_records(
+        analysis_id="admittance_extraction",
+        records=[y_trace],
+    )
+
+    assert diagnostic == SweepSupportDiagnostic(
         status="sweep-ready",
         reason="2D Freq x L_jun admittance sweeps are supported.",
     )
@@ -358,6 +412,97 @@ def test_resonance_fit_service_persists_ljun_bias_params_for_2d_sweeps(
     assert l_jun_params[0]["extra"]["sweep_axis"] == "L_jun"
     assert l_jun_params[0]["extra"]["sweep_index"] == 0
     assert l_jun_params[1]["extra"]["sweep_index"] == 1
+
+
+def test_resonance_fit_service_accepts_trace_record_contract_for_2d_sweeps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_calls: list[dict[str, object]] = []
+    service = ResonanceFitService()
+    dataset = SimpleNamespace(id=1)
+    real_record = _trace_record(
+        trace_id=10,
+        family="s_matrix",
+        parameter="S21",
+        representation="real",
+        axes=[
+            {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0, 6.0, 7.0, 8.0]},
+            {"name": "L_jun", "unit": "nH", "values": [1.1, 1.6]},
+        ],
+        values=[
+            [0.1, 0.2],
+            [0.1, 0.2],
+            [0.1, 0.2],
+            [0.1, 0.2],
+            [0.1, 0.2],
+        ],
+    )
+    imag_record = _trace_record(
+        trace_id=11,
+        family="s_matrix",
+        parameter="S21",
+        representation="imaginary",
+        axes=[
+            {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0, 6.0, 7.0, 8.0]},
+            {"name": "L_jun", "unit": "nH", "values": [1.1, 1.6]},
+        ],
+        values=[
+            [0.01, 0.02],
+            [0.01, 0.02],
+            [0.01, 0.02],
+            [0.01, 0.02],
+            [0.01, 0.02],
+        ],
+    )
+
+    monkeypatch.setattr(service.dataset_service, "get_dataset", lambda _: dataset)
+    monkeypatch.setattr(
+        service.data_record_service,
+        "list_records",
+        lambda _: [real_record, imag_record],
+    )
+    monkeypatch.setattr(
+        service.data_record_service,
+        "get_record",
+        lambda record_id: {10: real_record, 11: imag_record}[record_id],
+    )
+    monkeypatch.setattr(
+        service.param_service,
+        "create_or_update_param",
+        lambda dataset_id, **kwargs: captured_calls.append(
+            {"dataset_id": dataset_id, **kwargs}
+        ),
+    )
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_fit_service.fit_notch_s21",
+        lambda f_arr, s21_arr: {
+            "fr": float(f_arr[2]),
+            "Ql": 1000.0,
+            "Qc_mag": 1200.0,
+            "Qi": 6000.0,
+            "tau": 1e-9,
+            "Qc_real": 1200.0,
+            "Qc_imag": 0.0,
+            "a": 1.0,
+            "alpha": 0.0,
+        },
+    )
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_fit_service.notch_s21",
+        lambda f_arr, **kwargs: np.ones_like(f_arr, dtype=complex),
+    )
+
+    service.perform_fit(
+        dataset_identifier="1",
+        parameter="S21",
+        model="notch",
+        record_ids=[10, 11],
+    )
+
+    l_jun_params = [call for call in captured_calls if str(call["name"]).startswith("L_jun")]
+
+    assert {call["name"] for call in l_jun_params} == {"L_jun_b0", "L_jun_b1"}
+    assert l_jun_params[0]["extra"]["sweep_axis"] == "L_jun"
 
 
 def test_execute_analysis_run_rejects_unknown_analysis_id() -> None:

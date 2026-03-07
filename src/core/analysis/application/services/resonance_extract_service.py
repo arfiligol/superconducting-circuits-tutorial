@@ -12,6 +12,12 @@ from core.analysis.application.services.data_record_management import (
 )
 from core.analysis.application.services.dataset_management import DatasetManagementService
 from core.analysis.application.services.parameter_management import ParameterManagementService
+from core.analysis.domain import (
+    normalize_trace_record,
+    trace_record_data_type,
+    trace_record_dataset_id,
+    trace_record_representation,
+)
 from core.shared.persistence import get_unit_of_work
 
 
@@ -45,13 +51,17 @@ class ResonanceExtractService:
         all_records = self.data_record_service.list_records(dataset.id)
         if record_ids is not None:
             selected_ids = set(record_ids)
-            all_records = [record for record in all_records if record.id in selected_ids]
+            all_records = [
+                record
+                for record in all_records
+                if normalize_trace_record(record).id in selected_ids
+            ]
         y_records = [
             r
             for r in all_records
-            if r.dataset_id == dataset.id
-            and r.data_type in ("y_parameters", "y_params")
-            and r.representation in ("imaginary", "imag")
+            if trace_record_dataset_id(r) == dataset.id
+            and trace_record_data_type(r) == "y_parameters"
+            and trace_record_representation(r) == "imaginary"
         ]
 
         if not y_records:
@@ -60,18 +70,24 @@ class ResonanceExtractService:
             )
 
         # Fetch detailed records
-        detailed_records = [self.data_record_service.get_record(r.id) for r in y_records]
+        detailed_records = [
+            self.data_record_service.get_record(int(trace_id))
+            for record in y_records
+            for trace_id in [normalize_trace_record(record).id]
+            if trace_id is not None
+        ]
 
         dfs = []
         for rec in detailed_records:
             if rec is None:
                 continue
+            record = normalize_trace_record(rec)
 
-            y_vals = np.array(rec.values, dtype=float)
-            if not rec.axes or not rec.axes[0].get("values"):
+            y_vals = np.array(record.values, dtype=float)
+            if not record.axes or not record.axes[0].get("values"):
                 continue
 
-            f_vals = np.array(rec.axes[0]["values"], dtype=float)
+            f_vals = np.array(record.axes[0]["values"], dtype=float)
 
             if y_vals.ndim == 1:
                 if len(y_vals) != len(f_vals):
@@ -84,16 +100,22 @@ class ResonanceExtractService:
                         "im(Y) []": y_vals,
                     }
                 )
-                if len(rec.axes) > 1 and rec.axes[1].get("name") in ("L_jun", "l_jun"):
-                    df_part["L_jun [nH]"] = float(rec.axes[1]["values"][0])
+                if len(record.axes) > 1 and str(record.axes[1].get("name", "")).lower() in {
+                    "l_jun",
+                    "l_ind",
+                }:
+                    df_part["L_jun [nH]"] = float(record.axes[1]["values"][0])
                 dfs.append(df_part)
 
             elif y_vals.ndim == 2:
                 # 2D array: typically [Freq, L_jun]
                 # Check axes[1] for L_jun
                 l_jun_vals = [0.0]
-                if len(rec.axes) > 1 and rec.axes[1].get("name") in ("L_jun", "l_jun"):
-                    l_jun_vals = [float(v) for v in rec.axes[1]["values"]]
+                if len(record.axes) > 1 and str(record.axes[1].get("name", "")).lower() in {
+                    "l_jun",
+                    "l_ind",
+                }:
+                    l_jun_vals = [float(v) for v in record.axes[1]["values"]]
 
                 if y_vals.shape[1] != len(l_jun_vals):
                     # Fallback single L_jun or mismatch

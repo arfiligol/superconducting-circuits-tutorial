@@ -21,9 +21,14 @@ from core.analysis.application.services.fit_result_persistence import (
     persist_y11_fit_outputs,
 )
 from core.analysis.application.services.squid_fitting import FitModel
+from core.analysis.domain import (
+    normalize_trace_record,
+    trace_record_data_type,
+    trace_record_representation,
+)
 from core.analysis.domain.schemas.fitting import AnalysisEntry
 from core.analysis.domain.services.data_conversion import convert_data_record_to_dataframe
-from core.shared.persistence import DataRecord, DeviceType, get_unit_of_work
+from core.shared.persistence import DeviceType, get_unit_of_work
 
 
 @dataclass(frozen=True)
@@ -149,14 +154,17 @@ class CharacterizationFittingService:
         self,
         dataset_id: int,
         record_ids: list[int] | None,
-    ) -> tuple[str, DataRecord]:
+    ) -> tuple[str, object]:
         with get_unit_of_work() as uow:
             dataset = uow.datasets.get(dataset_id)
             if dataset is None:
                 raise ValueError(f"Dataset ID {dataset_id} not found.")
 
             selected_ids = {int(record_id) for record_id in record_ids or []}
-            records = uow.data_records.list_by_dataset(dataset_id)
+            records = [
+                normalize_trace_record(record)
+                for record in uow.data_records.list_by_dataset(dataset_id)
+            ]
             if selected_ids:
                 records = [record for record in records if record.id in selected_ids]
 
@@ -168,17 +176,17 @@ class CharacterizationFittingService:
             return str(dataset.name), y11_records[0]
 
     @staticmethod
-    def _is_y11_imaginary_record(record: DataRecord) -> bool:
-        data_type = str(record.data_type).strip().lower()
-        if data_type not in {"y_parameters", "y_params"}:
+    def _is_y11_imaginary_record(record: object) -> bool:
+        data_type = trace_record_data_type(record)
+        if data_type != "y_parameters":
             return False
 
-        parameter = str(record.parameter).split(" [", maxsplit=1)[0].strip().upper()
+        normalized_record = normalize_trace_record(record)
+        parameter = str(normalized_record.parameter).split(" [", maxsplit=1)[0].strip().upper()
         if parameter != "Y11":
             return False
 
-        representation = str(record.representation).strip().lower()
-        return representation in {"imaginary", "imag"}
+        return trace_record_representation(record) == "imaginary"
 
     @staticmethod
     def _resolve_fit_model(raw_value: str) -> FitModel:
@@ -190,14 +198,15 @@ class CharacterizationFittingService:
         return FitModel.WITH_LS
 
     @staticmethod
-    def _build_y11_dataframe(record: DataRecord) -> pd.DataFrame:
-        values_array = np.asarray(record.values, dtype=float)
+    def _build_y11_dataframe(record: object) -> pd.DataFrame:
+        normalized_record = normalize_trace_record(record)
+        values_array = np.asarray(normalized_record.values, dtype=float)
         if values_array.ndim == 2:
-            return convert_data_record_to_dataframe(record, value_label="im(Y) []")
+            return convert_data_record_to_dataframe(normalized_record, value_label="im(Y) []")
 
-        if not record.axes:
+        if not normalized_record.axes:
             raise ValueError("Selected record has no axes metadata.")
-        freq_values = np.asarray(record.axes[0].get("values", []), dtype=float)
+        freq_values = np.asarray(normalized_record.axes[0].get("values", []), dtype=float)
         if freq_values.size == 0:
             raise ValueError("Selected record has empty frequency axis.")
         freq_ghz = freq_values / 1e9 if np.max(freq_values) > 1e6 else freq_values
@@ -211,11 +220,10 @@ class CharacterizationFittingService:
                     "im(Y) []": values_array.tolist(),
                 }
             )
-            if len(record.axes) > 1 and str(record.axes[1].get("name", "")).lower() in {
-                "l_jun",
-                "l_ind",
-            }:
-                axis_values = record.axes[1].get("values", [])
+            if len(normalized_record.axes) > 1 and str(
+                normalized_record.axes[1].get("name", "")
+            ).lower() in {"l_jun", "l_ind"}:
+                axis_values = normalized_record.axes[1].get("values", [])
                 if axis_values:
                     df["L_jun [nH]"] = float(axis_values[0])
             return df
