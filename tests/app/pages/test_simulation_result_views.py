@@ -37,6 +37,7 @@ from app.pages.simulation import (
     _normalize_termination_mode,
     _normalize_termination_selected_ports,
     _normalized_simulation_setup_snapshot,
+    _result_from_trace_store_bundle,
     _result_metric_options_for_family,
     _result_mode_options,
     _result_port_options,
@@ -47,6 +48,11 @@ from app.pages.simulation import (
     _should_log_sweep_point_progress,
     _sweep_payload_port_options,
     _sweep_progress_log_step,
+    _trace_store_bundle_from_simulation_result,
+    _TraceRecordAuthority,
+    _TraceStoreAxis,
+    _TraceStoreResultBundle,
+    _ViewTraceStore,
 )
 from app.services.simulation_setup_manager import (
     delete_setup,
@@ -187,6 +193,21 @@ def _sample_transformed_post_processed_sweep_run() -> PortMatrixSweepRun:
         ),
         representative_point_index=0,
     )
+
+
+class _NoFullReadArray:
+    """Array wrapper that fails when callers request a full ND read before slicing."""
+
+    def __init__(self, values: list[list[float]] | np.ndarray) -> None:
+        self._values = np.asarray(values, dtype=np.float64)
+        self.keys: list[object] = []
+
+    def __getitem__(self, key: object) -> np.ndarray:
+        self.keys.append(key)
+        normalized = key if isinstance(key, tuple) else (key,)
+        if normalized and all(item == slice(None) for item in normalized):
+            raise AssertionError("unexpected full-read before slice")
+        return self._values[key]
 
 
 def test_result_metric_options_for_family_exposes_multiple_result_families() -> None:
@@ -828,7 +849,7 @@ def test_post_processing_panel_exposes_input_source_and_hfss_fields() -> None:
 def test_raw_result_provider_scopes_ptc_to_yz_families_only() -> None:
     source = inspect.getsource(simulation_page._render_simulation_environment)
     assert "view_family in _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY" in source
-    assert "return (raw_result, _result_port_options(raw_result))" in source
+    assert "_cached_trace_store_bundle_from_result(raw_result)" in source
 
 
 def test_kron_keep_basis_uses_non_dropdown_multi_select_interaction() -> None:
@@ -1026,6 +1047,128 @@ def test_post_processed_sweep_metric_rows_can_render_non_representative_point() 
     assert rendered["trace_details"][0]["point_index"] == 1
     assert rendered["trace_details"][0]["axis_value"] == pytest.approx(1100.0)
     assert rendered["figure"].data[0].y[0] == pytest.approx(3.0)
+
+
+def test_trace_store_result_bundle_roundtrips_single_result_view() -> None:
+    bundle = _trace_store_bundle_from_simulation_result(_sample_result())
+
+    reconstructed = _result_from_trace_store_bundle(bundle)
+
+    assert reconstructed.frequencies_ghz == pytest.approx([4.9, 5.0, 5.1])
+    assert reconstructed.get_mode_s_parameter_real((0,), 1, (0,), 1) == pytest.approx(
+        [0.2, 0.0, -0.2]
+    )
+    assert reconstructed.get_mode_y_parameter_complex((0,), 2, (0,), 2)[2].imag == pytest.approx(
+        -0.002
+    )
+
+
+def test_trace_store_backed_sweep_metric_rows_read_only_selected_slice() -> None:
+    sweep_axis = SimulationSweepAxis(target_value_ref="Lj", values=(900.0, 1100.0), unit="pH")
+    frequency_axis = _TraceStoreAxis(name="frequency", unit="GHz", values=(4.9, 5.0, 5.1))
+    compare_real = _NoFullReadArray(((0.2, 0.0, -0.2), (0.4, 0.0, -0.4)))
+    compare_imag = _NoFullReadArray(((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    bundle = _TraceStoreResultBundle(
+        trace_records=(
+            _TraceRecordAuthority(
+                family="s_params",
+                parameter="om=0|op=1|im=0|ip=1",
+                representation="real",
+                axes=(
+                    _TraceStoreAxis(name="Lj", unit="pH", values=(900.0, 1100.0)),
+                    frequency_axis,
+                ),
+                store_key="s11:real",
+                trace_meta={
+                    "family": "s_params",
+                    "parameter": "om=0|op=1|im=0|ip=1",
+                    "representation": "real",
+                },
+            ),
+            _TraceRecordAuthority(
+                family="s_params",
+                parameter="om=0|op=1|im=0|ip=1",
+                representation="imaginary",
+                axes=(
+                    _TraceStoreAxis(name="Lj", unit="pH", values=(900.0, 1100.0)),
+                    frequency_axis,
+                ),
+                store_key="s11:imaginary",
+                trace_meta={
+                    "family": "s_params",
+                    "parameter": "om=0|op=1|im=0|ip=1",
+                    "representation": "imaginary",
+                },
+            ),
+        ),
+        trace_store=_ViewTraceStore(
+            arrays={
+                "s11:real": compare_real,
+                "s11:imaginary": compare_imag,
+            }
+        ),
+        sweep_axes=(sweep_axis,),
+        representative_axis_indices=(0,),
+        representative_result=_sample_result(),
+        port_indices=(1, 2),
+        mode_indices=((0,), (1,)),
+        port_label_by_index={1: "1", 2: "2"},
+    )
+
+    rendered = _build_sweep_metric_rows(
+        sweep_payload={},
+        trace_store_bundle=bundle,
+        family="s",
+        metric="magnitude_linear",
+        trace_selection={
+            "trace": "s_param",
+            "output_mode": (0,),
+            "output_port": 1,
+            "input_mode": (0,),
+            "input_port": 1,
+            "sweep_axis_index": 1,
+        },
+        z0=50.0,
+        frequency_index=0,
+        dark_mode=True,
+    )
+
+    assert compare_real.keys == [(1, slice(None, None, None))]
+    assert compare_imag.keys == [(1, slice(None, None, None))]
+    assert rendered["slice_point_count"] == 1
+    assert rendered["trace_details"][0]["point_index"] == 1
+    assert rendered["figure"].data[0].y[0] == pytest.approx(0.4)
+
+
+def test_post_processed_trace_store_bundle_preserves_compare_labels() -> None:
+    trace_store_bundle = simulation_page._trace_store_bundle_from_post_processed_sweep_run(
+        _sample_transformed_post_processed_sweep_run(),
+        reference_impedance_ohm=50.0,
+    )
+
+    rendered = _build_sweep_metric_rows(
+        sweep_payload={},
+        trace_store_bundle=trace_store_bundle,
+        family="admittance",
+        metric="real",
+        trace_selection={
+            "trace": "admittance",
+            "output_mode": (0,),
+            "output_port": 2,
+            "input_mode": (0,),
+            "input_port": 2,
+            "sweep_axis_index": 1,
+        },
+        z0=50.0,
+        frequency_index=0,
+        dark_mode=True,
+        port_label_by_index=trace_store_bundle.port_label_by_index,
+    )
+
+    assert trace_store_bundle.port_label_by_index == {1: "cm(1,2)", 2: "dm(1,2)"}
+    assert rendered["trace_details"][0]["axis_value"] == pytest.approx(15.0)
+    assert rendered["figure"].data[0].name.startswith("Y_dm_dm")
+    assert "Y22" not in rendered["figure"].data[0].name
 
 
 def test_hash_stable_json_is_order_independent() -> None:

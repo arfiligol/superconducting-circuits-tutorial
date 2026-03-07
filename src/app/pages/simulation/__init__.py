@@ -7,6 +7,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -241,6 +242,102 @@ _SWEEP_SERIES_CACHE: dict[
     tuple[Any, ...],
     tuple[list[float | None], str, str],
 ] = {}
+_TRACE_STORE_AUTHORITY_CACHE: dict[tuple[Any, ...], _TraceStoreResultBundle] = {}
+
+
+@dataclass(frozen=True)
+class _TraceStoreAxis:
+    """One canonical axis definition for TraceRecord-style runtime reads."""
+
+    name: str
+    unit: str
+    values: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class _TraceRecordAuthority:
+    """One logical observable over axes plus a TraceStore locator."""
+
+    family: str
+    parameter: str
+    representation: str
+    axes: tuple[_TraceStoreAxis, ...]
+    store_key: str
+    trace_meta: dict[str, Any]
+
+
+@dataclass
+class _ViewTraceStore:
+    """In-memory TraceStore abstraction for slice-first result-view reads."""
+
+    arrays: dict[str, Any]
+
+    def read_frequency_slice(
+        self,
+        record: _TraceRecordAuthority,
+        *,
+        axis_index_by_name: Mapping[str, int] | None = None,
+    ) -> list[float]:
+        """Read exactly one frequency trace without materializing unrelated sweep slices."""
+        selectors: list[Any] = []
+        resolved_axis_indices = dict(axis_index_by_name or {})
+        for axis in record.axes:
+            if axis.name == "frequency":
+                selectors.append(slice(None))
+                continue
+            axis_index = int(resolved_axis_indices.get(axis.name, 0))
+            if axis_index < 0 or axis_index >= len(axis.values):
+                raise IndexError(f"Axis index out of range for {axis.name}: {axis_index}")
+            selectors.append(axis_index)
+        raw_values = self.arrays[record.store_key][tuple(selectors)]
+        values = np.asarray(raw_values, dtype=np.float64)
+        if values.ndim != 1:
+            raise ValueError("TraceStore slice must resolve to exactly one frequency trace.")
+        return [float(value) for value in values]
+
+
+@dataclass(frozen=True)
+class _TraceStoreResultBundle:
+    """Canonical TraceRecord + TraceStore authority for one result or sweep view."""
+
+    trace_records: tuple[_TraceRecordAuthority, ...]
+    trace_store: _ViewTraceStore
+    sweep_axes: tuple[SimulationSweepAxis, ...]
+    representative_axis_indices: tuple[int, ...]
+    representative_result: SimulationResult
+    port_indices: tuple[int, ...]
+    mode_indices: tuple[tuple[int, ...], ...]
+    port_label_by_index: dict[int, str]
+
+    @property
+    def point_count(self) -> int:
+        """Return the cartesian sweep size implied by canonical axes."""
+        if not self.sweep_axes:
+            return 1
+        return int(np.prod([len(axis.values) for axis in self.sweep_axes], dtype=np.int64))
+
+
+@dataclass(frozen=True)
+class _SweepSourcePoint:
+    """One lazily resolved sweep point from canonical trace authority."""
+
+    point_index: int
+    axis_indices: tuple[int, ...]
+    axis_values: dict[str, float]
+    result: SimulationResult
+
+
+@dataclass(frozen=True)
+class _SweepResultSource:
+    """Unified sweep source for legacy payloads and TraceStore-backed runtime reads."""
+
+    axes: tuple[SimulationSweepAxis, ...]
+    representative_result: SimulationResult
+    representative_axis_indices: tuple[int, ...]
+    representative_point_index: int
+    point_count: int
+    port_options: dict[int, str]
+    read_point: Callable[[tuple[int, ...]], _SweepSourcePoint | None]
 
 
 def _with_test_id(element: Any, test_id: str) -> Any:
@@ -260,6 +357,548 @@ def _cache_store_limited(cache: dict[Any, Any], key: Any, value: Any, *, limit: 
     while len(cache) > limit:
         cache.pop(next(iter(cache)))
     return value
+
+
+def _trace_store_axis(
+    *,
+    name: str,
+    unit: str,
+    values: tuple[float, ...] | list[float],
+) -> _TraceStoreAxis:
+    """Build one immutable axis descriptor for TraceStore-backed reads."""
+    return _TraceStoreAxis(
+        name=str(name),
+        unit=str(unit),
+        values=tuple(float(value) for value in values),
+    )
+
+
+def _iter_simulation_result_trace_series(
+    result: SimulationResult,
+) -> list[tuple[str, str, str, list[float]]]:
+    """Flatten one SimulationResult into canonical trace-series entries."""
+    resolved_s_real = result.s_parameter_mode_real or result._resolved_mode_s_parameter_real()
+    resolved_s_imag = result.s_parameter_mode_imag or result._resolved_mode_s_parameter_imag()
+    entries: list[tuple[str, str, str, list[float]]] = []
+
+    for label in sorted(set(resolved_s_real) & set(resolved_s_imag)):
+        entries.append(("s_params", label, "real", list(resolved_s_real[label])))
+        entries.append(("s_params", label, "imaginary", list(resolved_s_imag[label])))
+    for label in sorted(set(result.z_parameter_mode_real) & set(result.z_parameter_mode_imag)):
+        entries.append(("z_params", label, "real", list(result.z_parameter_mode_real[label])))
+        entries.append(("z_params", label, "imaginary", list(result.z_parameter_mode_imag[label])))
+    for label in sorted(set(result.y_parameter_mode_real) & set(result.y_parameter_mode_imag)):
+        entries.append(("y_params", label, "real", list(result.y_parameter_mode_real[label])))
+        entries.append(("y_params", label, "imaginary", list(result.y_parameter_mode_imag[label])))
+    for label in sorted(result.qe_parameter_mode):
+        entries.append(("qe", label, "value", list(result.qe_parameter_mode[label])))
+    for label in sorted(result.qe_ideal_parameter_mode):
+        entries.append(("qe_ideal", label, "value", list(result.qe_ideal_parameter_mode[label])))
+    for label in sorted(result.cm_parameter_mode):
+        entries.append(("commutation", label, "value", list(result.cm_parameter_mode[label])))
+    return entries
+
+
+def _trace_store_bundle_from_result_points(
+    *,
+    points: list[tuple[tuple[int, ...], SimulationResult]],
+    sweep_axes: tuple[SimulationSweepAxis, ...],
+    representative_axis_indices: tuple[int, ...],
+    representative_result: SimulationResult,
+    port_label_by_index: Mapping[int, str] | None = None,
+) -> _TraceStoreResultBundle:
+    """Materialize one canonical TraceRecord + TraceStore bundle from point results."""
+    if not points:
+        raise ValueError("TraceStore authority requires at least one point result.")
+
+    frequency_axis = _trace_store_axis(
+        name="frequency",
+        unit="GHz",
+        values=tuple(float(value) for value in representative_result.frequencies_ghz),
+    )
+    sweep_trace_axes = tuple(
+        _trace_store_axis(
+            name=axis.target_value_ref,
+            unit=axis.unit,
+            values=tuple(float(value) for value in axis.values),
+        )
+        for axis in sweep_axes
+    )
+    bundle_axes = (*sweep_trace_axes, frequency_axis)
+    sweep_shape = tuple(len(axis.values) for axis in sweep_axes)
+    frequency_count = len(frequency_axis.values)
+    arrays: dict[str, Any] = {}
+    trace_records: list[_TraceRecordAuthority] = []
+    seen_store_keys: set[str] = set()
+    port_indices: set[int] = set()
+    mode_indices: set[tuple[int, ...]] = set()
+
+    for axis_indices, result in points:
+        if len(result.frequencies_ghz) != frequency_count:
+            raise ValueError("Sweep point frequency grids must match for TraceStore reads.")
+        port_indices.update(int(port) for port in result.available_port_indices)
+        mode_indices.update(tuple(mode) for mode in result.available_mode_indices)
+        target_index = (*axis_indices, slice(None))
+        for (
+            family,
+            parameter,
+            representation,
+            values,
+        ) in _iter_simulation_result_trace_series(result):
+            store_key = f"{family}:{representation}:{parameter}"
+            if store_key not in arrays:
+                arrays[store_key] = np.full(
+                    (*sweep_shape, frequency_count) if sweep_shape else (frequency_count,),
+                    np.nan,
+                    dtype=np.float64,
+                )
+            arrays[store_key][target_index] = np.asarray(values, dtype=np.float64)
+            if store_key in seen_store_keys:
+                continue
+            seen_store_keys.add(store_key)
+            trace_records.append(
+                _TraceRecordAuthority(
+                    family=family,
+                    parameter=parameter,
+                    representation=representation,
+                    axes=bundle_axes,
+                    store_key=store_key,
+                    trace_meta={
+                        "parameter": parameter,
+                        "family": family,
+                        "representation": representation,
+                    },
+                )
+            )
+
+    resolved_port_labels = {
+        int(port): str((port_label_by_index or {}).get(port, port))
+        for port in sorted(port_indices or set(representative_result.available_port_indices))
+    }
+    resolved_modes = tuple(
+        sorted(
+            mode_indices
+            or {
+                tuple(mode)
+                for mode in representative_result.available_mode_indices
+            }
+        )
+    )
+    return _TraceStoreResultBundle(
+        trace_records=tuple(trace_records),
+        trace_store=_ViewTraceStore(arrays=arrays),
+        sweep_axes=tuple(sweep_axes),
+        representative_axis_indices=tuple(int(index) for index in representative_axis_indices),
+        representative_result=representative_result,
+        port_indices=tuple(
+            sorted(port_indices or set(representative_result.available_port_indices))
+        ),
+        mode_indices=resolved_modes,
+        port_label_by_index=resolved_port_labels or _result_port_options(representative_result),
+    )
+
+
+def _trace_store_bundle_from_simulation_result(
+    result: SimulationResult,
+) -> _TraceStoreResultBundle:
+    """Build one canonical TraceStore bundle for a single simulation result."""
+    return _trace_store_bundle_from_result_points(
+        points=[((), result)],
+        sweep_axes=(),
+        representative_axis_indices=(),
+        representative_result=result,
+        port_label_by_index=_result_port_options(result),
+    )
+
+
+def _trace_store_bundle_from_sweep_run(
+    sweep_run: SimulationSweepRun,
+    *,
+    port_label_by_index: Mapping[int, str] | None = None,
+) -> _TraceStoreResultBundle:
+    """Build one canonical TraceStore bundle for a simulation sweep."""
+    representative_point = sweep_run.points[sweep_run.representative_point_index]
+    return _trace_store_bundle_from_result_points(
+        points=[
+            (tuple(int(index) for index in point.axis_indices), point.result)
+            for point in sweep_run.points
+        ],
+        sweep_axes=tuple(sweep_run.axes),
+        representative_axis_indices=tuple(
+            int(index) for index in representative_point.axis_indices
+        ),
+        representative_result=representative_point.result,
+        port_label_by_index=port_label_by_index,
+    )
+
+
+def _trace_store_bundle_from_post_processed_sweep(
+    sweep: PortMatrixSweep,
+    *,
+    reference_impedance_ohm: float,
+) -> _TraceStoreResultBundle:
+    """Build one canonical TraceStore bundle for one post-processed result."""
+    result, port_options = _build_post_processed_result_payload(
+        sweep,
+        reference_impedance_ohm=reference_impedance_ohm,
+    )
+    return _trace_store_bundle_from_result_points(
+        points=[((), result)],
+        sweep_axes=(),
+        representative_axis_indices=(),
+        representative_result=result,
+        port_label_by_index=port_options,
+    )
+
+
+def _trace_store_bundle_from_post_processed_sweep_run(
+    runtime_output: PortMatrixSweepRun,
+    *,
+    reference_impedance_ohm: float,
+) -> _TraceStoreResultBundle:
+    """Build one canonical TraceStore bundle for one post-processed sweep."""
+    converted_points: list[tuple[tuple[int, ...], SimulationResult]] = []
+    representative_result: SimulationResult | None = None
+    port_options: dict[int, str] = {}
+    for point in runtime_output.points:
+        converted, resolved_port_options = _build_post_processed_result_payload(
+            point.sweep,
+            reference_impedance_ohm=reference_impedance_ohm,
+        )
+        if representative_result is None:
+            representative_result = converted
+            port_options = resolved_port_options
+        converted_points.append((tuple(int(index) for index in point.axis_indices), converted))
+    if representative_result is None:
+        raise ValueError("Post-processed sweep runtime has no points.")
+    representative_point = runtime_output.points[runtime_output.representative_point_index]
+    return _trace_store_bundle_from_result_points(
+        points=converted_points,
+        sweep_axes=tuple(runtime_output.axes),
+        representative_axis_indices=tuple(
+            int(index) for index in representative_point.axis_indices
+        ),
+        representative_result=representative_result,
+        port_label_by_index=port_options,
+    )
+
+
+def _cached_trace_store_bundle_from_result(
+    result: SimulationResult,
+) -> _TraceStoreResultBundle:
+    """Cache one single-result TraceStore bundle by result object identity."""
+    cache_key = ("single_result", id(result))
+    cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    return _cache_store_limited(
+        _TRACE_STORE_AUTHORITY_CACHE,
+        cache_key,
+        _trace_store_bundle_from_simulation_result(result),
+        limit=_SWEEP_RUN_CACHE_LIMIT,
+    )
+
+
+def _cached_trace_store_bundle_from_sweep_payload(
+    payload: Mapping[str, Any],
+    *,
+    port_label_by_index: Mapping[int, str] | None = None,
+) -> _TraceStoreResultBundle:
+    """Cache one sweep TraceStore bundle by payload object identity."""
+    cache_key = (
+        "simulation_sweep",
+        id(payload),
+        tuple(
+            sorted(
+                (int(port), str(label))
+                for port, label in (port_label_by_index or {}).items()
+            )
+        ),
+    )
+    cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    sweep_run = _cached_sweep_run_from_payload(payload)
+    return _cache_store_limited(
+        _TRACE_STORE_AUTHORITY_CACHE,
+        cache_key,
+        _trace_store_bundle_from_sweep_run(
+            sweep_run,
+            port_label_by_index=port_label_by_index,
+        ),
+        limit=_SWEEP_RUN_CACHE_LIMIT,
+    )
+
+
+def _cached_trace_store_bundle_from_post_processed_runtime(
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun,
+    *,
+    reference_impedance_ohm: float,
+) -> _TraceStoreResultBundle:
+    """Cache one post-processed TraceStore bundle by runtime identity and Z0."""
+    cache_key = ("post_processed", id(runtime_output), float(reference_impedance_ohm))
+    cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    if isinstance(runtime_output, PortMatrixSweepRun):
+        authority = _trace_store_bundle_from_post_processed_sweep_run(
+            runtime_output,
+            reference_impedance_ohm=reference_impedance_ohm,
+        )
+    else:
+        authority = _trace_store_bundle_from_post_processed_sweep(
+            runtime_output,
+            reference_impedance_ohm=reference_impedance_ohm,
+        )
+    return _cache_store_limited(
+        _TRACE_STORE_AUTHORITY_CACHE,
+        cache_key,
+        authority,
+        limit=_SWEEP_RUN_CACHE_LIMIT,
+    )
+
+
+def _axis_index_by_name_from_bundle(
+    bundle: _TraceStoreResultBundle,
+    *,
+    axis_index_by_name: Mapping[str, int] | None = None,
+) -> dict[str, int]:
+    """Normalize sweep-axis selectors for one TraceStore bundle."""
+    raw_indices = dict(axis_index_by_name or {})
+    resolved: dict[str, int] = {}
+    for axis_position, axis in enumerate(bundle.sweep_axes):
+        axis_index = int(raw_indices.get(axis.target_value_ref, 0))
+        if (
+            axis_position < len(bundle.representative_axis_indices)
+            and axis.target_value_ref not in raw_indices
+        ):
+            axis_index = int(bundle.representative_axis_indices[axis_position])
+        axis_index = max(0, min(len(axis.values) - 1, axis_index))
+        resolved[axis.target_value_ref] = axis_index
+    return resolved
+
+
+def _result_from_trace_store_bundle(
+    bundle: _TraceStoreResultBundle,
+    *,
+    axis_index_by_name: Mapping[str, int] | None = None,
+) -> SimulationResult:
+    """Slice one canonical TraceStore bundle back into a SimulationResult view payload."""
+    resolved_axis_indices = _axis_index_by_name_from_bundle(
+        bundle,
+        axis_index_by_name=axis_index_by_name,
+    )
+    s_mode_real: dict[str, list[float]] = {}
+    s_mode_imag: dict[str, list[float]] = {}
+    z_mode_real: dict[str, list[float]] = {}
+    z_mode_imag: dict[str, list[float]] = {}
+    y_mode_real: dict[str, list[float]] = {}
+    y_mode_imag: dict[str, list[float]] = {}
+    qe_mode: dict[str, list[float]] = {}
+    qe_ideal_mode: dict[str, list[float]] = {}
+    cm_mode: dict[str, list[float]] = {}
+    s_zero_mode_real: dict[str, list[float]] = {}
+    s_zero_mode_imag: dict[str, list[float]] = {}
+
+    for record in bundle.trace_records:
+        values = bundle.trace_store.read_frequency_slice(
+            record,
+            axis_index_by_name=resolved_axis_indices,
+        )
+        family = str(record.trace_meta.get("family", record.family))
+        parameter = str(record.trace_meta.get("parameter", record.parameter))
+        if family == "s_params":
+            if record.representation == "real":
+                s_mode_real[parameter] = values
+            else:
+                s_mode_imag[parameter] = values
+        elif family == "z_params":
+            if record.representation == "real":
+                z_mode_real[parameter] = values
+            else:
+                z_mode_imag[parameter] = values
+        elif family == "y_params":
+            if record.representation == "real":
+                y_mode_real[parameter] = values
+            else:
+                y_mode_imag[parameter] = values
+        elif family == "qe":
+            qe_mode[parameter] = values
+        elif family == "qe_ideal":
+            qe_ideal_mode[parameter] = values
+        elif family == "commutation":
+            cm_mode[parameter] = values
+
+    for label, values in s_mode_real.items():
+        parsed = SimulationResult._parse_mode_trace_label(label)
+        if parsed is None:
+            continue
+        output_mode, output_port, input_mode, input_port = parsed
+        if all(value == 0 for value in output_mode) and all(value == 0 for value in input_mode):
+            zero_label = f"S{output_port}{input_port}"
+            s_zero_mode_real[zero_label] = list(values)
+            if label in s_mode_imag:
+                s_zero_mode_imag[zero_label] = list(s_mode_imag[label])
+
+    zero_mode = next(
+        (mode for mode in bundle.mode_indices if all(value == 0 for value in mode)),
+        (0,),
+    )
+    s11_label = SimulationResult._mode_trace_label(tuple(zero_mode), 1, tuple(zero_mode), 1)
+    frequency_values = list(bundle.representative_result.frequencies_ghz)
+    s11_real = list(s_mode_real.get(s11_label, [0.0] * len(frequency_values)))
+    s11_imag = list(s_mode_imag.get(s11_label, [0.0] * len(frequency_values)))
+    return SimulationResult(
+        frequencies_ghz=frequency_values,
+        s11_real=s11_real,
+        s11_imag=s11_imag,
+        port_indices=list(bundle.port_indices),
+        mode_indices=[tuple(mode) for mode in bundle.mode_indices],
+        s_parameter_real=s_zero_mode_real,
+        s_parameter_imag=s_zero_mode_imag,
+        s_parameter_mode_real=s_mode_real,
+        s_parameter_mode_imag=s_mode_imag,
+        z_parameter_mode_real=z_mode_real,
+        z_parameter_mode_imag=z_mode_imag,
+        y_parameter_mode_real=y_mode_real,
+        y_parameter_mode_imag=y_mode_imag,
+        qe_parameter_mode=qe_mode,
+        qe_ideal_parameter_mode=qe_ideal_mode,
+        cm_parameter_mode=cm_mode,
+    )
+
+
+def _point_index_from_axis_indices(
+    *,
+    axis_indices: tuple[int, ...],
+    axes: tuple[SimulationSweepAxis, ...],
+) -> int:
+    """Convert one sweep index tuple into a stable point index."""
+    if not axes:
+        return 0
+    dims = tuple(len(axis.values) for axis in axes)
+    if not dims:
+        return 0
+    return int(np.ravel_multi_index(axis_indices, dims=dims))
+
+
+def _sweep_source_from_sweep_run(
+    sweep_run: SimulationSweepRun,
+    *,
+    port_options: Mapping[int, str] | None = None,
+) -> _SweepResultSource:
+    """Adapt one legacy sweep payload into the common sweep-source interface."""
+    point_lookup = _cached_sweep_point_lookup(sweep_run)
+    representative_point = sweep_run.points[sweep_run.representative_point_index]
+    resolved_port_options = (
+        {int(key): str(value) for key, value in port_options.items()}
+        if isinstance(port_options, Mapping) and port_options
+        else _result_port_options(sweep_run.representative_result)
+    )
+
+    def read_point(axis_indices: tuple[int, ...]) -> _SweepSourcePoint | None:
+        point = point_lookup.get(tuple(int(index) for index in axis_indices))
+        if point is None:
+            return None
+        return _SweepSourcePoint(
+            point_index=int(point.point_index),
+            axis_indices=tuple(int(index) for index in point.axis_indices),
+            axis_values={
+                str(target_value_ref): float(value)
+                for target_value_ref, value in point.axis_values.items()
+            },
+            result=point.result,
+        )
+
+    return _SweepResultSource(
+        axes=tuple(sweep_run.axes),
+        representative_result=sweep_run.representative_result,
+        representative_axis_indices=tuple(
+            int(index) for index in representative_point.axis_indices
+        ),
+        representative_point_index=int(sweep_run.representative_point_index),
+        point_count=int(sweep_run.point_count),
+        port_options=resolved_port_options,
+        read_point=read_point,
+    )
+
+
+def _sweep_source_from_trace_store_bundle(
+    bundle: _TraceStoreResultBundle,
+) -> _SweepResultSource:
+    """Adapt one TraceStore-backed sweep authority into the common sweep-source interface."""
+    representative_axis_indices = tuple(int(index) for index in bundle.representative_axis_indices)
+
+    def read_point(axis_indices: tuple[int, ...]) -> _SweepSourcePoint | None:
+        resolved_axis_indices = tuple(int(index) for index in axis_indices)
+        if len(resolved_axis_indices) != len(bundle.sweep_axes):
+            return None
+        axis_values = {
+            axis.target_value_ref: float(axis.values[resolved_axis_indices[axis_position]])
+            for axis_position, axis in enumerate(bundle.sweep_axes)
+        }
+        return _SweepSourcePoint(
+            point_index=_point_index_from_axis_indices(
+                axis_indices=resolved_axis_indices,
+                axes=bundle.sweep_axes,
+            ),
+            axis_indices=resolved_axis_indices,
+            axis_values=axis_values,
+            result=_result_from_trace_store_bundle(
+                bundle,
+                axis_index_by_name={
+                    axis.target_value_ref: resolved_axis_indices[axis_position]
+                    for axis_position, axis in enumerate(bundle.sweep_axes)
+                },
+            ),
+        )
+
+    return _SweepResultSource(
+        axes=tuple(bundle.sweep_axes),
+        representative_result=bundle.representative_result,
+        representative_axis_indices=representative_axis_indices,
+        representative_point_index=_point_index_from_axis_indices(
+            axis_indices=representative_axis_indices,
+            axes=bundle.sweep_axes,
+        ),
+        point_count=int(bundle.point_count),
+        port_options=dict(bundle.port_label_by_index),
+        read_point=read_point,
+    )
+
+
+def _resolve_sweep_result_source(
+    *,
+    sweep_payload: Mapping[str, Any] | None = None,
+    trace_store_bundle: _TraceStoreResultBundle | None = None,
+) -> _SweepResultSource:
+    """Resolve the canonical sweep source for result-view rendering."""
+    if trace_store_bundle is not None:
+        return _sweep_source_from_trace_store_bundle(trace_store_bundle)
+    if not isinstance(sweep_payload, Mapping):
+        raise ValueError("Sweep source requires one payload or TraceStore bundle.")
+    sweep_run = _cached_sweep_run_from_payload(sweep_payload)
+    return _sweep_source_from_sweep_run(
+        sweep_run,
+        port_options=_sweep_payload_port_options(
+            sweep_payload,
+            fallback_result=sweep_run.representative_result,
+        ),
+    )
+
+
+def _resolve_representative_axis_index(
+    *,
+    representative_axis_indices: tuple[int, ...],
+    axis_position: int,
+    axis: SimulationSweepAxis,
+) -> int:
+    """Resolve one representative index along the compare axis."""
+    if axis_position < len(representative_axis_indices):
+        axis_index = int(representative_axis_indices[axis_position])
+    else:
+        axis_index = 0
+    return max(0, min(len(axis.values) - 1, axis_index))
 
 
 def _cached_sweep_run_from_payload(payload: Mapping[str, Any]) -> SimulationSweepRun:
@@ -4017,7 +4656,26 @@ def _normalize_sweep_result_view_state(
     port_options: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     """Normalize sweep result-view selectors against one sweep payload."""
-    representative = sweep_run.representative_result
+    return _normalize_sweep_result_view_state_from_source(
+        view_state=view_state,
+        sweep_source=_sweep_source_from_sweep_run(
+            sweep_run,
+            port_options=port_options,
+        ),
+        family_options=family_options,
+        port_options=port_options,
+    )
+
+
+def _normalize_sweep_result_view_state_from_source(
+    *,
+    view_state: dict[str, Any],
+    sweep_source: _SweepResultSource,
+    family_options: Mapping[str, str] | None = None,
+    port_options: Mapping[int, str] | None = None,
+) -> dict[str, Any]:
+    """Normalize sweep result-view selectors against one resolved sweep source."""
+    representative = sweep_source.representative_result
     resolved_family_options = (
         dict(family_options)
         if isinstance(family_options, Mapping)
@@ -4036,7 +4694,7 @@ def _normalize_sweep_result_view_state(
     resolved_port_options = (
         {int(key): str(value) for key, value in port_options.items()}
         if isinstance(port_options, Mapping) and port_options
-        else _result_port_options(representative)
+        else dict(sweep_source.port_options)
     )
     mode_options = _result_mode_options(representative)
     trace_options = _result_trace_options_for_family(family)
@@ -4091,22 +4749,21 @@ def _normalize_sweep_result_view_state(
     if z0 <= 0:
         z0 = 50.0
 
-    axis_keys = [axis.target_value_ref for axis in sweep_run.axes]
+    axis_keys = [axis.target_value_ref for axis in sweep_source.axes]
     view_axis_target = str(view_state.get("view_axis_target_value_ref", "")).strip()
     if view_axis_target not in axis_keys:
         view_axis_target = axis_keys[0] if axis_keys else ""
     compare_axis = next(
-        (axis for axis in sweep_run.axes if axis.target_value_ref == view_axis_target),
-        sweep_run.axes[0],
+        (axis for axis in sweep_source.axes if axis.target_value_ref == view_axis_target),
+        sweep_source.axes[0],
     )
     compare_axis_position = next(
         idx
-        for idx, axis in enumerate(sweep_run.axes)
+        for idx, axis in enumerate(sweep_source.axes)
         if axis.target_value_ref == compare_axis.target_value_ref
     )
-    representative_point = sweep_run.points[sweep_run.representative_point_index]
-    representative_axis_index = _resolve_sweep_point_axis_index(
-        representative_point,
+    representative_axis_index = _resolve_representative_axis_index(
+        representative_axis_indices=sweep_source.representative_axis_indices,
         axis_position=compare_axis_position,
         axis=compare_axis,
     )
@@ -4122,7 +4779,7 @@ def _normalize_sweep_result_view_state(
     raw_fixed_indices = view_state.get("fixed_axis_indices")
     fixed_indices_input = raw_fixed_indices if isinstance(raw_fixed_indices, Mapping) else {}
     fixed_axis_indices: dict[str, int] = {}
-    for axis in sweep_run.axes:
+    for axis in sweep_source.axes:
         if axis.target_value_ref == view_axis_target:
             continue
         default_axis_index = len(axis.values) // 2
@@ -4294,7 +4951,8 @@ def _sweep_metric_series_for_point(
 
 def _build_sweep_metric_rows(
     *,
-    sweep_payload: Mapping[str, Any],
+    sweep_payload: Mapping[str, Any] | None,
+    trace_store_bundle: _TraceStoreResultBundle | None = None,
     family: str,
     metric: str,
     trace_selection: Mapping[str, Any] | None = None,
@@ -4307,28 +4965,28 @@ def _build_sweep_metric_rows(
     port_label_by_index: Mapping[int, str] | None = None,
 ) -> dict[str, Any]:
     """Build one frequency-first multi-trace sweep compare payload."""
-    sweep_run = _cached_sweep_run_from_payload(sweep_payload)
-    if not sweep_run.points:
-        raise ValueError("Sweep payload has no points.")
-
-    representative = sweep_run.representative_result
-    axis_by_target = {axis.target_value_ref: axis for axis in sweep_run.axes}
+    sweep_source = _resolve_sweep_result_source(
+        sweep_payload=sweep_payload,
+        trace_store_bundle=trace_store_bundle,
+    )
+    representative = sweep_source.representative_result
+    axis_by_target = {axis.target_value_ref: axis for axis in sweep_source.axes}
     if not axis_by_target:
         raise ValueError("Sweep payload has no axis metadata.")
 
     resolved_view_axis_target = str(view_axis_target_value_ref or "").strip()
     if resolved_view_axis_target not in axis_by_target:
-        resolved_view_axis_target = sweep_run.axes[0].target_value_ref
+        resolved_view_axis_target = sweep_source.axes[0].target_value_ref
     view_axis = axis_by_target[resolved_view_axis_target]
     view_axis_position = next(
         idx
-        for idx, axis in enumerate(sweep_run.axes)
+        for idx, axis in enumerate(sweep_source.axes)
         if axis.target_value_ref == resolved_view_axis_target
     )
 
     resolved_fixed_axis_indices: dict[str, int] = {}
     raw_fixed_indices = fixed_axis_indices if isinstance(fixed_axis_indices, Mapping) else {}
-    for axis in sweep_run.axes:
+    for axis in sweep_source.axes:
         if axis.target_value_ref == resolved_view_axis_target:
             continue
         axis_index = _coerce_int_value(
@@ -4356,23 +5014,27 @@ def _build_sweep_metric_rows(
     trace_labels: list[str] = []
     trace_details: list[dict[str, Any]] = []
     y_axis_title = ""
-    resolved_points: list[tuple[SimulationSweepPointResult, int, float]] = []
-    point_lookup = _cached_sweep_point_lookup(sweep_run)
+    resolved_points: list[tuple[_SweepSourcePoint, int, float]] = []
     for trace_index, resolved_trace_selection in enumerate(raw_trace_selections, start=1):
         requested_axis_index = _coerce_int_value(
             resolved_trace_selection.get("sweep_axis_index"),
-            sweep_run.representative_point_index if len(view_axis.values) == 1 else 0,
+            sweep_source.representative_point_index if len(view_axis.values) == 1 else 0,
         )
         requested_axis_index = max(0, min(len(view_axis.values) - 1, requested_axis_index))
         requested_point_indices = []
-        for axis_position, axis in enumerate(sweep_run.axes):
+        for axis_position, axis in enumerate(sweep_source.axes):
             if axis_position == view_axis_position:
                 requested_point_indices.append(requested_axis_index)
                 continue
             requested_point_indices.append(
-                int(resolved_fixed_axis_indices.get(axis.target_value_ref, len(axis.values) // 2))
+                int(
+                    resolved_fixed_axis_indices.get(
+                        axis.target_value_ref,
+                        len(axis.values) // 2,
+                    )
+                )
             )
-        matching_point = point_lookup.get(tuple(requested_point_indices))
+        matching_point = sweep_source.read_point(tuple(requested_point_indices))
         if matching_point is None:
             continue
         axis_value = float(
@@ -4450,8 +5112,8 @@ def _build_sweep_metric_rows(
         "trace_labels": trace_labels,
         "trace_details": trace_details,
         "view_axis_target_value_ref": view_axis.target_value_ref,
-        "dimension": int(sweep_run.dimension),
-        "point_count": int(sweep_run.point_count),
+        "dimension": len(sweep_source.axes),
+        "point_count": int(sweep_source.point_count),
         "slice_point_count": len(resolved_points),
         "fixed_axis_indices": resolved_fixed_axis_indices,
         "fixed_axis_details": [
@@ -4461,7 +5123,7 @@ def _build_sweep_metric_rows(
                 "value": float(axis.values[resolved_fixed_axis_indices[axis.target_value_ref]]),
                 "unit": str(axis.unit),
             }
-            for axis in sweep_run.axes
+            for axis in sweep_source.axes
             if axis.target_value_ref in resolved_fixed_axis_indices
         ],
     }
@@ -4471,6 +5133,7 @@ def _render_sweep_result_view_container(
     *,
     container: Any,
     sweep_payload: Mapping[str, Any] | None,
+    trace_store_bundle: _TraceStoreResultBundle | None = None,
     view_state: dict[str, Any],
     family_options: Mapping[str, str],
     title: str,
@@ -4484,29 +5147,29 @@ def _render_sweep_result_view_container(
 ) -> None:
     """Render one frequency-first sweep compare view from a canonical or adapted sweep payload."""
     container.clear()
-    if not isinstance(sweep_payload, Mapping):
+    if trace_store_bundle is None and not isinstance(sweep_payload, Mapping):
         with container:
             ui.label(empty_message).classes("text-sm text-muted")
         return
     try:
-        sweep_run = _cached_sweep_run_from_payload(sweep_payload)
+        sweep_source = _resolve_sweep_result_source(
+            sweep_payload=sweep_payload,
+            trace_store_bundle=trace_store_bundle,
+        )
     except Exception as exc:
         with container:
             ui.label(f"Sweep payload decode failed: {exc}").classes("text-sm text-warning")
         return
-    if not sweep_run.points:
+    if sweep_source.point_count <= 0:
         with container:
             ui.label("Sweep payload has no points to visualize.").classes("text-sm text-muted")
         return
 
-    normalized_state = _normalize_sweep_result_view_state(
+    normalized_state = _normalize_sweep_result_view_state_from_source(
         view_state=view_state,
-        sweep_run=sweep_run,
+        sweep_source=sweep_source,
         family_options=family_options,
-        port_options=_sweep_payload_port_options(
-            sweep_payload,
-            fallback_result=sweep_run.representative_result,
-        ),
+        port_options=sweep_source.port_options,
     )
     family = str(normalized_state["family"])
     metric = str(normalized_state["metric"])
@@ -4514,20 +5177,19 @@ def _render_sweep_result_view_container(
     view_axis_target_value_ref = str(normalized_state["view_axis_target_value_ref"])
     fixed_axis_indices = dict(normalized_state["fixed_axis_indices"])
     traces = list(normalized_state["traces"])
-    representative = sweep_run.representative_result
+    representative = sweep_source.representative_result
     metric_options = _result_metric_options_for_family(family)
     mode_options = _result_mode_options(representative)
-    port_options = _sweep_payload_port_options(
-        sweep_payload,
-        fallback_result=representative,
-    )
+    port_options = dict(sweep_source.port_options)
     trace_options = _result_trace_options_for_family(family)
     axis_options = {
-        axis.target_value_ref: _sweep_axis_display_label(axis) for axis in sweep_run.axes
+        axis.target_value_ref: _sweep_axis_display_label(axis)
+        for axis in sweep_source.axes
     }
     try:
         payload = _build_sweep_metric_rows(
             sweep_payload=sweep_payload,
+            trace_store_bundle=trace_store_bundle,
             family=family,
             metric=metric,
             trace_selections=traces,
@@ -4632,7 +5294,7 @@ def _render_sweep_result_view_container(
             with ui.row().classes("w-full items-end gap-3 flex-wrap mt-1"):
                 fixed_selects: list[tuple[str, Any]] = []
                 fixed_position = 0
-                for axis in sweep_run.axes:
+                for axis in sweep_source.axes:
                     if axis.target_value_ref == str(payload["view_axis_target_value_ref"]):
                         continue
                     fixed_position += 1
@@ -4660,6 +5322,7 @@ def _render_sweep_result_view_container(
             _render_sweep_result_view_container(
                 container=container,
                 sweep_payload=sweep_payload,
+                trace_store_bundle=trace_store_bundle,
                 view_state=view_state,
                 family_options=family_options,
                 title=title,
@@ -4713,7 +5376,7 @@ def _render_sweep_result_view_container(
 
         compare_axis = next(
             axis
-            for axis in sweep_run.axes
+            for axis in sweep_source.axes
             if axis.target_value_ref == str(payload["view_axis_target_value_ref"])
         )
 
@@ -5566,8 +6229,13 @@ def _render_simulation_environment():
                     reference_impedance_ohm=float(_reference_impedance),
                 )
                 if isinstance(ptc_result, SimulationResult):
-                    return (ptc_result, _result_port_options(ptc_result))
-            return (raw_result, _result_port_options(raw_result))
+                    bundle = _cached_trace_store_bundle_from_result(ptc_result)
+                    return (
+                        _result_from_trace_store_bundle(bundle),
+                        dict(bundle.port_label_by_index),
+                    )
+            bundle = _cached_trace_store_bundle_from_result(raw_result)
+            return (_result_from_trace_store_bundle(bundle), dict(bundle.port_label_by_index))
 
         def _post_processed_result_provider(
             reference_impedance: float,
@@ -5577,17 +6245,24 @@ def _render_simulation_environment():
             sweep = runtime_state.latest_sweep
             if not isinstance(sweep, PortMatrixSweep):
                 return None
-            return _build_post_processed_result_payload(
+            bundle = _cached_trace_store_bundle_from_post_processed_runtime(
                 sweep,
                 reference_impedance_ohm=reference_impedance,
             )
+            return (_result_from_trace_store_bundle(bundle), dict(bundle.port_label_by_index))
 
         def _render_simulation_sweep_result_view() -> None:
             if simulation_sweep_results_container is None:
                 return
+            trace_store_bundle = None
+            if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
+                trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
+                    runtime_state.latest_simulation_sweep_payload,
+                )
             _render_sweep_result_view_container(
                 container=simulation_sweep_results_container,
                 sweep_payload=runtime_state.latest_simulation_sweep_payload,
+                trace_store_bundle=trace_store_bundle,
                 view_state=sweep_result_view_state,
                 family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
                 title="Sweep Result View",
@@ -5615,7 +6290,7 @@ def _render_simulation_environment():
                 )
                 return
             try:
-                sweep_payload = _build_post_processed_sweep_explorer_payload(
+                trace_store_bundle = _cached_trace_store_bundle_from_post_processed_runtime(
                     runtime_output,
                     reference_impedance_ohm=float(
                         post_processed_sweep_view_state.get(
@@ -5645,7 +6320,8 @@ def _render_simulation_environment():
             )
             _render_sweep_result_view_container(
                 container=post_processing_sweep_results_container,
-                sweep_payload=sweep_payload,
+                sweep_payload=None,
+                trace_store_bundle=trace_store_bundle,
                 view_state=post_processed_sweep_view_state,
                 family_options=_POST_PROCESSED_RESULT_FAMILY_OPTIONS,
                 title="Post-Processed Sweep Result View",
@@ -5663,9 +6339,13 @@ def _render_simulation_environment():
 
             raw_save_callback = runtime_state.latest_raw_save_callback
             if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
+                trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
+                    runtime_state.latest_simulation_sweep_payload,
+                )
                 _render_sweep_result_view_container(
                     container=simulation_results_container,
                     sweep_payload=runtime_state.latest_simulation_sweep_payload,
+                    trace_store_bundle=trace_store_bundle,
                     view_state=sweep_result_view_state,
                     family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
                     title="Parameter Sweep Compare",
@@ -5755,7 +6435,7 @@ def _render_simulation_environment():
                 )
             if isinstance(runtime_output, PortMatrixSweepRun):
                 try:
-                    sweep_payload = _build_post_processed_sweep_explorer_payload(
+                    trace_store_bundle = _cached_trace_store_bundle_from_post_processed_runtime(
                         runtime_output,
                         reference_impedance_ohm=float(
                             post_processed_sweep_view_state.get(
@@ -5774,7 +6454,8 @@ def _render_simulation_environment():
                     return
                 _render_sweep_result_view_container(
                     container=post_processing_results_container,
-                    sweep_payload=sweep_payload,
+                    sweep_payload=None,
+                    trace_store_bundle=trace_store_bundle,
                     view_state=post_processed_sweep_view_state,
                     family_options=_POST_PROCESSED_SWEEP_COMPARE_FAMILY_OPTIONS,
                     title="Parameter Sweep Compare",
