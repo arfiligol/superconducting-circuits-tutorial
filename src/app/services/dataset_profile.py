@@ -240,3 +240,18 @@ def profile_summary_text(profile: Mapping[str, object]) -> str:
         capability_text = "None"
     source = normalize_profile_source(profile.get("source"), default="inferred")
     return f"Device Type: {device_type} | Capabilities: {capability_text} | Source: {source}"
+
+
+def design_profile_summary_text(profile: Mapping[str, object]) -> str:
+    """Build a product-facing summary using Design terminology over dataset_profile storage."""
+    device_type = normalize_device_type(profile.get("device_type"))
+    capabilities = normalize_capabilities(profile.get("capabilities", []))
+    capability_text = (
+        ", ".join(capability_label(item) for item in capabilities) if capabilities else "None"
+    )
+    source = normalize_profile_source(profile.get("source"), default="inferred")
+    return (
+        f"Design Type: {device_type_label(device_type)} | "
+        f"Characterization Hints: {capability_text} | "
+        f"Profile Source: {source}"
+    )

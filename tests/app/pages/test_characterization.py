@@ -97,6 +97,10 @@ def test_build_analysis_run_availability_marks_recommended_when_all_checks_pass(
     )
     assert availability.status == "Recommended"
     assert availability.has_compatible_traces is True
+    assert (
+        availability.reason
+        == "Compatible traces found and design profile recommends this analysis."
+    )
 
 
 def test_format_sweep_support_reason_renders_status_and_reason() -> None:

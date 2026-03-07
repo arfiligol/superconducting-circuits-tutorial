@@ -1,4 +1,4 @@
-"""Trace-scope query service for Characterization page."""
+"""Design-scope trace query service for the Characterization page."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from core.shared.persistence.repositories import (
 
 @runtime_checkable
 class CharacterizationTraceScopeUnitOfWork(Protocol):
-    """Typed UoW interface consumed by trace-scope query service."""
+    """Typed UoW interface consumed by design-facing trace scope queries."""
 
     data_records: DataRecordCharacterizationContract
     result_bundles: ResultBundleCharacterizationContract
@@ -96,7 +96,7 @@ def count_scope_trace_records(
     dataset_id: int,
     selected_bundle_id: int | None,
 ) -> int:
-    """Count trace rows for current source scope."""
+    """Count traces visible in the current design scope."""
     if selected_bundle_id is not None:
         return uow.result_bundles.count_data_records(selected_bundle_id)
     return uow.data_records.count_by_dataset(dataset_id)
@@ -116,7 +116,7 @@ def list_scope_compatible_trace_index_page(
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[dict[str, str | int]], int]:
-    """List one page of compatible trace metadata under current scope."""
+    """List one page of compatible trace metadata under the current design scope."""
     filters = _analysis_query_filters(analysis_requires)
     raw_data_types = filters.get("data_types")
     raw_parameters = filters.get("parameters")

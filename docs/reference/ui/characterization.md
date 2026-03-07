@@ -10,9 +10,9 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: /characterization 的 Source Scope、Run Analysis、Trace Selection 與 Result View 契約
+scope: /characterization 的 Design Scope、Run Analysis、Trace Selection 與 Result View 契約
 version: v0.10.0
-last_updated: 2026-03-07
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
@@ -22,12 +22,16 @@ updated_by: codex
 
 ## Core Data Model
 
-`/characterization` 必須以以下資料模型作為主體：
+`/characterization` 必須以以下產品語意作為主體：
 
-- `DatasetRecord`：容器
-- `ResultBundleRecord`：單次 run / import / analysis batch
-- `DataRecord`：trace-level payload
+- `Design`：使用者操作的 root container
+- `Trace`：統一分析與選取單位
+- `Trace Batch`：run / import / analysis 的 provenance boundary
 - `ResultArtifact`：Result View 的統一可顯示單元（view contract）
+
+!!! note "Phase-2 internal compatibility"
+    目前實作仍透過 `DatasetRecord` / `DataRecord` / `ResultBundleRecord` 相容層落地，
+    但 UI 主語言與查詢語意必須維持 `Design / Trace / Trace Batch`。
 
 ## Result Artifact Contract
 
@@ -49,7 +53,7 @@ updated_by: codex
 
 ## Page Sections
 
-1. `Source Scope`
+1. `Design Scope`
 2. `Run Analysis`
 3. `Result View`
 
@@ -65,23 +69,24 @@ updated_by: codex
     server-side characterization run 可以完成並保存結果，
     但舊 client 一旦 disconnected 或 deleted，任何 background UI refresh path 都必須停止命中該頁面的 refreshable target。
 
-## Source Scope Contract
+## Design Scope Contract
 
 !!! note "Current behavior（2026-03-04）"
-    舊版 UI 曾提供 `Result Bundle` 下拉，允許使用者直接切換 Characterization bundle scope。
+    舊版 UI 曾提供 `Trace Batch`（internal: `Result Bundle`）下拉，
+    允許使用者直接切換 Characterization scope。
 
-!!! important "Contract（Dataset-centric）"
-    使用者應只對 `Dataset` 操作。`Source Scope` 不再暴露「選 bundle 再分析」入口。
-    Run Analysis 的 trace 候選來源預設為 dataset-level trace index，並採 trace-first 相容性判定。
+!!! important "Contract（Design-centric）"
+    使用者應只對 `Design` 操作。`Design Scope` 不再暴露「選 trace batch 再分析」入口。
+    Run Analysis 的 trace 候選來源預設為 design-level trace index，並採 trace-first 相容性判定。
 
 !!! note "Internal provenance"
-    系統仍可在內部維持 `input_bundle_id` 等 provenance；但 UI 不應要求使用者理解或操作 bundle 細節。
+    系統仍可在內部維持 `input_bundle_id` 等 provenance；但 UI 不應要求使用者理解或操作 trace batch 細節。
 
-## Dataset Profile Contract
+## Design Profile Contract
 
-`dataset_profile` 是 Characterization 的 summary/recommendation 資料來源：
+design profile 是 Characterization 的 summary/recommendation 資料來源：
 
-- 儲存位置：`DatasetRecord.source_meta.dataset_profile`
+- 儲存位置：phase-2 相容層目前仍是 `DatasetRecord.source_meta.dataset_profile`
 - schema（versioned）：
   - `schema_version`：目前 `1.0`
   - `device_type`：`unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other`
@@ -97,8 +102,8 @@ updated_by: codex
     `dataset_profile.capabilities` 不可作為唯一 hard-block 條件。
 
 !!! warning "backward compatibility"
-    舊 dataset 若沒有 `dataset_profile`，系統必須自動 fallback 到 `inferred` profile，
-    由現有 record metadata 推導最低必要 capabilities，避免既有流程突然全部變成不可用。
+    舊 design 若沒有 `dataset_profile`，系統必須自動 fallback 到 `inferred` profile，
+    由現有 trace metadata 推導最低必要 capabilities，避免既有流程突然全部變成不可用。
 
 ## Run Analysis Contract
 
@@ -189,17 +194,17 @@ Reason 必須可機器組合，最少包含：
 ## Parameter Sweep Support Boundary（Current vs Target）
 
 !!! note "Current behavior（2026-03-07）"
-    `/characterization` 目前仍是 trace-first、dataset-centric。
-    它處理的是「可選取的 `DataRecord` traces」，不是直接把 raw/post-processed sweep bundle 當 primary input object。
+    `/characterization` 目前仍是 trace-first、design-centric。
+    它處理的是「可選取的 traces」，不是直接把 raw/post-processed sweep trace batch 當 primary input object。
 
 目前支援邊界如下：
 
 - `Supported`：
   `admittance_zero_crossing`、`squid_fitting`、`y11_fit` 這類已定義的 analysis，
-  在 sweep dataset 已 materialize 成可相容 `DataRecord` traces、且使用者明確選到那些 traces 時，可以照既有 trace-first 契約執行。
+  在 sweep design 已 materialize 成可相容 traces、且使用者明確選到那些 traces 時，可以照既有 trace-first 契約執行。
 - `Partial support`：
   這些 analysis 可以跑在 sweep-origin traces 上，但目前沒有正式 sweep-native UI 契約來保證：
-  軸切片 selector、N-D sweep summary artifact、或直接從 canonical bundle payload 做跨點瀏覽。
+  軸切片 selector、N-D sweep summary artifact、或直接從 canonical trace batch payload 做跨點瀏覽。
 - `Blocked`：
   直接把 `ResultBundleRecord(bundle_type=circuit_simulation|simulation_postprocess, run_kind=parameter_sweep)` 當 `/characterization` 的主要輸入物件、
   或要求 analysis 直接遍歷完整 canonical sweep payload，而不經 trace selection，現在都不在契約內。
@@ -208,10 +213,10 @@ Reason 必須可機器組合，最少包含：
     之後若擴充 Characterization 對 sweep 的支援，仍必須保留：
     - trace-first authority 是 run gate
     - `dataset_profile` 只是 hint，不是 hard gate
-    - raw/post-processed sweep bundle 可作 provenance 與 reconstruction source，但不能取代 selected trace ids
+    - raw/post-processed sweep trace batch 可作 provenance 與 reconstruction source，但不能取代 selected trace ids
 
 !!! warning "代表點不是 analysis authority"
-    若 sweep dataset 只有 representative-point projection，而沒有對應 selected traces 或 sweep-aware contract，
+    若 sweep design 只有 representative-point projection，而沒有對應 selected traces 或 sweep-aware contract，
     `/characterization` 不得宣稱自己支援「完整 sweep analysis」。
 
 ## Result View Contract
@@ -262,7 +267,7 @@ Reason 必須可機器組合，最少包含：
 - 不可用任意 margin hack；需沿用既有 spacing token（`gap-*`, `p-*`, `mb-*`）
 
 !!! note "狀態一致性"
-    `Available for current scope` 文案、可選 trace 集合、analysis run enable/disable 狀態，必須以同一份 mode-filtered compatibility 結果驅動，禁止分叉判定。
+    `Available for current design scope` 文案、可選 trace 集合、analysis run enable/disable 狀態，必須以同一份 mode-filtered compatibility 結果驅動，禁止分叉判定。
 
 ## Fitting Analyses UI Contract
 
@@ -366,19 +371,19 @@ Persistence 最小契約：
 
 ## Availability Contract
 
-analysis 可用性必須以「當前 scope 的 compatible traces」為準。
+analysis 可用性必須以「當前 design scope 的 compatible traces」為準。
 
 !!! warning "compatible traces = 0"
-    Availability 必須顯示 `Unavailable for current scope`，且 `Run Selected Analysis` 必須 disabled。
+    Availability 必須顯示 `Unavailable for current design scope`，且 `Run Selected Analysis` 必須 disabled。
     此狀態下不可執行 run（即使使用者嘗試觸發，也必須被 guard 阻擋）。
 
 !!! important "compatible traces > 0 但 selected traces = 0"
-    Availability 可顯示 `Available for current scope`（或明確標示尚未選取）。
+    Availability 可顯示 `Available for current design scope`（或明確標示尚未選取）。
     但 Run 按鈕仍必須 disabled，直到至少選取 1 條 trace。
     UI 必須顯示明確提示：`Select at least one trace to run.`。
 
 !!! tip "compatible traces > 0 且 selected traces > 0"
-    Availability 應顯示 `Available for current scope`，且 Run 按鈕應可啟用。
+    Availability 應顯示 `Available for current design scope`，且 Run 按鈕應可啟用。
 
 !!! note "禁止雙重判定分歧"
     Availability 文案、Run 按鈕狀態、實際執行前檢查必須共用同一 compatibility evaluator。
@@ -392,42 +397,41 @@ analysis 可用性必須以「當前 scope 的 compatible traces」為準。
 
 ## Provenance Contract
 
-每次 run 完成後，必須建立新的 `ResultBundleRecord`：
+每次 run 完成後，必須建立新的 `Trace Batch`：
 
-- `bundle_type=characterization`
-- `role=analysis_run`
+- phase-2 相容層目前仍落在 `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
 - `config_snapshot` 應包含本次 analysis config 與 selected trace ids
 
-若輸入 traces 來自 sweep dataset，`config_snapshot` 還應保留足以回推 sweep slice 的資訊
+若輸入 traces 來自 sweep design，`config_snapshot` 還應保留足以回推 sweep slice 的資訊
 （例如選到的 trace ids、trace mode group，以及 trace 自身攜帶的 sweep axes metadata）。
 
 ## Admittance Output Replacement Rule
 
-`admittance_zero_crossing` 每次執行時，必須先清掉同 dataset 舊的同 method 輸出，再寫入新結果，避免舊 sideband / 舊 sweep 殘留造成 mode rows 無限膨脹。
+`admittance_zero_crossing` 每次執行時，必須先清掉同 design 舊的同 method 輸出，再寫入新結果，避免舊 sideband / 舊 sweep 殘留造成 mode rows 無限膨脹。
 
 ## Runtime Contract Snapshot
 
 ### Input
 
-- active `DatasetRecord`（dataset-centric）
+- active `Design`（phase-2 相容層目前仍由 `DatasetRecord` 承載）
 - trace metadata index（scope-filtered）
 - analysis config + selected trace ids
 
 ### Output
 
-- 新的 `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
+- 新的 analysis `Trace Batch`（phase-2 相容層目前仍落在 `ResultBundleRecord`）
 - 對應 `DerivedParameter` / artifact payload（依 analysis type）
 - 可追蹤 status log（start / heartbeat / success / failure）
 
 ### Invariants
 
 1. trace-first authority：`compatible traces + selected trace ids` 是唯一 run gate
-2. `dataset_profile` 僅提供 hint/recommendation，不可 hard-block
+2. design profile（phase-2 相容層目前仍是 `dataset_profile`）僅提供 hint/recommendation，不可 hard-block
 3. Result View 只讀 artifact contract，不直接依賴派生參數命名字串
 
 ### Failure Modes
 
-- `compatible traces = 0` -> `Unavailable for current scope`
+- `compatible traces = 0` -> `Unavailable for current design scope`
 - `selected trace ids = 0` -> Run disabled + `Select at least one trace to run.`
 - persistence method 與 registry `completed_methods` 不一致 -> 結果 tab/artifact 不可見
 
@@ -449,5 +453,5 @@ release 前至少確認：
 
 1. availability label / run enable / pre-run guard 共用同一 evaluator
 2. trace mode filter（All/Base/Sideband）在 Run Analysis 與 Result View 語義一致
-3. `ResultBundleRecord.config_snapshot` 含 selected trace ids + mode group
+3. analysis trace batch 的 `config_snapshot` 含 selected trace ids + mode group
 4. artifact manifest 與 payload query 由同一 trace scope 過濾結果驅動

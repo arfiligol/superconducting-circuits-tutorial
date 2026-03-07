@@ -10,9 +10,9 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: /characterization contract for Source Scope, Run Analysis, trace selection, and unified Result View
+scope: /characterization contract for Design Scope, Run Analysis, trace selection, and unified Result View
 version: v0.10.0
-last_updated: 2026-03-07
+last_updated: 2026-03-08
 updated_by: codex
 ---
 
@@ -22,12 +22,17 @@ This page defines the formal `/characterization` UI contract.
 
 ## Core Data Model
 
-`/characterization` must use:
+`/characterization` must use the following product semantics:
 
-- `DatasetRecord` as the container
-- `ResultBundleRecord` as one run/import/analysis batch boundary
-- `DataRecord` as trace-level payload
+- `Design` as the user-facing root container
+- `Trace` as the unified analysis and selection unit
+- `Trace Batch` as the run/import/analysis provenance boundary
 - `ResultArtifact` as the unified render contract for Result View
+
+!!! note "Phase-2 internal compatibility"
+    The implementation still persists through the compatibility layer
+    `DatasetRecord` / `DataRecord` / `ResultBundleRecord`,
+    but UI language and query semantics must remain `Design / Trace / Trace Batch`.
 
 ## Result Artifact Contract
 
@@ -49,30 +54,31 @@ Minimum `ResultArtifact` fields:
 
 ## Page Sections
 
-1. `Source Scope`
+1. `Design Scope`
 2. `Run Analysis`
 3. `Result View`
 
-## Source Scope Contract
+## Design Scope Contract
 
 !!! note "Current behavior (2026-03-04)"
-    Older UI builds exposed a `Result Bundle` selector and let users directly scope
-    Characterization runs to one bundle.
+    Older UI builds exposed a `Trace Batch` selector
+    (internal compatibility: `Result Bundle`) and let users directly scope
+    Characterization runs to one batch.
 
-!!! important "Contract (Dataset-centric)"
-    Users should operate on `Dataset` only. The `Source Scope` surface must not expose
-    "choose a characterization bundle then rerun" as a primary interaction.
-    Run Analysis trace candidates default to dataset-level trace index, with trace-first compatibility.
+!!! important "Contract (Design-centric)"
+    Users should operate on `Design` only. The `Design Scope` surface must not expose
+    "choose a trace batch then rerun" as a primary interaction.
+    Run Analysis trace candidates default to the design-level trace index, with trace-first compatibility.
 
 !!! note "Internal provenance"
-    The system may still persist bundle-level provenance (for example `input_bundle_id`)
-    internally, but UI must not require users to understand or manipulate bundle internals.
+    The system may still persist batch-level provenance (for example `input_bundle_id`)
+    internally, but UI must not require users to understand or manipulate trace-batch internals.
 
-## Dataset Profile Contract
+## Design Profile Contract
 
-`dataset_profile` is a Characterization summary/recommendation source:
+The design profile is a Characterization summary/recommendation source:
 
-- storage path: `DatasetRecord.source_meta.dataset_profile`
+- storage path: the phase-2 compatibility layer still uses `DatasetRecord.source_meta.dataset_profile`
 - versioned schema:
   - `schema_version`: currently `1.0`
   - `device_type`: `unspecified` / `single_junction` / `squid` / `traveling_wave` / `resonator` / `other`
@@ -88,8 +94,8 @@ Minimum `ResultArtifact` fields:
     selected trace ids. `dataset_profile.capabilities` must not be the only hard-block condition.
 
 !!! warning "Backward compatibility"
-    Legacy datasets without `dataset_profile` must fall back to an `inferred` profile,
-    derived from existing record metadata, so existing workflows do not suddenly become unavailable.
+    Legacy designs without `dataset_profile` must fall back to an `inferred` profile,
+    derived from existing trace metadata, so existing workflows do not suddenly become unavailable.
 
 ## Run Analysis Contract
 
@@ -181,17 +187,17 @@ Before each run, users must be able to choose which traces will be analyzed.
 ## Parameter Sweep Support Boundary (Current vs Target)
 
 !!! note "Current behavior (2026-03-07)"
-    `/characterization` is still trace-first and dataset-centric.
-    It operates on selectable `DataRecord` traces, not on raw/post-processed sweep bundles as the primary input object.
+    `/characterization` is still trace-first and design-centric.
+    It operates on selectable traces, not on raw/post-processed sweep trace batches as the primary input object.
 
 Current support boundary:
 
 - `Supported`:
   documented analyses such as `admittance_zero_crossing`, `squid_fitting`, and `y11_fit`
-  may run when sweep-origin data has already been materialized into compatible selectable `DataRecord` traces.
+  may run when sweep-origin data has already been materialized into compatible selectable traces.
 - `Partial support`:
   those analyses may run on sweep-origin traces, but there is no formal sweep-native UI contract yet for
-  axis-slice selectors, N-D sweep summary artifacts, or direct cross-point browsing from canonical bundle payloads.
+  axis-slice selectors, N-D sweep summary artifacts, or direct cross-point browsing from canonical trace-batch payloads.
 - `Blocked`:
   using `ResultBundleRecord(bundle_type=circuit_simulation|simulation_postprocess, run_kind=parameter_sweep)`
   as the primary `/characterization` input object, or requiring analyses to traverse canonical sweep payloads
@@ -201,10 +207,10 @@ Current support boundary:
     Any future sweep support in Characterization must still preserve:
     - trace-first authority as the run gate
     - `dataset_profile` as hint only, never as hard gate
-    - raw/post-processed sweep bundles as provenance and reconstruction sources, not replacements for selected trace ids
+    - raw/post-processed sweep trace batches as provenance and reconstruction sources, not replacements for selected trace ids
 
 !!! warning "Representative point is not analysis authority"
-    If a sweep dataset exposes only a representative-point projection and no selected traces or sweep-aware contract,
+    If a sweep design exposes only a representative-point projection and no selected traces or sweep-aware contract,
     `/characterization` must not claim full sweep-analysis support.
 
 ## Result View Contract
@@ -255,7 +261,7 @@ After `Run Selected Analysis` completes successfully, Result View must immediate
 - do not use arbitrary margin hacks; use existing spacing tokens (`gap-*`, `p-*`, `mb-*`)
 
 !!! note "State consistency"
-    `Available for current scope`, selectable traces, and analysis run enable/disable state must be driven by the same mode-filtered compatibility result; no split evaluators are allowed.
+    `Available for current design scope`, selectable traces, and analysis run enable/disable state must be driven by the same mode-filtered compatibility result; no split evaluators are allowed.
 
 ## Fitting Analyses UI Contract
 
@@ -359,19 +365,19 @@ When persisted data exists but artifact manifest is empty, UI must surface a dia
 
 ## Availability Contract
 
-Analysis availability must be based on compatible traces in current scope.
+Analysis availability must be based on compatible traces in the current design scope.
 
 !!! warning "compatible traces = 0"
-    Availability must show `Unavailable for current scope`, and `Run Selected Analysis` must be disabled.
+    Availability must show `Unavailable for current design scope`, and `Run Selected Analysis` must be disabled.
     Run execution must be guarded and rejected in this state.
 
 !!! important "compatible traces > 0 and selected traces = 0"
-    Availability may still show as available (or explicitly available with no selection),
+    Availability may still show as available in the current design scope (or explicitly available with no selection),
     but the Run button must remain disabled until at least one trace is selected.
     The UI must show a clear hint: `Select at least one trace to run.`.
 
 !!! tip "compatible traces > 0 and selected traces > 0"
-    Availability should show `Available for current scope`, and the Run button may be enabled.
+    Availability should show `Available for current design scope`, and the Run button may be enabled.
 
 !!! note "No split-brain checks"
     Availability text, run-button enabled state, and pre-run guard must be driven by one shared compatibility evaluator.
@@ -385,42 +391,41 @@ Analysis availability must be based on compatible traces in current scope.
 
 ## Provenance Contract
 
-Each completed run must create a new `ResultBundleRecord`:
+Each completed run must create a new `Trace Batch`:
 
-- `bundle_type=characterization`
-- `role=analysis_run`
+- the phase-2 compatibility layer still persists this as `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
 - `config_snapshot` includes analysis config and selected trace ids
 
-When selected traces come from a sweep dataset, `config_snapshot` should also preserve enough information to reconstruct the chosen sweep slice
+When selected traces come from a sweep design, `config_snapshot` should also preserve enough information to reconstruct the chosen sweep slice
 (for example selected trace ids, selected trace mode group, and the sweep-axis metadata carried by those traces).
 
 ## Admittance Output Replacement Rule
 
-Each `admittance_zero_crossing` run must delete prior outputs of the same method in the same dataset before writing new derived parameters, to prevent stale sideband/sweep rows from inflating mode tables.
+Each `admittance_zero_crossing` run must delete prior outputs of the same method in the same design before writing new derived parameters, to prevent stale sideband/sweep rows from inflating mode tables.
 
 ## Runtime Contract Snapshot
 
 ### Input
 
-- active `DatasetRecord` (dataset-centric)
+- active `Design` (currently backed by `DatasetRecord` in the phase-2 compatibility layer)
 - trace metadata index (scope-filtered)
 - analysis config + selected trace ids
 
 ### Output
 
-- new `ResultBundleRecord(bundle_type=characterization, role=analysis_run)`
+- new analysis `Trace Batch` (currently persisted through `ResultBundleRecord`)
 - corresponding `DerivedParameter` / artifact payload (by analysis type)
 - traceable status log (start / heartbeat / success / failure)
 
 ### Invariants
 
 1. trace-first authority: `compatible traces + selected trace ids` is the only run gate
-2. `dataset_profile` is recommendation only and must never hard-block execution
+2. the design profile (still backed by `dataset_profile` in phase-2 compatibility) is recommendation only and must never hard-block execution
 3. Result View renders from artifact contracts, not from derived-parameter naming strings
 
 ### Failure Modes
 
-- `compatible traces = 0` -> `Unavailable for current scope`
+- `compatible traces = 0` -> `Unavailable for current design scope`
 - `selected trace ids = 0` -> Run disabled + `Select at least one trace to run.`
 - persistence method key and registry `completed_methods` mismatch -> result tab/artifact invisible
 
@@ -442,5 +447,5 @@ Before release, verify:
 
 1. availability label, run-enable state, and pre-run guard all use one shared evaluator
 2. trace mode filter (`All/Base/Sideband`) semantics match between Run Analysis and Result View
-3. `ResultBundleRecord.config_snapshot` includes selected trace ids and selected trace mode group
+3. the analysis trace batch `config_snapshot` includes selected trace ids and selected trace mode group
 4. artifact manifest and payload queries are both driven by the same trace-scope filter result

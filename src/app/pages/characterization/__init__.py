@@ -33,7 +33,10 @@ from app.services.characterization_trace_scope import (
     count_scope_trace_records,
     list_scope_compatible_trace_index_page,
 )
-from app.services.dataset_profile import normalize_dataset_profile, profile_summary_text
+from app.services.dataset_profile import (
+    design_profile_summary_text,
+    normalize_dataset_profile,
+)
 from app.services.result_artifact_registry import (
     RESULT_CATEGORY_LABELS,
     artifact_categories,
@@ -365,7 +368,7 @@ def _build_analysis_run_availability(
     if profile_recommended:
         return AnalysisRunAvailability(
             status="Recommended",
-            reason="Compatible traces found and dataset profile recommends this analysis.",
+            reason="Compatible traces found and design profile recommends this analysis.",
             has_compatible_traces=True,
             profile_hints=list(profile_hints),
         )
@@ -735,7 +738,7 @@ def _result_view_empty_state_message(
     if latest_completed_run_bundle_id is not None:
         return (
             "Analysis completed but did not publish any result artifacts yet "
-            f"(latest run bundle #{latest_completed_run_bundle_id})."
+            f"(latest run trace batch #{latest_completed_run_bundle_id})."
         )
     return "No artifacts available for selected analysis."
 
@@ -1101,8 +1104,8 @@ def characterization_page():
                 "border-2 border-dashed border-border rounded-xl"
             ):
                 ui.icon("science", size="xl").classes("text-muted mb-4 opacity-50")
-                ui.label("No Datasets Selected").classes("text-xl text-fg font-bold")
-                ui.label("Select active datasets from the header or the Raw Data page.").classes(
+                ui.label("No Designs Selected").classes("text-xl text-fg font-bold")
+                ui.label("Select active designs from the header or the Raw Data page.").classes(
                     "text-sm text-muted mt-2"
                 )
             return
@@ -1116,7 +1119,7 @@ def characterization_page():
                         ds_options[ds_id] = ds.name
 
                 if not ds_options:
-                    ui.label("Error: Active datasets not found.").classes("text-danger")
+                    ui.label("Error: Active designs not found.").classes("text-danger")
                     return
 
                 current_ds_id = app.storage.user.get("analysis_current_dataset")
@@ -1160,7 +1163,7 @@ def characterization_page():
                         method_params = _group_by_method(ds_params)
                         analyses = list_dataset_analyses()
                         if not analyses:
-                            ui.label("No per-dataset analyses are registered.").classes(
+                            ui.label("No per-design analyses are registered.").classes(
                                 "text-danger"
                             )
                             return
@@ -1204,9 +1207,9 @@ def characterization_page():
                                         "available" if has_compatible_traces else "unavailable"
                                     ),
                                     message=(
-                                        "Available for current scope"
+                                        "Available for current design scope"
                                         if has_compatible_traces
-                                        else "Unavailable for current scope"
+                                        else "Unavailable for current design scope"
                                     ),
                                 )
                                 runtime_state.analysis_scope_compatibility_cache[
@@ -1454,31 +1457,31 @@ def characterization_page():
                                     "w-full items-center justify-between gap-4 flex-wrap"
                                 ):
                                     ui.icon("inventory_2", size="sm").classes("text-primary")
-                                    ui.label("Source Scope").classes("text-lg font-bold text-fg")
+                                    ui.label("Design Scope").classes("text-lg font-bold text-fg")
                                 ui.label(
-                                    "Dataset-centric scope is active. Run Analysis uses all "
-                                    "dataset trace records and applies trace-first "
+                                    "Design-centric scope is active. Run Analysis uses the "
+                                    "selected design's trace index and applies trace-first "
                                     "compatibility filtering."
                                 ).classes("text-sm text-muted mt-2")
                                 with ui.row().classes("w-full gap-4 mt-3 flex-wrap"):
                                     with ui.column().classes(
                                         "bg-bg rounded-lg border border-border p-3 min-w-[160px]"
                                     ):
-                                        ui.label("Scope").classes(
+                                        ui.label("Selection").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
-                                        ui.label("All Dataset Records").classes("text-sm text-fg")
+                                        ui.label("All Design Traces").classes("text-sm text-fg")
                                     with ui.column().classes(
                                         "bg-bg rounded-lg border border-border p-3 min-w-[160px]"
                                     ):
-                                        ui.label("Trace Records").classes(
+                                        ui.label("Traces").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
                                         ui.label(str(scoped_trace_count)).classes("text-sm text-fg")
                                     with ui.column().classes(
                                         "bg-bg rounded-lg border border-border p-3 min-w-[160px]"
                                     ):
-                                        ui.label("Result Bundles").classes(
+                                        ui.label("Trace Batches").classes(
                                             "text-xs text-muted font-bold uppercase"
                                         )
                                         ui.label(str(provenance_bundle_count)).classes(
@@ -1631,7 +1634,7 @@ def characterization_page():
                                             "info",
                                             (
                                                 f"Running {selected_run_analysis['label']} on "
-                                                f"dataset {ds.name} (id={ds.id}) with "
+                                                f"design {ds.name} (id={ds.id}) with "
                                                 f"{len(run_trace_ids)} trace(s)."
                                             ),
                                         )
@@ -1645,7 +1648,7 @@ def characterization_page():
                                             )
                                         try:
                                             if ds.id is None:
-                                                raise ValueError("Active dataset id is missing.")
+                                                raise ValueError("Active design id is missing.")
 
                                             selected_mode_group = (
                                                 _trace_mode_group_for_selected_rows(
@@ -1732,7 +1735,10 @@ def characterization_page():
                                                     )
                                                     append_analysis_status(
                                                         "info",
-                                                        f"Recorded analysis bundle #{bundle.id}.",
+                                                        (
+                                                            "Recorded analysis trace batch "
+                                                            f"#{bundle.id}."
+                                                        ),
                                                     )
 
                                             post_run_selection = (
@@ -1789,7 +1795,7 @@ def characterization_page():
                                     "Run control is centralized here. Choose one analysis, set "
                                     "parameters, then execute."
                                 ).classes("text-sm text-muted mb-3")
-                                ui.label(profile_summary_text(dataset_profile)).classes(
+                                ui.label(design_profile_summary_text(dataset_profile)).classes(
                                     "text-xs text-muted mb-2"
                                 )
 
@@ -2416,7 +2422,7 @@ def characterization_page():
 
                 # --- Layout ---
                 with ui.row().classes("w-full items-center gap-4 mb-4"):
-                    ui.label("Dataset:").classes("text-sm font-bold text-fg")
+                    ui.label("Design:").classes("text-sm font-bold text-fg")
 
                     def on_change(e):
                         app.storage.user["analysis_current_dataset"] = e.value

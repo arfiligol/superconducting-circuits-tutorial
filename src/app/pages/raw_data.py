@@ -1,4 +1,4 @@
-"""Raw Data Browser with paged, filterable dataset and record tables."""
+"""Raw Data Browser with paged, filterable design and trace tables."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from nicegui import app, ui
 
 from app.layout import app_shell
 from app.services.dataset_profile import (
+    design_profile_summary_text,
     normalize_dataset_profile,
-    profile_summary_text,
 )
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.repositories import TraceIndexPageQuery
@@ -166,7 +166,7 @@ def raw_data_page() -> None:
 
         if selected_record_id is None:
             with plot_container:
-                ui.label("Select a record from the table to view visualization.").classes(
+                ui.label("Select a trace from the table to view visualization.").classes(
                     "text-muted p-4"
                 )
             return
@@ -176,7 +176,7 @@ def raw_data_page() -> None:
                 record = uow.data_records.get(selected_record_id)
                 if not record:
                     with plot_container:
-                        ui.label("Record not found.").classes("text-danger")
+                        ui.label("Trace not found.").classes("text-danger")
                     return
 
                 if len(record.axes) == 2 and record.data_type == "s_params":
@@ -252,7 +252,7 @@ def raw_data_page() -> None:
             total_pages = _total_pages(int(dataset_state["total"]), int(dataset_state["page_size"]))
             with ui.row().classes("w-full justify-between items-center flex-wrap gap-2"):
                 ui.label(
-                    f"{dataset_state['total']} datasets · "
+                    f"{dataset_state['total']} designs · "
                     f"Page {dataset_state['page']} / {total_pages}"
                 ).classes("text-xs text-muted")
                 with ui.row().classes("items-center gap-2"):
@@ -322,7 +322,7 @@ def raw_data_page() -> None:
 
         if selected_dataset_id is None:
             with detail_container:
-                ui.label("Select a dataset from the list to preview.").classes(
+                ui.label("Select a design from the list to preview.").classes(
                     "text-muted italic text-center w-full mt-10"
                 )
             return
@@ -331,7 +331,7 @@ def raw_data_page() -> None:
             dataset = uow.datasets.get(selected_dataset_id)
         if dataset is None:
             with detail_container:
-                ui.label("Dataset not found.").classes("text-danger")
+                ui.label("Design not found.").classes("text-danger")
             return
 
         record_rows = _load_record_page(selected_dataset_id)
@@ -344,19 +344,19 @@ def raw_data_page() -> None:
             with ui.row().classes("w-full justify-between items-center mb-3 flex-wrap gap-3"):
                 with ui.column().classes("gap-1"):
                     ui.label(dataset.name).classes("text-xl font-bold text-fg")
-                    ui.label(f"{record_state['total']} records available.").classes(
+                    ui.label(f"{record_state['total']} traces available.").classes(
                         "text-sm text-muted"
                     )
                 ui.button(
-                    "Analyze This Dataset",
+                    "Analyze This Design",
                     on_click=lambda: _navigate_to_characterization(selected_dataset_id),
                     icon="science",
                 ).props("unelevated color=primary no-caps")
 
             with ui.column().classes("w-full gap-2 rounded-lg border border-border bg-bg p-3 mb-3"):
-                ui.label("Dataset Metadata Summary").classes("text-sm font-bold text-fg uppercase")
+                ui.label("Design Summary").classes("text-sm font-bold text-fg uppercase")
                 ui.label(
-                    profile_summary_text(
+                    design_profile_summary_text(
                         {
                             "device_type": persisted_profile["device_type"],
                             "capabilities": persisted_profile["capabilities"],
@@ -366,10 +366,11 @@ def raw_data_page() -> None:
                 ).classes("text-xs text-muted")
                 with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
                     ui.label(
-                        "Metadata editing moved to Pipeline Dashboard for single-entry consistency."
+                        "Design profile editing moved to Pipeline Dashboard "
+                        "for single-entry consistency."
                     ).classes("text-xs text-muted")
                     ui.button(
-                        "Edit in Dashboard",
+                        "Edit Design Profile",
                         icon="dashboard",
                         on_click=lambda: ui.navigate.to("/dashboard"),
                     ).props("outline color=primary no-caps")
@@ -440,7 +441,7 @@ def raw_data_page() -> None:
             total_pages = _total_pages(int(record_state["total"]), int(record_state["page_size"]))
             with ui.row().classes("w-full justify-between items-center flex-wrap gap-2"):
                 ui.label(
-                    f"{record_state['total']} records · Page {record_state['page']} / {total_pages}"
+                    f"{record_state['total']} traces · Page {record_state['page']} / {total_pages}"
                 ).classes("text-xs text-muted")
                 with ui.row().classes("items-center gap-2"):
                     ui.select(
@@ -510,10 +511,10 @@ def raw_data_page() -> None:
 
         with ui.column().classes("w-full gap-6"):
             with ui.column().classes("app-card w-full p-4 flex flex-col gap-3"):
-                ui.label("Datasets").classes("app-section-title")
+                ui.label("Designs").classes("app-section-title")
                 dataset_search = (
                     ui.input(
-                        label="Search Dataset",
+                        label="Search Design",
                         value=str(dataset_state["search"]),
                     )
                     .props("dense outlined clearable")
@@ -530,11 +531,11 @@ def raw_data_page() -> None:
                 render_dataset_list()
 
             with ui.column().classes("app-card w-full p-4 flex flex-col gap-3"):
-                ui.label("Dataset Preview").classes("app-section-title")
+                ui.label("Design Summary + Trace Preview").classes("app-section-title")
                 with ui.row().classes("w-full gap-3 flex-wrap"):
                     record_search_input = (
                         ui.input(
-                            label="Filter Records",
+                            label="Filter Traces",
                             value=str(record_state["search"]),
                         )
                         .props("dense outlined clearable")

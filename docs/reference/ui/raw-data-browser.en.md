@@ -10,10 +10,10 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: /raw-data page contract for dataset browsing, preview tables, and large-data UX boundaries
+scope: /raw-data page contract for design browsing, trace preview, and large-data UX boundaries
 version: v0.3.0
-last_updated: 2026-03-03
-updated_by: docs-team
+last_updated: 2026-03-08
+updated_by: codex
 ---
 
 # Raw Data Browser
@@ -22,39 +22,39 @@ This page defines the formal UI/UX contract for `/raw-data`, with emphasis on la
 
 ## Page Sections
 
-1. `Dataset List`
-2. `Dataset Preview`
+1. `Design List`
+2. `Design Summary + Trace Preview`
 3. `Visualization Preview`
-4. `Dataset Metadata Summary (Read-only)`
+4. `Design Summary (Read-only)`
 
 !!! note "Layout"
-    `Dataset List` and `Dataset Preview` should be stacked vertically in full width
+    `Design List` and `Design Summary + Trace Preview` should be stacked vertically in full width
     instead of side-by-side columns, so long names and large tables remain readable.
 
-## Dataset List Contract
+## Design List Contract
 
-`Dataset List` must provide:
+`Design List` must provide:
 
 - pagination
 - column sorting via clickable table headers
 - text filtering/search
-- row-click dataset selection
+- row-click design selection
 
 !!! tip "Live-search interaction"
     Live search is allowed, but typing must not lose focus due to input re-mounting.
 
 !!! important "Data query boundary"
-    Dataset list queries must use summary-only fields (for example `id`, `name`, `created_at`).
-    Do not load DataRecord waveform payloads in list queries.
+    Design list queries must use summary-only fields (for example `id`, `name`, `created_at`).
+    Do not load trace waveform payloads in list queries.
 
-## Dataset Preview Contract
+## Design Summary + Trace Preview Contract
 
-After selecting a dataset, the Data Record table in `Dataset Preview` must provide:
+After selecting a design, the `Trace Preview` table must provide:
 
 - pagination
 - column sorting via clickable table headers
 - column filtering (at minimum `data_type`, `representation`)
-- row-click record selection
+- row-click trace selection
 
 !!! note "Sorting controls"
     If header-click sorting is available in the table, do not add extra `Sort By` / `Order` selectors.
@@ -63,7 +63,7 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
     Preview tables should only render metadata (`id`, `data_type`, `parameter`, `representation`).
     Do not send full `axes` / `values` payloads to the frontend in one batch.
 
-## Dataset Metadata Summary Contract
+## Design Summary Contract
 
 !!! note "Current behavior (2026-03-04)"
     Older `/raw-data` builds exposed editable metadata controls
@@ -71,34 +71,35 @@ After selecting a dataset, the Data Record table in `Dataset Preview` must provi
 
 !!! important "Contract (Dashboard-only edit entry)"
     `/raw-data` must not expose any metadata write path.
-    This page may only display a read-only summary of `source_meta.dataset_profile`.
+    This page may only display a design-level read-only summary;
+    the current phase-2 compatibility layer still reads from `source_meta.dataset_profile`.
 
 !!! warning "No write interactions"
     Raw Data Browser must not render `Auto Suggest`, `Save Metadata`, or equivalent write controls.
 
 ## Visualization Preview Contract
 
-- Detailed record payload should be loaded only after the user clicks one row.
-- Switching dataset or page should not automatically reload all plot payloads.
+- Detailed trace payload should be loaded only after the user clicks one row.
+- Switching design or page should not automatically reload all plot payloads.
 
 !!! tip "Lazy detail fetch"
     Keep two query paths:
     - list path: metadata only
-    - detail path: by selected record id
+    - detail path: by selected trace id
 
 ## Interaction Rules
 
-- `Analyze This Dataset` should depend only on selected dataset id.
-- Switching dataset should reset selected-record state.
-- If selected record is no longer visible in current table page, behavior must be deterministic (clear or keep, but not random).
+- `Analyze This Design` should depend only on selected design id.
+- Switching design should reset selected-trace state.
+- If selected trace is no longer visible in current table page, behavior must be deterministic (clear or keep, but not random).
 - Metadata save success must be reflected in the current session immediately (no app restart required).
 
 !!! important "Relation to Characterization"
-    Characterization analysis availability consumes `source_meta.dataset_profile`.
+    Characterization analysis availability consumes the design-level profile summary.
     Metadata writes must happen on Dashboard; Raw Data only presents summary state.
 
 ## Performance SLO (UI Layer)
 
 - default table page size should be `20` (adjustable)
-- one render cycle must not include multi-thousand full payload records
-- UI should avoid websocket disconnect risk caused by oversized one-shot messages
+- one render cycle must not include multi-thousand full trace payloads
+- UI should avoid websocket disconnect risk caused by oversized one-shot trace messages
