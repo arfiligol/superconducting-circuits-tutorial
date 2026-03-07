@@ -164,6 +164,22 @@ It must cover at least:
 - characterization over saved traces
 - layout/measurement ingest paths once they land
 
+The recommended shape is a scenario-first matrix, not a page-specific checklist:
+
+| Scenario | Current status | Minimum verification focus | Extension point |
+|---|---|---|---|
+| circuit simulation -> save/read | implemented | the simulation UI runs, raw traces can be saved, and the saved dataset-facing read path remains usable | add more JosephsonCircuits example families and sweep variants |
+| postprocess -> save/read | implemented | the post-processing pipeline runs, derived traces can be saved, and the saved trace scope can be read again | expand to more pipeline steps and matrix families |
+| characterization over saved traces | implemented | analyses run against already-saved traces and preserve trace-first compatibility plus provenance | add analysis-history and run-persistence assertions |
+| layout ingest -> save/read | blocked until ingest lands | keep a dedicated test slot / TODO instead of inventing fake coverage | attach the same matrix once the ingest contract exists |
+| measurement ingest -> save/read | blocked until ingest lands | keep a dedicated test slot / TODO instead of inventing fake coverage | attach the same matrix once the ingest contract exists |
+
+Constraints:
+
+- do not let the validation matrix regress back to “only prove circuit simulation runs”
+- do not fabricate layout/measurement ingest coverage before those paths exist
+- prioritize proving that saved traces can be reused by characterization, rather than re-running only the phase-1 simulation success path
+
 ## Recommended Multi-Agent Split
 
 ### 1. Design Semantics Agent
@@ -231,6 +247,7 @@ At minimum:
 3. JosephsonCircuits.jl app flows
 4. trace write/read regressions for each newly added ingest path
 5. characterization over saved traces regression
+6. blocked scenarios in the validation matrix must remain explicit TODO/skipped slots, not silent omissions
 
 ## Acceptance Notes for Integrator
 

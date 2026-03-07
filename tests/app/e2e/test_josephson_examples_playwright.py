@@ -61,6 +61,56 @@ class AppServer:
     log_path: Path
 
 
+@dataclass(frozen=True)
+class ValidationMatrixSavedDataset:
+    """One saved-trace dataset materialized by the phase-2 validation matrix."""
+
+    scenario_id: str
+    dataset_name: str
+    bundle_type: str
+    role: str | None
+    stage_kind: str
+    analysis_label: str
+    expects_compatible_analysis: bool
+
+
+@dataclass(frozen=True)
+class BlockedValidationScenario:
+    """One planned matrix slot that remains blocked until its product path lands."""
+
+    scenario_id: str
+    blocked_reason: str
+
+
+_VALIDATION_MATRIX_ANALYSIS_LABEL = "Admittance Extraction"
+_VALIDATION_MATRIX_SCREENSHOT_PATH = Path("/tmp/phase2_examples_validation_matrix_saved_traces.png")
+_BLOCKED_VALIDATION_SCENARIOS = (
+    pytest.param(
+        BlockedValidationScenario(
+            scenario_id="layout_ingest_save_read",
+            blocked_reason="Layout ingest save/read is a reserved matrix slot until ingest lands.",
+        ),
+        marks=pytest.mark.skip(
+            reason="Layout ingest path has not landed yet; keep the validation-matrix slot blocked."
+        ),
+    ),
+    pytest.param(
+        BlockedValidationScenario(
+            scenario_id="measurement_ingest_save_read",
+            blocked_reason=(
+                "Measurement ingest save/read is a reserved matrix slot until ingest lands."
+            ),
+        ),
+        marks=pytest.mark.skip(
+            reason=(
+                "Measurement ingest path has not landed yet; keep the validation-matrix "
+                "slot blocked."
+            )
+        ),
+    ),
+)
+
+
 def _stable_series_lc_definition() -> str:
     return str(
         {
@@ -363,6 +413,27 @@ def _latest_trace_batch_bundle_for_circuit(
     return max(candidates, key=lambda bundle: int(bundle.id or 0))
 
 
+def _latest_trace_batch_bundle_for_dataset(
+    *,
+    dataset_name: str,
+    bundle_type: str,
+    role: str | None = None,
+) -> ResultBundleRecord:
+    with get_unit_of_work() as uow:
+        dataset = uow.datasets.get_by_name(dataset_name)
+        assert dataset is not None, f"Dataset not found for validation matrix: {dataset_name}"
+        assert dataset.id is not None, f"Dataset id missing for validation matrix: {dataset_name}"
+        candidates = [
+            bundle
+            for bundle in uow.result_bundles.list_by_dataset(int(dataset.id))
+            if str(bundle.bundle_type) == bundle_type
+            and (role is None or str(bundle.role) == role)
+            and str(bundle.result_payload.get("schema_kind", "")) == "trace_batch_bundle"
+        ]
+    assert candidates, f"No trace-batch bundle found for dataset {dataset_name} ({bundle_type})"
+    return max(candidates, key=lambda bundle: int(bundle.id or 0))
+
+
 def _assert_trace_batch_payload(
     bundle: ResultBundleRecord,
     *,
@@ -625,6 +696,23 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
 
 
+def _save_raw_simulation_results(page: Page, *, dataset_name: str) -> None:
+    raw_results_card = _card_by_testid(
+        page,
+        "simulation-results-card",
+        fallback_text="Simulation Results",
+    )
+    raw_results_card.get_by_role("button", name="Save Raw Simulation Results").click()
+    expect(page.get_by_text("Save Simulation Results")).to_be_visible(timeout=30000)
+    name_input = page.get_by_role("textbox", name="New Dataset Name")
+    name_input.click()
+    name_input.fill(dataset_name)
+    page.get_by_role("button", name="Save").last.click()
+    expect(page.get_by_text(re.compile(r"Saved .* trace\(s\) to:", re.IGNORECASE))).to_be_visible(
+        timeout=30000
+    )
+
+
 def _save_post_processed_results(page: Page, *, dataset_name: str) -> None:
     post_results_card = _card_by_testid(
         page,
@@ -640,6 +728,175 @@ def _save_post_processed_results(page: Page, *, dataset_name: str) -> None:
     expect(
         page.get_by_text(re.compile(r"Saved .* post-processed trace", re.IGNORECASE))
     ).to_be_visible(timeout=30000)
+
+
+def _select_active_dataset(page: Page, dataset_name: str) -> None:
+    active_selector = page.get_by_role("combobox", name="Active Datasets")
+    if active_selector.count() == 0:
+        active_selector = page.get_by_role("combobox").first
+    expect(active_selector).to_be_visible(timeout=15000)
+    active_selector.click()
+    page.get_by_role("option", name=dataset_name, exact=True).click()
+    page.keyboard.press("Escape")
+
+
+def _select_option(page: Page, label: str, option_text: str, index: int = 0) -> None:
+    select = page.get_by_role("combobox", name=label).nth(index)
+    expect(select).to_be_visible(timeout=15000)
+    select.click()
+    page.get_by_role("option", name=re.compile(rf"^{re.escape(option_text)}")).first.click()
+
+
+def _characterization_run_bundle_count(dataset_name: str) -> int:
+    with get_unit_of_work() as uow:
+        dataset = uow.datasets.get_by_name(dataset_name)
+        if dataset is None or dataset.id is None:
+            return 0
+        return len(
+            [
+                bundle
+                for bundle in uow.result_bundles.list_by_dataset(int(dataset.id))
+                if bundle.bundle_type == "characterization" and bundle.role == "analysis_run"
+            ]
+        )
+
+
+def _latest_characterization_run_bundle(dataset_name: str) -> ResultBundleRecord:
+    with get_unit_of_work() as uow:
+        dataset = uow.datasets.get_by_name(dataset_name)
+        assert dataset is not None, (
+            "Dataset not found for characterization verification: "
+            f"{dataset_name}"
+        )
+        assert dataset.id is not None, (
+            f"Dataset id missing for characterization verification: {dataset_name}"
+        )
+        bundles = [
+            bundle
+            for bundle in uow.result_bundles.list_by_dataset(int(dataset.id))
+            if bundle.bundle_type == "characterization" and bundle.role == "analysis_run"
+        ]
+    assert bundles, f"No characterization run bundle found for {dataset_name}"
+    return bundles[-1]
+
+
+def _open_characterization_dataset_scope(
+    page: Page,
+    *,
+    app_base_url: str,
+    dataset_name: str,
+    analysis_label: str,
+    expect_compatible_analysis: bool = True,
+) -> None:
+    page.goto(f"{app_base_url}/characterization", wait_until="networkidle")
+    _select_active_dataset(page, dataset_name)
+    expect(
+        _card_by_testid(
+            page,
+            "characterization-source-scope-card",
+            fallback_text="Source Scope",
+        )
+    ).to_be_visible(timeout=30000)
+    _select_option(page, "Analysis", analysis_label)
+    availability_label = _locator_by_testid(
+        page,
+        "characterization-availability-label",
+        fallback=page.get_by_text(re.compile(r"for current scope$")).first,
+    )
+    if expect_compatible_analysis:
+        expect(availability_label).to_contain_text(
+            re.compile(r"^(Available|Recommended) for current scope$")
+        )
+        expect(page.get_by_text("No compatible traces found", exact=False)).to_have_count(0)
+    else:
+        expect(availability_label).to_contain_text("Unavailable for current scope")
+
+
+def _select_base_traces_for_characterization(page: Page) -> None:
+    page.get_by_role("button", name="Base").click()
+    expect(page.get_by_text(re.compile(r"^[1-9]\d* / \d+ selected$")).first).to_be_visible(
+        timeout=30000
+    )
+
+
+@pytest.fixture(scope="session")
+def validation_matrix_saved_datasets(
+    app_base_url: str,
+    example_cases: tuple[ExampleCase, ...],
+) -> dict[str, ValidationMatrixSavedDataset]:
+    case = next(c for c in example_cases if c.slug == "linear_series_lc")
+    suffix = uuid.uuid4().hex[:8]
+    raw_dataset = ValidationMatrixSavedDataset(
+        scenario_id="circuit_simulation_save_read",
+        dataset_name=f"E2E-ValidationMatrix-Raw-{suffix}",
+        bundle_type="circuit_simulation",
+        role="manual_export",
+        stage_kind="raw",
+        analysis_label=_VALIDATION_MATRIX_ANALYSIS_LABEL,
+        expects_compatible_analysis=True,
+    )
+    post_dataset = ValidationMatrixSavedDataset(
+        scenario_id="postprocess_save_read",
+        dataset_name=f"E2E-ValidationMatrix-Post-{suffix}",
+        bundle_type="simulation_postprocess",
+        role="derived_from_simulation",
+        stage_kind="postprocess",
+        analysis_label=_VALIDATION_MATRIX_ANALYSIS_LABEL,
+        expects_compatible_analysis=False,
+    )
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 1920, "height": 1400})
+        page = context.new_page()
+        try:
+            page.goto(f"{app_base_url}/simulation", wait_until="networkidle")
+            _choose_schema(page, case.schema_name)
+            _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+            _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+            _set_spinbutton_value(page, "Points", case.points)
+            _set_spinbutton_value(page, "Nmodulation Harmonics", case.n_mod)
+            _set_spinbutton_value(page, "Npump Harmonics", case.n_pump)
+            _configure_sources(page, case.sources)
+            assert _run_and_expect_success(page) is True
+
+            _save_raw_simulation_results(page, dataset_name=raw_dataset.dataset_name)
+            _assert_trace_batch_payload(
+                _latest_trace_batch_bundle_for_dataset(
+                    dataset_name=raw_dataset.dataset_name,
+                    bundle_type=raw_dataset.bundle_type,
+                    role=raw_dataset.role,
+                ),
+                stage_kind=raw_dataset.stage_kind,
+                point_count=1,
+            )
+
+            _run_post_processing_and_expect_output(page)
+            _save_post_processed_results(page, dataset_name=post_dataset.dataset_name)
+            _assert_trace_batch_payload(
+                _latest_trace_batch_bundle_for_dataset(
+                    dataset_name=post_dataset.dataset_name,
+                    bundle_type=post_dataset.bundle_type,
+                    role=post_dataset.role,
+                ),
+                stage_kind=post_dataset.stage_kind,
+                point_count=1,
+            )
+        finally:
+            context.close()
+            browser.close()
+
+    yield {
+        "raw": raw_dataset,
+        "postprocess": post_dataset,
+    }
+
+    with get_unit_of_work() as uow:
+        for dataset_name in (raw_dataset.dataset_name, post_dataset.dataset_name):
+            dataset = uow.datasets.get_by_name(dataset_name)
+            if dataset is not None:
+                uow.datasets.delete(dataset)
+                uow.commit()
 
 
 def _select_card_option(
@@ -1339,3 +1596,87 @@ def test_result_view_axis_titles_follow_y_z_family_switches(
     post_results_card.get_by_role("tab", name="Admittance (Y)").click()
     _select_card_option(page, post_results_card, "Metric", "Real")
     _expect_plot_y_axis_title(post_results_card, "Real (S)")
+
+
+@pytest.mark.parametrize(
+    ("scenario_key", "expected_stage_kind"),
+    [
+        ("raw", "raw"),
+        ("postprocess", "postprocess"),
+    ],
+)
+def test_phase2_validation_matrix_save_read_paths(
+    page: Page,
+    app_base_url: str,
+    validation_matrix_saved_datasets: dict[str, ValidationMatrixSavedDataset],
+    scenario_key: str,
+    expected_stage_kind: str,
+) -> None:
+    saved_dataset = validation_matrix_saved_datasets[scenario_key]
+
+    saved_bundle = _latest_trace_batch_bundle_for_dataset(
+        dataset_name=saved_dataset.dataset_name,
+        bundle_type=saved_dataset.bundle_type,
+        role=saved_dataset.role,
+    )
+    _assert_trace_batch_payload(
+        saved_bundle,
+        stage_kind=expected_stage_kind,
+        point_count=1,
+    )
+
+    _open_characterization_dataset_scope(
+        page,
+        app_base_url=app_base_url,
+        dataset_name=saved_dataset.dataset_name,
+        analysis_label=saved_dataset.analysis_label,
+        expect_compatible_analysis=saved_dataset.expects_compatible_analysis,
+    )
+
+
+def test_phase2_validation_matrix_characterization_over_saved_traces(
+    page: Page,
+    app_base_url: str,
+    validation_matrix_saved_datasets: dict[str, ValidationMatrixSavedDataset],
+) -> None:
+    saved_dataset = validation_matrix_saved_datasets["raw"]
+    _open_characterization_dataset_scope(
+        page,
+        app_base_url=app_base_url,
+        dataset_name=saved_dataset.dataset_name,
+        analysis_label=saved_dataset.analysis_label,
+        expect_compatible_analysis=saved_dataset.expects_compatible_analysis,
+    )
+    _select_base_traces_for_characterization(page)
+
+    run_button = _locator_by_testid(
+        page,
+        "characterization-run-analysis-button",
+        fallback=page.get_by_role("button", name="Run Selected Analysis"),
+    )
+    expect(run_button).to_be_enabled(timeout=15000)
+    before_count = _characterization_run_bundle_count(saved_dataset.dataset_name)
+    run_button.click()
+    deadline = time.time() + 60.0
+    while time.time() < deadline:
+        if _characterization_run_bundle_count(saved_dataset.dataset_name) > before_count:
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError("Timed out waiting for characterization over saved traces.")
+
+    run_bundle = _latest_characterization_run_bundle(saved_dataset.dataset_name)
+    selected_trace_ids = run_bundle.config_snapshot.get("selected_trace_ids")
+    assert isinstance(selected_trace_ids, list)
+    assert len(selected_trace_ids) > 0
+    assert run_bundle.source_meta.get("input_scope") == "all_dataset_records"
+    page.screenshot(path=str(_VALIDATION_MATRIX_SCREENSHOT_PATH), full_page=True)
+
+
+@pytest.mark.parametrize("scenario", _BLOCKED_VALIDATION_SCENARIOS)
+def test_phase2_validation_matrix_blocked_slots(
+    scenario: BlockedValidationScenario,
+) -> None:
+    raise AssertionError(
+        f"Blocked validation scenario should stay skipped until implemented: {scenario.scenario_id}"
+    )

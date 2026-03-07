@@ -165,6 +165,22 @@ Decision target for this workstream：
 - characterization over saved traces
 - layout/measurement ingest path（當其落地後）
 
+目前建議先把 matrix 固定成「scenario first」骨架，而不是把驗證綁死在單一來源頁面：
+
+| Scenario | 目前狀態 | 最低驗證重點 | 後續擴張點 |
+|---|---|---|---|
+| circuit simulation -> save/read | implemented | simulation UI 可執行、raw traces 可保存、保存後 dataset-facing read path 可用 | 增加更多 JosephsonCircuits example families / sweep variants |
+| postprocess -> save/read | implemented | post-processing pipeline 可執行、derived traces 可保存、保存後可重新讀取其 trace scope | 擴張更多 pipeline steps / matrix families |
+| characterization over saved traces | implemented | 以已保存 traces 為輸入執行 analysis，驗證 trace-first compatibility 與 provenance | 補 analysis history / run-persistence assertions |
+| layout ingest -> save/read | blocked until ingest lands | 先保留 test slot / TODO，不用假造 coverage | ingest contract 落地後接入同一 matrix |
+| measurement ingest -> save/read | blocked until ingest lands | 先保留 test slot / TODO，不用假造 coverage | ingest contract 落地後接入同一 matrix |
+
+約束：
+
+- 不要把 validation matrix 重新退回「只驗證 circuit simulation 能跑」
+- 不要要求 layout/measurement 在尚未落地時製造假 fixture 來冒充 ingest coverage
+- characterization coverage 應優先驗證「saved traces 可被再利用」，而不是重複驗證 phase-1 的單次 simulation 成功訊息
+
 ## Recommended Multi-Agent Split
 
 ### 1. Design Semantics Agent
@@ -232,6 +248,7 @@ Allowed Files:
 3. JosephsonCircuits.jl app flows
 4. 新增 ingest path 的 trace write/read regression
 5. characterization over saved traces regression
+6. validation matrix 中 blocked scenarios 需明確保留 TODO / skipped reason，不可默默缺席
 
 ## Acceptance Notes for Integrator
 
