@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import product
 from typing import Any, TypedDict
 from uuid import uuid4
 
@@ -78,6 +79,7 @@ from core.simulation.application.run_simulation import (
 )
 from core.simulation.application.trace_architecture import (
     TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+    IncrementalPostProcessedSweepWriter,
     IncrementalRawSimulationSweepWriter,
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
@@ -817,7 +819,7 @@ def _cached_trace_store_bundle_from_sweep_payload(
 
 
 def _cached_trace_store_bundle_from_post_processed_runtime(
-    runtime_output: PortMatrixSweep | PortMatrixSweepRun,
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun | Mapping[str, Any],
     *,
     reference_impedance_ohm: float,
 ) -> _TraceStoreResultBundle:
@@ -826,7 +828,9 @@ def _cached_trace_store_bundle_from_post_processed_runtime(
     cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
     if cached is not None:
         return cached
-    if isinstance(runtime_output, PortMatrixSweepRun):
+    if isinstance(runtime_output, Mapping) and is_trace_batch_bundle_payload(runtime_output):
+        authority = _trace_store_bundle_from_trace_batch_payload(runtime_output)
+    elif isinstance(runtime_output, PortMatrixSweepRun):
         authority = _trace_store_bundle_from_post_processed_sweep_run(
             runtime_output,
             reference_impedance_ohm=reference_impedance_ohm,
@@ -1263,7 +1267,7 @@ def _load_cached_simulation_result(
     *,
     schema_source_hash: str,
     simulation_setup_hash: str,
-) -> tuple[int, int, SimulationResult, dict[str, Any] | None] | None:
+) -> tuple[int, int, SimulationResult | None, dict[str, Any] | None] | None:
     """Load one cached simulation result from the hidden system dataset."""
     cache_dataset = _ensure_simulation_cache_dataset(uow)
     if cache_dataset.id is None:
@@ -1281,6 +1285,15 @@ def _load_cached_simulation_result(
         result, sweep_payload = _decode_simulation_result_payload(bundle.result_payload)
     except Exception:
         return None
+
+    if is_trace_batch_bundle_payload(bundle.result_payload):
+        trace_batch_record = bundle.result_payload.get("trace_batch_record", {})
+        summary_payload = trace_batch_record.get("summary_payload", {})
+        if (
+            isinstance(summary_payload, Mapping)
+            and str(summary_payload.get("run_kind", "")).strip() == "parameter_sweep"
+        ):
+            return (int(bundle.id), int(cache_dataset.id), None, dict(bundle.result_payload))
 
     if not is_trace_batch_bundle_payload(bundle.result_payload):
         source_meta = dict(bundle.source_meta) if isinstance(bundle.source_meta, dict) else {}
@@ -1336,6 +1349,8 @@ def _load_cached_simulation_result(
             },
         )
         uow.commit()
+        if sweep_payload is not None:
+            return (int(bundle.id), int(cache_dataset.id), None, dict(bundle.result_payload))
 
     if bundle.id is None:
         return None
@@ -1347,7 +1362,7 @@ def _load_cached_simulation_result_io(
     *,
     schema_source_hash: str,
     simulation_setup_hash: str,
-) -> tuple[int, int, SimulationResult, dict[str, Any] | None] | None:
+) -> tuple[int, int, SimulationResult | None, dict[str, Any] | None] | None:
     """Run one cache lookup inside a background IO worker."""
     with get_unit_of_work() as uow:
         return _load_cached_simulation_result(
@@ -1403,6 +1418,54 @@ def _resolved_sweep_point_count(payload: Mapping[str, Any] | None) -> int:
             return int(summary_payload.get("point_count", 0) or 0)
         return 0
     return int(payload.get("point_count", 0) or 0)
+
+
+def _resolved_frequency_point_count_from_payload(payload: Mapping[str, Any] | None) -> int:
+    """Resolve one representative frequency-point count across payload shapes."""
+    if not isinstance(payload, Mapping):
+        return 0
+    if is_trace_batch_bundle_payload(payload):
+        summary_payload = payload.get("trace_batch_record", {}).get("summary_payload", {})
+        if isinstance(summary_payload, Mapping):
+            return int(summary_payload.get("frequency_points", 0) or 0)
+        return 0
+    try:
+        sweep_run = simulation_sweep_run_from_payload(payload)
+    except Exception:
+        return 0
+    return len(sweep_run.representative_result.frequencies_ghz)
+
+
+def _post_processed_runtime_is_sweep(
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun | Mapping[str, Any] | None,
+    flow_spec: Mapping[str, Any] | None = None,
+) -> bool:
+    """Return whether one post-processed runtime represents a parameter sweep."""
+    if isinstance(runtime_output, PortMatrixSweepRun):
+        return True
+    if isinstance(runtime_output, Mapping) and is_trace_batch_bundle_payload(runtime_output):
+        summary_payload = runtime_output.get("trace_batch_record", {}).get("summary_payload", {})
+        if isinstance(summary_payload, Mapping):
+            return str(summary_payload.get("run_kind", "")).strip() == "parameter_sweep"
+    if isinstance(flow_spec, Mapping):
+        return str(flow_spec.get("run_kind", "")).strip() == "parameter_sweep"
+    return False
+
+
+def _resolved_frequency_point_count_from_payload(payload: Mapping[str, Any] | None) -> int:
+    """Resolve one frequency point count across legacy and trace-batch payload shapes."""
+    if not isinstance(payload, Mapping):
+        return 0
+    if is_trace_batch_bundle_payload(payload):
+        summary_payload = payload.get("trace_batch_record", {}).get("summary_payload", {})
+        if isinstance(summary_payload, Mapping):
+            return int(summary_payload.get("frequency_points", 0) or 0)
+        return 0
+    try:
+        representative = simulation_sweep_run_from_payload(payload).representative_result
+    except Exception:
+        return 0
+    return len(representative.frequencies_ghz)
 
 
 def _build_compensated_simulation_sweep_payload(
@@ -2370,12 +2433,19 @@ def _build_termination_compensation_plan(
 
 
 def _can_save_post_processed_results(
-    runtime_output: PortMatrixSweep | PortMatrixSweepRun | None,
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun | Mapping[str, Any] | None,
     flow_spec: dict[str, Any] | None,
 ) -> bool:
     """Return whether post-processed results are ready for dataset persistence."""
-    return isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun)) and isinstance(
-        flow_spec, dict
+    return (
+        (
+            isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun))
+            or (
+                isinstance(runtime_output, Mapping)
+                and is_trace_batch_bundle_payload(runtime_output)
+            )
+        )
+        and isinstance(flow_spec, dict)
     )
 
 
@@ -3040,6 +3110,8 @@ def _render_post_processing_panel(
     on_input_y_source_change: Callable[[str], None] | None = None,
     resolve_input_bundle: Callable[[str, float], tuple[SimulationResult, dict[str, Any] | None]]
     | None = None,
+    resolve_input_sweep_point: Callable[[str, tuple[int, ...], float], SimulationResult | None]
+    | None = None,
     circuit_definition: CircuitDefinition | None = None,
     schema_id: int | None = None,
     schema_name: str | None = None,
@@ -3073,6 +3145,15 @@ def _render_post_processing_panel(
         if resolve_input_bundle is not None:
             return resolve_input_bundle(source, reference_impedance_ohm)
         return (_active_input_result(source), None)
+
+    def _active_input_sweep_point(
+        source: str,
+        axis_indices: tuple[int, ...],
+        reference_impedance_ohm: float,
+    ) -> SimulationResult | None:
+        if resolve_input_sweep_point is not None:
+            return resolve_input_sweep_point(source, axis_indices, reference_impedance_ohm)
+        return None
 
     port_options = _result_port_options(raw_result)
     default_ports = list(port_options)
@@ -3735,25 +3816,179 @@ def _render_post_processing_panel(
                 input_source,
                 float(z0_input.value or 50.0),
             )
+            reference_impedance_ohm = float(z0_input.value or 50.0)
             request = PostProcessingRunRequest(
                 result=active_result,
                 sweep_payload=active_sweep_payload,
                 input_source=input_source,
                 mode_filter=str(mode_filter_select.value or "base"),
                 mode_token=str(mode_select.value or ""),
-                reference_impedance_ohm=float(z0_input.value or 50.0),
+                reference_impedance_ohm=reference_impedance_ohm,
                 step_sequence=[dict(step) for step in step_sequence],
                 circuit_definition=circuit_definition,
                 has_ptc_result=isinstance(ptc_result, SimulationResult),
             )
-            run_result = await run.cpu_bound(
-                _execute_post_processing_pipeline_cpu,
-                request,
-            )
+
+            async def _run_with_heartbeat(
+                post_request: PostProcessingRunRequest,
+                *,
+                stage_label: str,
+            ) -> PostProcessingRunResult:
+                started_at = datetime.now()
+                heartbeat_warned = False
+                task = asyncio.create_task(
+                    run.cpu_bound(
+                        _execute_post_processing_pipeline_cpu,
+                        post_request,
+                    )
+                )
+                while True:
+                    try:
+                        return await asyncio.wait_for(
+                            asyncio.shield(task),
+                            timeout=_SIMULATION_HEARTBEAT_SECONDS,
+                        )
+                    except TimeoutError:
+                        elapsed_seconds = max(
+                            1,
+                            int((datetime.now() - started_at).total_seconds()),
+                        )
+                        log_info(
+                            f"{stage_label} still running... {elapsed_seconds}s elapsed."
+                        )
+                        if (
+                            not heartbeat_warned
+                            and elapsed_seconds >= _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS
+                        ):
+                            heartbeat_warned = True
+                            log_info(
+                                "Long-running post-processing detected; heartbeat "
+                                "continues every 5s."
+                            )
+
+            sweep_payload = _coerce_parameter_sweep_payload(active_sweep_payload)
+            if isinstance(sweep_payload, Mapping):
+                sweep_source = _resolve_sweep_result_source(sweep_payload=sweep_payload)
+                axis_ranges = [range(len(axis.values)) for axis in sweep_source.axes]
+                total_points = int(sweep_source.point_count)
+                axis_points = product(*axis_ranges) if axis_ranges else (tuple() for _ in range(1))
+                writer = IncrementalPostProcessedSweepWriter(
+                    design_id=int(schema_id or 0),
+                    design_name=str(schema_name or f"design-{schema_id or 0}"),
+                    run_id=f"post-{uuid4().hex[:8]}",
+                    sweep_axes=tuple(sweep_source.axes),
+                    representative_point_index=int(sweep_source.representative_point_index),
+                )
+                run_result: PostProcessingRunResult | None = None
+                resolved_normalized_steps: list[dict[str, Any]] = []
+                try:
+                    for point_number, axis_indices_tuple in enumerate(axis_points, start=1):
+                        axis_indices = tuple(int(index) for index in axis_indices_tuple)
+                        point_result = _active_input_sweep_point(
+                            input_source,
+                            axis_indices,
+                            reference_impedance_ohm,
+                        )
+                        if not isinstance(point_result, SimulationResult):
+                            point = sweep_source.read_point(axis_indices)
+                            point_result = point.result if point is not None else None
+                        if not isinstance(point_result, SimulationResult):
+                            raise ValueError(
+                                "Sweep point payload is unavailable for post-processing."
+                            )
+                        point_request = PostProcessingRunRequest(
+                            result=point_result,
+                            sweep_payload=None,
+                            input_source=input_source,
+                            mode_filter=request.mode_filter,
+                            mode_token=request.mode_token,
+                            reference_impedance_ohm=reference_impedance_ohm,
+                            step_sequence=[dict(step) for step in step_sequence],
+                            circuit_definition=circuit_definition,
+                            has_ptc_result=isinstance(ptc_result, SimulationResult),
+                        )
+                        run_result = await _run_with_heartbeat(
+                            point_request,
+                            stage_label=(
+                                f"Post-processing sweep point {point_number}/{total_points}"
+                            ),
+                        )
+                        writer.append_point(
+                            point_index=point_number - 1,
+                            axis_indices=axis_indices,
+                            sweep=run_result.preview_sweep,
+                        )
+                        if not resolved_normalized_steps:
+                            resolved_normalized_steps = [
+                                dict(step) for step in run_result.normalized_steps
+                            ]
+                            for index, normalized in enumerate(resolved_normalized_steps):
+                                step_sequence[index].update(normalized)
+                        log_info(
+                            f"Persisted post-processing point {point_number}/{total_points} "
+                            "to TraceStore."
+                        )
+                    if run_result is None:
+                        raise ValueError("Post-processing sweep produced no output.")
+                    representative_axis_indices = tuple(
+                        int(index) for index in sweep_source.representative_axis_indices
+                    )
+                    run_result = PostProcessingRunResult(
+                        runtime_output=writer.build_payload(
+                            summary_payload={
+                                "trace_count": writer.trace_count,
+                                "run_kind": "parameter_sweep",
+                                "frequency_points": len(
+                                    writer.representative_sweep.frequencies_ghz
+                                ),
+                                "point_count": total_points,
+                                "representative_point_index": int(
+                                    sweep_source.representative_point_index
+                                ),
+                            }
+                        ),
+                        preview_sweep=writer.representative_sweep,
+                        flow_spec={
+                            **dict(run_result.flow_spec),
+                            "run_kind": "parameter_sweep",
+                            "point_count": total_points,
+                            "sweep_axes": [
+                                {
+                                    "target_value_ref": str(axis.target_value_ref),
+                                    "unit": str(axis.unit),
+                                    "values": [float(value) for value in axis.values],
+                                }
+                                for axis in sweep_source.axes
+                            ],
+                            "preview_projection": {
+                                "kind": "representative_point",
+                                "point_index": int(sweep_source.representative_point_index),
+                            "axis_indices": [
+                                int(value) for value in representative_axis_indices
+                            ],
+                                "axis_values": {
+                                    str(axis.target_value_ref): float(
+                                        axis.values[representative_axis_indices[position]]
+                                    )
+                                    for position, axis in enumerate(sweep_source.axes)
+                                },
+                            },
+                        },
+                        normalized_steps=resolved_normalized_steps,
+                    )
+                except Exception:
+                    writer.cleanup()
+                    raise
+            else:
+                run_result = await _run_with_heartbeat(
+                    request,
+                    stage_label="Post-processing pipeline",
+                )
+                for index, normalized in enumerate(run_result.normalized_steps):
+                    step_sequence[index].update(normalized)
+
             sweep = run_result.sweep
             flow_spec = run_result.flow_spec
-            for index, normalized in enumerate(run_result.normalized_steps):
-                step_sequence[index].update(normalized)
 
             hfss_comparable = bool(flow_spec.get("hfss_comparable"))
             hfss_not_comparable_reason = str(flow_spec.get("hfss_not_comparable_reason", ""))
@@ -6502,9 +6737,16 @@ def _render_simulation_environment():
 
         def _raw_simulation_result() -> SimulationResult | None:
             result = runtime_state.latest_simulation_result
-            if not isinstance(result, SimulationResult):
-                return None
-            return result
+            if isinstance(result, SimulationResult):
+                return result
+            if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
+                bundle = _cached_trace_store_bundle_from_sweep_payload(
+                    runtime_state.latest_simulation_sweep_payload,
+                )
+                result = bundle.representative_result
+                runtime_state.latest_simulation_result = result
+                return result
+            return None
 
         def _ptc_simulation_result(
             *,
@@ -6573,14 +6815,34 @@ def _render_simulation_environment():
                     raise ValueError("PTC Y is unavailable for post-processing.")
                 if canonical_sweep_payload is None:
                     return (ptc_result, None)
-                ptc_sweep_payload = _ptc_simulation_sweep_payload(
-                    reference_impedance_ohm=reference_impedance_ohm,
-                )
-                if ptc_sweep_payload is None:
-                    raise ValueError("PTC Y sweep payload is unavailable for post-processing.")
-                return (ptc_result, ptc_sweep_payload)
+                return (ptc_result, canonical_sweep_payload)
 
             return (raw_result, canonical_sweep_payload)
+
+        def _resolve_post_processing_input_sweep_point(
+            source: str,
+            axis_indices: tuple[int, ...],
+            reference_impedance_ohm: float,
+        ) -> SimulationResult | None:
+            canonical_sweep_payload = _coerce_parameter_sweep_payload(
+                runtime_state.latest_simulation_sweep_payload
+            )
+            if not isinstance(canonical_sweep_payload, Mapping):
+                return None
+            sweep_source = _resolve_sweep_result_source(sweep_payload=canonical_sweep_payload)
+            point = sweep_source.read_point(axis_indices)
+            if point is None:
+                return None
+            if source != "ptc_y":
+                return point.result
+            plan = _resolved_termination_plan()
+            if not bool(plan.get("enabled", False)):
+                return None
+            return compensate_simulation_result_port_terminations(
+                point.result,
+                resistance_ohm_by_port=dict(plan.get("resistance_ohm_by_port", {})),
+                reference_impedance_ohm=reference_impedance_ohm,
+            )
 
         def _render_post_processing_input_panel() -> None:
             if post_processing_container is None:
@@ -6612,6 +6874,7 @@ def _render_simulation_environment():
                         )
                     ),
                     resolve_input_bundle=_resolve_post_processing_input_bundle,
+                    resolve_input_sweep_point=_resolve_post_processing_input_sweep_point,
                     circuit_definition=latest_circuit_definition_ref["definition"],
                     schema_id=active_record_id,
                     schema_name=active_record.name,
@@ -6661,11 +6924,17 @@ def _render_simulation_environment():
             _view_family: str,
             _source_token: str,
         ) -> tuple[SimulationResult, dict[int, str]] | None:
-            sweep = runtime_state.latest_sweep
-            if not isinstance(sweep, PortMatrixSweep):
+            runtime_output = runtime_state.latest_post_processing_runtime
+            if not (
+                isinstance(runtime_output, PortMatrixSweep)
+                or (
+                    isinstance(runtime_output, Mapping)
+                    and is_trace_batch_bundle_payload(runtime_output)
+                )
+            ):
                 return None
             bundle = _cached_trace_store_bundle_from_post_processed_runtime(
-                sweep,
+                runtime_output,
                 reference_impedance_ohm=reference_impedance,
             )
             return (_result_from_trace_store_bundle(bundle), dict(bundle.port_label_by_index))
@@ -6722,7 +6991,7 @@ def _render_simulation_environment():
                     "save-path=Save Post-Processed Results",
                 ),
             )
-            if not isinstance(runtime_output, PortMatrixSweepRun):
+            if not _post_processed_runtime_is_sweep(runtime_output, typed_flow_spec):
                 _render_sweep_result_view_container(
                     container=post_processing_sweep_results_container,
                     sweep_payload=None,
@@ -6857,11 +7126,22 @@ def _render_simulation_environment():
             if not _can_save_post_processed_results(runtime_output, flow_spec):
                 ui.notify("Run Post Processing first.", type="warning")
                 return
-            if not isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun)):
+            if not (
+                isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun))
+                or (
+                    isinstance(runtime_output, Mapping)
+                    and is_trace_batch_bundle_payload(runtime_output)
+                )
+            ):
                 ui.notify("Post-processed runtime output is unavailable.", type="warning")
                 return
             _save_post_processed_results_dialog(
                 runtime_output=runtime_output,
+                representative_sweep=(
+                    runtime_state.latest_sweep
+                    if isinstance(runtime_state.latest_sweep, PortMatrixSweep)
+                    else None
+                ),
                 flow_spec=dict(flow_spec),
                 circuit_record=runtime_state.latest_circuit_record,
                 source_simulation_bundle_id=runtime_state.latest_source_simulation_bundle_id,
@@ -6887,7 +7167,7 @@ def _render_simulation_environment():
                 stage_kind="postprocess",
                 run_kind=(
                     "parameter_sweep"
-                    if isinstance(runtime_output, PortMatrixSweepRun)
+                    if _post_processed_runtime_is_sweep(runtime_output, typed_flow_spec)
                     else "single_run"
                 ),
                 provenance_tokens=(
@@ -6931,7 +7211,7 @@ def _render_simulation_environment():
                     f"basis={', '.join(typed_sweep.labels)} | "
                     f"input={input_source}{preview_token} | {hfss_token}"
                 )
-            if isinstance(runtime_output, PortMatrixSweepRun):
+            if _post_processed_runtime_is_sweep(runtime_output, typed_flow_spec):
                 try:
                     trace_store_bundle = _cached_trace_store_bundle_from_post_processed_runtime(
                         runtime_output,
@@ -8774,7 +9054,7 @@ def _render_simulation_environment():
                         await asyncio.sleep(0)
 
                         async def _load_cache_with_heartbeat() -> (
-                            tuple[int, int, SimulationResult, dict[str, Any] | None] | None
+                            tuple[int, int, SimulationResult | None, dict[str, Any] | None] | None
                         ):
                             cache_started_at = datetime.now()
                             heartbeat_warned = False
@@ -9062,7 +9342,7 @@ def _render_simulation_environment():
                                 )
 
                         # Save state for persistence
-                        last_sim_result = result
+                        last_sim_result = result if isinstance(result, SimulationResult) else None
                         last_sweep_result_payload = sweep_result_payload
                         last_sweep_setup_hash = sweep_setup_hash
                         last_freq_range = freq_range
@@ -9070,29 +9350,51 @@ def _render_simulation_environment():
                         last_schema_source_hash = schema_source_hash
                         last_simulation_setup_hash = simulation_setup_hash
                         if last_sweep_result_payload is None:
+                            frequency_point_count = (
+                                len(result.frequencies_ghz)
+                                if isinstance(result, SimulationResult)
+                                else 0
+                            )
                             append_status(
                                 "positive",
                                 (
                                     "Simulation completed successfully "
-                                    f"({len(result.frequencies_ghz)} points)."
+                                    f"({frequency_point_count} points)."
                                 ),
                             )
                         else:
+                            frequency_point_count = (
+                                len(result.frequencies_ghz)
+                                if isinstance(result, SimulationResult)
+                                else _resolved_frequency_point_count_from_payload(
+                                    last_sweep_result_payload
+                                )
+                            )
                             append_status(
                                 "positive",
                                 (
                                     "Parameter sweep completed successfully "
                                     f"({_resolved_sweep_point_count(last_sweep_result_payload)} "
                                     "points, "
-                                    f"{len(result.frequencies_ghz)} freq points each)."
+                                    f"{frequency_point_count} freq points each)."
                                 ),
                             )
 
                         def on_save_click():
+                            save_result = last_sim_result
+                            if not isinstance(save_result, SimulationResult):
+                                if isinstance(last_sweep_result_payload, Mapping):
+                                    save_result = _cached_trace_store_bundle_from_sweep_payload(
+                                        last_sweep_result_payload
+                                    ).representative_result
+                                else:
+                                    raise ValueError(
+                                        "Representative simulation result is unavailable."
+                                    )
                             _save_simulation_results_dialog(
                                 latest_record,
                                 last_freq_range,
-                                last_sim_result,
+                                save_result,
                                 setup_snapshot=last_setup_snapshot,
                                 schema_source_hash=last_schema_source_hash,
                                 simulation_setup_hash=last_simulation_setup_hash,
@@ -9431,7 +9733,8 @@ def _save_simulation_results_dialog(
 
 def _save_post_processed_results_dialog(
     *,
-    runtime_output: PortMatrixSweep | PortMatrixSweepRun,
+    runtime_output: PortMatrixSweep | PortMatrixSweepRun | Mapping[str, Any],
+    representative_sweep: PortMatrixSweep | None,
     flow_spec: dict[str, Any],
     circuit_record: CircuitRecord | None,
     source_simulation_bundle_id: int | None,
@@ -9440,15 +9743,27 @@ def _save_post_processed_results_dialog(
     simulation_setup_hash: str | None,
 ) -> None:
     """Dialog for saving one post-processed Y sweep into a result bundle."""
-    representative_sweep = (
+    resolved_representative_sweep = (
         runtime_output.representative_sweep
         if isinstance(runtime_output, PortMatrixSweepRun)
+        else representative_sweep
+        if isinstance(representative_sweep, PortMatrixSweep)
         else runtime_output
+        if isinstance(runtime_output, PortMatrixSweep)
+        else None
     )
-    bundle_records = _build_post_processed_runtime_data_records(
-        dataset_id=0,
-        runtime_output=runtime_output,
-    )
+    if not isinstance(resolved_representative_sweep, PortMatrixSweep):
+        raise ValueError("Representative post-processed sweep is unavailable.")
+    if isinstance(runtime_output, Mapping) and is_trace_batch_bundle_payload(runtime_output):
+        bundle_records = _build_trace_batch_data_records(
+            dataset_id=0,
+            trace_batch_payload=runtime_output,
+        )
+    else:
+        bundle_records = _build_post_processed_runtime_data_records(
+            dataset_id=0,
+            runtime_output=runtime_output,
+        )
     bundle_trace_count = len(
         {
             (
@@ -9465,7 +9780,7 @@ def _save_post_processed_results_dialog(
             "This saves the processed port-level Y bundle "
             "("
             f"{bundle_trace_count} trace(s), "
-            f"mode={SimulationResult.mode_token(representative_sweep.mode)}"
+            f"mode={SimulationResult.mode_token(resolved_representative_sweep.mode)}"
             ")."
         ).classes("text-sm text-muted mb-3")
 
@@ -9512,7 +9827,7 @@ def _save_post_processed_results_dialog(
                 )
                 bundle_source_meta, bundle_config_snapshot, bundle_provenance_payload = (
                     _build_post_processed_bundle_artifacts(
-                        sweep=representative_sweep,
+                        sweep=resolved_representative_sweep,
                         flow_spec=flow_spec,
                         source_simulation_bundle_id=source_simulation_bundle_id,
                         source_bundle_snapshot=source_bundle_snapshot,
@@ -9532,9 +9847,9 @@ def _save_post_processed_results_dialog(
                             "circuit_name": circuit_name,
                         },
                         parameters={
-                            "start_ghz": float(representative_sweep.frequencies_ghz[0]),
-                            "stop_ghz": float(representative_sweep.frequencies_ghz[-1]),
-                            "points": len(representative_sweep.frequencies_ghz),
+                            "start_ghz": float(resolved_representative_sweep.frequencies_ghz[0]),
+                            "stop_ghz": float(resolved_representative_sweep.frequencies_ghz[-1]),
+                            "points": len(resolved_representative_sweep.frequencies_ghz),
                         },
                     )
                     uow.datasets.add(dataset)
@@ -9585,38 +9900,62 @@ def _save_post_processed_results_dialog(
                     if circuit_record is not None and circuit_record.id is not None
                     else ds_name
                 )
-                trace_specs = build_post_processed_trace_specs(runtime_output=runtime_output)
-                bundle.result_payload = persist_trace_batch_bundle(
-                    bundle_id=int(bundle.id),
-                    design_id=design_id,
-                    design_name=design_name,
-                    source_kind="circuit_simulation",
-                    stage_kind="postprocess",
-                    setup_kind="circuit_simulation.postprocess",
-                    setup_payload=bundle_config_snapshot,
-                    provenance_payload=bundle_provenance_payload,
-                    trace_specs=trace_specs,
-                    parent_batch_id=source_simulation_bundle_id,
-                    summary_payload={
-                        "trace_count": len(trace_specs),
-                        "run_kind": (
-                            "parameter_sweep"
-                            if isinstance(runtime_output, PortMatrixSweepRun)
-                            else "single_run"
+                if (
+                    isinstance(runtime_output, Mapping)
+                    and is_trace_batch_bundle_payload(runtime_output)
+                ):
+                    summary_payload = runtime_output.get("trace_batch_record", {}).get(
+                        "summary_payload",
+                        {},
+                    )
+                    bundle.result_payload = rebind_trace_batch_bundle_payload(
+                        runtime_output,
+                        bundle_id=int(bundle.id),
+                        design_id=design_id,
+                        design_name=design_name,
+                        source_kind="circuit_simulation",
+                        stage_kind="postprocess",
+                        setup_kind="circuit_simulation.postprocess",
+                        setup_payload=bundle_config_snapshot,
+                        provenance_payload=bundle_provenance_payload,
+                        parent_batch_id=source_simulation_bundle_id,
+                        summary_payload=(
+                            summary_payload if isinstance(summary_payload, Mapping) else None
                         ),
-                        "frequency_points": len(representative_sweep.frequencies_ghz),
-                        "point_count": (
-                            runtime_output.point_count
-                            if isinstance(runtime_output, PortMatrixSweepRun)
-                            else 1
-                        ),
-                        "representative_point_index": (
-                            runtime_output.representative_point_index
-                            if isinstance(runtime_output, PortMatrixSweepRun)
-                            else 0
-                        ),
-                    },
-                )
+                    )
+                else:
+                    trace_specs = build_post_processed_trace_specs(runtime_output=runtime_output)
+                    bundle.result_payload = persist_trace_batch_bundle(
+                        bundle_id=int(bundle.id),
+                        design_id=design_id,
+                        design_name=design_name,
+                        source_kind="circuit_simulation",
+                        stage_kind="postprocess",
+                        setup_kind="circuit_simulation.postprocess",
+                        setup_payload=bundle_config_snapshot,
+                        provenance_payload=bundle_provenance_payload,
+                        trace_specs=trace_specs,
+                        parent_batch_id=source_simulation_bundle_id,
+                        summary_payload={
+                            "trace_count": len(trace_specs),
+                            "run_kind": (
+                                "parameter_sweep"
+                                if isinstance(runtime_output, PortMatrixSweepRun)
+                                else "single_run"
+                            ),
+                            "frequency_points": len(resolved_representative_sweep.frequencies_ghz),
+                            "point_count": (
+                                runtime_output.point_count
+                                if isinstance(runtime_output, PortMatrixSweepRun)
+                                else 1
+                            ),
+                            "representative_point_index": (
+                                runtime_output.representative_point_index
+                                if isinstance(runtime_output, PortMatrixSweepRun)
+                                else 0
+                            ),
+                        },
+                    )
                 persisted_records = _build_trace_batch_data_records(
                     dataset_id=ds_id,
                     trace_batch_payload=bundle.result_payload,

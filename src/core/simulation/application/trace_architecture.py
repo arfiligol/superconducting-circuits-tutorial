@@ -311,7 +311,7 @@ def rebind_trace_batch_bundle_payload(
     )
 
 
-def _build_inflight_store_key(*, design_id: int, run_id: str) -> str:
+def _build_inflight_store_key(*, design_id: int, run_id: str, stage: str = "raw") -> str:
     """Build one stable runtime store key for in-flight simulation sweeps."""
     normalized_run_id = "".join(
         character
@@ -320,7 +320,14 @@ def _build_inflight_store_key(*, design_id: int, run_id: str) -> str:
     ).strip("-_")
     if not normalized_run_id:
         raise ValueError("run_id is required for incremental sweep persistence.")
-    return f"designs/{int(design_id)}/runtime/{normalized_run_id}.zarr"
+    normalized_stage = "".join(
+        character
+        for character in str(stage).strip()
+        if character.isalnum() or character in {"-", "_"}
+    ).strip("-_")
+    if not normalized_stage:
+        normalized_stage = "raw"
+    return f"designs/{int(design_id)}/runtime/{normalized_run_id}-{normalized_stage}.zarr"
 
 
 @dataclass
@@ -342,6 +349,7 @@ class IncrementalRawSimulationSweepWriter:
         self._store_key = _build_inflight_store_key(
             design_id=int(self.design_id),
             run_id=self.run_id,
+            stage=self.stage_kind,
         )
         self._store_path = backend_binding.resolve_store_path(store_key=self._store_key)
         if self._store_path.exists():
@@ -447,6 +455,187 @@ class IncrementalRawSimulationSweepWriter:
             result=result,
             axes=(self._frequency_axis,),
         )
+        for trace_index, spec in enumerate(point_specs, start=1):
+            write_result = self._trace_store.create_trace(
+                design_id=int(self.design_id),
+                batch_id=0,
+                trace_id=trace_index,
+                shape=shape,
+                dtype=np.float64,
+                axes=[
+                    {
+                        "name": axis.name,
+                        "unit": axis.unit,
+                        "values": axis.values,
+                    }
+                    for axis in materialized_axes
+                ],
+                chunk_shape=_default_chunk_shape(shape),
+                array_path="values",
+                store_key=self._store_key,
+            )
+            store_ref = {
+                **dict(write_result.store_ref),
+                "axis_array_refs": [
+                    {
+                        "name": axis.name,
+                        "unit": axis.unit,
+                        "array_path": f"axes/{axis_position}",
+                        "shape": [axis.length],
+                        "dtype": "float64",
+                    }
+                    for axis_position, axis in enumerate(materialized_axes)
+                ],
+            }
+            trace_record = {
+                "id": int(trace_index),
+                "design_id": int(self.design_id),
+                "family": spec.family,
+                "parameter": spec.parameter,
+                "representation": spec.representation,
+                "axes": [
+                    {
+                        "name": axis.name,
+                        "unit": axis.unit,
+                        "length": axis.length,
+                    }
+                    for axis in materialized_axes
+                ],
+                "trace_meta": dict(spec.trace_meta),
+                "store_ref": store_ref,
+            }
+            meta_key = json.dumps(spec.trace_meta, sort_keys=True, separators=(",", ":"))
+            grouped_key = (spec.family, spec.parameter, spec.representation, meta_key)
+            self._trace_record_lookup[grouped_key] = trace_record
+            self._trace_records.append(trace_record)
+
+
+@dataclass
+class IncrementalPostProcessedSweepWriter:
+    """Incrementally materialize one post-processed parameter sweep into TraceStore."""
+
+    design_id: int
+    design_name: str
+    run_id: str
+    sweep_axes: tuple[SimulationSweepAxis, ...]
+    representative_point_index: int = 0
+    source_kind: str = "circuit_simulation"
+    stage_kind: str = "postprocess"
+    setup_kind: str = "circuit_simulation.postprocess"
+    status: str = "completed"
+
+    def __post_init__(self) -> None:
+        backend_binding = _require_local_trace_store_backend()
+        self._trace_store = LocalZarrTraceStore(root_path=get_trace_store_root())
+        self._store_key = _build_inflight_store_key(
+            design_id=int(self.design_id),
+            run_id=self.run_id,
+            stage=self.stage_kind,
+        )
+        self._store_path = backend_binding.resolve_store_path(store_key=self._store_key)
+        if self._store_path.exists():
+            shutil.rmtree(self._store_path)
+        self._trace_store.root_path.mkdir(parents=True, exist_ok=True)
+        self._trace_records: list[dict[str, Any]] = []
+        self._trace_record_lookup: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._representative_sweep: PortMatrixSweep | None = None
+        self._frequency_axis: TraceAxisSpec | None = None
+
+    @property
+    def representative_sweep(self) -> PortMatrixSweep:
+        """Return the representative post-processed sweep once written."""
+        if self._representative_sweep is None:
+            raise ValueError("Incremental post-processed sweep writer has no representative sweep.")
+        return self._representative_sweep
+
+    @property
+    def trace_count(self) -> int:
+        """Return the number of canonical traces materialized for this sweep."""
+        return len(self._trace_records)
+
+    def append_point(
+        self,
+        *,
+        point_index: int,
+        axis_indices: Sequence[int],
+        sweep: PortMatrixSweep,
+    ) -> None:
+        """Persist one post-processed sweep point directly into TraceStore-backed ND traces."""
+        if self._representative_sweep is None:
+            self._initialize_from_first_sweep(sweep)
+        if self._frequency_axis is None:
+            raise ValueError(
+                "Incremental post-processed sweep writer is missing frequency metadata."
+            )
+        if int(point_index) == int(self.representative_point_index):
+            self._representative_sweep = sweep
+
+        point_specs = _build_postprocess_trace_specs_for_sweep(sweep)
+        normalized_axis_indices = tuple(int(value) for value in axis_indices)
+        selection = (slice(None), *normalized_axis_indices)
+        for spec in point_specs:
+            meta_key = json.dumps(spec.trace_meta, sort_keys=True, separators=(",", ":"))
+            grouped_key = (spec.family, spec.parameter, spec.representation, meta_key)
+            trace_record = self._trace_record_lookup.get(grouped_key)
+            if trace_record is None:
+                raise ValueError(
+                    "Post-processed sweep trace shape drift detected; grouped trace metadata "
+                    f"changed at point {int(point_index)} for {spec.family}/{spec.parameter}/"
+                    f"{spec.representation}."
+                )
+            self._trace_store.write_trace_slice(
+                trace_record["store_ref"],
+                selection=selection,
+                values=spec.values,
+            )
+
+    def build_payload(
+        self,
+        *,
+        summary_payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Return one canonical post-processed trace-batch payload.
+
+        The numeric payload remains backed by the incremental trace store.
+        """
+        return build_trace_batch_bundle_payload(
+            bundle_id=0,
+            design_id=int(self.design_id),
+            design_name=str(self.design_name),
+            source_kind=self.source_kind,
+            stage_kind=self.stage_kind,
+            setup_kind=self.setup_kind,
+            setup_payload={},
+            provenance_payload={},
+            trace_records=self._trace_records,
+            status=self.status,
+            summary_payload=summary_payload,
+        )
+
+    def cleanup(self) -> None:
+        """Remove any on-disk runtime trace-store artifacts for this writer."""
+        if self._store_path.exists():
+            shutil.rmtree(self._store_path)
+
+    def _initialize_from_first_sweep(self, sweep: PortMatrixSweep) -> None:
+        self._representative_sweep = sweep
+        sweep_axes = tuple(
+            TraceAxisSpec(
+                name=str(axis.target_value_ref),
+                unit=str(axis.unit),
+                values=np.asarray(axis.values, dtype=np.float64),
+            )
+            for axis in self.sweep_axes
+        )
+        self._frequency_axis = TraceAxisSpec(
+            name="frequency",
+            unit="GHz",
+            values=np.asarray(sweep.frequencies_ghz, dtype=np.float64),
+        )
+        materialized_axes = (self._frequency_axis, *sweep_axes)
+        sweep_shape = tuple(axis.length for axis in sweep_axes)
+        shape = (self._frequency_axis.length, *sweep_shape)
+        point_specs = _build_postprocess_trace_specs_for_sweep(sweep)
         for trace_index, spec in enumerate(point_specs, start=1):
             write_result = self._trace_store.create_trace(
                 design_id=int(self.design_id),

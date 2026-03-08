@@ -2,6 +2,7 @@
 
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -26,11 +27,13 @@ from app.pages.simulation import (
     _build_sweep_result_bundle_data_records,
     _build_termination_compensation_plan,
     _build_trace_batch_data_records,
+    _cached_trace_store_bundle_from_post_processed_runtime,
     _can_save_post_processed_results,
     _coordinate_weight_fields_editable,
     _decode_simulation_result_payload,
     _hash_schema_source,
     _hash_stable_json,
+    _load_cached_simulation_result,
     _load_saved_post_process_setups_for_schema,
     _load_saved_setups_for_schema,
     _load_selected_post_process_setup_id,
@@ -82,6 +85,7 @@ from core.simulation.application.run_simulation import (
 )
 from core.simulation.application.trace_architecture import (
     TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+    IncrementalPostProcessedSweepWriter,
     IncrementalRawSimulationSweepWriter,
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
@@ -1157,6 +1161,111 @@ def test_incremental_sweep_writer_persists_points_without_full_regroup(
     assert rebuilt_result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx(
         base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
     )
+
+
+def test_incremental_post_processed_writer_persists_points_without_full_regroup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
+    runtime_output = _sample_transformed_post_processed_sweep_run()
+    writer = IncrementalPostProcessedSweepWriter(
+        design_id=10,
+        design_name="FloatingQubitWithXYLine",
+        run_id="floatingqubit-postprocess",
+        sweep_axes=runtime_output.axes,
+    )
+
+    for point in runtime_output.points:
+        writer.append_point(
+            point_index=point.point_index,
+            axis_indices=point.axis_indices,
+            sweep=point.sweep,
+        )
+
+    payload = writer.build_payload(
+        summary_payload={
+            "trace_count": writer.trace_count,
+            "run_kind": "parameter_sweep",
+            "frequency_points": len(runtime_output.points[0].sweep.frequencies_ghz),
+            "point_count": runtime_output.point_count,
+            "representative_point_index": runtime_output.representative_point_index,
+        }
+    )
+
+    def _forbid_full_read(path: Path) -> np.ndarray:
+        raise AssertionError(
+            f"unexpected full array read during incremental postprocess reload: {path}"
+        )
+
+    monkeypatch.setattr(
+        "core.simulation.application.trace_architecture._read_zarr_array",
+        _forbid_full_read,
+    )
+
+    bundle = _cached_trace_store_bundle_from_post_processed_runtime(
+        payload,
+        reference_impedance_ohm=50.0,
+    )
+
+    assert writer.trace_count > 0
+    assert (
+        bundle.representative_result.y_parameter_mode_real[
+            "Y_dm_1_2_dm_1_2 [om=(0,), im=(0,)]"
+        ]
+        == pytest.approx([2.0, 2.0])
+    )
+    assert bundle.sweep_axes[0].target_value_ref == "L_q"
+    assert bundle.sweep_axes[0].values == pytest.approx((10.0, 15.0))
+
+
+def test_load_cached_simulation_result_defers_preview_for_trace_batch_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_dataset = SimpleNamespace(id=42)
+    bundle = SimpleNamespace(
+        id=7,
+        dataset_id=42,
+        result_payload={
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "trace_batch_record": {
+                "summary_payload": {
+                    "run_kind": "parameter_sweep",
+                }
+            },
+        },
+        source_meta={},
+        config_snapshot={},
+    )
+
+    class _ResultBundles:
+        def find_simulation_cache(self, **_: object) -> object:
+            return bundle
+
+    class _FakeUow:
+        result_bundles = _ResultBundles()
+
+        def commit(self) -> None:
+            raise AssertionError("cache hit should not upgrade or commit in this path")
+
+    monkeypatch.setattr(
+        simulation_page,
+        "_ensure_simulation_cache_dataset",
+        lambda _uow: cache_dataset,
+    )
+    monkeypatch.setattr(
+        simulation_page,
+        "_decode_simulation_result_payload",
+        lambda _payload: (_sample_result(), {"run_kind": "parameter_sweep", "point_count": 2}),
+    )
+
+    resolved = _load_cached_simulation_result(
+        _FakeUow(),
+        schema_source_hash="schema-hash",
+        simulation_setup_hash="setup-hash",
+    )
+
+    assert resolved == (7, 42, None, dict(bundle.result_payload))
 
 
 def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:
