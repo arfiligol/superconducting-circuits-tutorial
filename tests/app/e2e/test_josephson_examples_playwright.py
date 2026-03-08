@@ -26,6 +26,7 @@ from playwright.sync_api import (
 
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import CircuitRecord, ResultBundleRecord
+from core.shared.persistence.trace_store import LocalZarrTraceStoreBackend, get_trace_store_path
 
 _RUN_PLAYWRIGHT_E2E = os.getenv("RUN_PLAYWRIGHT_JOSEPHSON_E2E") == "1"
 
@@ -452,8 +453,10 @@ def _assert_trace_batch_payload(
 
     trace_records = payload["trace_records"]
     assert trace_records
-    store_uri = Path(__file__).resolve().parents[3] / trace_records[0]["store_ref"]["store_uri"]
-    assert store_uri.exists()
+    store_ref = trace_records[0]["store_ref"]
+    assert store_ref["store_key"]
+    binding = LocalZarrTraceStoreBackend(root_path=get_trace_store_path())
+    assert binding.resolve_store_path(store_key=store_ref["store_key"]).exists()
 
 
 def _set_spinbutton_value(page: Page, label: str, value: float | int | str, index: int = 0) -> None:
@@ -807,15 +810,17 @@ def _open_characterization_dataset_scope(
     availability_label = _locator_by_testid(
         page,
         "characterization-availability-label",
-        fallback=page.get_by_text(re.compile(r"for current scope$")).first,
+        fallback=page.get_by_text(re.compile(r"for current (design )?scope$")).first,
     )
     if expect_compatible_analysis:
         expect(availability_label).to_contain_text(
-            re.compile(r"^(Available|Recommended) for current scope$")
+            re.compile(r"^(Available|Recommended) for current (design )?scope$")
         )
         expect(page.get_by_text("No compatible traces found", exact=False)).to_have_count(0)
     else:
-        expect(availability_label).to_contain_text("Unavailable for current scope")
+        expect(availability_label).to_contain_text(
+            re.compile(r"^Unavailable for current (design )?scope$")
+        )
 
 
 def _select_base_traces_for_characterization(page: Page) -> None:

@@ -117,6 +117,7 @@ It may be:
 ```json
 {
   "backend": "local_zarr",
+  "store_key": "designs/42/batches/105.zarr",
   "store_uri": "data/trace_store/designs/42/batches/105.zarr",
   "group_path": "/traces/9001",
   "array_path": "values",
@@ -126,6 +127,8 @@ It may be:
   "schema_version": "1.0"
 }
 ```
+
+`store_key` is the canonical locator. `store_uri` remains an opaque backend-owned compatibility/debug locator and must not be parsed by the UI or application layer to recover local path layout.
 
 **Allowed direction for `backend`**
 

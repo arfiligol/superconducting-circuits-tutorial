@@ -45,6 +45,17 @@ class TraceStoreRef(TypedDict):
 
 
 @dataclass(frozen=True)
+class TraceStoreRuntimeConfig:
+    """Runtime configuration for backend selection and locator resolution."""
+
+    default_backend: TraceStoreBackend
+    local_root_path: Path
+    s3_bucket: str | None = None
+    s3_prefix: str = ""
+    s3_endpoint_url: str | None = None
+
+
+@dataclass(frozen=True)
 class TraceWriteResult:
     """Metadata returned after materializing one trace payload."""
 
@@ -161,6 +172,41 @@ def get_trace_store_path() -> Path:
     return TRACE_STORE_PATH
 
 
+def get_trace_store_runtime_config() -> TraceStoreRuntimeConfig:
+    """Return the configured TraceStore runtime boundary."""
+    default_backend = str(os.getenv("SC_TRACE_STORE_BACKEND", "local_zarr")).strip() or "local_zarr"
+    if default_backend not in {"local_zarr", "s3_zarr"}:
+        raise ValueError(f"Unsupported TraceStore backend: {default_backend}")
+    return TraceStoreRuntimeConfig(
+        default_backend=cast(TraceStoreBackend, default_backend),
+        local_root_path=get_trace_store_path(),
+        s3_bucket=(str(os.getenv("SC_TRACE_STORE_S3_BUCKET", "")).strip() or None),
+        s3_prefix=str(os.getenv("SC_TRACE_STORE_S3_PREFIX", "")).strip(),
+        s3_endpoint_url=(str(os.getenv("SC_TRACE_STORE_S3_ENDPOINT_URL", "")).strip() or None),
+    )
+
+
+def get_trace_store_backend_binding(
+    *,
+    backend: TraceStoreBackend | None = None,
+    config: TraceStoreRuntimeConfig | None = None,
+) -> TraceStoreBackendBinding:
+    """Return the backend-owned locator binding for the requested backend."""
+    runtime_config = config or get_trace_store_runtime_config()
+    resolved_backend = backend or runtime_config.default_backend
+    if resolved_backend == "local_zarr":
+        return LocalZarrTraceStoreBackend(root_path=runtime_config.local_root_path)
+    if resolved_backend == "s3_zarr":
+        if not runtime_config.s3_bucket:
+            raise ValueError("SC_TRACE_STORE_S3_BUCKET is required for s3_zarr backend.")
+        return S3ZarrTraceStoreBackend(
+            bucket=runtime_config.s3_bucket,
+            prefix=runtime_config.s3_prefix,
+            endpoint_url=runtime_config.s3_endpoint_url,
+        )
+    raise ValueError(f"Unsupported TraceStore backend: {resolved_backend}")
+
+
 def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
     """Validate and normalize one persisted store-ref mapping."""
     backend = str(ref.get("backend", "")).strip()
@@ -217,6 +263,24 @@ def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
         chunk_shape=chunk_shape,
         schema_version=schema_version,
     )
+
+
+def resolve_trace_store_path(
+    ref: Mapping[str, object],
+    *,
+    config: TraceStoreRuntimeConfig | None = None,
+) -> Path:
+    """Resolve a local TraceStore path via the backend-owned binding."""
+    normalized_ref = coerce_trace_store_ref(ref)
+    binding = get_trace_store_backend_binding(
+        backend=normalized_ref["backend"],
+        config=config,
+    )
+    if not isinstance(binding, LocalZarrTraceStoreBackend):
+        raise NotImplementedError(
+            "Filesystem path resolution is only available for local_zarr refs."
+        )
+    return binding.resolve_store_path(store_key=normalized_ref["store_key"])
 
 
 class LocalZarrTraceStore:
@@ -470,11 +534,8 @@ def _normalize_store_uri(
     if raw_store_uri:
         return raw_store_uri
 
-    if backend == "local_zarr":
-        binding = LocalZarrTraceStoreBackend(root_path=get_trace_store_path())
-        return binding.build_store_uri(store_key=store_key)
-
-    return f"trace-store://{backend}/{store_key}"
+    binding = get_trace_store_backend_binding(backend=backend)
+    return binding.build_store_uri(store_key=store_key)
 
 
 def _normalize_store_key(store_key: str) -> str:
@@ -549,7 +610,11 @@ __all__ = [
     "TraceStoreBackend",
     "TraceStoreBackendBinding",
     "TraceStoreRef",
+    "TraceStoreRuntimeConfig",
     "TraceWriteResult",
     "coerce_trace_store_ref",
+    "get_trace_store_backend_binding",
     "get_trace_store_path",
+    "get_trace_store_runtime_config",
+    "resolve_trace_store_path",
 ]

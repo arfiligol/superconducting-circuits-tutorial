@@ -118,6 +118,7 @@ DesignRecord
 ```json
 {
   "backend": "local_zarr",
+  "store_key": "designs/42/batches/105.zarr",
   "store_uri": "data/trace_store/designs/42/batches/105.zarr",
   "group_path": "/traces/9001",
   "array_path": "values",
@@ -127,6 +128,8 @@ DesignRecord
   "schema_version": "1.0"
 }
 ```
+
+`store_key` 是 canonical locator；`store_uri` 僅作 backend-owned opaque / compatibility locator，不應由 UI 或 application layer 自行解析 local path layout。
 
 **backend 可用值（目前 direction）**
 

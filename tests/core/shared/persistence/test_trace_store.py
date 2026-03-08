@@ -12,6 +12,8 @@ from core.shared.persistence.trace_store import (
     TraceStore,
     TraceStoreBackendBinding,
     coerce_trace_store_ref,
+    get_trace_store_backend_binding,
+    get_trace_store_runtime_config,
 )
 
 
@@ -43,6 +45,21 @@ def test_backend_bindings_keep_locator_logic_inside_persistence(tmp_path) -> Non
     assert s3_backend.build_store_uri(store_key=s3_key) == (
         "s3://trace-bucket/tutorial/designs/42/batches/105.zarr"
     )
+
+
+def test_runtime_config_selects_backend_contract_from_env(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
+    monkeypatch.setenv("SC_TRACE_STORE_BACKEND", "s3_zarr")
+    monkeypatch.setenv("SC_TRACE_STORE_S3_BUCKET", "trace-bucket")
+    monkeypatch.setenv("SC_TRACE_STORE_S3_PREFIX", "tutorial")
+
+    config = get_trace_store_runtime_config()
+    assert config.default_backend == "s3_zarr"
+    assert config.local_root_path == (tmp_path / "trace_store")
+
+    binding = get_trace_store_backend_binding(config=config)
+    assert isinstance(binding, S3ZarrTraceStoreBackend)
+    assert binding.build_store_key(design_id=7, batch_id=9) == "tutorial/designs/7/batches/9.zarr"
 
 
 def test_local_zarr_trace_store_writes_trace_and_reads_slices(tmp_path) -> None:

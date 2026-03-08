@@ -81,9 +81,9 @@ Make the system reach the following steady state:
 4. examples-driven regression covers circuit / layout / measurement saved-trace reuse paths rather than only one source path
 5. after phase-3 acceptance, the Integrator can clearly identify which legacy names and compatibility paths still exist and why
 
-## Active Workstreams
+## Phase 3 Workstreams
 
-### Workstream A: Cross-Source Product Workflow
+### Workstream A: Cross-Source Product Workflow (Completed)
 
 Goal:
 
@@ -102,7 +102,17 @@ Focus:
 - source compare / source summary / provenance visibility
 - no large page-layout rewrite, but the cross-source compare experience must become complete
 
-### Workstream B: Legacy Cleanup and Persistence Convergence
+Completed now:
+
+- `Raw Data` surfaces design-scoped source summary, compare readiness, and trace provenance
+- `Simulation` / `Post Processing` clearly distinguish inspect-only surfaces from save-then-compare workflows
+- `Characterization` now shows source coverage, provenance, and analysis-run history inside one design scope
+
+Deferred expansion:
+
+- if the product later needs richer per-source side-by-side compare UI, open a dedicated follow-up product workstream
+
+### Workstream B: Legacy Cleanup and Persistence Convergence (Completed)
 
 Goal:
 
@@ -117,7 +127,17 @@ Focus:
 - dual-path save/read behavior
 - no physical table rename yet, but less logical duplication
 
-### Workstream C: TraceStore Operational Boundary
+Completed now:
+
+- `store_key` is the canonical locator
+- `store_uri` is explicitly reduced to an opaque compatibility/debug locator
+- simulation write/read paths and targeted regressions no longer treat `store_uri` as the primary local path source
+
+Deferred expansion:
+
+- physical schema rename / migration is still intentionally deferred outside the current phase-3 scope
+
+### Workstream C: TraceStore Operational Boundary (Completed)
 
 Goal:
 
@@ -132,7 +152,17 @@ Focus:
 - `s3_zarr` must expose a clear operational config/validation surface
 - live production integration is optional, but the design cannot stop at abstract naming
 
-### Workstream D: Platform Acceptance Matrix
+Completed now:
+
+- the `local_zarr` runtime path and backend binding are converged
+- `s3_zarr` now has an explicit runtime config / validation contract
+- the rule that UI/app code must not parse backend-specific local path layout is now part of the guardrails
+
+Deferred expansion:
+
+- live MinIO / S3 smoke integration remains later deployment work, not a current phase-3 blocker
+
+### Workstream D: Platform Acceptance Matrix (Active)
 
 Goal:
 
@@ -153,8 +183,8 @@ Focus:
 | postprocess -> save/read -> characterize | implemented | post-processed traces can be saved, re-read, and reused in characterization / result navigation | expand to more pipeline steps and matrix families |
 | layout ingest -> save/read -> characterize | implemented | layout traces persist through the trace-store path and can be consumed by characterization | add full browser/E2E coverage |
 | measurement ingest -> save/read -> characterize | implemented | measurement traces persist through the trace-store path and can be consumed by characterization | add broader matrix-family coverage |
-| cross-source compare within one design | active | multiple source traces can be browsed and compared inside the same design scope | add UX and compare assertions for source differences |
-| TraceStore backend readiness | active | the local backend path is stable and the `s3_zarr` boundary has explicit validation points | add MinIO/S3 integration smoke coverage |
+| cross-source compare within one design | implemented | multiple source traces can be browsed with source summary / provenance / compatibility gating inside the same design scope | add richer source-difference UX and compare assertions |
+| TraceStore backend readiness | implemented | the local backend path is stable and the `s3_zarr` boundary has explicit validation points | add MinIO/S3 integration smoke coverage |
 
 Constraints:
 

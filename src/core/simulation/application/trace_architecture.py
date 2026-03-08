@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import shutil
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -14,6 +13,12 @@ from typing import Any
 
 import numpy as np
 
+from core.shared.persistence.trace_store import (
+    LocalZarrTraceStoreBackend,
+    get_trace_store_backend_binding,
+    get_trace_store_path,
+    resolve_trace_store_path,
+)
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
     PortMatrixSweepRun,
@@ -60,10 +65,17 @@ class TraceNumericSpec:
 
 def get_trace_store_root() -> Path:
     """Return the repository-local TraceStore root with env override support."""
-    override = str(os.getenv("SC_TRACE_STORE_ROOT", "")).strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    return Path(__file__).resolve().parents[4] / "data" / "trace_store"
+    return get_trace_store_path()
+
+
+def _require_local_trace_store_backend() -> LocalZarrTraceStoreBackend:
+    """Resolve the local TraceStore backend binding for simulation trace writes."""
+    binding = get_trace_store_backend_binding(backend=TRACE_STORE_BACKEND)
+    if not isinstance(binding, LocalZarrTraceStoreBackend):
+        raise TypeError(
+            "Simulation trace persistence currently requires a local_zarr backend binding."
+        )
+    return binding
 
 
 def is_trace_batch_bundle_payload(payload: Mapping[str, Any] | None) -> bool:
@@ -226,21 +238,17 @@ def persist_trace_batch_bundle(
     if not trace_specs:
         raise ValueError("At least one trace spec is required.")
 
-    store_uri = (
-        get_trace_store_root()
-        / "designs"
-        / str(int(design_id))
-        / "batches"
-        / f"{int(bundle_id)}.zarr"
-    )
-    if store_uri.exists():
-        shutil.rmtree(store_uri)
-    _write_group(store_uri)
-    _write_group(store_uri / "traces")
+    backend_binding = _require_local_trace_store_backend()
+    store_key = backend_binding.build_store_key(design_id=int(design_id), batch_id=int(bundle_id))
+    store_path = backend_binding.resolve_store_path(store_key=store_key)
+    if store_path.exists():
+        shutil.rmtree(store_path)
+    _write_group(store_path)
+    _write_group(store_path / "traces")
 
     trace_records: list[dict[str, Any]] = []
     for trace_index, spec in enumerate(trace_specs, start=1):
-        trace_group = store_uri / "traces" / str(trace_index)
+        trace_group = store_path / "traces" / str(trace_index)
         _write_group(trace_group)
         _write_group(trace_group / "axes")
         values_group = trace_group / "values"
@@ -283,7 +291,8 @@ def persist_trace_batch_bundle(
                 "trace_meta": dict(spec.trace_meta),
                 "store_ref": {
                     "backend": TRACE_STORE_BACKEND,
-                    "store_uri": _store_uri_text(store_uri),
+                    "store_key": store_key,
+                    "store_uri": backend_binding.build_store_uri(store_key=store_key),
                     "group_path": f"/traces/{trace_index}",
                     "array_path": "values",
                     "dtype": str(np.asarray(spec.values).dtype),
@@ -803,10 +812,10 @@ def _load_axis_values(
     if target_ref is None:
         raise ValueError(f"Axis '{axis_name}' is not available in store_ref.")
 
-    store_uri = _resolve_store_uri(str(store_ref.get("store_uri", "")))
+    store_path = resolve_trace_store_path(store_ref)
     group_path = str(store_ref.get("group_path", "")).strip("/")
     axis_array_path = str(target_ref.get("array_path", "")).strip("/")
-    return _read_zarr_array(store_uri / group_path / axis_array_path)
+    return _read_zarr_array(store_path / group_path / axis_array_path)
 
 
 def _load_trace_values(
@@ -815,33 +824,13 @@ def _load_trace_values(
     axis_indices: tuple[int, ...] | None,
 ) -> list[float]:
     """Load one trace array and optionally slice it by sweep axes."""
-    store_uri = _resolve_store_uri(str(store_ref.get("store_uri", "")))
+    store_path = resolve_trace_store_path(store_ref)
     group_path = str(store_ref.get("group_path", "")).strip("/")
     array_path = str(store_ref.get("array_path", "")).strip("/")
-    array = _read_zarr_array(store_uri / group_path / array_path)
+    array = _read_zarr_array(store_path / group_path / array_path)
     if axis_indices:
         array = array[(slice(None), *axis_indices)]
     return [float(value) for value in np.asarray(array, dtype=np.float64).tolist()]
-
-
-def _resolve_store_uri(store_uri: str) -> Path:
-    """Resolve a stored URI into an absolute filesystem path."""
-    raw = str(store_uri).strip()
-    if not raw:
-        raise ValueError("TraceStore ref is missing store_uri.")
-    candidate = Path(raw)
-    if candidate.is_absolute():
-        return candidate
-    return Path(__file__).resolve().parents[4] / candidate
-
-
-def _store_uri_text(store_uri: Path) -> str:
-    """Persist a repository-relative URI when possible."""
-    repo_root = Path(__file__).resolve().parents[4]
-    try:
-        return store_uri.relative_to(repo_root).as_posix()
-    except ValueError:
-        return str(store_uri)
 
 
 def _default_chunk_shape(shape: Sequence[int]) -> tuple[int, ...]:

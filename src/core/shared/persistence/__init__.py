@@ -22,9 +22,13 @@ from core.shared.persistence.trace_store import (
     TraceStoreBackend,
     TraceStoreBackendBinding,
     TraceStoreRef,
+    TraceStoreRuntimeConfig,
     TraceWriteResult,
     coerce_trace_store_ref,
+    get_trace_store_backend_binding,
     get_trace_store_path,
+    get_trace_store_runtime_config,
+    resolve_trace_store_path,
 )
 from core.shared.persistence.unit_of_work import SqliteUnitOfWork, get_unit_of_work
 
@@ -53,9 +57,13 @@ __all__ = [  # noqa: RUF022
     "TraceStoreBackend",
     "TraceStoreBackendBinding",
     "TraceStoreRef",
+    "TraceStoreRuntimeConfig",
     "TraceWriteResult",
     "coerce_trace_store_ref",
+    "get_trace_store_backend_binding",
     "get_trace_store_path",
+    "get_trace_store_runtime_config",
+    "resolve_trace_store_path",
     # Unit of Work
     "SqliteUnitOfWork",
     "get_unit_of_work",

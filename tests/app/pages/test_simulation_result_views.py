@@ -61,6 +61,10 @@ from app.services.simulation_setup_manager import (
     save_setup_as,
 )
 from core.shared.persistence.models import CircuitRecord
+from core.shared.persistence.trace_store import (
+    LocalZarrTraceStoreBackend,
+    get_trace_store_path,
+)
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
     PortMatrixSweepPoint,
@@ -782,9 +786,11 @@ def test_trace_batch_bundle_roundtrip_rebuilds_parameter_sweep_from_trace_store(
     assert payload["schema_kind"] == TRACE_BATCH_BUNDLE_SCHEMA_KIND
     assert payload["trace_batch_record"]["stage_kind"] == "raw"
     assert payload["trace_batch_record"]["summary_payload"]["point_count"] == 2
-    assert payload["trace_records"][0]["store_ref"]["backend"] == "local_zarr"
-    store_uri = payload["trace_records"][0]["store_ref"]["store_uri"]
-    assert (Path(__file__).resolve().parents[3] / store_uri).exists()
+    store_ref = payload["trace_records"][0]["store_ref"]
+    assert store_ref["backend"] == "local_zarr"
+    assert store_ref["store_key"] == "designs/42/batches/105.zarr"
+    binding = LocalZarrTraceStoreBackend(root_path=get_trace_store_path())
+    assert binding.resolve_store_path(store_key=store_ref["store_key"]).exists()
 
     rebuilt_result, rebuilt_sweep_payload = load_raw_simulation_bundle(payload)
 

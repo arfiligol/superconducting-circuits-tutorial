@@ -82,9 +82,9 @@ updated_by: codex
 4. examples-driven regression 能覆蓋 circuit / layout / measurement 的 saved-trace reuse paths，而不是只驗證單一路徑
 5. phase-3 驗收完成後，Integrator 能明確指出哪些 legacy names / compatibility layers 仍保留，哪些已退休
 
-## Active Workstreams
+## Phase 3 Workstreams
 
-### Workstream A: Cross-Source Product Workflow
+### Workstream A: Cross-Source Product Workflow (Completed)
 
 目標：
 
@@ -103,7 +103,17 @@ updated_by: codex
 - source compare / source summary / provenance visibility
 - 不做大型頁面重排，但要把 cross-source compare 體驗補完整
 
-### Workstream B: Legacy Cleanup and Persistence Convergence
+已完成項目：
+
+- `Raw Data` 已呈現 design-scoped source summary / compare readiness / trace provenance
+- `Simulation` / `Post Processing` 已明確標示 inspect-only 與 save-then-compare 邊界
+- `Characterization` 已在同一 design scope 下強化 source coverage / provenance / analysis-run history
+
+剩餘擴張：
+
+- 若要做更完整的 per-source side-by-side compare UI，可另開後續產品 workstream
+
+### Workstream B: Legacy Cleanup and Persistence Convergence (Completed)
 
 目標：
 
@@ -118,7 +128,17 @@ updated_by: codex
 - raw/postprocess/manual-save 等雙軌路徑
 - 不要求 physical table rename，但要讓 logical contract 更單一路徑
 
-### Workstream C: TraceStore Operational Boundary
+已完成項目：
+
+- `store_key` 已成為 canonical locator
+- `store_uri` 明確降為 opaque compatibility/debug locator
+- simulation write/read path 與 targeted regressions 已不再把 `store_uri` 當 primary local path source
+
+剩餘擴張：
+
+- physical schema rename / migration 仍 deferred，不在目前 phase-3 範圍
+
+### Workstream C: TraceStore Operational Boundary (Completed)
 
 目標：
 
@@ -133,7 +153,17 @@ updated_by: codex
 - `s3_zarr` 至少要有明確 operational config / validation surface
 - 不一定要做 live production integration，但不能只停在抽象名稱
 
-### Workstream D: Platform Acceptance Matrix
+已完成項目：
+
+- `local_zarr` runtime path 與 backend binding 已收斂
+- `s3_zarr` 已有 runtime config / validation contract
+- UI / app layer 不應解析 backend-specific local path layout 的規則已進 guardrails
+
+剩餘擴張：
+
+- live MinIO / S3 smoke integration 仍是後續 deployment work，而非當前 phase-3 blocker
+
+### Workstream D: Platform Acceptance Matrix (Active)
 
 目標：
 
@@ -154,8 +184,8 @@ updated_by: codex
 | postprocess -> save/read -> characterize | implemented | post-processed traces 可保存、重讀、再次進 characterization / result navigation | 擴張更多 pipeline steps / matrix families |
 | layout ingest -> save/read -> characterize | implemented | layout traces 以 trace-store path 寫入並可被 characterization 消費 | 補 full browser/E2E path |
 | measurement ingest -> save/read -> characterize | implemented | measurement traces 以 trace-store path 寫入並可被 characterization 消費 | 補更多 matrix family coverage |
-| cross-source compare within one design | active | 同一 design scope 下能同時顯示與比較多來源 traces | 補 source difference UX 與 compare assertions |
-| TraceStore backend readiness | active | local backend 路徑穩定且 `s3_zarr` boundary 有明確驗證點 | 補 MinIO/S3 integration smoke tests |
+| cross-source compare within one design | implemented | 同一 design scope 下能同時顯示來源 summary / provenance / compatibility gating | 補更完整 per-source difference UX 與 compare assertions |
+| TraceStore backend readiness | implemented | local backend 路徑穩定且 `s3_zarr` boundary 有明確驗證點 | 補 MinIO/S3 integration smoke tests |
 
 約束：
 

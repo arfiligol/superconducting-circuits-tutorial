@@ -59,6 +59,21 @@ The target storage direction is:
 | Numeric payload | `Zarr` | S/Y/Z traces, sweep ND arrays, axes arrays |
 | Object backend | local FS / MinIO / S3 | TraceStore backend (located via `TraceStoreRef.backend + store_key`; local path layout stays internal) |
 
+## TraceStore Runtime Config
+
+Current runtime config contract:
+
+- `SC_TRACE_STORE_BACKEND`
+  - `local_zarr` (implemented now)
+  - `s3_zarr` (contract-ready; live integration deferred)
+- `SC_TRACE_STORE_ROOT`
+  - root path for the local backend
+- `SC_TRACE_STORE_S3_BUCKET`
+- `SC_TRACE_STORE_S3_PREFIX`
+- `SC_TRACE_STORE_S3_ENDPOINT_URL`
+
+The application / UI layer must not parse local `store_uri` paths directly. Backend locator resolution must go through the persistence `TraceStore` abstraction.
+
 ## Dependency Management
 
 - **Python**: `pyproject.toml` (managed by `uv`)

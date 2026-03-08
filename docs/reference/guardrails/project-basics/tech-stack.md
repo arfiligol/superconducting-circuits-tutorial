@@ -59,6 +59,21 @@ tags:
 | Numeric payload | `Zarr` | S/Y/Z traces、sweep ND arrays、axes arrays |
 | Object backend | local FS / MinIO / S3 | TraceStore backend（透過 `TraceStoreRef.backend + store_key` 定位；local path layout 不外漏） |
 
+## TraceStore Runtime Config
+
+當前 runtime config 約定：
+
+- `SC_TRACE_STORE_BACKEND`
+  - `local_zarr`（目前實作）
+  - `s3_zarr`（contract-ready；尚未 live integration）
+- `SC_TRACE_STORE_ROOT`
+  - local backend 的 root path
+- `SC_TRACE_STORE_S3_BUCKET`
+- `SC_TRACE_STORE_S3_PREFIX`
+- `SC_TRACE_STORE_S3_ENDPOINT_URL`
+
+Application / UI layer 不得自行解析 local `store_uri` path；backend locator 必須經由 persistence `TraceStore` abstraction 解決。
+
 ## 依賴管理
 
 - **Python**: `pyproject.toml`（由 `uv` 管理）
