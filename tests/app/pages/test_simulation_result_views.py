@@ -24,6 +24,7 @@ from app.pages.simulation import (
     _build_sweep_metric_rows,
     _build_sweep_result_bundle_data_records,
     _build_termination_compensation_plan,
+    _build_trace_batch_data_records,
     _can_save_post_processed_results,
     _coordinate_weight_fields_editable,
     _decode_simulation_result_payload,
@@ -1950,3 +1951,34 @@ def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:
     assert payload["trace_details"][0]["axis_value"] == pytest.approx(900.0)
     assert payload["trace_details"][1]["axis_value"] == pytest.approx(1100.0)
     assert len(payload["figure"].data) == 2
+
+
+def test_build_trace_batch_data_records_materializes_metadata_only_trace_rows() -> None:
+    trace_specs = build_post_processed_trace_specs(
+        runtime_output=_sample_transformed_post_processed_sweep_run(),
+    )
+    payload = persist_trace_batch_bundle(
+        bundle_id=404,
+        design_id=12,
+        design_name="FloatingQubitWithXYLine",
+        source_kind="circuit_simulation",
+        stage_kind="postprocess",
+        setup_kind="circuit_simulation.postprocess",
+        setup_payload={"steps": [{"type": "kron_reduction"}]},
+        provenance_payload={"input_source_type": "ptc_y"},
+        trace_specs=trace_specs,
+        summary_payload={"trace_count": len(trace_specs), "run_kind": "parameter_sweep"},
+    )
+
+    records = _build_trace_batch_data_records(
+        dataset_id=33,
+        trace_batch_payload=payload,
+    )
+
+    assert len(records) == len(payload["trace_records"])
+    assert all(record.dataset_id == 33 for record in records)
+    assert all(record.values == [] for record in records)
+    assert all(record.store_ref for record in records)
+    assert all(record.axes and "length" in record.axes[0] for record in records)
+    assert any(record.representation == "imaginary" for record in records)
+    assert any(record.parameter.startswith("Y_dm_1_2_dm_1_2") for record in records)

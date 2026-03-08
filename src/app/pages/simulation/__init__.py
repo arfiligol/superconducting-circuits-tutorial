@@ -3793,6 +3793,47 @@ def _build_post_processed_runtime_data_records(
     return records
 
 
+def _build_trace_batch_data_records(
+    *,
+    dataset_id: int,
+    trace_batch_payload: Mapping[str, Any],
+) -> list[DataRecord]:
+    """Materialize metadata-only trace rows from one persisted trace-batch payload."""
+    if not is_trace_batch_bundle_payload(trace_batch_payload):
+        raise ValueError("Payload is not a trace-batch bundle.")
+
+    raw_trace_records = trace_batch_payload.get("trace_records", [])
+    if not isinstance(raw_trace_records, list) or not raw_trace_records:
+        raise ValueError("Trace-batch payload has no trace records.")
+
+    records: list[DataRecord] = []
+    for raw_trace_record in raw_trace_records:
+        if not isinstance(raw_trace_record, Mapping):
+            raise ValueError("Trace-batch trace record entry is invalid.")
+        store_ref = raw_trace_record.get("store_ref")
+        raw_axes = raw_trace_record.get("axes", [])
+        if not isinstance(store_ref, Mapping) or not store_ref:
+            raise ValueError("Trace-batch trace record is missing store_ref metadata.")
+        if not isinstance(raw_axes, list) or not raw_axes:
+            raise ValueError("Trace-batch trace record is missing axis metadata.")
+        records.append(
+            DataRecord(
+                dataset_id=dataset_id,
+                data_type=str(
+                    raw_trace_record.get("family")
+                    or raw_trace_record.get("data_type")
+                    or ""
+                ),
+                parameter=str(raw_trace_record.get("parameter") or ""),
+                representation=str(raw_trace_record.get("representation") or ""),
+                axes=[dict(axis) for axis in raw_axes if isinstance(axis, Mapping)],
+                values=[],
+                store_ref=dict(store_ref),
+            )
+        )
+    return records
+
+
 def _resolved_source_run_kind(
     source_bundle_snapshot: ResultBundleSnapshot | None,
     *,
@@ -9214,6 +9255,22 @@ def _save_post_processed_results_dialog(
                         ),
                     },
                 )
+                persisted_records = _build_trace_batch_data_records(
+                    dataset_id=ds_id,
+                    trace_batch_payload=bundle.result_payload,
+                )
+                persisted_trace_ids: list[int] = []
+                for persisted_record in persisted_records:
+                    uow.data_records.add(persisted_record)
+                    uow.flush()
+                    if persisted_record.id is None:
+                        raise ValueError("Failed to allocate a post-processed trace id.")
+                    persisted_trace_ids.append(int(persisted_record.id))
+                if persisted_trace_ids:
+                    uow.result_bundles.attach_traces(
+                        batch_id=int(bundle.id),
+                        trace_ids=persisted_trace_ids,
+                    )
                 uow.commit()
                 return ds_name
 
