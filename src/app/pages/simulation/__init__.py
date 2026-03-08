@@ -8479,13 +8479,53 @@ def _render_simulation_environment():
                             ui.label("Checking cached results...").classes("text-muted mt-2")
                         await asyncio.sleep(0)
 
+                        async def _load_cache_with_heartbeat() -> (
+                            tuple[int, int, SimulationResult, dict[str, Any] | None] | None
+                        ):
+                            cache_started_at = datetime.now()
+                            heartbeat_warned = False
+                            cache_task = asyncio.create_task(
+                                run.io_bound(
+                                    _load_cached_simulation_result_io,
+                                    schema_source_hash=schema_source_hash,
+                                    simulation_setup_hash=simulation_setup_hash,
+                                )
+                            )
+                            while True:
+                                try:
+                                    return await asyncio.wait_for(
+                                        asyncio.shield(cache_task),
+                                        timeout=_SIMULATION_HEARTBEAT_SECONDS,
+                                    )
+                                except TimeoutError:
+                                    elapsed_seconds = max(
+                                        1,
+                                        int((datetime.now() - cache_started_at).total_seconds()),
+                                    )
+                                    append_status(
+                                        "info",
+                                        (
+                                            "Cache lookup still running... "
+                                            f"{elapsed_seconds}s elapsed."
+                                        ),
+                                    )
+                                    if (
+                                        not heartbeat_warned
+                                        and elapsed_seconds
+                                        >= _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS
+                                    ):
+                                        heartbeat_warned = True
+                                        append_status(
+                                            "warning",
+                                            (
+                                                "Long-running cache reconstruction detected; "
+                                                "trace-store cache heartbeat continues every 5s."
+                                            ),
+                                        )
+
                         cache_bundle_id: int | None = None
                         cache_result = None
-                        cache_result = await run.io_bound(
-                            _load_cached_simulation_result_io,
-                            schema_source_hash=schema_source_hash,
-                            simulation_setup_hash=simulation_setup_hash,
-                        )
+                        cache_result = await _load_cache_with_heartbeat()
 
                         if cache_result is not None:
                             (
