@@ -1,7 +1,9 @@
 """Tests for simulation result view helpers."""
 
 import inspect
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -39,6 +41,7 @@ from app.pages.simulation import (
     _normalize_termination_mode,
     _normalize_termination_selected_ports,
     _normalized_simulation_setup_snapshot,
+    _resolved_sweep_point_count,
     _result_from_trace_store_bundle,
     _result_metric_options_for_family,
     _result_mode_options,
@@ -889,6 +892,72 @@ def test_floating_qubit_with_xyline_simple_setup_cache_rebuild_stays_slice_first
     assert rebuilt_result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx(
         points[0].result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
     )
+
+
+def test_decode_trace_batch_sweep_payload_keeps_canonical_payload_without_full_rebuild(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
+    base = _sample_result()
+    sweep_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="L_q", values=(10.0, 12.0), unit="nH"),),
+        points=(
+            SimulationSweepPointResult(
+                point_index=0,
+                axis_indices=(0,),
+                axis_values={"L_q": 10.0},
+                result=base,
+            ),
+            SimulationSweepPointResult(
+                point_index=1,
+                axis_indices=(1,),
+                axis_values={"L_q": 12.0},
+                result=SimulationResult.model_validate(
+                    {
+                        **base.model_dump(mode="json"),
+                        "y_parameter_mode_imag": {
+                            **base.y_parameter_mode_imag,
+                            "om=0|op=2|im=0|ip=2": [0.1, 0.2, 0.3],
+                        },
+                    }
+                ),
+            ),
+        ),
+        representative_point_index=1,
+    )
+    payload = persist_trace_batch_bundle(
+        bundle_id=206,
+        design_id=10,
+        design_name="FloatingQubitWithXYLine",
+        source_kind="circuit_simulation",
+        stage_kind="raw",
+        setup_kind="circuit_simulation.raw",
+        setup_payload={"preset_name": "Simple Setup"},
+        provenance_payload={"origin": "circuit_simulation"},
+        trace_specs=build_raw_simulation_trace_specs(
+            result=sweep_run.representative_result,
+            sweep_payload=simulation_sweep_run_to_payload(sweep_run),
+        ),
+        summary_payload={
+            "trace_count": 1,
+            "run_kind": "parameter_sweep",
+            "frequency_points": 3,
+            "point_count": 2,
+            "representative_point_index": 1,
+        },
+    )
+
+    def _fail_full_rebuild(_: Mapping[str, Any]) -> tuple[SimulationResult, dict[str, Any] | None]:
+        raise AssertionError("unexpected legacy full sweep reconstruction during cache decode")
+
+    monkeypatch.setattr(simulation_page, "load_raw_simulation_bundle", _fail_full_rebuild)
+
+    result, sweep_payload = _decode_simulation_result_payload(payload)
+
+    assert sweep_payload == payload
+    assert _resolved_sweep_point_count(sweep_payload) == 2
+    assert result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx([0.1, 0.2, 0.3])
 
 
 def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:

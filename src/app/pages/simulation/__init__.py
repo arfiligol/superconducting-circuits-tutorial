@@ -52,6 +52,7 @@ from core.shared.persistence.models import (
     ResultBundleRecord,
 )
 from core.shared.persistence.repositories.contracts import ResultBundleSnapshot
+from core.shared.persistence.trace_store import LocalZarrTraceStore, get_trace_store_path
 from core.shared.visualization import get_plotly_layout
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
@@ -264,13 +265,15 @@ class _TraceRecordAuthority:
     axes: tuple[_TraceStoreAxis, ...]
     store_key: str
     trace_meta: dict[str, Any]
+    store_ref: dict[str, Any] | None = None
 
 
 @dataclass
 class _ViewTraceStore:
     """In-memory TraceStore abstraction for slice-first result-view reads."""
 
-    arrays: dict[str, Any]
+    arrays: dict[str, Any] | None = None
+    local_trace_store: LocalZarrTraceStore | None = None
 
     def read_frequency_slice(
         self,
@@ -289,7 +292,15 @@ class _ViewTraceStore:
             if axis_index < 0 or axis_index >= len(axis.values):
                 raise IndexError(f"Axis index out of range for {axis.name}: {axis_index}")
             selectors.append(axis_index)
-        raw_values = self.arrays[record.store_key][tuple(selectors)]
+        if isinstance(self.arrays, dict) and record.store_key in self.arrays:
+            raw_values = self.arrays[record.store_key][tuple(selectors)]
+        elif self.local_trace_store is not None and isinstance(record.store_ref, Mapping):
+            raw_values = self.local_trace_store.read_trace_slice(
+                record.store_ref,
+                selection=tuple(selectors),
+            )
+        else:
+            raise KeyError(f"TraceStore key is unavailable for slice read: {record.store_key}")
         values = np.asarray(raw_values, dtype=np.float64)
         if values.ndim != 1:
             raise ValueError("TraceStore slice must resolve to exactly one frequency trace.")
@@ -494,6 +505,176 @@ def _trace_store_bundle_from_result_points(
     )
 
 
+def _runtime_family_from_persisted_trace_family(family: str) -> str:
+    """Map persisted TraceStore families back to result-view runtime families."""
+    normalized = str(family).strip()
+    if normalized == "s_matrix":
+        return "s_params"
+    if normalized == "z_matrix":
+        return "z_params"
+    if normalized == "y_matrix":
+        return "y_params"
+    return normalized
+
+
+def _trace_store_bundle_from_trace_batch_payload(
+    payload: Mapping[str, Any],
+    *,
+    port_label_by_index: Mapping[int, str] | None = None,
+) -> _TraceStoreResultBundle:
+    """Build one slice-first TraceStore authority directly from a persisted trace-batch payload."""
+    raw_trace_records = payload.get("trace_records", [])
+    if not isinstance(raw_trace_records, list) or not raw_trace_records:
+        raise ValueError("Trace-batch payload has no trace records.")
+
+    first_trace_record = raw_trace_records[0]
+    if not isinstance(first_trace_record, Mapping):
+        raise ValueError("Trace-batch payload has an invalid trace record entry.")
+    first_store_ref = first_trace_record.get("store_ref")
+    first_axes = first_trace_record.get("axes", [])
+    if not isinstance(first_store_ref, Mapping) or not first_store_ref:
+        raise ValueError("Trace-batch payload is missing store_ref metadata.")
+    if not isinstance(first_axes, list) or not first_axes:
+        raise ValueError("Trace-batch payload is missing axis metadata.")
+
+    local_trace_store = LocalZarrTraceStore(root_path=get_trace_store_path())
+
+    axis_values_by_name: dict[str, tuple[float, ...]] = {}
+    bundle_axes: list[_TraceStoreAxis] = []
+    for axis_entry in first_axes:
+        if not isinstance(axis_entry, Mapping):
+            raise ValueError("Trace-batch axis metadata entry is invalid.")
+        axis_name = str(axis_entry.get("name", "")).strip()
+        if not axis_name:
+            raise ValueError("Trace-batch axis metadata is missing a name.")
+        values = tuple(
+            float(value)
+            for value in np.asarray(
+                local_trace_store.read_axis_slice(first_store_ref, axis_name=axis_name),
+                dtype=np.float64,
+            ).tolist()
+        )
+        axis_values_by_name[axis_name] = values
+        bundle_axes.append(
+            _trace_store_axis(
+                name=axis_name,
+                unit=str(axis_entry.get("unit", "")).strip(),
+                values=values,
+            )
+        )
+
+    sweep_axis_defs = bundle_axes[1:]
+    sweep_axes = tuple(
+        SimulationSweepAxis(
+            target_value_ref=axis.name,
+            unit=axis.unit,
+            values=tuple(float(value) for value in axis.values),
+        )
+        for axis in sweep_axis_defs
+    )
+    sweep_shape = tuple(len(axis.values) for axis in sweep_axes)
+    summary_payload = payload.get("trace_batch_record", {}).get("summary_payload", {})
+    if not isinstance(summary_payload, Mapping):
+        summary_payload = {}
+    representative_point_index = int(summary_payload.get("representative_point_index", 0) or 0)
+    if sweep_shape:
+        max_point_index = max(0, int(np.prod(sweep_shape, dtype=np.int64)) - 1)
+        representative_point_index = max(0, min(max_point_index, representative_point_index))
+        representative_axis_indices = tuple(
+            int(index) for index in np.unravel_index(representative_point_index, sweep_shape)
+        )
+    else:
+        representative_axis_indices = ()
+
+    trace_records: list[_TraceRecordAuthority] = []
+    for raw_trace_record in raw_trace_records:
+        if not isinstance(raw_trace_record, Mapping):
+            raise ValueError("Trace-batch trace record entry is invalid.")
+        raw_store_ref = raw_trace_record.get("store_ref")
+        raw_axes = raw_trace_record.get("axes", [])
+        if not isinstance(raw_store_ref, Mapping) or not raw_store_ref:
+            raise ValueError("Trace-batch trace record is missing store_ref metadata.")
+        if not isinstance(raw_axes, list) or not raw_axes:
+            raise ValueError("Trace-batch trace record is missing axis metadata.")
+        resolved_axes = tuple(
+            _trace_store_axis(
+                name=str(axis_entry.get("name", "")).strip(),
+                unit=str(axis_entry.get("unit", "")).strip(),
+                values=axis_values_by_name[str(axis_entry.get("name", "")).strip()],
+            )
+            for axis_entry in raw_axes
+            if isinstance(axis_entry, Mapping)
+        )
+        trace_meta = (
+            dict(raw_trace_record.get("trace_meta", {}))
+            if isinstance(raw_trace_record.get("trace_meta"), Mapping)
+            else {}
+        )
+        runtime_parameter = str(
+            trace_meta.get("label")
+            or trace_meta.get("parameter")
+            or raw_trace_record.get("parameter")
+            or ""
+        )
+        runtime_family = _runtime_family_from_persisted_trace_family(
+            str(raw_trace_record.get("family") or raw_trace_record.get("data_type") or "")
+        )
+        trace_records.append(
+            _TraceRecordAuthority(
+                family=runtime_family,
+                parameter=runtime_parameter,
+                representation=str(raw_trace_record.get("representation") or ""),
+                axes=resolved_axes,
+                store_key=str(raw_store_ref.get("store_key", "")),
+                trace_meta={
+                    **trace_meta,
+                    "family": runtime_family,
+                    "parameter": runtime_parameter,
+                    "representation": str(raw_trace_record.get("representation") or ""),
+                },
+                store_ref=dict(raw_store_ref),
+            )
+        )
+
+    representative_result = _result_from_trace_store_bundle(
+        _TraceStoreResultBundle(
+            trace_records=tuple(trace_records),
+            trace_store=_ViewTraceStore(local_trace_store=local_trace_store),
+            sweep_axes=sweep_axes,
+            representative_axis_indices=representative_axis_indices,
+            representative_result=SimulationResult(
+                frequencies_ghz=list(axis_values_by_name.get("frequency", ())),
+                s11_real=[],
+                s11_imag=[],
+            ),
+            port_indices=(),
+            mode_indices=(),
+            port_label_by_index={},
+        ),
+        axis_index_by_name={
+            axis.target_value_ref: representative_axis_indices[axis_position]
+            for axis_position, axis in enumerate(sweep_axes)
+        },
+    )
+    resolved_port_labels = {
+        int(port): str((port_label_by_index or {}).get(port, label))
+        for port, label in _result_port_options(representative_result).items()
+    }
+    return _TraceStoreResultBundle(
+        trace_records=tuple(trace_records),
+        trace_store=_ViewTraceStore(local_trace_store=local_trace_store),
+        sweep_axes=sweep_axes,
+        representative_axis_indices=representative_axis_indices,
+        representative_result=representative_result,
+        port_indices=tuple(int(port) for port in representative_result.available_port_indices),
+        mode_indices=tuple(
+            tuple(int(value) for value in mode)
+            for mode in representative_result.available_mode_indices
+        ),
+        port_label_by_index=resolved_port_labels,
+    )
+
+
 def _trace_store_bundle_from_simulation_result(
     result: SimulationResult,
 ) -> _TraceStoreResultBundle:
@@ -611,6 +792,16 @@ def _cached_trace_store_bundle_from_sweep_payload(
     cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
     if cached is not None:
         return cached
+    if is_trace_batch_bundle_payload(payload):
+        return _cache_store_limited(
+            _TRACE_STORE_AUTHORITY_CACHE,
+            cache_key,
+            _trace_store_bundle_from_trace_batch_payload(
+                payload,
+                port_label_by_index=port_label_by_index,
+            ),
+            limit=_SWEEP_RUN_CACHE_LIMIT,
+        )
     sweep_run = _cached_sweep_run_from_payload(payload)
     return _cache_store_limited(
         _TRACE_STORE_AUTHORITY_CACHE,
@@ -1169,13 +1360,28 @@ def _decode_simulation_result_payload(
 ) -> tuple[SimulationResult, dict[str, Any] | None]:
     """Decode one persisted payload into preview result plus optional canonical sweep payload."""
     if is_trace_batch_bundle_payload(payload):
-        return load_raw_simulation_bundle(payload)
+        trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(payload)
+        if trace_store_bundle.sweep_axes:
+            return (trace_store_bundle.representative_result, dict(payload))
+        return (trace_store_bundle.representative_result, None)
     run_kind = str(payload.get("run_kind", "")).strip() if isinstance(payload, Mapping) else ""
     if run_kind == "parameter_sweep":
         sweep_run = simulation_sweep_run_from_payload(payload)
         return (sweep_run.representative_result, simulation_sweep_run_to_payload(sweep_run))
     result = SimulationResult.model_validate(payload)
     return (result, None)
+
+
+def _resolved_sweep_point_count(payload: Mapping[str, Any] | None) -> int:
+    """Resolve one sweep point count across legacy and trace-batch payload shapes."""
+    if not isinstance(payload, Mapping):
+        return 0
+    if is_trace_batch_bundle_payload(payload):
+        summary_payload = payload.get("trace_batch_record", {}).get("summary_payload", {})
+        if isinstance(summary_payload, Mapping):
+            return int(summary_payload.get("point_count", 0) or 0)
+        return 0
+    return int(payload.get("point_count", 0) or 0)
 
 
 def _build_compensated_simulation_sweep_payload(
@@ -1227,6 +1433,12 @@ def _persist_simulation_result_bundle(
     result_payload: dict[str, Any] | None = None,
 ) -> int:
     """Persist one simulation result bundle using the trace-batch + TraceStore contract."""
+    normalized_result_payload = result_payload
+    if isinstance(normalized_result_payload, Mapping) and is_trace_batch_bundle_payload(
+        normalized_result_payload
+    ):
+        _, normalized_result_payload = load_raw_simulation_bundle(normalized_result_payload)
+
     design_id = int(source_meta.get("circuit_id") or dataset_id)
     design_name = str(
         source_meta.get("circuit_name")
@@ -1264,14 +1476,14 @@ def _persist_simulation_result_bundle(
         "simulation_setup_hash": simulation_setup_hash,
         "run_kind": (
             "parameter_sweep"
-            if isinstance(result_payload, Mapping)
-            and str(result_payload.get("run_kind", "")).strip() == "parameter_sweep"
+            if isinstance(normalized_result_payload, Mapping)
+            and str(normalized_result_payload.get("run_kind", "")).strip() == "parameter_sweep"
             else "single_run"
         ),
     }
     trace_specs = build_raw_simulation_trace_specs(
         result=result,
-        sweep_payload=result_payload,
+        sweep_payload=normalized_result_payload,
     )
     bundle.result_payload = persist_trace_batch_bundle(
         bundle_id=bundle_id,
@@ -1288,13 +1500,13 @@ def _persist_simulation_result_bundle(
             "run_kind": provenance_payload["run_kind"],
             "frequency_points": len(result.frequencies_ghz),
             "point_count": (
-                int(result_payload.get("point_count", 0))
-                if isinstance(result_payload, Mapping)
+                int(normalized_result_payload.get("point_count", 0))
+                if isinstance(normalized_result_payload, Mapping)
                 else 1
             ),
             "representative_point_index": (
-                int(result_payload.get("representative_point_index", 0))
-                if isinstance(result_payload, Mapping)
+                int(normalized_result_payload.get("representative_point_index", 0))
+                if isinstance(normalized_result_payload, Mapping)
                 else 0
             ),
         },
@@ -1304,12 +1516,12 @@ def _persist_simulation_result_bundle(
         return bundle_id
 
     records: list[DataRecord]
-    if isinstance(result_payload, Mapping) and (
-        str(result_payload.get("run_kind", "")) == "parameter_sweep"
+    if isinstance(normalized_result_payload, Mapping) and (
+        str(normalized_result_payload.get("run_kind", "")) == "parameter_sweep"
     ):
         records = _build_sweep_result_bundle_data_records(
             dataset_id=dataset_id,
-            sweep_payload=result_payload,
+            sweep_payload=normalized_result_payload,
         )
     else:
         records = _build_result_bundle_data_records(dataset_id=dataset_id, result=result)
@@ -8553,7 +8765,9 @@ def _render_simulation_environment():
                                     "info",
                                     (
                                         "Loaded cached parameter sweep payload "
-                                        f"({sweep_result_payload.get('point_count', 0)} points)."
+                                        "("
+                                        f"{_resolved_sweep_point_count(sweep_result_payload)} "
+                                        "points)."
                                     ),
                                 )
                         else:
@@ -8775,7 +8989,7 @@ def _render_simulation_environment():
                                 "positive",
                                 (
                                     "Parameter sweep completed successfully "
-                                    f"({int(last_sweep_result_payload.get('point_count', 0))} "
+                                    f"({_resolved_sweep_point_count(last_sweep_result_payload)} "
                                     "points, "
                                     f"{len(result.frequencies_ghz)} freq points each)."
                                 ),
@@ -8939,13 +9153,28 @@ def _save_simulation_results_dialog(
     sweep_result_payload: dict[str, Any] | None = None,
 ):
     """Dialog for saving SimulationResult into DataRecords."""
-    if sweep_result_payload is not None:
+    if isinstance(sweep_result_payload, Mapping) and is_trace_batch_bundle_payload(
+        sweep_result_payload
+    ):
+        bundle_records = _build_trace_batch_data_records(
+            dataset_id=0,
+            trace_batch_payload=sweep_result_payload,
+        )
+        sweep_point_count = int(
+            sweep_result_payload.get("trace_batch_record", {})
+            .get("summary_payload", {})
+            .get("point_count", 0)
+            or 0
+        )
+    elif sweep_result_payload is not None:
         bundle_records = _build_sweep_result_bundle_data_records(
             dataset_id=0,
             sweep_payload=sweep_result_payload,
         )
+        sweep_point_count = int(sweep_result_payload.get("point_count", 0) or 0)
     else:
         bundle_records = _build_result_bundle_data_records(dataset_id=0, result=result)
+        sweep_point_count = 0
     bundle_trace_count = len(
         {
             (
@@ -8967,7 +9196,7 @@ def _save_simulation_results_dialog(
             ui.label(
                 "This saves the cached parameter-sweep bundle "
                 f"({bundle_trace_count} trace(s), "
-                f"{int(sweep_result_payload.get('point_count', 0))} sweep points)."
+                f"{sweep_point_count} sweep points)."
             ).classes("text-sm text-muted mb-3")
 
         try:
