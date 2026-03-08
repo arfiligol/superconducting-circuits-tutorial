@@ -82,6 +82,7 @@ from core.simulation.application.trace_architecture import (
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
     is_trace_batch_bundle_payload,
+    load_raw_simulation_bundle,
     persist_trace_batch_bundle,
     rebind_trace_batch_bundle_payload,
 )
@@ -1373,6 +1374,25 @@ def _decode_simulation_result_payload(
     return (result, None)
 
 
+def _coerce_parameter_sweep_payload(
+    payload: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Coerce one canonical sweep payload into legacy parameter-sweep shape when needed."""
+    if not isinstance(payload, Mapping):
+        return None
+    if is_trace_batch_bundle_payload(payload):
+        try:
+            _result, sweep_payload = load_raw_simulation_bundle(payload)
+        except Exception:
+            return None
+        if not isinstance(sweep_payload, Mapping):
+            return None
+        return json.loads(json.dumps(sweep_payload))
+    if str(payload.get("run_kind", "")).strip() != "parameter_sweep":
+        return None
+    return json.loads(json.dumps(payload))
+
+
 def _resolved_sweep_point_count(payload: Mapping[str, Any] | None) -> int:
     """Resolve one sweep point count across legacy and trace-batch payload shapes."""
     if not isinstance(payload, Mapping):
@@ -1392,7 +1412,10 @@ def _build_compensated_simulation_sweep_payload(
     reference_impedance_ohm: float,
 ) -> dict[str, Any]:
     """Apply port-termination compensation point-wise while preserving full sweep provenance."""
-    sweep_run = simulation_sweep_run_from_payload(sweep_payload)
+    resolved_sweep_payload = _coerce_parameter_sweep_payload(sweep_payload)
+    if not isinstance(resolved_sweep_payload, Mapping):
+        raise ValueError("Sweep payload is unavailable for termination compensation.")
+    sweep_run = simulation_sweep_run_from_payload(resolved_sweep_payload)
     compensated_points = tuple(
         SimulationSweepPointResult(
             point_index=int(point.point_index),
@@ -4105,11 +4128,23 @@ def _resolved_source_run_kind(
     """Resolve one canonical source run kind from stored bundle payload or runtime fallback."""
     result_payload = source_bundle_snapshot["result_payload"] if source_bundle_snapshot else None
     if isinstance(result_payload, Mapping):
-        run_kind = str(result_payload.get("run_kind", "")).strip()
+        if is_trace_batch_bundle_payload(result_payload):
+            summary_payload = (
+                result_payload.get("trace_batch_record", {}).get("summary_payload", {})
+            )
+            run_kind = str(summary_payload.get("run_kind", "")).strip()
+        else:
+            run_kind = str(result_payload.get("run_kind", "")).strip()
         if run_kind:
             return run_kind
     if isinstance(source_sweep_payload, Mapping):
-        run_kind = str(source_sweep_payload.get("run_kind", "")).strip()
+        if is_trace_batch_bundle_payload(source_sweep_payload):
+            summary_payload = source_sweep_payload.get("trace_batch_record", {}).get(
+                "summary_payload", {}
+            )
+            run_kind = str(summary_payload.get("run_kind", "")).strip()
+        else:
+            run_kind = str(source_sweep_payload.get("run_kind", "")).strip()
         if run_kind:
             return run_kind
     return "single_run"
@@ -4150,16 +4185,12 @@ def _resolved_source_sweep_payload(
     """Resolve one canonical sweep payload from bundle storage or runtime fallback."""
     if source_bundle_snapshot is not None:
         result_payload = source_bundle_snapshot["result_payload"]
-        if (
-            isinstance(result_payload, Mapping)
-            and str(result_payload.get("run_kind", "")).strip() == "parameter_sweep"
-        ):
-            return json.loads(json.dumps(result_payload))
-    if (
-        isinstance(source_sweep_payload, Mapping)
-        and str(source_sweep_payload.get("run_kind", "")).strip() == "parameter_sweep"
-    ):
-        return json.loads(json.dumps(source_sweep_payload))
+        resolved_payload = _coerce_parameter_sweep_payload(result_payload)
+        if isinstance(resolved_payload, Mapping):
+            return resolved_payload
+    resolved_runtime_payload = _coerce_parameter_sweep_payload(source_sweep_payload)
+    if isinstance(resolved_runtime_payload, Mapping):
+        return resolved_runtime_payload
     return None
 
 
@@ -6502,7 +6533,9 @@ def _render_simulation_environment():
             *,
             reference_impedance_ohm: float,
         ) -> dict[str, Any] | None:
-            raw_sweep_payload = runtime_state.latest_simulation_sweep_payload
+            raw_sweep_payload = _coerce_parameter_sweep_payload(
+                runtime_state.latest_simulation_sweep_payload
+            )
             if not isinstance(raw_sweep_payload, Mapping):
                 return None
             plan = _resolved_termination_plan()
@@ -6529,10 +6562,8 @@ def _render_simulation_environment():
             if not isinstance(raw_result, SimulationResult):
                 raise ValueError("Simulation result is unavailable.")
 
-            canonical_sweep_payload = (
-                dict(runtime_state.latest_simulation_sweep_payload)
-                if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping)
-                else None
+            canonical_sweep_payload = _coerce_parameter_sweep_payload(
+                runtime_state.latest_simulation_sweep_payload
             )
             if source == "ptc_y":
                 ptc_result = _ptc_simulation_result(
