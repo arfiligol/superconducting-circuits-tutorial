@@ -218,6 +218,290 @@ def build_post_processed_trace_specs(
     return persisted
 
 
+def build_trace_batch_bundle_payload(
+    *,
+    bundle_id: int,
+    design_id: int,
+    design_name: str,
+    source_kind: str,
+    stage_kind: str,
+    setup_kind: str,
+    setup_payload: Mapping[str, Any],
+    provenance_payload: Mapping[str, Any],
+    trace_records: Sequence[Mapping[str, Any]],
+    status: str = "completed",
+    setup_version: str = "1.0",
+    parent_batch_id: int | None = None,
+    summary_payload: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build one trace-batch payload around pre-materialized trace metadata."""
+    return {
+        "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+        "schema_version": TRACE_BATCH_BUNDLE_SCHEMA_VERSION,
+        "design_record": {
+            "id": int(design_id),
+            "name": str(design_name),
+        },
+        "trace_batch_record": {
+            "id": int(bundle_id),
+            "design_id": int(design_id),
+            "source_kind": str(source_kind),
+            "stage_kind": str(stage_kind),
+            "parent_batch_id": int(parent_batch_id) if parent_batch_id is not None else None,
+            "status": str(status),
+            "setup_kind": str(setup_kind),
+            "setup_version": str(setup_version),
+            "setup_payload": json.loads(json.dumps(dict(setup_payload))),
+            "provenance_payload": json.loads(json.dumps(dict(provenance_payload))),
+            "summary_payload": (
+                json.loads(json.dumps(dict(summary_payload)))
+                if isinstance(summary_payload, Mapping)
+                else {
+                    "trace_count": len(trace_records),
+                }
+            ),
+        },
+        "trace_records": [
+            json.loads(json.dumps(dict(trace_record))) for trace_record in trace_records
+        ],
+    }
+
+
+def rebind_trace_batch_bundle_payload(
+    payload: Mapping[str, Any],
+    *,
+    bundle_id: int,
+    design_id: int,
+    design_name: str,
+    source_kind: str,
+    stage_kind: str,
+    setup_kind: str,
+    setup_payload: Mapping[str, Any],
+    provenance_payload: Mapping[str, Any],
+    status: str = "completed",
+    setup_version: str = "1.0",
+    parent_batch_id: int | None = None,
+    summary_payload: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Rebind one pre-materialized trace-batch payload to a persisted bundle boundary."""
+    if not is_trace_batch_bundle_payload(payload):
+        raise ValueError("Payload is not a trace-batch bundle.")
+    raw_trace_records = payload.get("trace_records", [])
+    if not isinstance(raw_trace_records, list) or not raw_trace_records:
+        raise ValueError("Trace-batch payload has no trace records.")
+    trace_records = [
+        json.loads(json.dumps(dict(trace_record)))
+        for trace_record in raw_trace_records
+        if isinstance(trace_record, Mapping)
+    ]
+    return build_trace_batch_bundle_payload(
+        bundle_id=bundle_id,
+        design_id=design_id,
+        design_name=design_name,
+        source_kind=source_kind,
+        stage_kind=stage_kind,
+        setup_kind=setup_kind,
+        setup_payload=setup_payload,
+        provenance_payload=provenance_payload,
+        trace_records=trace_records,
+        status=status,
+        setup_version=setup_version,
+        parent_batch_id=parent_batch_id,
+        summary_payload=summary_payload,
+    )
+
+
+def _build_inflight_store_key(*, design_id: int, run_id: str) -> str:
+    """Build one stable runtime store key for in-flight simulation sweeps."""
+    normalized_run_id = "".join(
+        character
+        for character in str(run_id).strip()
+        if character.isalnum() or character in {"-", "_"}
+    ).strip("-_")
+    if not normalized_run_id:
+        raise ValueError("run_id is required for incremental sweep persistence.")
+    return f"designs/{int(design_id)}/runtime/{normalized_run_id}.zarr"
+
+
+@dataclass
+class IncrementalRawSimulationSweepWriter:
+    """Incrementally materialize one raw parameter sweep into TraceStore."""
+
+    design_id: int
+    design_name: str
+    run_id: str
+    sweep_axes: tuple[SimulationSweepAxis, ...]
+    source_kind: str = "circuit_simulation"
+    stage_kind: str = "raw"
+    setup_kind: str = "circuit_simulation.raw"
+    status: str = "completed"
+
+    def __post_init__(self) -> None:
+        backend_binding = _require_local_trace_store_backend()
+        self._trace_store = LocalZarrTraceStore(root_path=get_trace_store_root())
+        self._store_key = _build_inflight_store_key(
+            design_id=int(self.design_id),
+            run_id=self.run_id,
+        )
+        self._store_path = backend_binding.resolve_store_path(store_key=self._store_key)
+        if self._store_path.exists():
+            shutil.rmtree(self._store_path)
+        self._trace_store.root_path.mkdir(parents=True, exist_ok=True)
+        self._trace_records: list[dict[str, Any]] = []
+        self._trace_record_lookup: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        self._representative_result: SimulationResult | None = None
+        self._frequency_axis: TraceAxisSpec | None = None
+
+    @property
+    def representative_result(self) -> SimulationResult:
+        """Return the representative result once at least one point has been written."""
+        if self._representative_result is None:
+            raise ValueError("Incremental sweep writer has no representative result yet.")
+        return self._representative_result
+
+    @property
+    def trace_count(self) -> int:
+        """Return the number of canonical traces materialized for this sweep."""
+        return len(self._trace_records)
+
+    def append_point(
+        self,
+        *,
+        point_index: int,
+        axis_indices: Sequence[int],
+        axis_values: Mapping[str, float],
+        result: SimulationResult,
+    ) -> None:
+        """Persist one sweep point directly into TraceStore-backed ND traces."""
+        if self._representative_result is None:
+            self._initialize_from_first_result(result)
+        if self._frequency_axis is None:
+            raise ValueError("Incremental sweep writer is missing frequency metadata.")
+
+        point_specs = _build_raw_trace_specs_for_result(
+            result=result,
+            axes=(self._frequency_axis,),
+        )
+        normalized_axis_indices = tuple(int(value) for value in axis_indices)
+        selection = (slice(None), *normalized_axis_indices)
+        for spec in point_specs:
+            meta_key = json.dumps(spec.trace_meta, sort_keys=True, separators=(",", ":"))
+            grouped_key = (spec.family, spec.parameter, spec.representation, meta_key)
+            trace_record = self._trace_record_lookup.get(grouped_key)
+            if trace_record is None:
+                raise ValueError(
+                    "Sweep point trace shape drift detected; grouped trace metadata changed "
+                    f"at point {int(point_index)} for {spec.family}/{spec.parameter}/"
+                    f"{spec.representation}."
+                )
+            self._trace_store.write_trace_slice(
+                trace_record["store_ref"],
+                selection=selection,
+                values=spec.values,
+            )
+
+    def build_payload(
+        self,
+        *,
+        summary_payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Return one canonical trace-batch payload backed by the incremental store."""
+        return build_trace_batch_bundle_payload(
+            bundle_id=0,
+            design_id=int(self.design_id),
+            design_name=str(self.design_name),
+            source_kind=self.source_kind,
+            stage_kind=self.stage_kind,
+            setup_kind=self.setup_kind,
+            setup_payload={},
+            provenance_payload={},
+            trace_records=self._trace_records,
+            status=self.status,
+            summary_payload=summary_payload,
+        )
+
+    def cleanup(self) -> None:
+        """Remove any on-disk runtime trace-store artifacts for this writer."""
+        if self._store_path.exists():
+            shutil.rmtree(self._store_path)
+
+    def _initialize_from_first_result(self, result: SimulationResult) -> None:
+        self._representative_result = result
+        sweep_axes = tuple(
+            TraceAxisSpec(
+                name=str(axis.target_value_ref),
+                unit=str(axis.unit),
+                values=np.asarray(axis.values, dtype=np.float64),
+            )
+            for axis in self.sweep_axes
+        )
+        self._frequency_axis = TraceAxisSpec(
+            name="frequency",
+            unit="GHz",
+            values=np.asarray(result.frequencies_ghz, dtype=np.float64),
+        )
+        materialized_axes = (self._frequency_axis, *sweep_axes)
+        sweep_shape = tuple(axis.length for axis in sweep_axes)
+        shape = (self._frequency_axis.length, *sweep_shape)
+        point_specs = _build_raw_trace_specs_for_result(
+            result=result,
+            axes=(self._frequency_axis,),
+        )
+        for trace_index, spec in enumerate(point_specs, start=1):
+            write_result = self._trace_store.create_trace(
+                design_id=int(self.design_id),
+                batch_id=0,
+                trace_id=trace_index,
+                shape=shape,
+                dtype=np.float64,
+                axes=[
+                    {
+                        "name": axis.name,
+                        "unit": axis.unit,
+                        "values": axis.values,
+                    }
+                    for axis in materialized_axes
+                ],
+                chunk_shape=_default_chunk_shape(shape),
+                array_path="values",
+                store_key=self._store_key,
+            )
+            store_ref = {
+                **dict(write_result.store_ref),
+                "axis_array_refs": [
+                    {
+                        "name": axis.name,
+                        "unit": axis.unit,
+                        "array_path": f"axes/{axis_position}",
+                        "shape": [axis.length],
+                        "dtype": "float64",
+                    }
+                    for axis_position, axis in enumerate(materialized_axes)
+                ],
+            }
+            trace_record = {
+                "id": int(trace_index),
+                "design_id": int(self.design_id),
+                "family": spec.family,
+                "parameter": spec.parameter,
+                "representation": spec.representation,
+                "axes": [
+                    {
+                        "name": axis.name,
+                        "unit": axis.unit,
+                        "length": axis.length,
+                    }
+                    for axis in materialized_axes
+                ],
+                "trace_meta": dict(spec.trace_meta),
+                "store_ref": store_ref,
+            }
+            meta_key = json.dumps(spec.trace_meta, sort_keys=True, separators=(",", ":"))
+            grouped_key = (spec.family, spec.parameter, spec.representation, meta_key)
+            self._trace_record_lookup[grouped_key] = trace_record
+            self._trace_records.append(trace_record)
+
+
 def persist_trace_batch_bundle(
     *,
     bundle_id: int,
@@ -304,36 +588,21 @@ def persist_trace_batch_bundle(
             }
         )
 
-    trace_batch_record = {
-        "id": int(bundle_id),
-        "design_id": int(design_id),
-        "source_kind": str(source_kind),
-        "stage_kind": str(stage_kind),
-        "parent_batch_id": int(parent_batch_id) if parent_batch_id is not None else None,
-        "status": str(status),
-        "setup_kind": str(setup_kind),
-        "setup_version": str(setup_version),
-        "setup_payload": json.loads(json.dumps(dict(setup_payload))),
-        "provenance_payload": json.loads(json.dumps(dict(provenance_payload))),
-        "summary_payload": (
-            json.loads(json.dumps(dict(summary_payload)))
-            if isinstance(summary_payload, Mapping)
-            else {
-                "trace_count": len(trace_records),
-            }
-        ),
-    }
-
-    return {
-        "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
-        "schema_version": TRACE_BATCH_BUNDLE_SCHEMA_VERSION,
-        "design_record": {
-            "id": int(design_id),
-            "name": str(design_name),
-        },
-        "trace_batch_record": trace_batch_record,
-        "trace_records": trace_records,
-    }
+    return build_trace_batch_bundle_payload(
+        bundle_id=bundle_id,
+        design_id=design_id,
+        design_name=design_name,
+        source_kind=source_kind,
+        stage_kind=stage_kind,
+        setup_kind=setup_kind,
+        setup_payload=setup_payload,
+        provenance_payload=provenance_payload,
+        trace_records=trace_records,
+        status=status,
+        setup_version=setup_version,
+        parent_batch_id=parent_batch_id,
+        summary_payload=summary_payload,
+    )
 
 
 def load_raw_simulation_bundle(

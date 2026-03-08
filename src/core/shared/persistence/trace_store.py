@@ -91,7 +91,30 @@ class TraceStore(Protocol):
         axes: Sequence[Mapping[str, object]],
         chunk_shape: Sequence[int] | None = None,
         array_path: str = "values",
+        store_key: str | None = None,
     ) -> TraceWriteResult: ...
+
+    def create_trace(
+        self,
+        *,
+        design_id: int,
+        batch_id: int,
+        trace_id: int,
+        shape: Sequence[int],
+        dtype: str | np.dtype[Any],
+        axes: Sequence[Mapping[str, object]],
+        chunk_shape: Sequence[int] | None = None,
+        array_path: str = "values",
+        store_key: str | None = None,
+    ) -> TraceWriteResult: ...
+
+    def write_trace_slice(
+        self,
+        ref: Mapping[str, object],
+        *,
+        selection: TraceSelection,
+        values: ArrayLike,
+    ) -> None: ...
 
     def read_trace_slice(
         self,
@@ -311,25 +334,68 @@ class LocalZarrTraceStore:
         axes: Sequence[Mapping[str, object]],
         chunk_shape: Sequence[int] | None = None,
         array_path: str = "values",
+        store_key: str | None = None,
     ) -> TraceWriteResult:
         """Write one ND trace and its axis arrays to local Zarr storage."""
-        zarr = _require_zarr()
         payload = np.asarray(values)
         if payload.ndim == 0:
             raise ValueError("Trace values must be at least 1D.")
 
-        normalized_axes = _normalize_axes(axes, expected_shape=payload.shape)
         normalized_chunk_shape = _normalize_chunk_shape(payload.shape, chunk_shape)
-        store_key = self._backend_binding.build_store_key(design_id=design_id, batch_id=batch_id)
-        store_path = self._backend_binding.resolve_store_path(store_key=store_key)
+        write_result = self.create_trace(
+            design_id=design_id,
+            batch_id=batch_id,
+            trace_id=trace_id,
+            shape=payload.shape,
+            dtype=payload.dtype,
+            axes=axes,
+            chunk_shape=normalized_chunk_shape,
+            array_path=array_path,
+            store_key=store_key,
+        )
+        self.write_trace_slice(
+            write_result.store_ref,
+            selection=tuple(slice(None) for _ in range(payload.ndim)),
+            values=payload,
+        )
+        return write_result
+
+    def create_trace(
+        self,
+        *,
+        design_id: int,
+        batch_id: int,
+        trace_id: int,
+        shape: Sequence[int],
+        dtype: str | np.dtype[Any],
+        axes: Sequence[Mapping[str, object]],
+        chunk_shape: Sequence[int] | None = None,
+        array_path: str = "values",
+        store_key: str | None = None,
+    ) -> TraceWriteResult:
+        """Create one empty ND trace and axis arrays for incremental slice writes."""
+        zarr = _require_zarr()
+        normalized_shape = tuple(int(dimension) for dimension in shape)
+        if not normalized_shape or any(dimension <= 0 for dimension in normalized_shape):
+            raise ValueError("Trace shape must contain positive dimensions.")
+        normalized_axes = _normalize_axes(axes, expected_shape=normalized_shape)
+        normalized_chunk_shape = _normalize_chunk_shape(normalized_shape, chunk_shape)
+        resolved_store_key = (
+            str(store_key).strip()
+            if store_key is not None and str(store_key).strip()
+            else self._backend_binding.build_store_key(design_id=design_id, batch_id=batch_id)
+        )
+        store_path = self._backend_binding.resolve_store_path(store_key=resolved_store_key)
 
         root = zarr.open_group(store=store_path, mode="a")
         trace_group = _require_group(root, f"/traces/{trace_id}")
         trace_group.create_array(
             name=array_path,
-            data=payload,
+            shape=normalized_shape,
+            dtype=np.dtype(dtype),
             chunks=tuple(normalized_chunk_shape),
             overwrite=True,
+            fill_value=np.nan,
         )
         axes_group = trace_group.require_group("axes")
         for axis in normalized_axes:
@@ -353,16 +419,38 @@ class LocalZarrTraceStore:
             ],
             store_ref=TraceStoreRef(
                 backend="local_zarr",
-                store_key=store_key,
-                store_uri=self._backend_binding.build_store_uri(store_key=store_key),
+                store_key=resolved_store_key,
+                store_uri=self._backend_binding.build_store_uri(store_key=resolved_store_key),
                 group_path=f"/traces/{trace_id}",
                 array_path=array_path,
-                dtype=str(payload.dtype),
-                shape=[int(dimension) for dimension in payload.shape],
+                dtype=str(np.dtype(dtype)),
+                shape=[int(dimension) for dimension in normalized_shape],
                 chunk_shape=normalized_chunk_shape,
                 schema_version=TRACE_STORE_SCHEMA_VERSION,
             ),
         )
+
+    def write_trace_slice(
+        self,
+        ref: Mapping[str, object],
+        *,
+        selection: TraceSelection,
+        values: ArrayLike,
+    ) -> None:
+        """Write one slice directly into an existing stored trace array."""
+        array = self._open_trace_array(ref, mode="a")
+        normalized_selection = _normalize_selection(selection, ndim=int(array.ndim))
+        payload = np.asarray(values)
+        expected_shape = _selection_shape(
+            selection=normalized_selection,
+            shape=tuple(int(dimension) for dimension in array.shape),
+        )
+        if payload.shape != expected_shape:
+            raise ValueError(
+                "Trace slice shape does not match selection: "
+                f"{payload.shape!r} != {expected_shape!r}."
+            )
+        array[normalized_selection] = payload
 
     def read_trace_slice(
         self,
@@ -421,14 +509,14 @@ class LocalZarrTraceStore:
             )
         return self._backend_binding.resolve_store_path(store_key=normalized_ref["store_key"])
 
-    def _open_trace_group(self, ref: Mapping[str, object]):
+    def _open_trace_group(self, ref: Mapping[str, object], *, mode: str = "r"):
         zarr = _require_zarr()
         normalized_ref = coerce_trace_store_ref(ref)
-        root = zarr.open_group(store=self._resolve_store_path(normalized_ref), mode="r")
+        root = zarr.open_group(store=self._resolve_store_path(normalized_ref), mode=mode)
         return _get_group(root, normalized_ref["group_path"])
 
-    def _open_trace_array(self, ref: Mapping[str, object]):
-        trace_group = self._open_trace_group(ref)
+    def _open_trace_array(self, ref: Mapping[str, object], *, mode: str = "r"):
+        trace_group = self._open_trace_group(ref, mode=mode)
         normalized_ref = coerce_trace_store_ref(ref)
         return trace_group[normalized_ref["array_path"]]
 
@@ -520,6 +608,27 @@ def _normalize_selection(selection: TraceSelection, *, ndim: int) -> TraceSelect
     if len(selection) > ndim:
         raise ValueError("Slice selection has more dimensions than the trace shape.")
     return (*selection, *([slice(None)] * (ndim - len(selection))))
+
+
+def _selection_shape(
+    *,
+    selection: TraceSelection,
+    shape: tuple[int, ...],
+) -> tuple[int, ...]:
+    resolved: list[int] = []
+    for item, axis_length in zip(selection, shape, strict=True):
+        if isinstance(item, slice):
+            start, stop, step = item.indices(int(axis_length))
+            resolved.append(len(range(start, stop, step)))
+            continue
+        index = int(item)
+        if index < 0:
+            index += int(axis_length)
+        if index < 0 or index >= int(axis_length):
+            raise IndexError(
+                f"Trace selection index {item} is out of bounds for axis length {axis_length}."
+            )
+    return tuple(resolved)
 
 
 def _build_store_key(*, design_id: int, batch_id: int) -> str:

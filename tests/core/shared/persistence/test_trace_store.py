@@ -103,6 +103,42 @@ def test_local_zarr_trace_store_writes_trace_and_reads_slices(tmp_path) -> None:
     np.testing.assert_array_equal(axis_values, np.array([5.0, 6.0]))
 
 
+def test_local_zarr_trace_store_supports_incremental_slice_writes(tmp_path) -> None:
+    store = LocalZarrTraceStore(root_path=tmp_path / "trace_store")
+    write_result = store.create_trace(
+        design_id=42,
+        batch_id=105,
+        trace_id=9002,
+        shape=(4, 3),
+        dtype=np.float64,
+        axes=[
+            {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0, 6.0, 7.0]},
+            {"name": "L_q", "unit": "nH", "values": [10.0, 12.0, 14.0]},
+        ],
+        chunk_shape=(4, 1),
+    )
+
+    store.write_trace_slice(
+        write_result.store_ref,
+        selection=(slice(None), 0),
+        values=np.array([1.0, 2.0, 3.0, 4.0]),
+    )
+    store.write_trace_slice(
+        write_result.store_ref,
+        selection=(slice(None), 2),
+        values=np.array([5.0, 6.0, 7.0, 8.0]),
+    )
+
+    np.testing.assert_array_equal(
+        store.read_trace_slice(write_result.store_ref, selection=(slice(None), 0)),
+        np.array([1.0, 2.0, 3.0, 4.0]),
+    )
+    np.testing.assert_array_equal(
+        store.read_trace_slice(write_result.store_ref, selection=(slice(None), 2)),
+        np.array([5.0, 6.0, 7.0, 8.0]),
+    )
+
+
 def test_trace_store_ref_accepts_s3_backend_as_extension_direction() -> None:
     ref = coerce_trace_store_ref(
         {

@@ -78,11 +78,12 @@ from core.simulation.application.run_simulation import (
 )
 from core.simulation.application.trace_architecture import (
     TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+    IncrementalRawSimulationSweepWriter,
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
     is_trace_batch_bundle_payload,
-    load_raw_simulation_bundle,
     persist_trace_batch_bundle,
+    rebind_trace_batch_bundle_payload,
 )
 from core.simulation.domain.circuit import (
     CircuitDefinition,
@@ -1433,11 +1434,16 @@ def _persist_simulation_result_bundle(
     result_payload: dict[str, Any] | None = None,
 ) -> int:
     """Persist one simulation result bundle using the trace-batch + TraceStore contract."""
-    normalized_result_payload = result_payload
-    if isinstance(normalized_result_payload, Mapping) and is_trace_batch_bundle_payload(
-        normalized_result_payload
-    ):
-        _, normalized_result_payload = load_raw_simulation_bundle(normalized_result_payload)
+    trace_batch_payload = (
+        dict(result_payload)
+        if isinstance(result_payload, Mapping) and is_trace_batch_bundle_payload(result_payload)
+        else None
+    )
+    normalized_result_payload = (
+        None
+        if trace_batch_payload is not None
+        else result_payload
+    )
 
     design_id = int(source_meta.get("circuit_id") or dataset_id)
     design_name = str(
@@ -1476,47 +1482,92 @@ def _persist_simulation_result_bundle(
         "simulation_setup_hash": simulation_setup_hash,
         "run_kind": (
             "parameter_sweep"
-            if isinstance(normalized_result_payload, Mapping)
-            and str(normalized_result_payload.get("run_kind", "")).strip() == "parameter_sweep"
+            if (
+                trace_batch_payload is not None
+                or (
+                    isinstance(normalized_result_payload, Mapping)
+                    and str(normalized_result_payload.get("run_kind", "")).strip()
+                    == "parameter_sweep"
+                )
+            )
             else "single_run"
         ),
     }
-    trace_specs = build_raw_simulation_trace_specs(
-        result=result,
-        sweep_payload=normalized_result_payload,
-    )
-    bundle.result_payload = persist_trace_batch_bundle(
-        bundle_id=bundle_id,
-        design_id=design_id,
-        design_name=design_name,
-        source_kind="circuit_simulation",
-        stage_kind="raw",
-        setup_kind="circuit_simulation.raw",
-        setup_payload=config_snapshot,
-        provenance_payload=provenance_payload,
-        trace_specs=trace_specs,
-        summary_payload={
-            "trace_count": len(trace_specs),
-            "run_kind": provenance_payload["run_kind"],
-            "frequency_points": len(result.frequencies_ghz),
-            "point_count": (
+    summary_payload = {
+        "run_kind": provenance_payload["run_kind"],
+        "frequency_points": len(result.frequencies_ghz),
+        "point_count": (
+            int(
+                trace_batch_payload.get("trace_batch_record", {})
+                .get("summary_payload", {})
+                .get("point_count", 0)
+            )
+            if trace_batch_payload is not None
+            else (
                 int(normalized_result_payload.get("point_count", 0))
                 if isinstance(normalized_result_payload, Mapping)
                 else 1
-            ),
-            "representative_point_index": (
+            )
+        ),
+        "representative_point_index": (
+            int(
+                trace_batch_payload.get("trace_batch_record", {})
+                .get("summary_payload", {})
+                .get("representative_point_index", 0)
+            )
+            if trace_batch_payload is not None
+            else (
                 int(normalized_result_payload.get("representative_point_index", 0))
                 if isinstance(normalized_result_payload, Mapping)
                 else 0
-            ),
-        },
-    )
+            )
+        ),
+    }
+    if trace_batch_payload is not None:
+        summary_payload["trace_count"] = len(
+            list(trace_batch_payload.get("trace_records", []))
+        )
+        bundle.result_payload = rebind_trace_batch_bundle_payload(
+            trace_batch_payload,
+            bundle_id=bundle_id,
+            design_id=design_id,
+            design_name=design_name,
+            source_kind="circuit_simulation",
+            stage_kind="raw",
+            setup_kind="circuit_simulation.raw",
+            setup_payload=config_snapshot,
+            provenance_payload=provenance_payload,
+            summary_payload=summary_payload,
+        )
+    else:
+        trace_specs = build_raw_simulation_trace_specs(
+            result=result,
+            sweep_payload=normalized_result_payload,
+        )
+        summary_payload["trace_count"] = len(trace_specs)
+        bundle.result_payload = persist_trace_batch_bundle(
+            bundle_id=bundle_id,
+            design_id=design_id,
+            design_name=design_name,
+            source_kind="circuit_simulation",
+            stage_kind="raw",
+            setup_kind="circuit_simulation.raw",
+            setup_payload=config_snapshot,
+            provenance_payload=provenance_payload,
+            trace_specs=trace_specs,
+            summary_payload=summary_payload,
+        )
 
     if not include_data_records:
         return bundle_id
 
     records: list[DataRecord]
-    if isinstance(normalized_result_payload, Mapping) and (
+    if trace_batch_payload is not None:
+        records = _build_trace_batch_data_records(
+            dataset_id=dataset_id,
+            trace_batch_payload=bundle.result_payload,
+        )
+    elif isinstance(normalized_result_payload, Mapping) and (
         str(normalized_result_payload.get("run_kind", "")) == "parameter_sweep"
     ):
         records = _build_sweep_result_bundle_data_records(
@@ -8855,84 +8906,95 @@ def _render_simulation_environment():
                                     config_for_run=config,
                                 )
                             else:
-                                point_results = []
+                                sweep_writer = IncrementalRawSimulationSweepWriter(
+                                    design_id=int(latest_record.id),
+                                    design_name=str(latest_record.name),
+                                    run_id=simulation_run_id,
+                                    sweep_axes=tuple(sweep_plan.axes),
+                                )
                                 sweep_progress_log_step = _sweep_progress_log_step(
                                     sweep_plan.point_count
                                 )
-                                for point in sweep_plan.points:
-                                    point_no = int(point.point_index) + 1
-                                    if _should_log_sweep_point_progress(
-                                        point_index=point.point_index,
-                                        point_count=sweep_plan.point_count,
-                                        step=sweep_progress_log_step,
-                                    ):
-                                        progress_pct = round(
-                                            (point_no / sweep_plan.point_count) * 100.0
-                                        )
-                                        if point_no in {1, sweep_plan.point_count}:
-                                            point_tokens = ", ".join(
-                                                (
-                                                    f"{target}={_format_sweep_value_token(value)}"
-                                                    for target, value in sorted(
-                                                        point.value_ref_overrides.items()
+                                try:
+                                    for point in sweep_plan.points:
+                                        point_no = int(point.point_index) + 1
+                                        if _should_log_sweep_point_progress(
+                                            point_index=point.point_index,
+                                            point_count=sweep_plan.point_count,
+                                            step=sweep_progress_log_step,
+                                        ):
+                                            progress_pct = round(
+                                                (point_no / sweep_plan.point_count) * 100.0
+                                            )
+                                            if point_no in {1, sweep_plan.point_count}:
+                                                point_tokens = ", ".join(
+                                                    (
+                                                        f"{target}={_format_sweep_value_token(value)}"
+                                                        for target, value in sorted(
+                                                            point.value_ref_overrides.items()
+                                                        )
                                                     )
                                                 )
-                                            )
-                                            append_status(
-                                                "info",
-                                                (
-                                                    "Sweep point "
-                                                    f"{point_no}/{sweep_plan.point_count} "
-                                                    f"({progress_pct}%): {point_tokens}."
-                                                ),
-                                            )
-                                        else:
-                                            append_status(
-                                                "info",
-                                                (
-                                                    "Sweep point "
-                                                    f"{point_no}/{sweep_plan.point_count} "
-                                                    f"({progress_pct}%)."
-                                                ),
-                                            )
-                                    swept_circuit = apply_simulation_sweep_overrides(
-                                        circuit=latest_circuit_def,
-                                        value_ref_overrides=point.value_ref_overrides,
-                                    )
-                                    swept_config = apply_simulation_sweep_config_overrides(
-                                        config=config,
-                                        target_overrides=point.value_ref_overrides,
-                                    )
-                                    point_result = await _run_solver_with_heartbeat(
-                                        swept_circuit,
-                                        stage_label=(
-                                            f"Sweep point {point_no}/{sweep_plan.point_count}"
-                                        ),
-                                        config_for_run=swept_config,
-                                    )
-                                    point_results.append(
-                                        {
-                                            "point_index": int(point.point_index),
-                                            "axis_indices": tuple(point.axis_indices),
-                                            "axis_values": dict(point.value_ref_overrides),
-                                            "result": point_result,
-                                        }
-                                    )
-                                sweep_run = SimulationSweepRun(
-                                    axes=tuple(sweep_plan.axes),
-                                    points=tuple(
-                                        SimulationSweepPointResult(
-                                            point_index=entry["point_index"],
-                                            axis_indices=entry["axis_indices"],
-                                            axis_values=entry["axis_values"],
-                                            result=entry["result"],
+                                                append_status(
+                                                    "info",
+                                                    (
+                                                        "Sweep point "
+                                                        f"{point_no}/{sweep_plan.point_count} "
+                                                        f"({progress_pct}%): {point_tokens}."
+                                                    ),
+                                                )
+                                            else:
+                                                append_status(
+                                                    "info",
+                                                    (
+                                                        "Sweep point "
+                                                        f"{point_no}/{sweep_plan.point_count} "
+                                                        f"({progress_pct}%)."
+                                                    ),
+                                                )
+                                        swept_circuit = apply_simulation_sweep_overrides(
+                                            circuit=latest_circuit_def,
+                                            value_ref_overrides=point.value_ref_overrides,
                                         )
-                                        for entry in point_results
-                                    ),
-                                    representative_point_index=0,
+                                        swept_config = apply_simulation_sweep_config_overrides(
+                                            config=config,
+                                            target_overrides=point.value_ref_overrides,
+                                        )
+                                        point_result = await _run_solver_with_heartbeat(
+                                            swept_circuit,
+                                            stage_label=(
+                                                f"Sweep point {point_no}/{sweep_plan.point_count}"
+                                            ),
+                                            config_for_run=swept_config,
+                                        )
+                                        sweep_writer.append_point(
+                                            point_index=int(point.point_index),
+                                            axis_indices=tuple(point.axis_indices),
+                                            axis_values=dict(point.value_ref_overrides),
+                                            result=point_result,
+                                        )
+                                        append_status(
+                                            "info",
+                                            (
+                                                "Persisted sweep point "
+                                                f"{point_no}/{sweep_plan.point_count} "
+                                                "to TraceStore."
+                                            ),
+                                        )
+                                except Exception:
+                                    sweep_writer.cleanup()
+                                    raise
+
+                                result = sweep_writer.representative_result
+                                sweep_result_payload = sweep_writer.build_payload(
+                                    summary_payload={
+                                        "trace_count": sweep_writer.trace_count,
+                                        "run_kind": "parameter_sweep",
+                                        "frequency_points": len(result.frequencies_ghz),
+                                        "point_count": int(sweep_plan.point_count),
+                                        "representative_point_index": 0,
+                                    }
                                 )
-                                result = sweep_run.representative_result
-                                sweep_result_payload = simulation_sweep_run_to_payload(sweep_run)
 
                             try:
                                 cache_dataset_id: int | None = None

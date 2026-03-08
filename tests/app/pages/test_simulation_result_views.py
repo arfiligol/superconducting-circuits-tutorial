@@ -1,9 +1,7 @@
 """Tests for simulation result view helpers."""
 
 import inspect
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pytest
@@ -83,6 +81,7 @@ from core.simulation.application.run_simulation import (
 )
 from core.simulation.application.trace_architecture import (
     TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+    IncrementalRawSimulationSweepWriter,
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
     load_raw_simulation_bundle,
@@ -948,16 +947,84 @@ def test_decode_trace_batch_sweep_payload_keeps_canonical_payload_without_full_r
         },
     )
 
-    def _fail_full_rebuild(_: Mapping[str, Any]) -> tuple[SimulationResult, dict[str, Any] | None]:
-        raise AssertionError("unexpected legacy full sweep reconstruction during cache decode")
-
-    monkeypatch.setattr(simulation_page, "load_raw_simulation_bundle", _fail_full_rebuild)
-
     result, sweep_payload = _decode_simulation_result_payload(payload)
 
     assert sweep_payload == payload
     assert _resolved_sweep_point_count(sweep_payload) == 2
     assert result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx([0.1, 0.2, 0.3])
+
+
+def test_incremental_sweep_writer_persists_points_without_full_regroup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
+    sweep_values = (10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0)
+    base = _sample_result()
+    writer = IncrementalRawSimulationSweepWriter(
+        design_id=10,
+        design_name="FloatingQubitWithXYLine",
+        run_id="floatingqubit-simple-setup",
+        sweep_axes=(SimulationSweepAxis(target_value_ref="L_q", values=sweep_values, unit="nH"),),
+    )
+
+    for point_index, l_q in enumerate(sweep_values):
+        point_result = SimulationResult.model_validate(
+            {
+                **base.model_dump(mode="json"),
+                "y_parameter_mode_imag": {
+                    **base.y_parameter_mode_imag,
+                    "om=0|op=2|im=0|ip=2": [
+                        value + (point_index * 0.001)
+                        for value in base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
+                    ],
+                },
+            }
+        )
+        writer.append_point(
+            point_index=point_index,
+            axis_indices=(point_index,),
+            axis_values={"L_q": l_q},
+            result=point_result,
+        )
+
+    payload = writer.build_payload(
+        summary_payload={
+            "trace_count": writer.trace_count,
+            "run_kind": "parameter_sweep",
+            "frequency_points": len(base.frequencies_ghz),
+            "point_count": len(sweep_values),
+            "representative_point_index": 0,
+        }
+    )
+
+    def _forbid_full_read(path: Path) -> np.ndarray:
+        raise AssertionError(f"unexpected full array read during incremental sweep reload: {path}")
+
+    monkeypatch.setattr(
+        "core.simulation.application.trace_architecture._read_zarr_array",
+        _forbid_full_read,
+    )
+
+    rebuilt_result, rebuilt_sweep_payload = load_raw_simulation_bundle(payload)
+
+    assert writer.trace_count > 0
+    assert rebuilt_sweep_payload is not None
+    rebuilt_run = simulation_sweep_run_from_payload(rebuilt_sweep_payload)
+    assert rebuilt_run.point_count == len(sweep_values)
+    assert rebuilt_run.axes[0].target_value_ref == "L_q"
+    assert rebuilt_run.points[6].axis_values["L_q"] == pytest.approx(22.0)
+    assert rebuilt_run.points[6].result.y_parameter_mode_imag[
+        "om=0|op=2|im=0|ip=2"
+    ] == pytest.approx(
+        [
+            value + 0.006
+            for value in base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
+        ]
+    )
+    assert rebuilt_result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx(
+        base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
+    )
 
 
 def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:
