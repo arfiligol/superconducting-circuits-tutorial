@@ -12,6 +12,7 @@ from app.services.characterization_runner import (
     _diagnose_analysis_sweep_support_from_records,
     execute_analysis_run,
 )
+from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import DataRecord
 
@@ -175,7 +176,7 @@ def test_diagnose_analysis_sweep_support_marks_y11_and_squid_ready_for_2d_ljun()
     )
     assert admittance_support == SweepSupportDiagnostic(
         status="sweep-ready",
-        reason="2D Freq x L_jun admittance sweeps are supported.",
+        reason="2D Freq x L_jun sweeps are supported for admittance extraction.",
     )
 
 
@@ -198,7 +199,30 @@ def test_diagnose_analysis_sweep_support_accepts_trace_record_contract_for_2d_lj
 
     assert diagnostic == SweepSupportDiagnostic(
         status="sweep-ready",
-        reason="2D Freq x L_jun admittance sweeps are supported.",
+        reason="2D Freq x L_jun sweeps are supported for admittance extraction.",
+    )
+
+
+def test_diagnose_analysis_sweep_support_accepts_generic_single_axis_2d_admittance() -> None:
+    y_trace = _trace_record(
+        family="y_matrix",
+        parameter="Y_dm_dm [om=(0,), im=(0,)]",
+        representation="imag",
+        axes=[
+            {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0]},
+            {"name": "L_q", "unit": "nH", "values": [10.0, 12.0]},
+        ],
+        values=[[0.1, 0.2], [0.3, 0.4]],
+    )
+
+    diagnostic = _diagnose_analysis_sweep_support_from_records(
+        analysis_id="admittance_extraction",
+        records=[y_trace],
+    )
+
+    assert diagnostic == SweepSupportDiagnostic(
+        status="sweep-ready",
+        reason="2D Freq x L_q sweeps are supported for admittance extraction.",
     )
 
 
@@ -256,7 +280,7 @@ def test_diagnose_analysis_sweep_support_stays_source_agnostic_for_saved_traces(
 
     assert diagnostic == SweepSupportDiagnostic(
         status="sweep-ready",
-        reason="2D Freq x L_jun admittance sweeps are supported.",
+        reason="2D Freq x L_jun sweeps are supported for admittance extraction.",
     )
 
 
@@ -281,6 +305,59 @@ def test_diagnose_analysis_sweep_support_blocks_wrong_sweep_axis() -> None:
         status="blocked",
         reason="This fitting path requires a 2D Freq x L_jun sweep.",
     )
+
+
+def test_resonance_extract_service_persists_generic_sweep_axis_for_2d_sweeps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_calls: list[dict[str, object]] = []
+    service = ResonanceExtractService()
+    dataset = SimpleNamespace(id=1, name="generic-axis")
+    generic_axis_record = _trace_record(
+        trace_id=21,
+        family="y_matrix",
+        parameter="Y_dm_dm [om=(0,), im=(0,)]",
+        representation="imag",
+        axes=[
+            {"name": "frequency", "unit": "GHz", "values": [4.0, 5.0, 6.0]},
+            {"name": "L_q", "unit": "nH", "values": [10.0, 12.0]},
+        ],
+        values=[
+            [-1.0, -2.0],
+            [1.0, 2.0],
+            [2.0, 3.0],
+        ],
+    )
+
+    monkeypatch.setattr(service.dataset_service, "get_dataset", lambda _: dataset)
+    monkeypatch.setattr(
+        service.data_record_service,
+        "list_records",
+        lambda _: [generic_axis_record],
+    )
+    monkeypatch.setattr(
+        service.data_record_service,
+        "get_record",
+        lambda record_id: {21: generic_axis_record}[record_id],
+    )
+    monkeypatch.setattr(
+        service.param_service,
+        "create_or_update_param",
+        lambda dataset_id, **kwargs: captured_calls.append(
+            {"dataset_id": dataset_id, **kwargs}
+        ),
+    )
+
+    result = service.extract_admittance("1", record_ids=[21], trace_mode_group="base")
+
+    assert result["dataset_id"] == 1
+    sweep_params = [call for call in captured_calls if str(call["name"]).startswith("L_q")]
+    mode_params = [call for call in captured_calls if str(call["name"]).startswith("mode_1_ghz")]
+    assert {call["name"] for call in sweep_params} == {"L_q_b0", "L_q_b1"}
+    assert {call["name"] for call in mode_params} == {"mode_1_ghz_b0", "mode_1_ghz_b1"}
+    assert sweep_params[0]["extra"]["sweep_axis"] == "L_q"
+    assert sweep_params[0]["extra"]["sweep_value"] == pytest.approx(10.0)
+    assert mode_params[1]["extra"]["sweep_index"] == 1
 
 
 def test_diagnose_analysis_sweep_support_marks_s21_ljun_2d_as_sweep_ready() -> None:

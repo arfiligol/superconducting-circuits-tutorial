@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -21,10 +22,19 @@ class TraceKind(StrEnum):
         alias_map: dict[str, TraceKind] = {
             "s_parameters": cls.S_PARAMETERS,
             "s_params": cls.S_PARAMETERS,
+            "s_matrix": cls.S_PARAMETERS,
+            "scattering": cls.S_PARAMETERS,
+            "scattering_matrix": cls.S_PARAMETERS,
             "y_parameters": cls.Y_PARAMETERS,
             "y_params": cls.Y_PARAMETERS,
+            "y_matrix": cls.Y_PARAMETERS,
+            "admittance": cls.Y_PARAMETERS,
+            "admittance_matrix": cls.Y_PARAMETERS,
             "z_parameters": cls.Z_PARAMETERS,
             "z_params": cls.Z_PARAMETERS,
+            "z_matrix": cls.Z_PARAMETERS,
+            "impedance": cls.Z_PARAMETERS,
+            "impedance_matrix": cls.Z_PARAMETERS,
         }
         return alias_map.get(token, cls.UNKNOWN)
 
@@ -32,9 +42,27 @@ class TraceKind(StrEnum):
     def accepted_tokens(self) -> tuple[str, ...]:
         """Return canonical + alias tokens accepted by repository filters."""
         aliases: dict[TraceKind, tuple[str, ...]] = {
-            TraceKind.S_PARAMETERS: ("s_parameters", "s_params"),
-            TraceKind.Y_PARAMETERS: ("y_parameters", "y_params"),
-            TraceKind.Z_PARAMETERS: ("z_parameters", "z_params"),
+            TraceKind.S_PARAMETERS: (
+                "s_parameters",
+                "s_params",
+                "s_matrix",
+                "scattering",
+                "scattering_matrix",
+            ),
+            TraceKind.Y_PARAMETERS: (
+                "y_parameters",
+                "y_params",
+                "y_matrix",
+                "admittance",
+                "admittance_matrix",
+            ),
+            TraceKind.Z_PARAMETERS: (
+                "z_parameters",
+                "z_params",
+                "z_matrix",
+                "impedance",
+                "impedance_matrix",
+            ),
             TraceKind.UNKNOWN: ("unknown",),
         }
         return aliases[self]
@@ -100,4 +128,10 @@ class ParameterKey:
     @property
     def mode_group(self) -> ModeGroup:
         """Infer mode group from parameter suffix metadata."""
-        return ModeGroup.SIDEBAND if self.has_sideband_suffix else ModeGroup.BASE
+        if not self.has_sideband_suffix:
+            return ModeGroup.BASE
+        sideband_suffix = self.raw.split(" [", 1)[-1]
+        integers = [int(token) for token in re.findall(r"-?\d+", sideband_suffix)]
+        if not integers or all(value == 0 for value in integers):
+            return ModeGroup.BASE
+        return ModeGroup.SIDEBAND

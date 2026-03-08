@@ -44,6 +44,12 @@ def _axis_name(record: NormalizedTraceRecord, index: int) -> str:
     return str(record.axes[index].get("name", "")).strip().lower()
 
 
+def _axis_label(record: NormalizedTraceRecord, index: int) -> str:
+    if index >= len(record.axes):
+        return ""
+    return str(record.axes[index].get("name", "")).strip()
+
+
 def _is_l_jun_axis(name: str) -> bool:
     return name in {"l_jun", "l_ind"}
 
@@ -97,9 +103,15 @@ def _diagnose_analysis_sweep_support_from_records(
         len(record.trace_shape()) or _value_ndim(record.values) for record in sweep_records
     )
     second_axis_names = {_axis_name(record, 1) for record in sweep_records if len(record.axes) > 1}
+    second_axis_labels = {
+        _axis_label(record, 1)
+        for record in sweep_records
+        if len(record.axes) > 1 and _axis_label(record, 1)
+    }
     has_non_l_jun_second_axis = any(
         axis_name and not _is_l_jun_axis(axis_name) for axis_name in second_axis_names
     )
+    has_multiple_second_axes = len(second_axis_names) > 1
 
     if analysis_id == "admittance_extraction":
         if max_ndim > 2:
@@ -107,14 +119,24 @@ def _diagnose_analysis_sweep_support_from_records(
                 status="blocked",
                 reason="Admittance extraction supports up to 2D sweeps only.",
             )
-        if has_non_l_jun_second_axis:
+        if has_multiple_second_axes:
             return SweepSupportDiagnostic(
                 status="blocked",
-                reason="Admittance extraction requires a single L_jun sweep axis for 2D traces.",
+                reason=(
+                    "Admittance extraction supports one shared sweep axis across selected traces."
+                ),
+            )
+        if second_axis_labels:
+            sweep_axis_label = sorted(second_axis_labels)[0]
+            return SweepSupportDiagnostic(
+                status="sweep-ready",
+                reason=(
+                    f"2D Freq x {sweep_axis_label} sweeps are supported for admittance extraction."
+                ),
             )
         return SweepSupportDiagnostic(
             status="sweep-ready",
-            reason="2D Freq x L_jun admittance sweeps are supported.",
+            reason="2D admittance sweeps are supported.",
         )
 
     if analysis_id in {"y11_fit", "squid_fitting"}:

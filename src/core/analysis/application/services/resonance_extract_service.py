@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import typing
+from collections.abc import Mapping
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,27 @@ from core.analysis.domain import (
     trace_record_representation,
 )
 from core.shared.persistence import get_unit_of_work
+
+
+def _axis_display_name(axis: Mapping[str, typing.Any] | None, fallback: str = "Sweep Axis") -> str:
+    name = str((axis or {}).get("name", "")).strip()
+    return name or fallback
+
+
+def _axis_unit(axis: Mapping[str, typing.Any] | None) -> str:
+    return str((axis or {}).get("unit", "")).strip()
+
+
+def _axis_column_label(axis: Mapping[str, typing.Any] | None) -> str:
+    name = _axis_display_name(axis)
+    unit = _axis_unit(axis)
+    return f"{name} [{unit}]" if unit else name
+
+
+def _sanitize_parameter_name(name: str) -> str:
+    normalized = re.sub(r"[^0-9A-Za-z_]+", "_", str(name).strip())
+    normalized = normalized.strip("_")
+    return normalized or "sweep_axis"
 
 
 class ResonanceExtractService:
@@ -79,6 +101,7 @@ class ResonanceExtractService:
         ]
 
         dfs = []
+        sweep_axis_unit: str = ""
         for rec in detailed_records:
             if rec is None:
                 continue
@@ -101,39 +124,35 @@ class ResonanceExtractService:
                         "im(Y) []": y_vals,
                     }
                 )
-                if len(record.axes) > 1 and str(record.axes[1].get("name", "")).lower() in {
-                    "l_jun",
-                    "l_ind",
-                }:
-                    df_part["L_jun [nH]"] = float(record.axes[1]["values"][0])
+                if len(record.axes) > 1 and record.axes[1].get("values"):
+                    axis = record.axes[1]
+                    axis_values = [float(value) for value in axis.get("values", [])]
+                    if axis_values:
+                        df_part[_axis_column_label(axis)] = float(axis_values[0])
+                        sweep_axis_unit = sweep_axis_unit or _axis_unit(axis)
                 dfs.append(df_part)
 
             elif y_vals.ndim == 2:
-                # 2D array: typically [Freq, L_jun]
-                # Check axes[1] for L_jun
-                l_jun_vals = [0.0]
-                if len(record.axes) > 1 and str(record.axes[1].get("name", "")).lower() in {
-                    "l_jun",
-                    "l_ind",
-                }:
-                    l_jun_vals = [float(v) for v in record.axes[1]["values"]]
-
-                if y_vals.shape[1] != len(l_jun_vals):
-                    # Fallback single L_jun or mismatch
-                    pass
+                axis = record.axes[1] if len(record.axes) > 1 else {}
+                axis_values = [float(v) for v in axis.get("values", [])]
+                if len(axis_values) != y_vals.shape[1]:
+                    axis_values = [float(index) for index in range(y_vals.shape[1])]
+                axis_column = _axis_column_label(axis)
 
                 f_ghz = f_vals / 1e9 if np.max(f_vals) > 1e6 else f_vals
 
-                for bi, l_val in enumerate(l_jun_vals):
-                    if bi < y_vals.shape[1]:
-                        df_part = pd.DataFrame(
-                            {
-                                "Freq [GHz]": f_ghz,
-                                "im(Y) []": y_vals[:, bi],
-                                "L_jun [nH]": float(l_val),
-                            }
-                        )
-                        dfs.append(df_part)
+                for bi, axis_value in enumerate(axis_values):
+                    if bi >= y_vals.shape[1]:
+                        break
+                    df_part = pd.DataFrame(
+                        {
+                            "Freq [GHz]": f_ghz,
+                            "im(Y) []": y_vals[:, bi],
+                            axis_column: float(axis_value),
+                        }
+                    )
+                    dfs.append(df_part)
+                sweep_axis_unit = sweep_axis_unit or _axis_unit(axis)
 
         if not dfs:
             raise ValueError("No valid frequency/admittance axes found in records.")
@@ -167,23 +186,38 @@ class ResonanceExtractService:
             cleanup_uow.commit()
 
         for idx, row in result_df.iterrows():
-            l_jun_val = row.get("L_jun", None)
+            mode_cols = [c for c in row.index if "Mode" in str(c)]
+            sweep_cols = [str(column) for column in row.index if str(column) not in mode_cols]
+            sweep_column = sweep_cols[0] if sweep_cols else None
+            sweep_value = row.get(sweep_column, None) if sweep_column else None
             # Formatting the param name based on bias index
             suffix = f"_b{idx}" if len(result_df) > 1 else ""
-
-            # Persist L_jun if available
-            if l_jun_val is not None and not pd.isna(l_jun_val):
-                self.param_service.create_or_update_param(
-                    dataset.id,
-                    name=f"L_jun{suffix}",
-                    value=float(l_jun_val),
-                    unit="nH",
-                    device_type="resonator",
-                    method=method_name,
-                    extra={"trace_mode_group": normalized_trace_mode},
+            sweep_extra = {"trace_mode_group": normalized_trace_mode}
+            if sweep_column is not None and sweep_value is not None and not pd.isna(sweep_value):
+                sweep_extra.update(
+                    {
+                        "sweep_axis": str(sweep_column),
+                        "sweep_value": float(sweep_value),
+                        "sweep_index": idx,
+                    }
                 )
 
-            mode_cols = [c for c in row.index if "Mode" in str(c)]
+            if sweep_column is not None and sweep_value is not None and not pd.isna(sweep_value):
+                sweep_param_name = (
+                    "L_jun"
+                    if str(sweep_column).strip().lower() in {"l_jun", "l_ind"}
+                    else _sanitize_parameter_name(str(sweep_column))
+                )
+                self.param_service.create_or_update_param(
+                    dataset.id,
+                    name=f"{sweep_param_name}{suffix}",
+                    value=float(sweep_value),
+                    unit=sweep_axis_unit or "",
+                    device_type="resonator",
+                    method=method_name,
+                    extra=dict(sweep_extra),
+                )
+
             for m_idx, mode_col in enumerate(mode_cols, start=1):
                 f_ghz = row[mode_col]
                 if pd.isna(f_ghz):
@@ -199,7 +233,7 @@ class ResonanceExtractService:
                     unit="GHz",
                     device_type="resonator",
                     method=method_name,
-                    extra={"trace_mode_group": normalized_trace_mode},
+                    extra=dict(sweep_extra),
                 )
 
         return {

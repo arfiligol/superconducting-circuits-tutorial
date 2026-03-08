@@ -63,26 +63,36 @@ def build_result_artifacts_for_analysis(
 
         mode_vs_ljun_df = build_mode_vs_ljun_dataframe(method_params)
         if mode_vs_ljun_df is not None and not mode_vs_ljun_df.empty:
+            sweep_axis_label = str(mode_vs_ljun_df.attrs.get("sweep_axis_label") or "L_jun")
+            sweep_axis_title = f"Mode vs {sweep_axis_label}"
+            artifact_shape = "mode_vs_ljun" if sweep_axis_label == "L_jun" else "mode_vs_sweep_axis"
             artifacts.append(
                 ResultArtifact(
-                    artifact_id=f"{analysis_id}.{method_key}.mode_vs_ljun",
+                    artifact_id=(
+                        f"{analysis_id}.{method_key}.mode_vs_ljun"
+                        if artifact_shape == "mode_vs_ljun"
+                        else f"{analysis_id}.{method_key}.mode_vs_sweep_axis"
+                    ),
                     analysis_id=analysis_id,
                     category=default_category,
                     view_kind="matrix_table_plot",
                     tab_label=(
-                        "Mode vs L_jun" if method_count == 1 else f"Mode vs L_jun ({method_label})"
+                        sweep_axis_title
+                        if method_count == 1
+                        else f"{sweep_axis_title} ({method_label})"
                     ),
-                    title="Mode vs L_jun",
+                    title=sweep_axis_title,
                     subtitle=method_label if method_count > 1 else None,
                     query_spec={
                         "method_key": method_key,
                         "dataset": "derived_parameters",
-                        "shape": "mode_vs_ljun",
+                        "shape": artifact_shape,
                     },
                     meta={
                         "row_count": int(mode_vs_ljun_df.shape[0]),
                         "col_count": int(mode_vs_ljun_df.shape[1]),
                         "is_sweep": int(mode_vs_ljun_df.shape[1]) > 1,
+                        "sweep_axis_label": sweep_axis_label,
                     },
                 )
             )

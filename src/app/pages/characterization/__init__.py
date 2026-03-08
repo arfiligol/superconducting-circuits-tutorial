@@ -734,17 +734,21 @@ def _group_by_method(params):
 
 def _build_bias_dataframe(params) -> pd.DataFrame | None:
     rows: dict[str, dict[int, float]] = defaultdict(dict)
-    l_jun_values: dict[int, float] = {}
-    l_jun_unit: str = "nH"
+    sweep_axis_values: dict[int, float] = {}
+    sweep_axis_unit: str = ""
+    sweep_axis_label: str | None = None
 
     for p in params:
         m = _BIAS_RE.match(p.name)
         if m:
             base, bias = m.group(1), int(m.group(2))
-            if base == "L_jun":
-                l_jun_values[bias] = p.value
+            extra = p.extra if isinstance(getattr(p, "extra", {}), dict) else {}
+            sweep_axis = str(extra.get("sweep_axis", "")).strip()
+            if sweep_axis and base == sweep_axis:
+                sweep_axis_values[bias] = p.value
                 if p.unit:
-                    l_jun_unit = p.unit
+                    sweep_axis_unit = p.unit
+                sweep_axis_label = sweep_axis
             else:
                 rows[base][bias] = p.value
 
@@ -755,9 +759,13 @@ def _build_bias_dataframe(params) -> pd.DataFrame | None:
     df = df.reindex(sorted(df.columns), axis=1)
     col_map: dict[object, str]
 
-    if l_jun_values:
+    if sweep_axis_values:
         col_map = {
-            b: f"{l_jun_values[b]:.4g} ({l_jun_unit})" for b in df.columns if b in l_jun_values
+            b: f"{sweep_axis_values[b]:.4g} ({sweep_axis_unit})"
+            if sweep_axis_unit
+            else f"{sweep_axis_values[b]:.4g}"
+            for b in df.columns
+            if b in sweep_axis_values
         }
         for column_name in df.columns:
             if column_name not in col_map:
@@ -771,6 +779,8 @@ def _build_bias_dataframe(params) -> pd.DataFrame | None:
         new_index.append(_display_param_name(str(idx)))
     df.index = new_index
     df.index.name = "Parameter"
+    df.attrs["sweep_axis_label"] = sweep_axis_label or "L_jun"
+    df.attrs["sweep_axis_unit"] = sweep_axis_unit or "nH"
     return df
 
 
@@ -836,35 +846,43 @@ def _build_fit_parameter_table(params: list) -> pd.DataFrame | None:
 
 
 def _build_mode_vs_ljun_dataframe(params: list) -> pd.DataFrame | None:
-    """Build canonical Mode-vs-L_jun table; synthesize a single-column form when needed."""
+    """Build canonical mode-vs-sweep-axis table; synthesize a single-column form when needed."""
     bias_df = _build_bias_dataframe(params)
     if bias_df is not None and not bias_df.empty:
         return bias_df
 
     mode_by_index: dict[int, float] = {}
-    l_jun_value: float | None = None
-    l_jun_unit = "nH"
+    sweep_value: float | None = None
+    sweep_label = "L_jun"
+    sweep_unit = "nH"
     for param in params:
         mode_index = _mode_index_from_key(str(param.name))
         if mode_index is not None:
             mode_by_index[mode_index] = float(param.value)
             continue
-        if str(param.name) == "L_jun":
-            l_jun_value = float(param.value)
+        extra = param.extra if isinstance(getattr(param, "extra", {}), dict) else {}
+        sweep_axis = str(extra.get("sweep_axis", "")).strip()
+        if sweep_axis and str(param.name) == sweep_axis:
+            sweep_value = float(param.value)
+            sweep_label = sweep_axis
             if getattr(param, "unit", None):
-                l_jun_unit = str(param.unit)
+                sweep_unit = str(param.unit)
 
     if not mode_by_index:
         return None
 
     sorted_modes = sorted(mode_by_index)
     col_label = (
-        f"{l_jun_value:.4g} ({l_jun_unit})" if l_jun_value is not None else f"L_jun ({l_jun_unit})"
+        f"{sweep_value:.4g} ({sweep_unit})"
+        if sweep_value is not None
+        else f"{sweep_label} ({sweep_unit})"
     )
     mode_rows = [f"Mode {mode_index} (GHz)" for mode_index in sorted_modes]
     values = [mode_by_index[mode_index] for mode_index in sorted_modes]
     df = pd.DataFrame({col_label: values}, index=mode_rows)
     df.index.name = "Parameter"
+    df.attrs["sweep_axis_label"] = sweep_label
+    df.attrs["sweep_axis_unit"] = sweep_unit
     return df
 
 

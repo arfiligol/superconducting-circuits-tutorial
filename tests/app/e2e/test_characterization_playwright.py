@@ -48,6 +48,7 @@ def _seed_characterization_dataset(
     dataset_profile: dict[str, object],
     include_y11: bool,
     include_s21: bool,
+    second_axis_name: str = "L_jun",
 ) -> None:
     freq_ghz = np.linspace(4.0, 8.0, 201)
     l_jun_nh = np.linspace(0.8, 2.8, 9)
@@ -85,7 +86,7 @@ def _seed_characterization_dataset(
 
         common_axes = [
             {"name": "Freq", "unit": "GHz", "values": [float(x) for x in freq_ghz]},
-            {"name": "L_jun", "unit": "nH", "values": [float(x) for x in l_jun_nh]},
+            {"name": second_axis_name, "unit": "nH", "values": [float(x) for x in l_jun_nh]},
         ]
         persisted_records: list[DataRecord] = []
         if include_y11:
@@ -161,6 +162,7 @@ def seeded_dataset_names() -> dict[str, str]:
         "squid": f"E2E-Characterization-SQUID-{suffix}",
         "single_junction": f"E2E-Characterization-SJ-{suffix}",
         "traveling_wave": f"E2E-Characterization-TW-{suffix}",
+        "generic_axis": f"E2E-Characterization-GenericAxis-{suffix}",
     }
 
 
@@ -208,6 +210,18 @@ def seed_characterization_data(seeded_dataset_names: dict[str, str]) -> None:
         },
         include_y11=True,
         include_s21=True,
+    )
+    _seed_characterization_dataset(
+        seeded_dataset_names["generic_axis"],
+        dataset_profile={
+            "schema_version": "1.0",
+            "device_type": "unspecified",
+            "capabilities": [],
+            "source": "manual_override",
+        },
+        include_y11=True,
+        include_s21=False,
+        second_axis_name="L_q",
     )
     yield
     with get_unit_of_work() as uow:
@@ -280,7 +294,13 @@ def _select_option(page: Page, label: str, option_text: str, index: int = 0) -> 
     select = page.get_by_role("combobox", name=label).nth(index)
     expect(select).to_be_visible(timeout=15000)
     select.click()
-    page.get_by_role("option", name=re.compile(rf"^{re.escape(option_text)}")).first.click()
+    option_pattern = re.compile(rf"^{re.escape(option_text)}")
+    option = page.locator("[role='option'], .q-item").filter(has_text=option_pattern).first
+    try:
+        expect(option).to_be_visible(timeout=5000)
+        option.click()
+    except AssertionError:
+        page.get_by_text(option_pattern).first.click()
 
 
 def _locator_by_testid(page: Page, testid: str, *, fallback):  # type: ignore[no-untyped-def]
@@ -465,10 +485,32 @@ def test_characterization_profile_hints_do_not_hard_block_trace_first_run(
             fallback=page.get_by_text("Design Scope"),
         )
     ).to_be_visible(timeout=30000)
-    _select_option(page, "Analysis", "S21 Resonance Fit")
     availability_label = _locator_by_testid(
         page,
         "characterization-availability-label",
         fallback=page.get_by_text(re.compile(r"for current design scope$")).first,
     )
-    expect(availability_label).to_be_visible(timeout=30000)
+    expect(availability_label).to_contain_text("Available for current design scope", timeout=30000)
+
+
+def test_generic_single_axis_saved_traces_enable_admittance_extraction(
+    page: Page,
+    seeded_dataset_names: dict[str, str],
+) -> None:
+    _select_active_dataset(page, seeded_dataset_names["generic_axis"])
+    expect(
+        _locator_by_testid(
+            page,
+            "characterization-source-scope-card",
+            fallback=page.get_by_text("Design Scope"),
+        )
+    ).to_be_visible(timeout=30000)
+    _select_option(page, "Analysis", "Admittance Extraction")
+
+    availability_label = _locator_by_testid(
+        page,
+        "characterization-availability-label",
+        fallback=page.get_by_text(re.compile(r"for current design scope$")).first,
+    )
+    expect(availability_label).to_contain_text("Available for current design scope")
+    expect(page.get_by_role("cell", name="Y11")).to_be_visible(timeout=30000)

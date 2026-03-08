@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, cast
 
-from sqlalchemy import String, asc, case, delete, desc, func, not_, or_
+from sqlalchemy import String, and_, asc, case, delete, desc, func, not_, or_
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
@@ -20,6 +20,23 @@ def _canonical_trace_row(row: dict[str, str | int]) -> dict[str, str | int]:
         "parameter": str(row["parameter"]),
         "representation": str(row["representation"]),
     }
+
+
+def _sideband_parameter_predicate(parameter_col: Any) -> Any:
+    """Return a SQL predicate that treats zero-mode suffixes as base traces."""
+    parameter_text = sa_cast(parameter_col, String)
+    has_sideband_metadata = or_(
+        parameter_text.ilike("% [om=%"),
+        parameter_text.ilike("% [im=%"),
+    )
+    zero_mode_suffix = or_(
+        parameter_text.ilike("% [om=(0,), im=(0,)]"),
+        parameter_text.ilike("% [om=(0, 0), im=(0, 0)]"),
+        parameter_text.ilike("% [om=(0,0), im=(0,0)]"),
+        parameter_text.ilike("% [om=(0, 0, 0), im=(0, 0, 0)]"),
+        parameter_text.ilike("% [om=(0,0,0), im=(0,0,0)]"),
+    )
+    return and_(has_sideband_metadata, not_(zero_mode_suffix))
 
 
 class TraceRepository:
@@ -156,10 +173,7 @@ class TraceRepository:
             representation_col,
         ).where(dataset_id_col == dataset_id)
 
-        sideband_predicate = or_(
-            sa_cast(parameter_col, String).ilike("% [om=%"),
-            sa_cast(parameter_col, String).ilike("% [im=%"),
-        )
+        sideband_predicate = _sideband_parameter_predicate(parameter_col)
 
         if ids is not None:
             normalized_ids = [int(record_id) for record_id in ids]

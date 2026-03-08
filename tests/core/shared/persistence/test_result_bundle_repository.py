@@ -319,6 +319,16 @@ def test_data_record_repository_characterization_contract_methods() -> None:
                 values=[],
             )
         )
+        zero_mode = data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="y_parameters",
+                parameter="Y11 [om=(0,), im=(0,)]",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
         data_repo.add(
             DataRecord(
                 dataset_id=dataset.id,
@@ -331,7 +341,7 @@ def test_data_record_repository_characterization_contract_methods() -> None:
         )
         session.commit()
 
-        assert data_repo.count_by_dataset(dataset.id) == 3
+        assert data_repo.count_by_dataset(dataset.id) == 4
         distinct = data_repo.list_distinct_index_for_profile(dataset.id)
         assert any(
             row["family"] == "y_parameters" and row["parameter"] == "Y11" for row in distinct
@@ -347,8 +357,8 @@ def test_data_record_repository_characterization_contract_methods() -> None:
             limit=20,
             offset=0,
         )
-        assert base_total == 1
-        assert [int(row["id"]) for row in base_rows] == [int(base.id or 0)]
+        assert base_total == 2
+        assert [int(row["id"]) for row in base_rows] == [int(base.id or 0), int(zero_mode.id or 0)]
 
         sideband_rows, sideband_total = data_repo.list_index_page_by_dataset(
             dataset.id,
@@ -356,7 +366,7 @@ def test_data_record_repository_characterization_contract_methods() -> None:
             parameters=["Y11"],
             representation="imaginary",
             mode_filter="sideband",
-            ids=[int(base.id or 0), int(sideband.id or 0)],
+            ids=[int(base.id or 0), int(sideband.id or 0), int(zero_mode.id or 0)],
             sort_by="mode",
             limit=20,
             offset=0,
@@ -371,7 +381,7 @@ def test_data_record_repository_characterization_contract_methods() -> None:
                 parameters=("Y11",),
                 representation="imaginary",
                 mode_filter="sideband",
-                ids=(int(base.id or 0), int(sideband.id or 0)),
+                ids=(int(base.id or 0), int(sideband.id or 0), int(zero_mode.id or 0)),
                 sort_by="mode",
                 limit=20,
                 offset=0,
@@ -411,6 +421,16 @@ def test_result_bundle_repository_characterization_contract_methods() -> None:
                 values=[],
             )
         )
+        zero_mode = data_repo.add(
+            DataRecord(
+                dataset_id=dataset.id,
+                data_type="y_parameters",
+                parameter="Y11 [om=(0,), im=(0,)]",
+                representation="imaginary",
+                axes=[],
+                values=[],
+            )
+        )
         bundle = bundle_repo.add(
             ResultBundleRecord(
                 dataset_id=dataset.id,
@@ -426,11 +446,23 @@ def test_result_bundle_repository_characterization_contract_methods() -> None:
         assert bundle.id is not None
         bundle_repo.attach_data_records(
             bundle_id=bundle.id,
-            data_record_ids=[int(base.id or 0), int(sideband.id or 0)],
+            data_record_ids=[int(base.id or 0), int(sideband.id or 0), int(zero_mode.id or 0)],
         )
         session.commit()
 
-        assert bundle_repo.count_data_records(bundle.id) == 2
+        assert bundle_repo.count_data_records(bundle.id) == 3
+        base_rows, base_total = bundle_repo.list_data_record_index_page(
+            bundle.id,
+            data_types=["y_parameters"],
+            parameters=["Y11"],
+            representation="imaginary",
+            mode_filter="base",
+            sort_by="mode",
+            limit=20,
+            offset=0,
+        )
+        assert base_total == 2
+        assert [int(row["id"]) for row in base_rows] == [int(base.id or 0), int(zero_mode.id or 0)]
         rows, total = bundle_repo.list_data_record_index_page(
             bundle.id,
             data_types=["y_parameters"],
