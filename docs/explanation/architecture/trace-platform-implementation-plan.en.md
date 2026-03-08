@@ -20,6 +20,11 @@ updated_by: codex
 This page is not a migration plan.  
 It is the **active execution plan for the next phase**, so Integrators and Contributors can resume work cleanly after context compaction.
 
+!!! important "Current active decisions"
+    - `TraceStore` currently has only one active backend: local `Zarr`.
+    - `s3_zarr` / MinIO / S3 is a deferred extension, not a blocker for the current phase.
+    - when physical schema convergence begins, the project will cut directly to the new schema instead of building a historical-data migration path.
+
 ## Phase Status
 
 ### Phase 1 Completed
@@ -42,7 +47,7 @@ The following phase-2 workstreams are now complete and integrated into `main`:
 
 - the main user-facing language in `Raw Data` and `Characterization` now converges on `Design / Trace / Trace Batch`
 - layout ingest and measurement ingest now write through `TraceBatchRecord + TraceRecord + TraceStore`
-- `TraceStoreRef` now exposes a formal `local_zarr` / `s3_zarr` backend contract
+- `TraceStoreRef` now exposes a local-first backend contract while keeping an extension-safe `s3_zarr` shape
 - `AnalysisRunRecord` now exists as a logical persistence boundary
 - the examples-driven validation matrix now has a formal phase-2 skeleton
 
@@ -68,7 +73,7 @@ Make the system reach the following steady state:
 
 ## Non-Goals
 
-- no historical-data migration
+- no historical-data migration; physical schema convergence should use a direct cutover to the new schema
 - no full UI hierarchy rewrite
 - no point-per-record replacement of canonical ND `TraceRecord`
 - no regression that pushes large numeric payloads back into the metadata DB for convenience
@@ -77,7 +82,7 @@ Make the system reach the following steady state:
 
 1. the `Design` scope supports stable cross-source browsing and compare workflows over layout / circuit / measurement traces
 2. the remaining phase-2 compatibility layers now have explicit retirement or containment rules instead of open-ended dual paths
-3. the `TraceStore` boundary is not only contract-ready for `local_zarr` / `s3_zarr`, but operationally ready for server deployment work
+3. the `TraceStore` boundary is operationally ready for the local `Zarr` path, and future storage-extension work no longer blocks the current phase
 4. examples-driven regression covers circuit / layout / measurement saved-trace reuse paths rather than only one source path
 5. after phase-3 acceptance, the Integrator can clearly identify which legacy names and compatibility paths still exist and why
 
@@ -142,25 +147,20 @@ Deferred expansion:
 Goal:
 
 - move the current backend abstraction from contract-ready to deployment-ready
-- make the local-development, server-deployment, and future S3/MinIO extension boundaries explicit
+- make the local-development path and any future storage-extension boundary explicit
 
 Focus:
 
 - stable `TraceStoreRef` contract
 - no backend-specific path logic leaking into UI/app code
 - equivalent semantics for local filesystem and object storage layouts
-- `s3_zarr` must expose a clear operational config/validation surface
-- live production integration is optional, but the design cannot stop at abstract naming
+- live `s3_zarr` / MinIO / S3 integration is not required in this phase
+- the local backend must be the only active, verifiable, deployable path in this phase
 
 Completed now:
 
 - the `local_zarr` runtime path and backend binding are converged
-- `s3_zarr` now has an explicit runtime config / validation contract
 - the rule that UI/app code must not parse backend-specific local path layout is now part of the guardrails
-
-Deferred expansion:
-
-- live MinIO / S3 smoke integration remains later deployment work, not a current phase-3 blocker
 
 ### Workstream D: Platform Acceptance Matrix (Active)
 
@@ -184,7 +184,7 @@ Focus:
 | layout ingest -> save/read -> characterize | implemented | layout traces persist through the trace-store path and can be consumed by characterization | add full browser/E2E coverage |
 | measurement ingest -> save/read -> characterize | implemented | measurement traces persist through the trace-store path and can be consumed by characterization | add broader matrix-family coverage |
 | cross-source compare within one design | implemented | multiple source traces can be browsed with source summary / provenance / compatibility gating inside the same design scope | add richer source-difference UX and compare assertions |
-| TraceStore backend readiness | implemented | the local backend path is stable and the `s3_zarr` boundary has explicit validation points | add MinIO/S3 integration smoke coverage |
+| TraceStore backend readiness | implemented | the local backend path is stable, verifiable, and supports the app/examples | if object-storage work resumes later, add MinIO/S3 smoke coverage |
 
 Constraints:
 
@@ -245,7 +245,7 @@ At minimum:
 4. layout / measurement saved-trace reuse regressions
 5. characterization over saved traces regression
 6. cross-source compare / scope regression whenever touched
-7. TraceStore backend-boundary regression (local is mandatory; `s3_zarr` must at least have contract-level validation)
+7. TraceStore backend-boundary regression (local is mandatory)
 
 ## Acceptance Notes for Integrator
 

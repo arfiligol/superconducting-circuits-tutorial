@@ -37,7 +37,7 @@ DesignRecord
 2. `TraceRecord` is the standard unit consumed by plotting, Characterization, and comparison flows.
 3. `TraceBatchRecord` carries setup, source kind, lineage, and status.
 4. metadata DB and numeric payload must remain separate.
-5. numeric payload is stored in `TraceStore` (`Zarr`) and may use either local or S3-compatible backends.
+5. numeric payload is stored in `TraceStore` (`Zarr`); the only active backend right now is local.
 
 ---
 
@@ -133,7 +133,10 @@ It may be:
 **Allowed direction for `backend`**
 
 - `local_zarr`
-- `s3_zarr`
+
+!!! note "Object-storage extension is deferred"
+    `s3_zarr` / MinIO / S3 is not the active implementation target right now.
+    If object-storage extension work resumes later, it should return as an additive contract without changing the current local path.
 
 !!! important "Canonical ND trace"
     A sweep point must not automatically become its own canonical `TraceRecord`.
@@ -217,7 +220,7 @@ Physics extraction output.
 `TraceStore` uses `Zarr` and keeps backend abstraction explicit:
 
 - current baseline: local filesystem
-- storage extension target: S3-compatible endpoints (for example MinIO / S3)
+- storage extension target (deferred): S3-compatible endpoints (for example MinIO / S3)
 
 ### Recommended Local Layout
 
@@ -232,15 +235,15 @@ data/trace_store/
                         └── values
 ```
 
-### S3-Compatible Direction
+### Deferred Object-Storage Direction
 
-The same `TraceStoreRef` contract must support:
+If object-storage extension work resumes later, the same `TraceStoreRef` contract must still support:
 
 - `file://...`
 - `s3://bucket/...`
 - MinIO S3 endpoints
 
-UI, Characterization, and repositories must not depend on backend-specific path logic.
+That is not a blocker for the current phase. The only active path right now is local `Zarr`.
 
 ## Related
 

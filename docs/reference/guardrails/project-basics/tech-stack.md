@@ -30,7 +30,7 @@ tags:
 | `ruff`, `basedpyright` | Lint / Type Check |
 | `pytest`, `Playwright` | 自動化測試與 E2E 驗證 |
 | `zarr` | Trace numeric payload storage（chunked ND arrays） |
-| `fsspec`, `s3fs` | TraceStore backend abstraction（local / S3-compatible） |
+| `fsspec`, `s3fs` | TraceStore backend abstraction（目前 local-only；未來可延伸） |
 | `sqlmodel`, `sqlalchemy` | metadata DB 與 repository/UoW |
 
 ### Julia
@@ -49,7 +49,7 @@ tags:
    - 未來 server/deployment：`PostgreSQL`
 2. **Numeric Trace Store**
    - 現階段：local filesystem `Zarr`
-   - 未來 storage extension：`S3-compatible Zarr`（例如 MinIO / S3 endpoint）
+   - 未來 storage extension（deferred）：`S3-compatible Zarr`（例如 MinIO / S3 endpoint）
 
 ## Storage Responsibility Split
 
@@ -57,17 +57,19 @@ tags:
 |---|---|---|
 | Metadata | `SQLite` / `PostgreSQL` | `DesignRecord`、`TraceRecord`、`TraceBatchRecord`、`AnalysisRunRecord`、`DerivedParameterRecord` |
 | Numeric payload | `Zarr` | S/Y/Z traces、sweep ND arrays、axes arrays |
-| Object backend | local FS / MinIO / S3 | TraceStore backend（透過 `TraceStoreRef.backend + store_key` 定位；local path layout 不外漏） |
+| Object backend | local FS（目前） | TraceStore backend（透過 `TraceStoreRef.backend + store_key` 定位；local path layout 不外漏） |
 
 ## TraceStore Runtime Config
 
 當前 runtime config 約定：
 
 - `SC_TRACE_STORE_BACKEND`
-  - `local_zarr`（目前實作）
-  - `s3_zarr`（contract-ready；尚未 live integration）
+  - `local_zarr`（目前唯一 active backend）
 - `SC_TRACE_STORE_ROOT`
   - local backend 的 root path
+
+若未來重新啟動 object-storage extension，再補：
+
 - `SC_TRACE_STORE_S3_BUCKET`
 - `SC_TRACE_STORE_S3_PREFIX`
 - `SC_TRACE_STORE_S3_ENDPOINT_URL`
@@ -101,9 +103,12 @@ Application / UI layer 不得自行解析 local `store_uri` path；backend locat
 - **Metadata DB direction**:
     - current: `SQLite`
     - deployment target: `PostgreSQL`
+- **DB schema convergence**:
+    - 目前這個計畫不包含歷史資料 migration
+    - 當 physical schema 收斂開始時，直接切到新 schema
 - **Numeric Trace Store direction**:
     - current: local `Zarr`
-    - extension target: S3-compatible `Zarr` (for example MinIO / S3 endpoint)
+    - extension target (deferred): S3-compatible `Zarr` (for example MinIO / S3 endpoint)
 - **Config files**:
     - Python: `pyproject.toml`
     - Julia: `Project.toml`

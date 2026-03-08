@@ -30,7 +30,7 @@ This project is converging toward a **Python + Julia + Zarr Trace Store** scient
 | `ruff`, `basedpyright` | lint / type check |
 | `pytest`, `Playwright` | automation and E2E verification |
 | `zarr` | trace numeric payload storage (chunked ND arrays) |
-| `fsspec`, `s3fs` | TraceStore backend abstraction (local / S3-compatible) |
+| `fsspec`, `s3fs` | TraceStore backend abstraction (currently local-only; future extension-safe) |
 | `sqlmodel`, `sqlalchemy` | metadata DB and repository/UoW |
 
 ### Julia
@@ -49,7 +49,7 @@ The target storage direction is:
    - future server/deployment: `PostgreSQL`
 2. **Numeric Trace Store**
    - current: local filesystem `Zarr`
-   - future storage extension: `S3-compatible Zarr` (for example MinIO / S3 endpoints)
+   - future storage extension (deferred): `S3-compatible Zarr` (for example MinIO / S3 endpoints)
 
 ## Storage Responsibility Split
 
@@ -57,17 +57,19 @@ The target storage direction is:
 |---|---|---|
 | Metadata | `SQLite` / `PostgreSQL` | `DesignRecord`, `TraceRecord`, `TraceBatchRecord`, `AnalysisRunRecord`, `DerivedParameterRecord` |
 | Numeric payload | `Zarr` | S/Y/Z traces, sweep ND arrays, axes arrays |
-| Object backend | local FS / MinIO / S3 | TraceStore backend (located via `TraceStoreRef.backend + store_key`; local path layout stays internal) |
+| Object backend | local FS (current) | TraceStore backend (located via `TraceStoreRef.backend + store_key`; local path layout stays internal) |
 
 ## TraceStore Runtime Config
 
 Current runtime config contract:
 
 - `SC_TRACE_STORE_BACKEND`
-  - `local_zarr` (implemented now)
-  - `s3_zarr` (contract-ready; live integration deferred)
+  - `local_zarr` (the only active backend right now)
 - `SC_TRACE_STORE_ROOT`
   - root path for the local backend
+
+If object-storage extension work resumes later, add:
+
 - `SC_TRACE_STORE_S3_BUCKET`
 - `SC_TRACE_STORE_S3_PREFIX`
 - `SC_TRACE_STORE_S3_ENDPOINT_URL`
@@ -101,9 +103,12 @@ The application / UI layer must not parse local `store_uri` paths directly. Back
 - **Metadata DB direction**:
     - current: `SQLite`
     - deployment target: `PostgreSQL`
+- **DB schema convergence**:
+    - no historical-data migration in the current program
+    - when physical schema convergence begins, cut directly to the new schema
 - **Numeric Trace Store direction**:
     - current: local `Zarr`
-    - extension target: S3-compatible `Zarr` (for example MinIO / S3 endpoint)
+    - extension target (deferred): S3-compatible `Zarr` (for example MinIO / S3 endpoint)
 - **Config files**:
     - Python: `pyproject.toml`
     - Julia: `Project.toml`

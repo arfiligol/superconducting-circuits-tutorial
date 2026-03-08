@@ -168,9 +168,9 @@ Phase-2 的最小可整合落地方向是：
 - canonical = ND `TraceRecord`
 - point/slice materialization = projection/cache/export
 
-## Local to Server to Object Storage
+## Local first, extension later
 
-這套模型天然支持演進：
+這套模型天然支持演進，但目前 active path 只有 local `Zarr`：
 
 1. 現階段
    - metadata: `SQLite`
@@ -178,9 +178,29 @@ Phase-2 的最小可整合落地方向是：
 2. 未來 server
    - metadata: `PostgreSQL`
    - numeric: local or shared `Zarr`
-3. storage extension
+3. storage extension（deferred）
    - metadata: `PostgreSQL`
    - numeric: `S3-compatible Zarr`（MinIO / S3）
+
+!!! important "Current phase is local-only"
+    `s3_zarr` / MinIO / S3 目前不是當前 phase 的實作目標。
+    現階段只要求 local `Zarr` 路徑穩定、可驗證、可支撐 examples 與 app flows。
+
+## No DB Migration in the current program
+
+目前不規劃歷史資料 migration。
+
+原因是：
+
+- 現有資料量小
+- 尚未有正式產品資料需要保留
+- 與其維護 legacy-to-new migration path，不如在 physical schema 收斂時直接切到新 schema
+
+這代表：
+
+- 現階段可以保留必要的 logical compatibility layer 來完成重構
+- 但當 physical schema 收斂時，應優先採用 **direct cutover to the new schema**
+- 不應把 migration 成本當成延後 schema 收斂的前提
 
 ## What this means for current features
 

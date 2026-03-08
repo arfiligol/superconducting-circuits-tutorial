@@ -38,7 +38,7 @@ DesignRecord
 2. `TraceRecord` 是 plotting / Characterization / compare 的標準操作單位。
 3. `TraceBatchRecord` 保存 setup、source kind、lineage、status。
 4. metadata DB 與 numeric payload 分離。
-5. numeric payload 由 `TraceStore`（Zarr）保存，可走 local 或 S3-compatible backend。
+5. numeric payload 由 `TraceStore`（Zarr）保存；目前 active backend 只有 local。
 
 ---
 
@@ -134,7 +134,10 @@ DesignRecord
 **backend 可用值（目前 direction）**
 
 - `local_zarr`
-- `s3_zarr`
+
+!!! note "Object-storage extension is deferred"
+    `s3_zarr` / MinIO / S3 目前不是當前 phase 的實作目標。
+    若之後重新啟動 object-storage extension，應以 additive contract 方式補回，不應影響目前 local path。
 
 !!! important "Canonical ND trace"
     sweep point 不應自動升格為一筆 canonical `TraceRecord`。
@@ -218,7 +221,7 @@ Characterization / fitting / extraction 的執行邊界。
 `TraceStore` 採 `Zarr`，並保留 backend abstraction：
 
 - 現階段：local filesystem
-- storage extension：S3-compatible endpoint（例如 MinIO / S3）
+- storage extension（deferred）：S3-compatible endpoint（例如 MinIO / S3）
 
 ### Recommended Local Layout
 
@@ -233,15 +236,15 @@ data/trace_store/
                         └── values
 ```
 
-### S3-Compatible Direction
+### Deferred Object-Storage Direction
 
-同一個 `TraceStoreRef` contract 應可對應：
+若之後重新啟動 object-storage extension，同一個 `TraceStoreRef` contract 應仍可對應：
 
 - `file://...`
 - `s3://bucket/...`
 - MinIO S3 endpoint
 
-不得讓 UI / Characterization / repositories 直接耦合 backend-specific path logic。
+但這不是目前 phase 的 blocking target；目前唯一 active path 是 local `Zarr`。
 
 ## Related
 

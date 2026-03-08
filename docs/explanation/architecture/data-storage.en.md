@@ -167,9 +167,9 @@ Recommended split:
 - canonical = ND `TraceRecord`
 - point/slice materialization = projection/cache/export
 
-## Local to Server to Object Storage
+## Local first, extension later
 
-This model scales naturally:
+This model scales naturally, but the only active path right now is local `Zarr`:
 
 1. current
    - metadata: `SQLite`
@@ -177,9 +177,29 @@ This model scales naturally:
 2. future server
    - metadata: `PostgreSQL`
    - numeric: local or shared `Zarr`
-3. storage extension
+3. storage extension (deferred)
    - metadata: `PostgreSQL`
    - numeric: `S3-compatible Zarr` (MinIO / S3)
+
+!!! important "Current phase is local-only"
+    `s3_zarr` / MinIO / S3 is not the active implementation target right now.
+    The current phase only requires the local `Zarr` path to be stable, testable, and able to support the examples and app flows.
+
+## No DB migration in the current program
+
+There is no historical-data migration plan for the current program.
+
+Why:
+
+- the current data volume is still small
+- there is no production data set that must be preserved yet
+- instead of carrying a legacy-to-new migration path, the project should cut directly to the new schema when physical schema convergence begins
+
+This means:
+
+- the current phase may keep necessary logical compatibility layers while the refactor lands
+- but once physical schema convergence begins, the preferred path is a **direct cutover to the new schema**
+- migration cost must not be treated as a reason to delay schema convergence
 
 ## What this means for current features
 
