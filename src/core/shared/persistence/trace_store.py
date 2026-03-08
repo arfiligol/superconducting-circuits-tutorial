@@ -386,7 +386,27 @@ class LocalZarrTraceStore:
         normalized_ref = coerce_trace_store_ref(ref)
         trace_group = self._open_trace_group(normalized_ref)
         axes_group = trace_group["axes"]
-        return np.asarray(axes_group[str(axis_name)][selection])
+        axis_key = str(axis_name)
+        try:
+            return np.asarray(axes_group[axis_key][selection])
+        except KeyError:
+            pass
+
+        axis_refs = ref.get("axis_array_refs", [])
+        if isinstance(axis_refs, list):
+            for axis_ref in axis_refs:
+                if (
+                    isinstance(axis_ref, Mapping)
+                    and str(axis_ref.get("name", "")) == axis_key
+                    and str(axis_ref.get("array_path", "")).startswith("axes/")
+                ):
+                    fallback_key = str(axis_ref.get("array_path", "")).split("/", 1)[-1]
+                    try:
+                        return np.asarray(axes_group[fallback_key][selection])
+                    except KeyError:
+                        continue
+
+        raise KeyError(axis_key)
 
     def read_trace_shape(self, ref: Mapping[str, object]) -> tuple[int, ...]:
         """Return stored shape metadata for one trace payload."""

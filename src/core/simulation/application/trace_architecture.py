@@ -14,10 +14,10 @@ from typing import Any
 import numpy as np
 
 from core.shared.persistence.trace_store import (
+    LocalZarrTraceStore,
     LocalZarrTraceStoreBackend,
     get_trace_store_backend_binding,
     get_trace_store_path,
-    resolve_trace_store_path,
 )
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
@@ -343,6 +343,7 @@ def load_raw_simulation_bundle(
     if not is_trace_batch_bundle_payload(payload):
         raise ValueError("Payload is not a trace-batch bundle.")
 
+    trace_store = LocalZarrTraceStore(root_path=get_trace_store_root())
     trace_records = payload.get("trace_records", [])
     if not isinstance(trace_records, list) or not trace_records:
         raise ValueError("Trace-batch bundle has no trace records.")
@@ -353,7 +354,10 @@ def load_raw_simulation_bundle(
 
     sweep_axis_defs = first_axes[1:]
     if not sweep_axis_defs:
-        result = _build_simulation_result_from_trace_slice(trace_records=trace_records)
+        result = _build_simulation_result_from_trace_slice(
+            trace_store=trace_store,
+            trace_records=trace_records,
+        )
         return (result, None)
 
     representative_point_index = int(
@@ -366,6 +370,7 @@ def load_raw_simulation_bundle(
     sweep_axes: list[SimulationSweepAxis] = []
     for axis_offset, axis_def in enumerate(sweep_axis_defs, start=1):
         axis_values = _load_axis_values(
+            trace_store=trace_store,
             store_ref=first_store_ref,
             axis_name=str(axis_def.get("name", "")),
             axis_index=axis_offset,
@@ -391,6 +396,7 @@ def load_raw_simulation_bundle(
                 axis_indices=tuple(int(value) for value in axis_indices),
                 axis_values=axis_values,
                 result=_build_simulation_result_from_trace_slice(
+                    trace_store=trace_store,
                     trace_records=trace_records,
                     axis_indices=tuple(int(value) for value in axis_indices),
                 ),
@@ -688,12 +694,14 @@ def _sanitize_postprocess_label_token(label: str) -> str:
 
 def _build_simulation_result_from_trace_slice(
     *,
+    trace_store: LocalZarrTraceStore,
     trace_records: Sequence[Mapping[str, Any]],
     axis_indices: tuple[int, ...] | None = None,
 ) -> SimulationResult:
     """Rebuild one SimulationResult from all trace records at one sweep slice."""
     first_store_ref = trace_records[0].get("store_ref", {})
     frequencies = _load_axis_values(
+        trace_store=trace_store,
         store_ref=first_store_ref,
         axis_name="frequency",
         axis_index=0,
@@ -717,7 +725,11 @@ def _build_simulation_result_from_trace_slice(
         store_ref = trace_record.get("store_ref", {})
         trace_meta = trace_record.get("trace_meta", {})
         label = str(trace_meta.get("label", "")).strip()
-        values = _load_trace_values(store_ref=store_ref, axis_indices=axis_indices)
+        values = _load_trace_values(
+            trace_store=trace_store,
+            store_ref=store_ref,
+            axis_indices=axis_indices,
+        )
         family = str(trace_record.get("family", "")).strip()
         representation = str(trace_record.get("representation", "")).strip()
         output_mode = tuple(int(value) for value in trace_meta.get("output_mode", [])) or (0,)
@@ -787,11 +799,12 @@ def _build_simulation_result_from_trace_slice(
 
 def _load_axis_values(
     *,
+    trace_store: LocalZarrTraceStore,
     store_ref: Mapping[str, Any],
     axis_name: str,
     axis_index: int,
 ) -> np.ndarray:
-    """Load one axis array from the TraceStore."""
+    """Load one axis array from the TraceStore via slice-first reads."""
     axis_refs = store_ref.get("axis_array_refs", [])
     if not isinstance(axis_refs, list):
         raise ValueError("TraceStore ref is missing axis_array_refs.")
@@ -812,25 +825,32 @@ def _load_axis_values(
     if target_ref is None:
         raise ValueError(f"Axis '{axis_name}' is not available in store_ref.")
 
-    store_path = resolve_trace_store_path(store_ref)
-    group_path = str(store_ref.get("group_path", "")).strip("/")
-    axis_array_path = str(target_ref.get("array_path", "")).strip("/")
-    return _read_zarr_array(store_path / group_path / axis_array_path)
+    return np.asarray(
+        trace_store.read_axis_slice(
+            store_ref,
+            axis_name=str(axis_name),
+            selection=slice(None),
+        )
+    )
 
 
 def _load_trace_values(
     *,
+    trace_store: LocalZarrTraceStore,
     store_ref: Mapping[str, Any],
     axis_indices: tuple[int, ...] | None,
 ) -> list[float]:
-    """Load one trace array and optionally slice it by sweep axes."""
-    store_path = resolve_trace_store_path(store_ref)
-    group_path = str(store_ref.get("group_path", "")).strip("/")
-    array_path = str(store_ref.get("array_path", "")).strip("/")
-    array = _read_zarr_array(store_path / group_path / array_path)
+    """Load one trace array slice via the TraceStore abstraction."""
+    selection: tuple[slice | int, ...]
     if axis_indices:
-        array = array[(slice(None), *axis_indices)]
-    return [float(value) for value in np.asarray(array, dtype=np.float64).tolist()]
+        selection = (slice(None), *tuple(int(value) for value in axis_indices))
+    else:
+        selection = (slice(None),)
+    values = trace_store.read_trace_slice(
+        store_ref,
+        selection=selection,
+    )
+    return [float(value) for value in np.asarray(values, dtype=np.float64).tolist()]
 
 
 def _default_chunk_shape(shape: Sequence[int]) -> tuple[int, ...]:

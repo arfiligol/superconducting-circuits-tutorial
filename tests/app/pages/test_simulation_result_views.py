@@ -807,6 +807,90 @@ def test_trace_batch_bundle_roundtrip_rebuilds_parameter_sweep_from_trace_store(
     ]
 
 
+def test_floating_qubit_with_xyline_simple_setup_cache_rebuild_stays_slice_first(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
+    sweep_values = tuple(15.0 + 2.5 * index for index in range(7))
+    points = []
+    for point_index, l_q in enumerate(sweep_values):
+        base = _sample_result()
+        point_result = SimulationResult.model_validate(
+            {
+                **base.model_dump(mode="json"),
+                "y_parameter_mode_imag": {
+                    **base.y_parameter_mode_imag,
+                    "om=0|op=2|im=0|ip=2": [
+                        value + (point_index * 0.0005)
+                        for value in base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
+                    ],
+                },
+            }
+        )
+        points.append(
+            SimulationSweepPointResult(
+                point_index=point_index,
+                axis_indices=(point_index,),
+                axis_values={"L_q": l_q},
+                result=point_result,
+            )
+        )
+
+    sweep_run = SimulationSweepRun(
+        axes=(SimulationSweepAxis(target_value_ref="L_q", values=sweep_values, unit="nH"),),
+        points=tuple(points),
+        representative_point_index=0,
+    )
+    payload = persist_trace_batch_bundle(
+        bundle_id=205,
+        design_id=10,
+        design_name="FloatingQubitWithXYLine",
+        source_kind="circuit_simulation",
+        stage_kind="raw",
+        setup_kind="circuit_simulation.raw",
+        setup_payload={
+            "preset_name": "Simple Setup",
+            "freq_range": {"start_ghz": 1.0, "stop_ghz": 10.0001, "points": 1001},
+            "sweep": {
+                "point_count": len(sweep_values),
+                "axes": [{"target_value_ref": "L_q", "unit": "nH"}],
+            },
+        },
+        provenance_payload={"origin": "circuit_simulation"},
+        trace_specs=build_raw_simulation_trace_specs(
+            result=sweep_run.representative_result,
+            sweep_payload=simulation_sweep_run_to_payload(sweep_run),
+        ),
+        summary_payload={
+            "trace_count": 1,
+            "run_kind": "parameter_sweep",
+            "frequency_points": 3,
+            "point_count": len(sweep_values),
+            "representative_point_index": 0,
+        },
+    )
+
+    def _forbid_full_read(path: Path) -> np.ndarray:
+        raise AssertionError(f"unexpected full array read during cache reconstruction: {path}")
+
+    monkeypatch.setattr(
+        "core.simulation.application.trace_architecture._read_zarr_array",
+        _forbid_full_read,
+    )
+
+    rebuilt_result, rebuilt_sweep_payload = load_raw_simulation_bundle(payload)
+
+    assert rebuilt_sweep_payload is not None
+    rebuilt_run = simulation_sweep_run_from_payload(rebuilt_sweep_payload)
+    assert rebuilt_run.point_count == len(sweep_values)
+    assert rebuilt_run.axes[0].target_value_ref == "L_q"
+    assert rebuilt_run.points[6].axis_values["L_q"] == pytest.approx(30.0)
+    assert rebuilt_result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx(
+        points[0].result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
+    )
+
+
 def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:
     trace_specs = build_post_processed_trace_specs(
         runtime_output=_sample_transformed_post_processed_sweep_run(),
