@@ -10,7 +10,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import product
-from typing import Any
+from typing import Any, Protocol
 
 from core.simulation.domain.circuit import (
     CircuitDefinition,
@@ -21,7 +21,24 @@ from core.simulation.domain.circuit import (
     SimulationConfig,
     SimulationResult,
 )
-from core.simulation.infrastructure.julia_adapter import JuliaSimulator
+
+
+class _JuliaSimulationAdapter(Protocol):
+    """Minimal protocol for the Julia-backed simulation adapter."""
+
+    def run_hbsolve(
+        self,
+        circuit: CircuitDefinition,
+        freq_range: FrequencyRange,
+        config: SimulationConfig,
+    ) -> SimulationResult: ...
+
+
+def _build_julia_simulator() -> _JuliaSimulationAdapter:
+    """Create the Julia-backed simulator only when execution is requested."""
+    from core.simulation.infrastructure.julia_adapter import JuliaSimulator
+
+    return JuliaSimulator()
 
 
 @dataclass(frozen=True)
@@ -168,7 +185,7 @@ def run_simulation(
     if config is None:
         config = SimulationConfig()
 
-    simulator = JuliaSimulator()
+    simulator = _build_julia_simulator()
     return simulator.run_hbsolve(circuit, freq_range, config)
 
 
@@ -376,7 +393,7 @@ def run_parameter_sweep(
     if plan.point_count < 1:
         raise ValueError("Sweep plan must include at least one point.")
 
-    simulator = JuliaSimulator()
+    simulator = _build_julia_simulator()
     point_results: list[SimulationSweepPointResult] = []
     for point in plan.points:
         swept_circuit = apply_simulation_sweep_overrides(

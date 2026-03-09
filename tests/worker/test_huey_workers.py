@@ -207,7 +207,7 @@ def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -
         assert failed_task.error_payload["error_code"] == "stale_task_timeout"
 
 
-def test_app_import_does_not_import_worker_lanes_or_juliacall_trace() -> None:
+def test_app_import_does_not_import_worker_or_julia_adapter_modules() -> None:
     env = {**os.environ, "PYTHON_JULIACALL_TRACE": "1"}
     result = subprocess.run(
         [
@@ -217,7 +217,9 @@ def test_app_import_does_not_import_worker_lanes_or_juliacall_trace() -> None:
                 "import sys; import app.main; "
                 "print('APP_IMPORT_OK'); "
                 "print('worker.simulation_huey' in sys.modules); "
-                "print('worker.characterization_huey' in sys.modules)"
+                "print('worker.characterization_huey' in sys.modules); "
+                "print('core.simulation.application.run_simulation' in sys.modules); "
+                "print('core.simulation.infrastructure.julia_adapter' in sys.modules)"
             ),
         ],
         cwd=_REPO_ROOT,
@@ -229,6 +231,6 @@ def test_app_import_does_not_import_worker_lanes_or_juliacall_trace() -> None:
 
     assert result.returncode == 0
     output_lines = result.stdout.strip().splitlines()
-    assert output_lines == ["APP_IMPORT_OK", "False", "False"]
+    assert output_lines == ["APP_IMPORT_OK", "False", "False", "True", "False"]
     combined_output = f"{result.stdout}\n{result.stderr}".lower()
     assert "juliacall" not in combined_output

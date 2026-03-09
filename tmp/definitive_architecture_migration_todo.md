@@ -3,7 +3,7 @@
 Status: `active`
 Owner: `Migration Agent (Codex)`
 Priority: `P0`
-Last Updated: `2026-03-09` (strengthened pass: `2026-03-09T13:26`, second pass: `2026-03-09T13:40`, decision freeze: `2026-03-09T13:52`, extended freeze: `2026-03-09T14:08`, api inventory freeze: `2026-03-09T14:24`, worker topology freeze: `2026-03-09T14:31`, ws2 execution ownership: `2026-03-09T15:04`, ws2 persistence batch 1 complete: `2026-03-09T15:28`, ws2 bootstrap-reconcile foundations: `2026-03-09T15:41`, ws2 dual-write lifecycle wired: `2026-03-09T15:55`, ws2 checkpoint commit prep: `2026-03-09T16:20`, ws3 execution ownership: `2026-03-09T18:05`, ws3 worker lanes verified: `2026-03-09T19:02`)
+Last Updated: `2026-03-09` (strengthened pass: `2026-03-09T13:26`, second pass: `2026-03-09T13:40`, decision freeze: `2026-03-09T13:52`, extended freeze: `2026-03-09T14:08`, api inventory freeze: `2026-03-09T14:24`, worker topology freeze: `2026-03-09T14:31`, ws2 execution ownership: `2026-03-09T15:04`, ws2 persistence batch 1 complete: `2026-03-09T15:28`, ws2 bootstrap-reconcile foundations: `2026-03-09T15:41`, ws2 dual-write lifecycle wired: `2026-03-09T15:55`, ws2 checkpoint commit prep: `2026-03-09T16:20`, ws3 execution ownership: `2026-03-09T18:05`, ws3 worker lanes verified: `2026-03-09T19:02`, ws3 import-boundary fixup: `2026-03-09T19:27`)
 Primary SoT:
 - `/Users/arfiligol/Downloads/Definitive Architecture`
 - `/Users/arfiligol/Github/superconducting-circuits-tutorial/docs/explanation/architecture/trace-platform-implementation-plan.md`
@@ -566,7 +566,7 @@ Acceptance:
 
 ### WS3. Huey Worker Integration
 
-Status: `not started`
+Status: `completed`
 Depends on:
 - `DA-WS2-01`
 - `DA-WS2-02`
@@ -667,12 +667,15 @@ Progress:
 - Python exception 會被 worker runtime 捕捉並寫回 `TaskRecord.error_payload`
 - crash task 會先把 task 標成 `running` 再 `os._exit(86)`；stale task 之後可由 WS2 reconcile path 偵測並標成 `failed`
 - `app.main` 未新增任何 worker import；worker lane import 仍留在 `src/worker/**`
+- `core.simulation.application.run_simulation` 已改成 execution-time lazy import `JuliaSimulator`；`import app.main` 不再載入 `core.simulation.infrastructure.julia_adapter`
 
 Verification:
 - `uv sync`
 - `uv run pytest tests/worker/test_huey_workers.py tests/core/shared/persistence/test_task_auth_audit_repository.py tests/core/shared/persistence/test_result_bundle_repository.py tests/core/shared/persistence/test_reconcile.py tests/core/shared/persistence/test_repository_contracts.py tests/core/shared/persistence/test_database_bootstrap.py`
 - `uv run ruff check src/worker tests/worker src/core/shared/persistence`
 - `uv run basedpyright src/worker src/core/shared/persistence`
+- `uv run python - <<'PY' ... import app.main ... PY`
+- `PYTHON_JULIACALL_TRACE=1 uv run python -c "import app.main; print('APP_IMPORT_OK')"`
 - shell smoke:
   - simulation lane consumer
   - characterization lane consumer
@@ -688,6 +691,7 @@ Evidence:
 - `src/worker/simulation_tasks.py`
 - `src/worker/characterization_tasks.py`
 - `tests/worker/test_huey_workers.py`
+- `src/core/simulation/application/run_simulation.py`
 
 ---
 
