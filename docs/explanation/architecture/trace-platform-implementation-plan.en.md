@@ -120,6 +120,13 @@ Minimum completion standard:
 - `Run Post Processing` selects a persisted raw input batch instead of `latest_simulation_result`
 - after UI disconnect/reconnect, persisted run state remains queryable and authoritative
 
+Immediate TODO for this workstream:
+
+- when the design selection changes, `/simulation` should resolve persisted raw and persisted postprocess batches first
+- `Simulation Results` and `Post Processing Results` should prefer persisted batch authority over page-local runtime state
+- rerunning post-processing from saved raw or saved postprocessed designs must no longer depend on page-local `latest_*`
+- live session state may remain as a short-lived preview bridge, but it must not remain the only workflow authority
+
 ### Workstream B: Persisted Orchestration for Analysis Flows (Planned)
 
 Goal:

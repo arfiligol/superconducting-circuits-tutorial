@@ -43,6 +43,8 @@ from app.pages.simulation import (
     _normalize_termination_mode,
     _normalize_termination_selected_ports,
     _normalized_simulation_setup_snapshot,
+    _resolve_latest_persisted_post_processing_snapshot,
+    _resolve_persisted_post_processing_input_snapshot,
     _resolved_sweep_point_count,
     _result_from_trace_store_bundle,
     _result_metric_options_for_family,
@@ -53,8 +55,10 @@ from app.pages.simulation import (
     _save_saved_setups_for_schema,
     _save_selected_post_process_setup_id,
     _should_log_sweep_point_progress,
+    _source_simulation_bundle_id_from_snapshot,
     _sweep_payload_port_options,
     _sweep_progress_log_step,
+    _trace_batch_payload_from_snapshot,
     _trace_store_bundle_from_simulation_result,
     _TraceRecordAuthority,
     _TraceStoreAxis,
@@ -1266,6 +1270,167 @@ def test_load_cached_simulation_result_defers_preview_for_trace_batch_sweep(
     )
 
     assert resolved == (7, 42, None, dict(bundle.result_payload))
+
+
+def test_source_simulation_bundle_id_prefers_parent_batch_from_trace_batch_snapshot() -> None:
+    snapshot = {
+        "id": 9,
+        "dataset_id": 12,
+        "bundle_type": "simulation_postprocess",
+        "role": "derived_from_simulation",
+        "status": "completed",
+        "schema_source_hash": None,
+        "simulation_setup_hash": None,
+        "source_meta": {"source_simulation_bundle_id": 41},
+        "config_snapshot": {"source_simulation_bundle_id": 42},
+        "result_payload": {
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "trace_batch_record": {
+                "parent_batch_id": 43,
+                "provenance_payload": {
+                    "canonical_authority": {"source_simulation_bundle_id": 44}
+                },
+            },
+        },
+    }
+
+    assert _trace_batch_payload_from_snapshot(snapshot) is snapshot["result_payload"]
+    assert _source_simulation_bundle_id_from_snapshot(snapshot) == 43
+
+
+def test_resolve_persisted_post_processing_input_snapshot_follows_postprocess_lineage() -> None:
+    raw_snapshot = {
+        "id": 3,
+        "dataset_id": 1,
+        "bundle_type": "circuit_simulation",
+        "role": "cache",
+        "status": "completed",
+        "schema_source_hash": None,
+        "simulation_setup_hash": None,
+        "source_meta": {},
+        "config_snapshot": {},
+        "result_payload": {
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "trace_batch_record": {
+                "source_kind": "circuit_simulation",
+                "stage_kind": "raw",
+            },
+        },
+    }
+    post_snapshot = {
+        "id": 4,
+        "dataset_id": 2,
+        "bundle_type": "simulation_postprocess",
+        "role": "derived_from_simulation",
+        "status": "completed",
+        "schema_source_hash": None,
+        "simulation_setup_hash": None,
+        "source_meta": {"source_simulation_bundle_id": 3},
+        "config_snapshot": {"source_simulation_bundle_id": 3},
+        "result_payload": {
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "trace_batch_record": {
+                "source_kind": "circuit_simulation",
+                "stage_kind": "postprocess",
+                "parent_batch_id": 3,
+            },
+        },
+    }
+
+    class _Batch:
+        def __init__(self, batch_id: int) -> None:
+            self.id = batch_id
+
+    class _ResultBundles:
+        def list_provenance_by_design(self, design_id: int) -> list[object]:
+            if design_id == 2:
+                return [_Batch(4)]
+            return []
+
+        def get_snapshot(self, batch_id: int) -> dict[str, object] | None:
+            if batch_id == 3:
+                return raw_snapshot
+            if batch_id == 4:
+                return post_snapshot
+            return None
+
+    class _FakeUow:
+        result_bundles = _ResultBundles()
+
+    resolved = _resolve_persisted_post_processing_input_snapshot(
+        _FakeUow(),
+        design_ids=(2,),
+    )
+
+    assert resolved == raw_snapshot
+
+
+def test_resolve_latest_persisted_post_processing_snapshot_prefers_completed_postprocess_batch(
+) -> None:
+    raw_snapshot = {
+        "id": 3,
+        "dataset_id": 1,
+        "bundle_type": "circuit_simulation",
+        "role": "cache",
+        "status": "completed",
+        "schema_source_hash": None,
+        "simulation_setup_hash": None,
+        "source_meta": {},
+        "config_snapshot": {},
+        "result_payload": {
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "trace_batch_record": {
+                "source_kind": "circuit_simulation",
+                "stage_kind": "raw",
+            },
+        },
+    }
+    post_snapshot = {
+        "id": 4,
+        "dataset_id": 2,
+        "bundle_type": "simulation_postprocess",
+        "role": "derived_from_simulation",
+        "status": "completed",
+        "schema_source_hash": None,
+        "simulation_setup_hash": None,
+        "source_meta": {"source_simulation_bundle_id": 3},
+        "config_snapshot": {"source_simulation_bundle_id": 3},
+        "result_payload": {
+            "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
+            "trace_batch_record": {
+                "source_kind": "circuit_simulation",
+                "stage_kind": "postprocess",
+                "parent_batch_id": 3,
+            },
+        },
+    }
+
+    class _Batch:
+        def __init__(self, batch_id: int) -> None:
+            self.id = batch_id
+
+    class _ResultBundles:
+        def list_provenance_by_design(self, design_id: int) -> list[object]:
+            if design_id == 2:
+                return [_Batch(3), _Batch(4)]
+            return []
+
+        def get_snapshot(self, batch_id: int) -> dict[str, object] | None:
+            if batch_id == 3:
+                return raw_snapshot
+            if batch_id == 4:
+                return post_snapshot
+            return None
+
+    class _FakeUow:
+        result_bundles = _ResultBundles()
+
+    resolved = _resolve_latest_persisted_post_processing_snapshot(
+        _FakeUow(),
+        design_ids=(2,),
+    )
+
+    assert resolved == post_snapshot
 
 
 def test_build_post_processed_trace_specs_preserve_nd_sweep_axes() -> None:

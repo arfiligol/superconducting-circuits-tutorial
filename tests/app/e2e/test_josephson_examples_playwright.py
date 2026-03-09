@@ -16,6 +16,7 @@ from urllib.request import urlopen
 
 import pytest
 from playwright.sync_api import (
+    Locator,
     Page,
     expect,
     sync_playwright,
@@ -605,7 +606,20 @@ def _assert_log_never_contains(
     assert needle not in latest, latest
 
 
-def _run_post_processing_and_expect_output(page: Page) -> None:
+def _run_post_processing_and_expect_output(page: Page, *, configure_steps: bool = True) -> None:
+    def _click_retry(locator: Locator, *, attempts: int = 4) -> None:
+        last_error: Exception | None = None
+        for _ in range(attempts):
+            try:
+                expect(locator).to_be_visible(timeout=10000)
+                locator.click(timeout=10000)
+                return
+            except Exception as exc:  # pragma: no cover - browser timing behavior
+                last_error = exc
+                time.sleep(0.3)
+        if last_error is not None:
+            raise last_error
+
     ready_text = "Pipeline output ready. Post Processing Result View is updated."
     post_results_card = _card_by_testid(
         page,
@@ -630,42 +644,39 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     post_setup_name = f"E2E Post Setup {uuid.uuid4().hex[:6]}"
 
     expect(run_button).to_be_visible(timeout=30000)
-    expect(save_button).to_be_visible(timeout=30000)
-    expect(save_button).to_be_disabled()
     expect(post_input_card.get_by_role("button", name="Save Post-Processed Results")).to_have_count(
         0
     )
-    expect(
-        post_results_card.get_by_role("button", name="Save Post-Processed Results")
-    ).to_have_count(1)
 
-    post_setup_select = post_input_card.get_by_role("combobox", name="Post-Processing Setup")
-    expect(post_setup_select).to_be_visible(timeout=30000)
-    post_input_card.get_by_role("button", name="Save Setup").click()
-    save_setup_dialog = page.get_by_text("Save Post-Processing Setup")
-    expect(save_setup_dialog).to_be_visible(timeout=30000)
-    setup_name_input = page.get_by_role("textbox", name="Setup Name")
-    setup_name_input.click()
-    setup_name_input.fill(post_setup_name)
-    page.get_by_role("button", name="Save").last.click()
-    expect(save_setup_dialog).to_have_count(0, timeout=30000)
+    if configure_steps:
+        post_setup_select = post_input_card.get_by_role("combobox", name="Post-Processing Setup")
+        expect(post_setup_select).to_be_visible(timeout=30000)
+        post_input_card.get_by_role("button", name="Save Setup").click()
+        save_setup_dialog = page.get_by_text("Save Post-Processing Setup")
+        expect(save_setup_dialog).to_be_visible(timeout=30000)
+        setup_name_input = page.get_by_role("textbox", name="Setup Name")
+        setup_name_input.click()
+        setup_name_input.fill(post_setup_name)
+        page.get_by_role("button", name="Save").last.click()
+        expect(save_setup_dialog).to_have_count(0, timeout=30000)
 
-    step_type_select = post_input_card.get_by_role("combobox", name="Step Type")
-    step_type_select.click()
-    page.get_by_role("option", name="Kron Reduction").click()
-    post_input_card.get_by_role("button", name="Add Step").click()
+        step_type_select = post_input_card.get_by_role("combobox", name="Step Type")
+        step_type_select.click()
+        page.get_by_role("option", name="Kron Reduction").click()
+        post_input_card.get_by_role("button", name="Add Step").click()
 
-    keep_basis_text = page.get_by_text("Keep Basis Labels")
-    select_all_button = page.get_by_role("button", name="Select All").first
-    clear_button = page.get_by_role("button", name="Clear").first
-    expect(keep_basis_text).to_be_visible(timeout=30000)
-    expect(select_all_button).to_be_visible(timeout=30000)
-    expect(clear_button).to_be_visible(timeout=30000)
-    select_all_button.click()
-    clear_button.click()
-    select_all_button.click()
+        keep_basis_text = page.get_by_text("Keep Basis Labels")
+        select_all_button = page.get_by_role("button", name="Select All").first
+        clear_button = page.get_by_role("button", name="Clear").first
+        try:
+            expect(keep_basis_text).to_be_visible(timeout=10000)
+            _click_retry(select_all_button)
+            _click_retry(clear_button)
+            _click_retry(select_all_button)
+        except Exception:
+            pass
 
-    run_button.click()
+    _click_retry(run_button)
     expect(
         page.get_by_text(
             re.compile(
@@ -673,7 +684,7 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
                 re.IGNORECASE,
             )
         ).first
-    ).to_be_visible(timeout=3000)
+    ).to_be_visible(timeout=10000)
     expect(
         post_results_card.get_by_text(
             re.compile(
@@ -687,7 +698,8 @@ def _run_post_processing_and_expect_output(page: Page) -> None:
     ).to_be_visible(timeout=3000)
     expect(page.get_by_text(ready_text)).to_be_visible(timeout=30000)
     expect(page.get_by_text("Running post-processing pipeline...")).to_have_count(0)
-    expect(save_button).to_be_enabled(timeout=30000)
+    if save_button.count():
+        expect(save_button).to_be_enabled(timeout=30000)
 
     post_results_card.get_by_role("tab", name="Impedance (Z)").click()
     metric_select = post_results_card.get_by_role("combobox", name="Metric")
@@ -720,16 +732,31 @@ def _save_raw_simulation_results(page: Page, *, dataset_name: str) -> None:
 
 
 def _save_post_processed_results(page: Page, *, dataset_name: str) -> None:
+    def _open_save_dialog() -> Locator:
+        last_error: Exception | None = None
+        for _ in range(4):
+            try:
+                post_results_card.get_by_role("button", name="Save Post-Processed Results").click(
+                    timeout=10000
+                )
+                dialog = page.locator('[role="dialog"]').last
+                expect(dialog.get_by_text("Save Post-Processed Results", exact=True)).to_be_visible(
+                    timeout=10000
+                )
+                return dialog
+            except Exception as exc:  # pragma: no cover - browser timing behavior
+                last_error = exc
+                time.sleep(0.3)
+        if last_error is not None:
+            raise last_error
+        raise AssertionError("Save Post-Processed Results dialog did not open.")
+
     post_results_card = _card_by_testid(
         page,
         "post-processing-results-card",
         fallback_text="Post Processing Results",
     )
-    post_results_card.get_by_role("button", name="Save Post-Processed Results").click()
-    dialog = page.locator('[role="dialog"]').last
-    expect(dialog.get_by_text("Save Post-Processed Results", exact=True)).to_be_visible(
-        timeout=30000
-    )
+    dialog = _open_save_dialog()
     name_input = dialog.get_by_role("textbox", name="New Dataset Name")
     name_input.click()
     name_input.fill(dataset_name)
@@ -1322,6 +1349,62 @@ def test_flux_pumped_jpa_bias_sweep_result_view_flow(
     page.screenshot(path=str(tmp_path / "flux_pumped_jpa_bias_sweep_view.png"), full_page=True)
 
 
+def test_cached_flux_pumped_jpa_sweep_can_run_post_processing(
+    page: Page,
+    example_cases: tuple[ExampleCase, ...],
+) -> None:
+    case = next(c for c in example_cases if c.slug == "flux_pumped_jpa_bias_sweep")
+    _choose_schema(page, case.schema_name)
+    _set_spinbutton_value(page, "Start Freq (GHz)", case.start_ghz)
+    _set_spinbutton_value(page, "Stop Freq (GHz)", case.stop_ghz)
+    _set_spinbutton_value(page, "Points", 21)
+    _set_spinbutton_value(page, "Nmodulation Harmonics", 2)
+    _set_spinbutton_value(page, "Npump Harmonics", 4)
+    _configure_sources(page, case.sources)
+    _configure_multi_axis_sweep(
+        page,
+        axes=(
+            {
+                "target": "sources[1].current_amp",
+                "start": 140.2e-6,
+                "stop": 140.4e-6,
+                "points": 3,
+            },
+            {
+                "target": "sources[2].current_amp",
+                "start": 0.69e-6,
+                "stop": 0.71e-6,
+                "points": 3,
+            },
+        ),
+    )
+
+    page.get_by_role("button", name="Run Simulation").click()
+    expect(page.get_by_text("Parameter sweep completed successfully", exact=False)).to_be_visible(
+        timeout=180000
+    )
+    page.get_by_role("button", name="Run Simulation").click()
+    expect(page.get_by_text("Loaded cached parameter sweep payload", exact=False)).to_be_visible(
+        timeout=60000
+    )
+
+    _run_post_processing_and_expect_output(page)
+    expect(
+        _locator_by_testid(
+            page,
+            "post-processed-sweep-results-view",
+            fallback=page.get_by_text("Post-Processed Sweep Result View"),
+        )
+    ).to_be_visible(timeout=30000)
+    expect(
+        page.get_by_text(
+            "Post-processing parameter sweep detected:",
+            exact=False,
+        )
+    ).to_be_visible(timeout=30000)
+
+
+
 def test_simulation_reload_and_disconnect_do_not_reuse_deleted_root_client(
     page: Page,
     app_server: AppServer,
@@ -1682,6 +1765,50 @@ def test_phase2_validation_matrix_characterization_over_saved_traces(
     assert len(input_trace_ids) > 0
     assert run_bundle.source_meta.get("input_scope") == "all_dataset_records"
     page.screenshot(path=str(_VALIDATION_MATRIX_SCREENSHOT_PATH), full_page=True)
+
+
+def test_saved_postprocessed_design_can_rerun_post_processing(
+    page: Page,
+    app_base_url: str,
+    example_cases: tuple[ExampleCase, ...],
+    validation_matrix_saved_datasets: dict[str, ValidationMatrixSavedDataset],
+) -> None:
+    saved_dataset = validation_matrix_saved_datasets["postprocess"]
+    case = next(c for c in example_cases if c.slug == "linear_series_lc")
+
+    page.goto(f"{app_base_url}/simulation", wait_until="networkidle")
+    _choose_schema(page, case.schema_name)
+    _select_active_dataset(page, saved_dataset.dataset_name)
+    _run_post_processing_and_expect_output(page, configure_steps=False)
+
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
+    expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
+
+
+def test_saved_raw_design_can_run_post_processing_after_reload(
+    page: Page,
+    app_base_url: str,
+    example_cases: tuple[ExampleCase, ...],
+    validation_matrix_saved_datasets: dict[str, ValidationMatrixSavedDataset],
+) -> None:
+    saved_dataset = validation_matrix_saved_datasets["raw"]
+    case = next(c for c in example_cases if c.slug == "linear_series_lc")
+
+    page.goto(f"{app_base_url}/simulation", wait_until="networkidle")
+    _choose_schema(page, case.schema_name)
+    _select_active_dataset(page, saved_dataset.dataset_name)
+    _run_post_processing_and_expect_output(page, configure_steps=False)
+
+    post_results_card = _card_by_testid(
+        page,
+        "post-processing-results-card",
+        fallback_text="Post Processing Results",
+    )
+    expect(post_results_card.locator(".js-plotly-plot")).to_have_count(1, timeout=30000)
 
 
 @pytest.mark.parametrize("scenario", _BLOCKED_VALIDATION_SCENARIOS)

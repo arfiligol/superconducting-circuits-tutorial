@@ -121,6 +121,13 @@ updated_by: codex
 - `Run Post Processing` 以 persisted input batch 為輸入，而不是 `latest_simulation_result`
 - live session 斷線後，run 仍可由 persisted state 繼續查詢 / 驗證
 
+本 workstream 目前的 immediate TODO 是：
+
+- `/simulation` 在 design selection 改變時，優先解析 persisted raw batch / persisted postprocess batch
+- `Simulation Results` / `Post Processing Results` 優先從 persisted batch authority 讀取
+- `Run Post Processing` 對 saved raw batch 與 saved postprocess batch 的 rerun，不再依賴 page-local `latest_*` state
+- live session state 只保留為短期 preview / just-finished run bridge，不再是唯一 workflow authority
+
 ### Workstream B: Persisted Orchestration for Analysis Flows (Planned)
 
 目標：

@@ -246,6 +246,13 @@ So:
 - `TraceBatchRecord` does not only answer “what traces came out”
 - it also answers “what trace-producing run is currently in progress”
 
+For UI surfaces such as `/simulation` and `/post-processing`, this also means:
+
+- active design selection should resolve persisted input/output batches first
+- result views should prefer persisted batches + TraceStore as the authority
+- live-session `latest_*` state may exist, but only as a short-lived preview / just-finished bridge
+- persisted workflows must not lose authority because the UI refreshed, reconnected, or navigated away
+
 ### Analysis flows
 
 For `Characterization`:

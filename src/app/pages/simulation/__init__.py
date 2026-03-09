@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from itertools import product
@@ -1406,6 +1406,173 @@ def _coerce_parameter_sweep_payload(
     if str(payload.get("run_kind", "")).strip() != "parameter_sweep":
         return None
     return json.loads(json.dumps(payload))
+
+
+def _normalize_selected_design_ids(selection: object) -> tuple[int, ...]:
+    """Normalize persisted UI selection payload into one stable design-id tuple."""
+    if selection is None:
+        return ()
+    if isinstance(selection, (str, int)):
+        selection_iterable: list[object] = [selection]
+    elif isinstance(selection, (list, tuple, set)):
+        selection_iterable = list(selection)
+    else:
+        return ()
+    normalized: list[int] = []
+    for value in selection_iterable:
+        try:
+            design_id = int(value)
+        except (TypeError, ValueError):
+            continue
+        if design_id not in normalized:
+            normalized.append(design_id)
+    return tuple(normalized)
+
+
+def _trace_batch_payload_from_snapshot(
+    snapshot: ResultBundleSnapshot | None,
+) -> Mapping[str, Any] | None:
+    """Return one canonical trace-batch payload from a detached snapshot."""
+    if not isinstance(snapshot, Mapping):
+        return None
+    payload = snapshot.get("result_payload")
+    if isinstance(payload, Mapping) and is_trace_batch_bundle_payload(payload):
+        return payload
+    return None
+
+
+def _resolved_batch_source_stage_from_snapshot(
+    snapshot: ResultBundleSnapshot | None,
+) -> tuple[str, str]:
+    """Resolve one canonical source/stage tuple across legacy and trace-batch snapshots."""
+    payload = _trace_batch_payload_from_snapshot(snapshot)
+    if isinstance(payload, Mapping):
+        trace_batch_record = payload.get("trace_batch_record", {})
+        if isinstance(trace_batch_record, Mapping):
+            return (
+                str(trace_batch_record.get("source_kind", "")).strip(),
+                str(trace_batch_record.get("stage_kind", "")).strip(),
+            )
+    if not isinstance(snapshot, Mapping):
+        return ("", "")
+    source_meta = snapshot.get("source_meta")
+    if not isinstance(source_meta, Mapping):
+        return ("", "")
+    return (
+        str(source_meta.get("source_kind", "")).strip(),
+        str(source_meta.get("stage_kind", "")).strip(),
+    )
+
+
+def _source_simulation_bundle_id_from_snapshot(
+    snapshot: ResultBundleSnapshot | None,
+) -> int | None:
+    """Extract one raw simulation parent bundle id from persisted provenance."""
+    if not isinstance(snapshot, Mapping):
+        return None
+    payload = _trace_batch_payload_from_snapshot(snapshot)
+    if isinstance(payload, Mapping):
+        trace_batch_record = payload.get("trace_batch_record", {})
+        if isinstance(trace_batch_record, Mapping):
+            parent_batch_id = trace_batch_record.get("parent_batch_id")
+            if parent_batch_id is not None:
+                try:
+                    return int(parent_batch_id)
+                except (TypeError, ValueError):
+                    pass
+            provenance_payload = trace_batch_record.get("provenance_payload", {})
+            if isinstance(provenance_payload, Mapping):
+                canonical_authority = provenance_payload.get("canonical_authority", {})
+                if isinstance(canonical_authority, Mapping):
+                    source_batch_id = canonical_authority.get("source_simulation_bundle_id")
+                    if source_batch_id is not None:
+                        try:
+                            return int(source_batch_id)
+                        except (TypeError, ValueError):
+                            pass
+    for container_key in ("config_snapshot", "source_meta"):
+        container = snapshot.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        source_batch_id = container.get("source_simulation_bundle_id")
+        if source_batch_id is None:
+            continue
+        try:
+            return int(source_batch_id)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _is_completed_raw_simulation_snapshot(snapshot: ResultBundleSnapshot | None) -> bool:
+    """Return whether one detached snapshot is a completed raw circuit-simulation batch."""
+    if not isinstance(snapshot, Mapping):
+        return False
+    if str(snapshot.get("status", "")).strip() != "completed":
+        return False
+    source_kind, stage_kind = _resolved_batch_source_stage_from_snapshot(snapshot)
+    return source_kind == "circuit_simulation" and stage_kind == "raw"
+
+
+def _is_completed_postprocess_snapshot(snapshot: ResultBundleSnapshot | None) -> bool:
+    """Return whether one detached snapshot is a completed post-processing batch."""
+    if not isinstance(snapshot, Mapping):
+        return False
+    if str(snapshot.get("status", "")).strip() != "completed":
+        return False
+    source_kind, stage_kind = _resolved_batch_source_stage_from_snapshot(snapshot)
+    return source_kind == "circuit_simulation" and stage_kind == "postprocess"
+
+
+def _resolve_persisted_post_processing_input_snapshot(
+    uow: SqliteUnitOfWork,
+    *,
+    design_ids: Sequence[int],
+) -> ResultBundleSnapshot | None:
+    """Resolve the best persisted raw simulation batch for post-processing input."""
+    candidate_source_ids: list[int] = []
+    for design_id in design_ids:
+        design_batches = sorted(
+            uow.result_bundles.list_provenance_by_design(int(design_id)),
+            key=lambda batch: int(batch.id or 0),
+            reverse=True,
+        )
+        for batch in design_batches:
+            if batch.id is None:
+                continue
+            snapshot = uow.result_bundles.get_snapshot(int(batch.id))
+            if _is_completed_raw_simulation_snapshot(snapshot):
+                return snapshot
+            source_batch_id = _source_simulation_bundle_id_from_snapshot(snapshot)
+            if source_batch_id is not None and source_batch_id not in candidate_source_ids:
+                candidate_source_ids.append(source_batch_id)
+
+    for batch_id in candidate_source_ids:
+        snapshot = uow.result_bundles.get_snapshot(int(batch_id))
+        if _is_completed_raw_simulation_snapshot(snapshot):
+            return snapshot
+    return None
+
+
+def _resolve_latest_persisted_post_processing_snapshot(
+    uow: SqliteUnitOfWork,
+    *,
+    design_ids: Sequence[int],
+) -> ResultBundleSnapshot | None:
+    """Resolve the latest completed persisted post-processing batch for one selected design."""
+    for design_id in design_ids:
+        design_batches = sorted(
+            uow.result_bundles.list_provenance_by_design(int(design_id)),
+            key=lambda batch: int(batch.id or 0),
+            reverse=True,
+        )
+        for batch in design_batches:
+            if batch.id is None:
+                continue
+            snapshot = uow.result_bundles.get_snapshot(int(batch.id))
+            if _is_completed_postprocess_snapshot(snapshot):
+                return snapshot
+    return None
 
 
 def _resolved_sweep_point_count(payload: Mapping[str, Any] | None) -> int:
@@ -3108,7 +3275,9 @@ def _render_post_processing_panel(
     ptc_result: SimulationResult | None = None,
     initial_input_y_source: str = "raw_y",
     on_input_y_source_change: Callable[[str], None] | None = None,
-    resolve_input_bundle: Callable[[str, float], tuple[SimulationResult, dict[str, Any] | None]]
+    resolve_input_bundle: Callable[
+        [str, float], tuple[SimulationResult, dict[str, Any] | None, int | None]
+    ]
     | None = None,
     resolve_input_sweep_point: Callable[[str, tuple[int, ...], float], SimulationResult | None]
     | None = None,
@@ -3118,6 +3287,7 @@ def _render_post_processing_panel(
     append_status: Callable[[str, str], None] | None = None,
     on_processing_start: Callable[[], None] | None = None,
     on_result: Callable[[PostProcessingRunResult | None], None] | None = None,
+    on_source_bundle_resolved: Callable[[int | None], None] | None = None,
 ) -> None:
     """Render one dynamic card-list style Port-Level post-processing pipeline."""
 
@@ -3129,22 +3299,39 @@ def _render_post_processing_panel(
         if on_result is not None:
             on_result(run_result)
 
-    input_y_source_options = {"raw_y": _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["raw_y"]}
-    if isinstance(ptc_result, SimulationResult):
-        input_y_source_options["ptc_y"] = _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["ptc_y"]
-    resolved_input_y_source = _resolve_option_key(input_y_source_options, initial_input_y_source)
-
     def _active_input_result(source: str) -> SimulationResult:
         if source == "ptc_y" and isinstance(ptc_result, SimulationResult):
             return ptc_result
         return raw_result
 
+    def _preview_input_result(
+        source: str,
+        reference_impedance_ohm: float,
+    ) -> SimulationResult | None:
+        if resolve_input_bundle is not None:
+            try:
+                preview_result, _preview_sweep_payload, _preview_bundle_id = resolve_input_bundle(
+                    source,
+                    reference_impedance_ohm,
+                )
+            except ValueError:
+                preview_result = None
+            if isinstance(preview_result, SimulationResult):
+                return preview_result
+        fallback = _active_input_result(source)
+        return fallback if isinstance(fallback, SimulationResult) else None
+
+    input_y_source_options = {"raw_y": _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["raw_y"]}
+    if isinstance(_preview_input_result("ptc_y", 50.0), SimulationResult):
+        input_y_source_options["ptc_y"] = _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS["ptc_y"]
+    resolved_input_y_source = _resolve_option_key(input_y_source_options, initial_input_y_source)
+
     def _active_input_bundle(
         source: str, reference_impedance_ohm: float
-    ) -> tuple[SimulationResult, dict[str, Any] | None]:
+    ) -> tuple[SimulationResult, dict[str, Any] | None, int | None]:
         if resolve_input_bundle is not None:
             return resolve_input_bundle(source, reference_impedance_ohm)
-        return (_active_input_result(source), None)
+        return (_active_input_result(source), None, None)
 
     def _active_input_sweep_point(
         source: str,
@@ -3155,7 +3342,8 @@ def _render_post_processing_panel(
             return resolve_input_sweep_point(source, axis_indices, reference_impedance_ohm)
         return None
 
-    port_options = _result_port_options(raw_result)
+    preview_raw_result = _preview_input_result("raw_y", 50.0) or raw_result
+    port_options = _result_port_options(preview_raw_result)
     default_ports = list(port_options)
     default_port_a = default_ports[0] if default_ports else None
     default_port_b = default_ports[1] if len(default_ports) > 1 else default_port_a
@@ -3246,12 +3434,14 @@ def _render_post_processing_panel(
                     ui.select(
                         label="Mode",
                         options=_post_process_mode_options(
-                            _active_input_result(
+                            _preview_input_result(
                                 _resolve_option_key(
                                     input_y_source_options,
                                     input_y_source_select.value,
-                                )
-                            ),
+                                ),
+                                50.0,
+                            )
+                            or preview_raw_result,
                             "base",
                         ),
                     )
@@ -3768,11 +3958,17 @@ def _render_post_processing_panel(
                             ).classes("text-xs text-muted")
 
     def refresh_mode_selector() -> None:
-        options = _post_process_mode_options(
-            _active_input_result(
-                _resolve_option_key(input_y_source_options, input_y_source_select.value)
-            ),
-            str(mode_filter_select.value or "base"),
+        preview_result = _preview_input_result(
+            _resolve_option_key(input_y_source_options, input_y_source_select.value),
+            float(z0_input.value or 50.0),
+        )
+        options = (
+            _post_process_mode_options(
+                preview_result,
+                str(mode_filter_select.value or "base"),
+            )
+            if isinstance(preview_result, SimulationResult)
+            else {}
         )
         mode_select.options = options
         if not options:
@@ -3812,11 +4008,23 @@ def _render_post_processing_panel(
         try:
             input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
             input_y_source_select.value = input_source
-            active_result, active_sweep_payload = _active_input_bundle(
+            active_result, active_sweep_payload, source_simulation_bundle_id = _active_input_bundle(
                 input_source,
                 float(z0_input.value or 50.0),
             )
+            if on_source_bundle_resolved is not None:
+                on_source_bundle_resolved(source_simulation_bundle_id)
             reference_impedance_ohm = float(z0_input.value or 50.0)
+            resolved_run_kind = "single_result"
+            if isinstance(_coerce_parameter_sweep_payload(active_sweep_payload), Mapping):
+                resolved_run_kind = "parameter_sweep"
+            resolved_mode = str(mode_select.value or "") or "auto"
+            log_info(
+                "Starting Post Processing: "
+                f"input={input_source}, run_kind={resolved_run_kind}, "
+                f"mode_filter={mode_filter_select.value or 'base'!s}, "
+                f"mode={resolved_mode}."
+            )
             request = PostProcessingRunRequest(
                 result=active_result,
                 sweep_payload=active_sweep_payload,
@@ -3872,6 +4080,10 @@ def _render_post_processing_panel(
                 axis_ranges = [range(len(axis.values)) for axis in sweep_source.axes]
                 total_points = int(sweep_source.point_count)
                 axis_points = product(*axis_ranges) if axis_ranges else (tuple() for _ in range(1))
+                log_info(
+                    "Post-processing parameter sweep detected: "
+                    f"{total_points} point(s) will persist incrementally to TraceStore."
+                )
                 writer = IncrementalPostProcessedSweepWriter(
                     design_id=int(schema_id or 0),
                     design_name=str(schema_name or f"design-{schema_id or 0}"),
@@ -3884,6 +4096,9 @@ def _render_post_processing_panel(
                 try:
                     for point_number, axis_indices_tuple in enumerate(axis_points, start=1):
                         axis_indices = tuple(int(index) for index in axis_indices_tuple)
+                        log_info(
+                            f"Post-processing sweep point {point_number}/{total_points} started."
+                        )
                         point_result = _active_input_sweep_point(
                             input_source,
                             axis_indices,
@@ -6667,22 +6882,26 @@ def _render_simulation_environment():
                 "positive": "text-positive",
             }
 
-            status_container.clear()
-            with status_container:
-                if not runtime_state.status_history:
-                    ui.label("No logs yet. Run a simulation to see process messages.").classes(
-                        "text-sm text-muted"
-                    )
-                    return
+            try:
+                status_container.clear()
+                with status_container:
+                    if not runtime_state.status_history:
+                        ui.label("No logs yet. Run a simulation to see process messages.").classes(
+                            "text-sm text-muted"
+                        )
+                        return
 
-                for item in runtime_state.status_history:
-                    with ui.row().classes("w-full items-start gap-2"):
-                        ui.icon(icon_map.get(item["level"], "info"), size="xs").classes(
-                            color_map.get(item["level"], "text-primary mt-1")
-                        )
-                        ui.label(f"[{item['time']}] {item['message']}").classes(
-                            "text-sm text-fg whitespace-pre-wrap break-all"
-                        )
+                    for item in runtime_state.status_history:
+                        with ui.row().classes("w-full items-start gap-2"):
+                            ui.icon(icon_map.get(item["level"], "info"), size="xs").classes(
+                                color_map.get(item["level"], "text-primary mt-1")
+                            )
+                            ui.label(f"[{item['time']}] {item['message']}").classes(
+                                "text-sm text-fg whitespace-pre-wrap break-all"
+                            )
+            except RuntimeError:
+                # Ignore stale status rerenders after the owning client/container has been deleted.
+                return
 
         def _reset_result_view_state(
             view_state: dict[str, Any],
@@ -6735,7 +6954,145 @@ def _render_simulation_environment():
                 f"enabled, mode={mode}, ports={selected_ports or []}, values={'; '.join(details)}."
             )
 
+        persisted_post_process_input_cache: dict[str, Any] = {
+            "selection": None,
+            "bundle_id": None,
+            "result": None,
+            "sweep_payload": None,
+        }
+        persisted_post_process_output_cache: dict[str, Any] = {
+            "selection": None,
+            "bundle_id": None,
+            "runtime_output": None,
+            "flow_spec": None,
+            "source_bundle_id": None,
+        }
+        resolved_post_process_source_bundle_id_ref = {
+            "value": runtime_state.latest_source_simulation_bundle_id
+        }
+
+        def _selected_design_ids() -> tuple[int, ...]:
+            return _normalize_selected_design_ids(app.storage.user.get("selected_datasets", []))
+
+        def _persisted_post_processing_input_bundle() -> (
+            tuple[SimulationResult | None, dict[str, Any] | None, int | None]
+        ):
+            selected_design_ids = _selected_design_ids()
+            if (
+                persisted_post_process_input_cache["selection"] == selected_design_ids
+                and persisted_post_process_input_cache["result"] is not None
+            ):
+                return (
+                    persisted_post_process_input_cache["result"],
+                    persisted_post_process_input_cache["sweep_payload"],
+                    persisted_post_process_input_cache["bundle_id"],
+                )
+            if not selected_design_ids:
+                persisted_post_process_input_cache.update(
+                    {
+                        "selection": selected_design_ids,
+                        "bundle_id": None,
+                        "result": None,
+                        "sweep_payload": None,
+                    }
+                )
+                return (None, None, None)
+            with get_unit_of_work() as uow:
+                snapshot = _resolve_persisted_post_processing_input_snapshot(
+                    uow,
+                    design_ids=selected_design_ids,
+                )
+            if snapshot is None:
+                persisted_post_process_input_cache.update(
+                    {
+                        "selection": selected_design_ids,
+                        "bundle_id": None,
+                        "result": None,
+                        "sweep_payload": None,
+                    }
+                )
+                return (None, None, None)
+            result, sweep_payload = _decode_simulation_result_payload(snapshot["result_payload"])
+            persisted_post_process_input_cache.update(
+                {
+                    "selection": selected_design_ids,
+                    "bundle_id": int(snapshot["id"]),
+                    "result": result,
+                    "sweep_payload": sweep_payload,
+                }
+            )
+            return (result, sweep_payload, int(snapshot["id"]))
+
+        def _persisted_post_processing_output_bundle() -> (
+            tuple[Mapping[str, Any] | None, dict[str, Any] | None, int | None, int | None]
+        ):
+            selected_design_ids = _selected_design_ids()
+            if (
+                persisted_post_process_output_cache["selection"] == selected_design_ids
+                and isinstance(persisted_post_process_output_cache["runtime_output"], Mapping)
+            ):
+                return (
+                    persisted_post_process_output_cache["runtime_output"],
+                    persisted_post_process_output_cache["flow_spec"],
+                    persisted_post_process_output_cache["bundle_id"],
+                    persisted_post_process_output_cache["source_bundle_id"],
+                )
+            if not selected_design_ids:
+                persisted_post_process_output_cache.update(
+                    {
+                        "selection": selected_design_ids,
+                        "bundle_id": None,
+                        "runtime_output": None,
+                        "flow_spec": None,
+                        "source_bundle_id": None,
+                    }
+                )
+                return (None, None, None, None)
+            with get_unit_of_work() as uow:
+                snapshot = _resolve_latest_persisted_post_processing_snapshot(
+                    uow,
+                    design_ids=selected_design_ids,
+                )
+            payload = _trace_batch_payload_from_snapshot(snapshot)
+            if payload is None:
+                persisted_post_process_output_cache.update(
+                    {
+                        "selection": selected_design_ids,
+                        "bundle_id": None,
+                        "runtime_output": None,
+                        "flow_spec": None,
+                        "source_bundle_id": None,
+                    }
+                )
+                return (None, None, None, None)
+            flow_spec = (
+                dict(snapshot.get("config_snapshot"))
+                if isinstance(snapshot, Mapping)
+                and isinstance(snapshot.get("config_snapshot"), Mapping)
+                else None
+            )
+            bundle_id = int(snapshot["id"]) if isinstance(snapshot, Mapping) else None
+            source_bundle_id = _source_simulation_bundle_id_from_snapshot(snapshot)
+            persisted_post_process_output_cache.update(
+                {
+                    "selection": selected_design_ids,
+                    "bundle_id": bundle_id,
+                    "runtime_output": dict(payload),
+                    "flow_spec": flow_spec,
+                    "source_bundle_id": source_bundle_id,
+                }
+            )
+            return (dict(payload), flow_spec, bundle_id, source_bundle_id)
+
         def _raw_simulation_result() -> SimulationResult | None:
+            selected_design_ids = _selected_design_ids()
+            if selected_design_ids:
+                persisted_result, _persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(persisted_result, SimulationResult):
+                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
+                    return persisted_result
             result = runtime_state.latest_simulation_result
             if isinstance(result, SimulationResult):
                 return result
@@ -6775,9 +7132,26 @@ def _render_simulation_environment():
             *,
             reference_impedance_ohm: float,
         ) -> dict[str, Any] | None:
-            raw_sweep_payload = _coerce_parameter_sweep_payload(
-                runtime_state.latest_simulation_sweep_payload
-            )
+            selected_design_ids = _selected_design_ids()
+            raw_sweep_payload = None
+            if selected_design_ids:
+                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(persisted_sweep_payload, Mapping):
+                    raw_sweep_payload = _coerce_parameter_sweep_payload(persisted_sweep_payload)
+                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
+            if not isinstance(raw_sweep_payload, Mapping):
+                raw_sweep_payload = _coerce_parameter_sweep_payload(
+                    runtime_state.latest_simulation_sweep_payload
+                )
+            if not isinstance(raw_sweep_payload, Mapping):
+                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(persisted_sweep_payload, Mapping):
+                    raw_sweep_payload = _coerce_parameter_sweep_payload(persisted_sweep_payload)
+                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             if not isinstance(raw_sweep_payload, Mapping):
                 return None
             plan = _resolved_termination_plan()
@@ -6799,14 +7173,45 @@ def _render_simulation_environment():
         def _resolve_post_processing_input_bundle(
             source: str,
             reference_impedance_ohm: float,
-        ) -> tuple[SimulationResult, dict[str, Any] | None]:
-            raw_result = _raw_simulation_result()
+        ) -> tuple[SimulationResult, dict[str, Any] | None, int | None]:
+            selected_design_ids = _selected_design_ids()
+            persisted_result = None
+            persisted_sweep_payload = None
+            persisted_bundle_id = None
+            if selected_design_ids:
+                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(_persisted_result, SimulationResult):
+                    persisted_result = _persisted_result
+                if isinstance(persisted_sweep_payload, Mapping):
+                    persisted_sweep_payload = _coerce_parameter_sweep_payload(
+                        persisted_sweep_payload
+                    )
+            raw_result = persisted_result
+            if not isinstance(raw_result, SimulationResult):
+                raw_result = _raw_simulation_result()
             if not isinstance(raw_result, SimulationResult):
                 raise ValueError("Simulation result is unavailable.")
 
-            canonical_sweep_payload = _coerce_parameter_sweep_payload(
-                runtime_state.latest_simulation_sweep_payload
-            )
+            canonical_sweep_payload = persisted_sweep_payload
+            source_bundle_id = persisted_bundle_id
+            if not isinstance(canonical_sweep_payload, Mapping):
+                canonical_sweep_payload = _coerce_parameter_sweep_payload(
+                    runtime_state.latest_simulation_sweep_payload
+                )
+                source_bundle_id = runtime_state.latest_source_simulation_bundle_id
+            if not isinstance(canonical_sweep_payload, Mapping):
+                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(persisted_sweep_payload, Mapping):
+                    canonical_sweep_payload = _coerce_parameter_sweep_payload(
+                        persisted_sweep_payload
+                    )
+                    source_bundle_id = persisted_bundle_id
+            if source_bundle_id is not None:
+                resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
             if source == "ptc_y":
                 ptc_result = _ptc_simulation_result(
                     reference_impedance_ohm=reference_impedance_ohm,
@@ -6814,10 +7219,10 @@ def _render_simulation_environment():
                 if not isinstance(ptc_result, SimulationResult):
                     raise ValueError("PTC Y is unavailable for post-processing.")
                 if canonical_sweep_payload is None:
-                    return (ptc_result, None)
-                return (ptc_result, canonical_sweep_payload)
+                    return (ptc_result, None, source_bundle_id)
+                return (ptc_result, canonical_sweep_payload, source_bundle_id)
 
-            return (raw_result, canonical_sweep_payload)
+            return (raw_result, canonical_sweep_payload, source_bundle_id)
 
         def _resolve_post_processing_input_sweep_point(
             source: str,
@@ -6827,6 +7232,15 @@ def _render_simulation_environment():
             canonical_sweep_payload = _coerce_parameter_sweep_payload(
                 runtime_state.latest_simulation_sweep_payload
             )
+            if not isinstance(canonical_sweep_payload, Mapping):
+                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(persisted_sweep_payload, Mapping):
+                    canonical_sweep_payload = _coerce_parameter_sweep_payload(
+                        persisted_sweep_payload
+                    )
+                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             if not isinstance(canonical_sweep_payload, Mapping):
                 return None
             sweep_source = _resolve_sweep_result_source(sweep_payload=canonical_sweep_payload)
@@ -6848,17 +7262,29 @@ def _render_simulation_environment():
             if post_processing_container is None:
                 return
             post_processing_container.clear()
-            raw_result = _raw_simulation_result()
-            if not isinstance(raw_result, SimulationResult):
+            try:
+                raw_result, _raw_sweep_payload, resolved_source_bundle_id = (
+                    _resolve_post_processing_input_bundle(
+                        "raw_y",
+                        _TERMINATION_DEFAULT_RESISTANCE_OHM,
+                    )
+                )
+            except ValueError:
                 with post_processing_container:
                     ui.label(
                         "Run a simulation first, then apply port-level coordinate transforms "
                         "and Kron reduction here."
                     ).classes("text-sm text-muted")
                 return
+            if resolved_source_bundle_id is not None:
+                resolved_post_process_source_bundle_id_ref["value"] = resolved_source_bundle_id
             ptc_result = _ptc_simulation_result(
                 reference_impedance_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
             )
+
+            def _record_post_processing_source_bundle(bundle_id: int | None) -> None:
+                resolved_post_process_source_bundle_id_ref["value"] = bundle_id
+                runtime_state.latest_source_simulation_bundle_id = bundle_id
 
             with post_processing_container:
                 _render_post_processing_panel(
@@ -6881,6 +7307,7 @@ def _render_simulation_environment():
                     append_status=append_status,
                     on_processing_start=_render_post_processing_results_pending,
                     on_result=handle_post_processing_result,
+                    on_source_bundle_resolved=_record_post_processing_source_bundle,
                 )
 
         def _render_post_processing_results_pending() -> None:
@@ -6925,6 +7352,27 @@ def _render_simulation_environment():
             _source_token: str,
         ) -> tuple[SimulationResult, dict[int, str]] | None:
             runtime_output = runtime_state.latest_post_processing_runtime
+            selected_design_ids = _selected_design_ids()
+            if selected_design_ids:
+                persisted_runtime_output, _flow_spec, _bundle_id, source_bundle_id = (
+                    _persisted_post_processing_output_bundle()
+                )
+                if isinstance(persisted_runtime_output, Mapping):
+                    runtime_output = persisted_runtime_output
+                    resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
+            if not (
+                isinstance(runtime_output, PortMatrixSweep)
+                or (
+                    isinstance(runtime_output, Mapping)
+                    and is_trace_batch_bundle_payload(runtime_output)
+                )
+            ):
+                persisted_runtime_output, _flow_spec, _bundle_id, source_bundle_id = (
+                    _persisted_post_processing_output_bundle()
+                )
+                if isinstance(persisted_runtime_output, Mapping):
+                    runtime_output = persisted_runtime_output
+                    resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
             if not (
                 isinstance(runtime_output, PortMatrixSweep)
                 or (
@@ -7060,9 +7508,29 @@ def _render_simulation_environment():
                 return
 
             raw_save_callback = runtime_state.latest_raw_save_callback
-            if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
+            selected_design_ids = _selected_design_ids()
+            resolved_raw_sweep_payload = None
+            raw_context_authority = (
+                "persisted_batch" if selected_design_ids else "live_solver_runtime"
+            )
+            if selected_design_ids:
+                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                    _persisted_post_processing_input_bundle()
+                )
+                if isinstance(persisted_sweep_payload, Mapping):
+                    resolved_raw_sweep_payload = _coerce_parameter_sweep_payload(
+                        persisted_sweep_payload
+                    )
+                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
+                    raw_save_callback = None
+            if not isinstance(resolved_raw_sweep_payload, Mapping):
+                resolved_raw_sweep_payload = _coerce_parameter_sweep_payload(
+                    runtime_state.latest_simulation_sweep_payload
+                )
+                raw_context_authority = "live_solver_runtime"
+            if isinstance(resolved_raw_sweep_payload, Mapping):
                 trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
-                    runtime_state.latest_simulation_sweep_payload,
+                    resolved_raw_sweep_payload,
                 )
                 context_lines = _build_simulation_workflow_context_lines(
                     circuit_record=active_record,
@@ -7070,13 +7538,13 @@ def _render_simulation_environment():
                     stage_kind="raw",
                     run_kind="parameter_sweep",
                     provenance_tokens=(
-                        "live_solver_runtime",
+                        raw_context_authority,
                         "save-path=Save Raw Simulation Results",
                     ),
                 )
                 _render_sweep_result_view_container(
                     container=simulation_results_container,
-                    sweep_payload=runtime_state.latest_simulation_sweep_payload,
+                    sweep_payload=resolved_raw_sweep_payload,
                     trace_store_bundle=trace_store_bundle,
                     view_state=sweep_result_view_state,
                     family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
@@ -7099,7 +7567,14 @@ def _render_simulation_environment():
                 source_kind="circuit_simulation",
                 stage_kind="raw",
                 run_kind="single_run",
-                provenance_tokens=("live_solver_runtime", "save-path=Save Raw Simulation Results"),
+                provenance_tokens=(
+                    (
+                        "live_solver_runtime"
+                        if raw_save_callback is not None
+                        else "persisted_batch"
+                    ),
+                    "save-path=Save Raw Simulation Results",
+                ),
             )
             _render_result_family_explorer(
                 container=simulation_results_container,
@@ -7124,6 +7599,24 @@ def _render_simulation_environment():
             runtime_output = runtime_state.latest_post_processing_runtime
             flow_spec = runtime_state.latest_flow_spec
             if not _can_save_post_processed_results(runtime_output, flow_spec):
+                (
+                    persisted_runtime_output,
+                    _persisted_flow_spec,
+                    persisted_bundle_id,
+                    _source_bundle_id,
+                ) = _persisted_post_processing_output_bundle()
+                if (
+                    isinstance(persisted_runtime_output, Mapping)
+                    and persisted_bundle_id is not None
+                ):
+                    ui.notify(
+                        (
+                            "Selected design already has one persisted post-processing batch "
+                            f"(#{persisted_bundle_id})."
+                        ),
+                        type="info",
+                    )
+                    return
                 ui.notify("Run Post Processing first.", type="warning")
                 return
             if not (
@@ -7157,7 +7650,46 @@ def _render_simulation_environment():
             runtime_output = runtime_state.latest_post_processing_runtime
             sweep = runtime_state.latest_sweep
             flow_spec = runtime_state.latest_flow_spec
-            save_enabled = _can_save_post_processed_results(runtime_output, flow_spec)
+            persisted_postprocess_authority = False
+            resolved_source_bundle_id = runtime_state.latest_source_simulation_bundle_id
+            selected_design_ids = _selected_design_ids()
+            has_runtime_output = isinstance(
+                runtime_output,
+                (PortMatrixSweep, PortMatrixSweepRun),
+            ) or (
+                isinstance(runtime_output, Mapping)
+                and is_trace_batch_bundle_payload(runtime_output)
+            )
+            if selected_design_ids:
+                (
+                    persisted_runtime_output,
+                    persisted_flow_spec,
+                    _persisted_batch_id,
+                    persisted_source_bundle_id,
+                ) = _persisted_post_processing_output_bundle()
+                if isinstance(persisted_runtime_output, Mapping):
+                    runtime_output = persisted_runtime_output
+                    flow_spec = persisted_flow_spec
+                    sweep = None
+                    resolved_source_bundle_id = persisted_source_bundle_id
+                    persisted_postprocess_authority = True
+                    has_runtime_output = True
+            if not has_runtime_output:
+                (
+                    persisted_runtime_output,
+                    persisted_flow_spec,
+                    _persisted_batch_id,
+                    persisted_source_bundle_id,
+                ) = _persisted_post_processing_output_bundle()
+                if isinstance(persisted_runtime_output, Mapping):
+                    runtime_output = persisted_runtime_output
+                    flow_spec = persisted_flow_spec
+                    sweep = None
+                    resolved_source_bundle_id = persisted_source_bundle_id
+                    persisted_postprocess_authority = True
+            save_enabled = _can_save_post_processed_results(runtime_output, flow_spec) and not (
+                persisted_postprocess_authority
+            )
             context_line = None
             typed_sweep = sweep if isinstance(sweep, PortMatrixSweep) else None
             typed_flow_spec = flow_spec if isinstance(flow_spec, dict) else None
@@ -7177,11 +7709,15 @@ def _render_simulation_environment():
                         else "input=raw_y"
                     ),
                     (
-                        f"source-bundle=#{int(runtime_state.latest_source_simulation_bundle_id)}"
-                        if runtime_state.latest_source_simulation_bundle_id is not None
-                        else "source-bundle=live_runtime"
+                        f"source-bundle=#{int(resolved_source_bundle_id)}"
+                        if resolved_source_bundle_id is not None
+                        else "source-bundle=persisted_batch"
                     ),
-                    "save-path=Save Post-Processed Results",
+                    (
+                        "save-path=Save Post-Processed Results"
+                        if save_enabled
+                        else "save-path=already persisted"
+                    ),
                 ),
             )
             if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
@@ -7247,7 +7783,9 @@ def _render_simulation_environment():
                     ),
                     summary_prefix=context_line,
                     testid_prefix="post-processed-sweep",
-                    save_button_label="Save Post-Processed Results",
+                    save_button_label=(
+                        "Save Post-Processed Results" if save_enabled else None
+                    ),
                     on_save_click=_save_post_processed_results_from_view,
                     save_enabled=save_enabled,
                     context_lines=post_context_lines,
@@ -7263,7 +7801,7 @@ def _render_simulation_environment():
                     "Result View consumes the latest Post Processing pipeline output node."
                 ),
                 empty_message="Run Post Processing to generate the pipeline output node.",
-                save_button_label="Save Post-Processed Results",
+                save_button_label="Save Post-Processed Results" if save_enabled else None,
                 on_save_click=_save_post_processed_results_from_view,
                 save_enabled=save_enabled,
                 context_line=context_line,
@@ -9532,6 +10070,10 @@ def _render_simulation_environment():
                     ui.label("Run Post Processing to view pipeline output traces.").classes(
                         "text-sm text-muted mt-2"
                     )
+
+            render_simulation_result_view()
+            _render_post_processing_input_panel()
+            render_post_processed_result_view()
 
     sim_env()
 

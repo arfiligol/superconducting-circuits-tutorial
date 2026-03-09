@@ -112,7 +112,8 @@ def app_shell(content_builder):
             except Exception:
                 return {}
 
-        def on_dataset_change(_):
+        def on_dataset_change(event):
+            app.storage.user["selected_datasets"] = list(getattr(event, "value", []) or [])
             _safe_refresh_content_area()
 
         def build_dataset_selector(extra_classes: str = ""):

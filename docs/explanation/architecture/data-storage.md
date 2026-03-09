@@ -247,6 +247,13 @@ UI 不應再把 live session state 當成 run authority。
 - `TraceBatchRecord` 不只描述「這批 traces 是什麼」
 - 也描述「這次 trace-producing run 正在做什麼」
 
+對 `/simulation` 與 `/post-processing` 這類 UI 來說，這也代表：
+
+- active design selection 應優先解析成 persisted input/output batches
+- result views 應優先從 persisted batches + TraceStore 讀取
+- live session `latest_*` state 可以存在，但只能當成短期 preview / just-finished bridge
+- persisted workflow 不得因為 UI 重整、reconnect、或切頁而失去 authority
+
 ### Analysis flows
 
 對 `Characterization`：
