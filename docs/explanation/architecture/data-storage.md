@@ -221,6 +221,67 @@ Phase-2 的最小可整合落地方向是：
 - `AnalysisRunRecord` 可持久化 run config、input trace ids、input batch ids、status、summary
 - trace numeric payload 仍留在 TraceStore；Characterization history 不應回退成 generic batch-only 語意
 
+## Persisted Orchestration Strategy
+
+UI 不應再把 live session state 當成 run authority。
+
+長期正確模型是：
+
+- UI / CLI 只建立 persisted run boundary
+- backend worker 根據 metadata DB + TraceStore 執行
+- execution progress / status / outputs 全部回寫 persisted records
+- 讀取端永遠只依賴 persisted state，而不是 `latest_*` runtime variables
+
+### Trace-producing flows
+
+對 `simulation` / `post-processing` / `layout ingest` / `measurement ingest`：
+
+- execution boundary = `TraceBatchRecord`
+- `status=running/completed/failed`
+- `setup_payload` = execution request contract
+- `provenance_payload` = source batch ids / source trace ids / source asset ids
+- numeric output = TraceStore slices / chunks
+
+也就是：
+
+- `TraceBatchRecord` 不只描述「這批 traces 是什麼」
+- 也描述「這次 trace-producing run 正在做什麼」
+
+### Analysis flows
+
+對 `Characterization`：
+
+- execution boundary = `AnalysisRunRecord`
+- input authority = selected trace ids / input batch ids
+- output authority = `DerivedParameterRecord` + analysis artifacts
+
+### Why this matters
+
+如果 `Simulation` / `Post-Processing` 仍依賴 live session：
+
+- UI refresh / reconnect / stale client 會影響 workflow continuity
+- CLI 與 UI 會走兩套不同 contract
+- saved raw batch 無法自然重新 post-process
+- cache hit / cache miss 會變成 page-local state 問題，而不是 persisted execution state 問題
+
+Persisted orchestration 的目標是：
+
+- UI 只是 interaction surface
+- CLI 只是另一個 interaction surface
+- backend 一律依據 persisted records 執行
+
+### Current vs Target
+
+- `Current`
+  - trace numeric payload 已進 TraceStore
+  - result views 大致已是 slice-first
+  - 但 `/simulation` run / post-processing 仍保留部分 live-session orchestration
+- `Target`
+  - `Run Simulation` 直接建立 / 更新 persisted `TraceBatchRecord`
+  - `Run Post Processing` 直接選 persisted raw source batch
+  - cache hit 只縮短 run path，不得成為 post-processing / Characterization 的 authority 來源
+  - UI / CLI 都不再要求「先有目前頁面的 live result」
+
 ## Related
 
 - [Design / Trace Schema](../../reference/data-formats/dataset-record.md)

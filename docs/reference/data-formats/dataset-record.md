@@ -168,6 +168,25 @@ DesignRecord
     `TraceBatchRecord` 是 circuit/layout/measurement 三種來源共用的 setup/provenance 抽象。
     差異放在 `source_kind + stage_kind + setup_payload`，而不是各自發明平行主模型。
 
+### Persisted execution contract
+
+對 trace-producing flows，`TraceBatchRecord` 也是 persisted execution boundary：
+
+- `status=running/completed/failed`
+- `setup_payload` = execution request
+- `summary_payload` = progress / representative preview summary
+- `provenance_payload` = upstream batch / trace / asset refs
+
+這代表：
+
+- `simulation` 不應依賴 page-local `latest_simulation_result`
+- `post-processing` 不應依賴「目前 session 剛跑完的 live raw result」
+- UI / CLI 都應只建立或選擇 persisted input batch，再由 backend 執行
+
+!!! important "No live-session-only authority"
+    saved raw simulation batch 必須能在沒有 live session 的情況下重新進入 post-processing。
+    cache hit 只是一種 optimization，不可成為唯一 authority。
+
 ---
 
 ## TraceBatchTraceLink
@@ -197,6 +216,16 @@ Characterization / fitting / extraction 的執行邊界。
 
 !!! important "Trace-first authority"
     Characterization 的統一輸入是 `TraceRecord`，不以來源類型區分 circuit/layout/measurement 專用分析流程。
+
+### Persisted orchestration relationship
+
+- trace-producing flows：`TraceBatchRecord`
+- analysis flows：`AnalysisRunRecord`
+
+兩者都屬於 persisted orchestration，但職責不同：
+
+- `TraceBatchRecord` = 生產 traces 的 run boundary
+- `AnalysisRunRecord` = 消費 traces 的 run boundary
 
 ---
 

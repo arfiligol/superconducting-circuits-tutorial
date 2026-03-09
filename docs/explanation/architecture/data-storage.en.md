@@ -220,6 +220,67 @@ This means:
 - `AnalysisRunRecord` may persist run config, input trace ids, input batch ids, status, and summary
 - numeric trace payload still belongs in the TraceStore; Characterization history must not regress into batch-only semantics
 
+## Persisted orchestration strategy
+
+UI must not treat live session state as run authority.
+
+The correct long-term model is:
+
+- UI / CLI only create persisted run boundaries
+- backend workers execute against the metadata DB + TraceStore
+- execution progress / status / outputs are written back to persisted records
+- read paths depend only on persisted state, not on `latest_*` runtime variables
+
+### Trace-producing flows
+
+For `simulation` / `post-processing` / `layout ingest` / `measurement ingest`:
+
+- execution boundary = `TraceBatchRecord`
+- `status=running/completed/failed`
+- `setup_payload` = execution request contract
+- `provenance_payload` = source batch ids / source trace ids / source asset ids
+- numeric output = TraceStore slices / chunks
+
+So:
+
+- `TraceBatchRecord` does not only answer “what traces came out”
+- it also answers “what trace-producing run is currently in progress”
+
+### Analysis flows
+
+For `Characterization`:
+
+- execution boundary = `AnalysisRunRecord`
+- input authority = selected trace ids / input batch ids
+- output authority = `DerivedParameterRecord` + analysis artifacts
+
+### Why this matters
+
+If `Simulation` / `Post-Processing` still depend on live session state:
+
+- UI refresh / reconnect / stale client lifecycle interferes with workflow continuity
+- CLI and UI drift into different execution contracts
+- saved raw batches cannot naturally re-enter post-processing
+- cache hit / cache miss becomes a page-local state issue instead of a persisted execution-state issue
+
+Persisted orchestration makes this explicit:
+
+- UI is only one interaction surface
+- CLI is another interaction surface
+- backend execution always depends on persisted records
+
+### Current vs target
+
+- `Current`
+  - trace numeric payload already lives in TraceStore
+  - result views are mostly slice-first
+  - but `/simulation` run / post-processing still retain some live-session orchestration
+- `Target`
+  - `Run Simulation` creates or updates a persisted raw `TraceBatchRecord`
+  - `Run Post Processing` selects a persisted raw input batch directly
+  - cache hit only shortens execution and never becomes the sole authority for post-processing / Characterization
+  - UI and CLI no longer require “the latest live result in this page”
+
 ## Related
 
 - [Design / Trace Schema](../../reference/data-formats/dataset-record.en.md)

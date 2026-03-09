@@ -10,9 +10,9 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: /simulation contract for expanded netlist display, setup boundary, load-or-run execution, and result views
-version: v0.14.0
-last_updated: 2026-03-07
+scope: /simulation contract for expanded netlist display, setup boundary, persisted execution, and result views
+version: v0.15.0
+last_updated: 2026-03-09
 updated_by: codex
 ---
 
@@ -29,6 +29,32 @@ This page defines the formal `/simulation` UI contract.
 5. `Simulation Results`
 6. `Post Processing`
 7. `Post Processing Results`
+
+## Persisted execution contract
+
+`/simulation` must not treat page-local live session state as workflow authority.
+
+The formal contract should converge to:
+
+- `Run Simulation`
+  - creates or updates a persisted raw `TraceBatchRecord`
+  - backend workers write sweep points incrementally into `TraceStore`
+  - the UI only shows progress, logs, and result preview
+- `Run Post Processing`
+  - selects a persisted raw input batch
+  - creates or updates a persisted post-process `TraceBatchRecord`
+  - backend workers write incrementally into `TraceStore`
+- `Simulation Results` / `Post Processing Results`
+  - read only from persisted batches / traces
+  - use slice-first TraceStore reads for representative preview and compare slices
+
+!!! important "No live-session-only authority"
+    `latest_simulation_result` / `latest_simulation_sweep_payload` may exist as temporary runtime cache,
+    but they must not remain the only authority for simulation / post-processing capability.
+
+!!! important "Saved raw batch must be reusable"
+    A saved raw simulation batch must be reusable for post-processing without requiring a live simulation session.
+    Cache hit may shorten the path, but must not decide whether the workflow is executable.
 
 ## Result View Interaction Contract (Raw vs Post-Processed)
 
@@ -197,6 +223,23 @@ When sweep is enabled:
 3. result-cache identity remains `schema_source_hash + simulation_setup_hash`, and `simulation_setup_hash` must include the sweep block
 4. `source_meta` and `config_snapshot` must persist `sweep_setup_hash` and sweep-axis summary
    (including target key)
+
+### Cache hit boundary
+
+Cache hit is responsible for:
+
+- finding a persisted batch
+- preparing a fast representative preview
+- reducing user wait time
+
+Cache hit must **not**:
+
+- change workflow authority
+- become the only post-processing input source
+- require the whole sweep to be rebuilt into memory first
+
+!!! important "Metadata-first, preview lazy-load"
+    Cache lookup should first resolve persisted metadata; preview and compare payloads should then be loaded on demand from TraceStore slices.
 
 ### Sweep Logs Contract
 

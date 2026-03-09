@@ -167,6 +167,25 @@ It may be:
     `TraceBatchRecord` is the shared setup/provenance abstraction for circuit/layout/measurement.
     Differences belong in `source_kind + stage_kind + setup_payload`, not in parallel top-level models.
 
+### Persisted execution contract
+
+For trace-producing flows, `TraceBatchRecord` is also the persisted execution boundary:
+
+- `status=running/completed/failed`
+- `setup_payload` = execution request
+- `summary_payload` = progress / representative preview summary
+- `provenance_payload` = upstream batch / trace / asset refs
+
+This means:
+
+- `simulation` must not rely on page-local `latest_simulation_result`
+- `post-processing` must not rely on “the live raw result from the current session”
+- UI and CLI should both create or select persisted input batches, then let backend workers execute
+
+!!! important "No live-session-only authority"
+    A saved raw simulation batch must be reusable for post-processing without requiring a live session.
+    Cache hit is only an optimization, never the only authority.
+
 ---
 
 ## TraceBatchTraceLink
@@ -196,6 +215,16 @@ Execution boundary for characterization / fitting / extraction.
 
 !!! important "Trace-first authority"
     Characterization consumes `TraceRecord` uniformly and does not branch into separate circuit/layout/measurement analysis models.
+
+### Persisted orchestration relationship
+
+- trace-producing flows: `TraceBatchRecord`
+- analysis flows: `AnalysisRunRecord`
+
+Both are part of persisted orchestration, but with different roles:
+
+- `TraceBatchRecord` = run boundary that produces traces
+- `AnalysisRunRecord` = run boundary that consumes traces
 
 ---
 

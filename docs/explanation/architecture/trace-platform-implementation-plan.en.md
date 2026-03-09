@@ -9,9 +9,9 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Design/Trace/TraceStore architecture phase-3 execution plan and multi-agent execution split
-version: v0.3.0
-last_updated: 2026-03-08
+scope: Design/Trace/TraceStore architecture phase-4 execution plan and multi-agent execution split
+version: v0.4.0
+last_updated: 2026-03-09
 updated_by: codex
 ---
 
@@ -51,14 +51,24 @@ The following phase-2 workstreams are now complete and integrated into `main`:
 - `AnalysisRunRecord` now exists as a logical persistence boundary
 - the examples-driven validation matrix now has a formal phase-2 skeleton
 
-### Phase 3 Active
+### Phase 3 Completed
 
-The next phase is not a second schema rewrite. It is the push from “new architecture is usable” to:
+The following phase-3 workstreams are now complete and integrated into `main`:
 
-- full cross-source product workflows
-- cleaner legacy retirement
-- deployable backend and storage boundaries
-- stronger examples-driven acceptance baselines
+- the first complete cross-source product workflow layer
+- local-only TraceStore operational boundary
+- major legacy cleanup needed to unblock phase 4
+- slice-first cache/read paths and incremental sweep persistence baseline
+
+### Phase 4 Active
+
+The next phase is not another terminology rewrite. It is the shift to persisted orchestration:
+
+- `Simulation` no longer depends on live session result state
+- `Post Processing` no longer depends on page-local latest raw result
+- UI and CLI both create persisted execution boundaries
+- backend workers execute only from persisted metadata DB + TraceStore state
+- cache hit remains an optimization and never defines workflow authority
 
 ## Goal
 
@@ -70,6 +80,7 @@ Make the system reach the following steady state:
 - `TraceStore` moves beyond contract-ready and reaches server/object-storage operational readiness
 - `Characterization` remains source-agnostic and depends only on trace compatibility
 - users can reliably compare layout / circuit / measurement traces inside the same `Design` scope
+- `Simulation` / `Post Processing` / `Characterization` can all be launched from UI or CLI through the same persisted execution contract
 
 ## Non-Goals
 
@@ -77,124 +88,85 @@ Make the system reach the following steady state:
 - no full UI hierarchy rewrite
 - no point-per-record replacement of canonical ND `TraceRecord`
 - no regression that pushes large numeric payloads back into the metadata DB for convenience
+- no move that places numeric authority back into the metadata DB instead of TraceStore
 
 ## Success Criteria
 
-1. the `Design` scope supports stable cross-source browsing and compare workflows over layout / circuit / measurement traces
-2. the remaining phase-2 compatibility layers now have explicit retirement or containment rules instead of open-ended dual paths
-3. the `TraceStore` boundary is operationally ready for the local `Zarr` path, and future storage-extension work no longer blocks the current phase
-4. examples-driven regression covers circuit / layout / measurement saved-trace reuse paths rather than only one source path
-5. after phase-3 acceptance, the Integrator can clearly identify which legacy names and compatibility paths still exist and why
+1. `Simulation` / `Post Processing` / `Characterization` can all be launched from persisted run boundaries instead of page-local live state
+2. saved raw simulation batches can re-enter post-processing without any live simulation session
+3. cache hit only shortens execution and never changes workflow capability
+4. UI and CLI share the same persisted execution semantics
+5. examples-driven regression covers circuit / layout / measurement saved-trace reuse paths rather than only one source path
 
-## Phase 3 Workstreams
+## Phase 4 Workstreams
 
-### Workstream A: Cross-Source Product Workflow (Completed)
+### Workstream A: Persisted Orchestration for Trace-Producing Flows (Active)
 
 Goal:
 
-- move from semantic convergence to a complete product workflow inside one `Design`
-- let users understand and operate:
-  - circuit traces
-  - layout traces
-  - measurement traces
-  - characterization outputs
+- move `Simulation` / `Post Processing` away from page-local live-session orchestration
+- let UI and CLI both create persisted execution boundaries, then let backend workers execute
 
 Focus:
 
-- `Raw Data`
-- `Characterization`
-- trace selection and result navigation
-- source compare / source summary / provenance visibility
-- no large page-layout rewrite, but the cross-source compare experience must become complete
+- `TraceBatchRecord(status=running/completed/failed)` as the execution boundary for trace-producing flows
+- `setup_payload` / `provenance_payload` explicitly represent input batches, source refs, and progress
+- saved raw batches can re-enter post-processing directly
+- cache hit never becomes the only authority path
 
-Completed now:
+Minimum completion standard:
 
-- `Raw Data` surfaces design-scoped source summary, compare readiness, and trace provenance
-- `Simulation` / `Post Processing` clearly distinguish inspect-only surfaces from save-then-compare workflows
-- `Characterization` now shows source coverage, provenance, and analysis-run history inside one design scope
+- `Run Simulation` creates a persisted raw batch and writes sweep points incrementally into TraceStore
+- `Run Post Processing` selects a persisted raw input batch instead of `latest_simulation_result`
+- after UI disconnect/reconnect, persisted run state remains queryable and authoritative
 
-Deferred expansion:
-
-- if the product later needs richer per-source side-by-side compare UI, open a dedicated follow-up product workstream
-
-### Workstream B: Legacy Cleanup and Persistence Convergence (Completed)
+### Workstream B: Persisted Orchestration for Analysis Flows (Planned)
 
 Goal:
 
-- converge the compatibility layers intentionally kept during phase 2
-- decide which dual-write / dual-read / legacy aliases can now be retired
-- make persistence, query, characterization, and result-view flows rely on the same canonical path whenever possible
+- align `Characterization` with fully sessionless persisted execution semantics
 
 Focus:
 
-- legacy aliases vs canonical names
-- trace-store authority vs inline fallback
-- dual-path save/read behavior
-- no physical table rename yet, but less logical duplication
+- keep `AnalysisRunRecord` and `TraceBatchRecord` responsibilities clear
+- let UI and CLI share the same persisted analysis-run semantics
+- avoid page-local state as the source of truth for run history / rerun / result navigation
 
-Completed now:
-
-- `store_key` is the canonical locator
-- `store_uri` is explicitly reduced to an opaque compatibility/debug locator
-- simulation write/read paths and targeted regressions no longer treat `store_uri` as the primary local path source
-
-Deferred expansion:
-
-- physical schema rename / migration is still intentionally deferred outside the current phase-3 scope
-
-### Workstream C: TraceStore Operational Boundary (Completed)
+### Workstream C: Platform Acceptance Matrix (Active)
 
 Goal:
 
-- move the current backend abstraction from contract-ready to deployment-ready
-- make the local-development path and any future storage-extension boundary explicit
-
-Focus:
-
-- stable `TraceStoreRef` contract
-- no backend-specific path logic leaking into UI/app code
-- equivalent semantics for local filesystem and object storage layouts
-- live `s3_zarr` / MinIO / S3 integration is not required in this phase
-- the local backend must be the only active, verifiable, deployable path in this phase
-
-Completed now:
-
-- the `local_zarr` runtime path and backend binding are converged
-- the rule that UI/app code must not parse backend-specific local path layout is now part of the guardrails
-
-### Workstream D: Platform Acceptance Matrix (Active)
-
-Goal:
-
-- evolve the phase-2 validation skeleton into a phase-3 acceptance baseline
-- prove the platform reuse paths, not only the original circuit-only path
+- turn the current validation baseline into a phase-4 acceptance matrix
+- prove saved-batch reuse and persisted execution semantics, not only the old live-session path
 
 Focus:
 
 - circuit simulation -> save/read -> characterize
+- saved raw batch -> post-process rerun
 - layout ingest -> save/read -> characterize
 - measurement ingest -> save/read -> characterize
 - cross-source compare inside one `Design`
-- TraceStore local vs backend-boundary readiness
+- persisted execution state after reconnect / cache hit
 
 | Scenario | Current status | Minimum verification focus | Extension point |
 |---|---|---|---|
 | circuit simulation -> save/read -> characterize | implemented | saved traces can be re-read, re-characterized, and still preserve provenance | add more JosephsonCircuits example families and sweep variants |
+| saved raw batch -> post-process rerun | active | post-processing can run from persisted raw batches without any live session result | extend to CLI/shared command coverage |
 | postprocess -> save/read -> characterize | implemented | post-processed traces can be saved, re-read, and reused in characterization / result navigation | expand to more pipeline steps and matrix families |
 | layout ingest -> save/read -> characterize | implemented | layout traces persist through the trace-store path and can be consumed by characterization | add full browser/E2E coverage |
 | measurement ingest -> save/read -> characterize | implemented | measurement traces persist through the trace-store path and can be consumed by characterization | add broader matrix-family coverage |
 | cross-source compare within one design | implemented | multiple source traces can be browsed with source summary / provenance / compatibility gating inside the same design scope | add richer source-difference UX and compare assertions |
-| TraceStore backend readiness | implemented | the local backend path is stable, verifiable, and supports the app/examples | if object-storage work resumes later, add MinIO/S3 smoke coverage |
+| persisted execution after reconnect/cache hit | active | cache hit and reconnect preserve capability, not just status messaging | extend to longer-running sweep cases |
 
 Constraints:
 
 - do not let the validation matrix regress back to “only prove circuit simulation runs”
 - do not replace real cross-source reuse paths with fake fixtures
-- prioritize proving that saved traces can be reused by characterization, rather than re-running only the phase-1 simulation success path
+- prioritize proving that saved raw batches can be reused by post-processing and that saved traces can be reused by characterization
 
 ## Recommended Multi-Agent Split
 
-Phase 3 should default back to the **3 fixed Contributor Agents** model, with the Integrator defining exact `Allowed Files` and bridge scope per round.
+Phase 4 should default back to the **3 fixed Contributor Agents** model, with the Integrator defining exact `Allowed Files` and bridge scope per round.
 
 ### 1. Platform Agent
 
@@ -204,6 +176,7 @@ Primary ownership:
 - TraceStore backend
 - ingest write paths
 - lineage / query / metadata convergence
+- persisted execution boundaries
 - cross-cutting architecture docs when needed
 
 ### 2. Simulation Agent
@@ -215,6 +188,7 @@ Primary ownership:
 - result views
 - simulation-oriented UX/performance/lifecycle
 - Josephson example E2E
+- persisted orchestration UI/CLI bridge
 
 ### 3. Characterization Agent
 
@@ -225,15 +199,15 @@ Primary ownership:
 - trace scope / trace compatibility
 - characterization regressions
 - cross-source compare behaviors when they center on analysis consumption
+- persisted analysis-run semantics
 
 If a round contains a large docs-only, validation-only, or infra-only task, the Integrator may temporarily add a specialist contributor, but that should supplement rather than replace the 3 fixed contributors model.
 
 ## Integration Order
 
-1. legacy cleanup / canonical path convergence
-2. TraceStore operational boundary
-3. cross-source product workflow
-4. platform acceptance matrix expansion
+1. persisted trace-producing orchestration
+2. persisted analysis orchestration
+3. platform acceptance matrix expansion
 
 ## Required Regression Set
 
@@ -242,15 +216,16 @@ At minimum:
 1. `uv run ruff check .`
 2. targeted `pytest` for the touched architecture slices
 3. JosephsonCircuits.jl app flows
-4. layout / measurement saved-trace reuse regressions
-5. characterization over saved traces regression
-6. cross-source compare / scope regression whenever touched
-7. TraceStore backend-boundary regression (local is mandatory)
+4. saved raw batch -> post-process rerun regression
+5. layout / measurement saved-trace reuse regressions
+6. characterization over saved traces regression
+7. cross-source compare / scope regression whenever touched
+8. TraceStore backend-boundary regression (local is mandatory)
 
 ## Acceptance Notes for Integrator
 
-- do not reopen completed phase-1 or phase-2 work unless phase 3 explicitly expands that contract
+- do not reopen completed phase-1 / phase-2 / phase-3 work unless phase 4 explicitly expands that contract
 - reject contributor diffs that introduce new legacy naming or new dual-path persistence patterns
 - if ingest, UI, or characterization still primarily depend on inline metadata-DB payload instead of TraceStore authority, treat the work as architecturally incomplete
 - if UI/app code directly touches backend-specific TraceStore paths, treat the backend boundary as incomplete
-- if validation still proves only a single source path rather than the cross-source trace model, treat phase 3 as incomplete
+- if `Simulation` / `Post Processing` still depend on page-local latest-result state instead of persisted input batches, treat phase 4 as incomplete

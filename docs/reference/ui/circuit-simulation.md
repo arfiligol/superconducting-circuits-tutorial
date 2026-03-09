@@ -10,9 +10,9 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、Load-or-Run 與 Result 檢視契約
-version: v0.14.0
-last_updated: 2026-03-07
+scope: /simulation 頁面的 Expanded Netlist、Simulation Setup、persisted execution 與 Result 檢視契約
+version: v0.15.0
+last_updated: 2026-03-09
 updated_by: codex
 ---
 
@@ -42,6 +42,32 @@ updated_by: codex
     server-side simulation / post-processing 可以依既有流程繼續執行或完成，
     但任何之後的 UI rerender 都必須先確認 refresh target 的 owner client 仍然 connected；
     若 owner client 已 stale / deleted，該 refresh 必須直接停止。
+
+## Persisted Execution Contract
+
+`/simulation` 不應把 page-local live session state 當成 workflow authority。
+
+正式契約應收斂為：
+
+- `Run Simulation`
+  - 建立或更新 persisted raw `TraceBatchRecord`
+  - backend worker 逐點寫入 `TraceStore`
+  - UI 只顯示 progress / logs / result preview
+- `Run Post Processing`
+  - 選擇 persisted raw input batch
+  - 建立或更新 persisted post-process `TraceBatchRecord`
+  - backend worker 逐點寫入 `TraceStore`
+- `Simulation Results` / `Post Processing Results`
+  - 只讀 persisted batches / traces
+  - 以 TraceStore slice-first 方式取 representative preview 與 compare slices
+
+!!! important "No live-session-only authority"
+    `latest_simulation_result` / `latest_simulation_sweep_payload` 只能是暫時 runtime cache，
+    不能成為 simulation / post-processing capability 的唯一 authority。
+
+!!! important "Saved raw batch must be reusable"
+    已儲存的 raw simulation batch，必須能在沒有 live simulation session 的情況下重新進入 post-processing。
+    cache hit 只能縮短時間，不能決定 workflow 是否可執行。
 
 ## Result View 互動契約（Raw vs Post-Processed）
 
@@ -204,6 +230,23 @@ Sweep Setup 最小欄位：
 2. 必須從該 `sweep` 區塊計算 `sweep_setup_hash`
 3. result cache identity 仍走 `schema_source_hash + simulation_setup_hash`，其中 `simulation_setup_hash` 已含 sweep 設定
 4. `source_meta` 與 `config_snapshot` 必須保存 `sweep_setup_hash` 與 sweep 軸摘要（含 target key）
+
+### Cache Hit Boundary
+
+cache hit 的職責是：
+
+- 命中 persisted batch
+- 快速建立 representative preview
+- 縮短使用者等待時間
+
+cache hit **不得**：
+
+- 改變 run authority
+- 變成 post-processing 的唯一 input source
+- 要求整個 sweep 先全量重建到 memory
+
+!!! important "Metadata-first, preview lazy-load"
+    cache lookup 應優先確認 persisted metadata 命中；preview 與 compare payload 應按需從 TraceStore slice 讀取。
 
 ### Sweep Logs 契約
 
