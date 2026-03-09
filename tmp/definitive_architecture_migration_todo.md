@@ -807,21 +807,22 @@ Evidence:
 
 ### WS5. REST API Surface
 
-Status: `not started`
+Status: `completed`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS4-01`
 - `DA-WS4-02`
 
 Tasks:
 
-- [ ] DA-WS5-01 在 NiceGUI/FastAPI app 上建立 API module 結構
+- [x] DA-WS5-01 在 NiceGUI/FastAPI app 上建立 API module 結構
   - Candidate:
     - `src/app/api/__init__.py`
     - `src/app/api/tasks.py`
     - `src/app/api/designs.py`
     - `src/app/api/simulation_runs.py`
 
-- [ ] DA-WS5-02 tasks API
+- [x] DA-WS5-02 tasks API
   - phase 1 required:
     - `POST /api/v1/tasks/simulation`
     - `POST /api/v1/tasks/post-processing`
@@ -829,7 +830,7 @@ Tasks:
     - `GET /api/v1/tasks/{task_id}`
     - `GET /api/v1/designs/{design_id}/tasks`
 
-- [ ] DA-WS5-03 persisted result lookup API
+- [x] DA-WS5-03 persisted result lookup API
   - UI refresh 後需要：
     - 找 design 下最近 raw simulation batch
     - 找最近 post-processing batch
@@ -839,7 +840,7 @@ Tasks:
     - `GET /api/v1/designs/{design_id}/post-processing/latest`
     - `GET /api/v1/designs/{design_id}/characterization/latest`
 
-- [ ] DA-WS5-04 auth/config seam
+- [x] DA-WS5-04 auth/config seam
   - Decision frozen (`DF-010`)：
     - phase 1 直接支援 multi-user local auth
     - local username/password + session cookie
@@ -848,7 +849,7 @@ Tasks:
     - queue 共享，不做 per-user queue 切分
     - 不做細粒度 RBAC / ACL
 
-- [ ] DA-WS5-06 login/session/auth API 與 page guard
+- [x] DA-WS5-06 login/session/auth API 與 page guard
   - 最低包含：
     - login endpoint / form
     - logout endpoint / action
@@ -859,20 +860,20 @@ Tasks:
     - `admin`：可管理 users、可看全部 audit logs
     - `user`：可登入、可建立 task、可看共享 task/result
 
-- [ ] DA-WS5-07 audit log API / admin surfaces
+- [x] DA-WS5-07 audit log API / admin surfaces
   - `admin` 可查：
     - user list
     - audit logs
     - shared task history
   - 至少先有 API；UI 可以 phase 1 簡版
 
-- [ ] DA-WS5-08 public API auth contract
+- [x] DA-WS5-08 public API auth contract
   - `/api/v1/*` response 需清楚區分：
     - `401 unauthenticated`
     - `403 unauthorized`
   - auth 不可只保護 UI，不保護 API
 
-- [ ] DA-WS5-09 完整 API inventory（必寫，即使 phase 1 不全做）
+- [x] DA-WS5-09 完整 API inventory（必寫，即使 phase 1 不全做）
   - 目標：
     - 列出完整 planned API surface
     - 每個 endpoint 標註：
@@ -1035,7 +1036,7 @@ Tasks:
   - Rule:
     - 不可因為 phase 1 不做就不列；完整規劃要先存在
 
-- [ ] DA-WS5-05 API schema / stability boundary
+- [x] DA-WS5-05 API schema / stability boundary
   - 必答：
     - `/api/internal/*` 還是 `/api/*`？
     - response schema 是否固定包含 `task_id`, `status`, `trace_batch_id`, `analysis_run_id`, `error`
@@ -1046,6 +1047,64 @@ Tasks:
     - phase 1 只公開最小必要 endpoint
     - response schema 必須 typed、穩定、可測
     - 後續 breaking change 走 `v2`，不回頭破壞 `v1`
+
+Progress:
+- 已建立 `src/app/api/**` 模組結構與 `/api/v1` router composition：
+  - `auth`
+  - `admin`
+  - `tasks`
+  - `results`
+- `app.main` 現在是 WS5 composition root：
+  - 初始化 signed session storage
+  - 掛上 `/api/v1/*`
+  - 建立 page guard
+  - bootstrap local admin account
+- phase 1 auth/session contract 已實作：
+  - `POST /api/v1/auth/login`
+  - `POST /api/v1/auth/logout`
+  - `GET /api/v1/auth/me`
+  - local username/password
+  - signed session cookie
+  - `401 unauthenticated` vs `403 unauthorized`
+- phase 1 admin/user/audit endpoints 已實作：
+  - `GET /api/v1/admin/users`
+  - `POST /api/v1/admin/users`
+  - `PATCH /api/v1/admin/users/{user_id}`
+  - `POST /api/v1/admin/users/{user_id}/password-reset`
+  - `GET /api/v1/admin/audit-logs`
+- phase 1 task APIs 已使用 frozen `TaskRecord` boundary：
+  - 建立真實 `TaskRecord`
+  - 保留 actor context (`actor_id`, `requested_by`)
+  - 預設 soft dedupe
+  - `force_rerun` 可明確跳過 dedupe
+  - 依 frozen lane topology dispatch 到 simulation / characterization queue
+- phase 1 latest-result lookup APIs 已從 persisted artifacts / runs 讀取：
+  - raw simulation latest
+  - post-processing latest
+  - characterization latest
+- `/api/v1` response schema 已改成 typed `pydantic` contract，`extra="forbid"`，後續 WS6/WS8 可直接依賴這些 identifier/shape
+
+Verification:
+- `uv run pytest tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/core/shared/persistence/test_task_auth_audit_repository.py tests/core/shared/persistence/test_result_bundle_repository.py tests/core/shared/persistence/test_reconcile.py tests/core/shared/persistence/test_repository_contracts.py tests/core/shared/persistence/test_database_bootstrap.py`
+- `uv run ruff check src/app/main.py src/app/pages/login.py src/app/api src/app/services/auth_service.py src/app/services/task_submission.py src/app/services/latest_result_lookup.py src/worker/dispatch.py src/worker/simulation_tasks.py tests/app/api/test_api_v1.py src/core/shared/persistence/repositories/user_repository.py src/core/shared/persistence/repositories/contracts.py`
+- `uv run basedpyright src/app/main.py src/app/pages/login.py src/app/api src/app/services/auth_service.py src/app/services/task_submission.py src/app/services/latest_result_lookup.py src/worker/dispatch.py src/worker/simulation_tasks.py tests/app/api/test_api_v1.py src/core/shared/persistence/repositories/user_repository.py src/core/shared/persistence/repositories/contracts.py`
+- `uv run python -m py_compile src/app/main.py src/app/pages/login.py`
+
+Evidence:
+- `src/app/main.py`
+- `src/app/pages/login.py`
+- `src/app/api/router.py`
+- `src/app/api/routes/auth.py`
+- `src/app/api/routes/admin.py`
+- `src/app/api/routes/tasks.py`
+- `src/app/api/routes/results.py`
+- `src/app/api/schemas.py`
+- `src/app/services/auth_service.py`
+- `src/app/services/task_submission.py`
+- `src/app/services/latest_result_lookup.py`
+- `src/worker/dispatch.py`
+- `src/worker/simulation_tasks.py`
+- `tests/app/api/test_api_v1.py`
 
 Acceptance:
 - UI 不必直接埋 persistence 細節；可以靠 API 重建頁面狀態。

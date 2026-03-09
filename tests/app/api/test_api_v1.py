@@ -1,0 +1,424 @@
+"""Integration tests for the WS5 `/api/v1/*` contract."""
+
+from __future__ import annotations
+
+import importlib
+import sys
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.services.auth_service import ensure_bootstrap_admin, hash_password
+from core.shared.persistence import database, get_unit_of_work
+from core.shared.persistence.models import AnalysisRunRecord, DesignRecord, TraceBatchRecord
+
+
+def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
+    monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
+    monkeypatch.setenv(
+        "SC_CHARACTERIZATION_HUEY_DB_PATH",
+        str(tmp_path / "characterization_huey.db"),
+    )
+    monkeypatch.setenv("SC_SESSION_SECRET", "ws5-test-secret")
+    database.get_engine.cache_clear()
+    for module_name in (
+        "worker.characterization_huey",
+        "worker.characterization_tasks",
+        "worker.config",
+        "worker.dispatch",
+        "worker.simulation_huey",
+        "worker.simulation_tasks",
+    ):
+        sys.modules.pop(module_name, None)
+
+
+@pytest.fixture()
+def client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Generator[TestClient, None, None]:
+    _configure_test_environment(tmp_path, monkeypatch)
+    app_main = importlib.import_module("app.main")
+    ensure_bootstrap_admin()
+    with TestClient(app_main.ui_app) as test_client:
+        yield test_client
+    database.get_engine.cache_clear()
+
+
+def _login(
+    client: TestClient,
+    *,
+    username: str = "admin",
+    password: str = "admin",
+) -> dict[str, Any]:
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"username": username, "password": password},
+    )
+    assert response.status_code == 200
+    return dict(response.json())
+
+
+def _create_design(name: str) -> int:
+    with get_unit_of_work() as uow:
+        design = uow.datasets.add(
+            DesignRecord(
+                name=name,
+                source_meta={},
+                parameters={},
+            )
+        )
+        uow.flush()
+        assert design.id is not None
+        uow.commit()
+        return int(design.id)
+
+
+def _create_local_user(*, username: str, password: str, role: str = "user") -> int:
+    with get_unit_of_work() as uow:
+        user = uow.users.create_user(
+            username=username,
+            password_hash=hash_password(password),
+            role=role,
+            is_active=True,
+        )
+        uow.commit()
+        assert user.id is not None
+        return int(user.id)
+
+
+def _create_completed_trace_batch(
+    *,
+    design_id: int,
+    bundle_type: str,
+    role: str,
+    source_kind: str,
+    stage_kind: str,
+    summary_payload: dict[str, object],
+) -> int:
+    with get_unit_of_work() as uow:
+        batch = TraceBatchRecord(
+            dataset_id=design_id,
+            bundle_type=bundle_type,
+            role=role,
+            status="completed",
+            source_meta={"source_kind": source_kind, "stage_kind": stage_kind},
+            config_snapshot={"setup_kind": f"{source_kind}.{stage_kind}", "setup_version": "v1"},
+            result_payload=dict(summary_payload),
+        )
+        uow.result_bundles.add(batch)
+        uow.flush()
+        assert batch.id is not None
+        uow.commit()
+        return int(batch.id)
+
+
+def _create_completed_task(
+    *,
+    task_kind: str,
+    design_id: int,
+    requested_by: str,
+    actor_id: int | None = None,
+    trace_batch_id: int | None = None,
+    analysis_run_id: int | None = None,
+    result_summary_payload: dict[str, object] | None = None,
+) -> int:
+    with get_unit_of_work() as uow:
+        task = uow.tasks.create_task(
+            task_kind=task_kind,
+            design_id=design_id,
+            request_payload={"requested_via": "test"},
+            requested_by=requested_by,
+            actor_id=actor_id,
+        )
+        assert task.id is not None
+        uow.tasks.mark_running(int(task.id))
+        uow.tasks.mark_completed(
+            int(task.id),
+            trace_batch_id,
+            dict(result_summary_payload or {}),
+            analysis_run_id=analysis_run_id,
+        )
+        uow.commit()
+        return int(task.id)
+
+
+def test_auth_endpoints_and_page_guard(client: TestClient) -> None:
+    unauthenticated_api = client.get("/api/v1/auth/me")
+    assert unauthenticated_api.status_code == 401
+    assert unauthenticated_api.json() == {"detail": "Unauthenticated"}
+
+    unauthenticated_page = client.get("/dashboard", follow_redirects=False)
+    assert unauthenticated_page.status_code == 307
+    assert unauthenticated_page.headers["location"] == "/login?next=%2Fdashboard"
+
+    bad_password = client.post(
+        "/api/v1/auth/login",
+        json={"username": "admin", "password": "wrong-password"},
+    )
+    assert bad_password.status_code == 401
+    assert bad_password.json() == {"detail": "Invalid username or password"}
+
+    login_payload = _login(client)
+    assert login_payload["authenticated"] is True
+    assert login_payload["user"]["username"] == "admin"
+    assert login_payload["user"]["role"] == "admin"
+
+    me_payload = client.get("/api/v1/auth/me")
+    assert me_payload.status_code == 200
+    assert me_payload.json()["user"]["username"] == "admin"
+
+    authenticated_page = client.get("/dashboard")
+    assert authenticated_page.status_code == 200
+
+    logout_payload = client.post("/api/v1/auth/logout")
+    assert logout_payload.status_code == 200
+    assert logout_payload.json() == {"authenticated": False, "message": "Logged out"}
+
+    me_after_logout = client.get("/api/v1/auth/me")
+    assert me_after_logout.status_code == 401
+    assert me_after_logout.json() == {"detail": "Unauthenticated"}
+
+
+def test_admin_user_management_and_audit_api(client: TestClient) -> None:
+    _login(client)
+
+    created = client.post(
+        "/api/v1/admin/users",
+        json={
+            "username": "alice",
+            "password": "pw-1",
+            "role": "user",
+            "is_active": True,
+        },
+    )
+    assert created.status_code == 201
+    created_payload = created.json()
+    alice_id = int(created_payload["id"])
+    assert created_payload["username"] == "alice"
+    assert created_payload["role"] == "user"
+
+    listed = client.get("/api/v1/admin/users")
+    assert listed.status_code == 200
+    usernames = [row["username"] for row in listed.json()["users"]]
+    assert usernames == ["admin", "alice"]
+
+    updated = client.patch(
+        f"/api/v1/admin/users/{alice_id}",
+        json={"role": "user", "is_active": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["is_active"] is False
+
+    reenabled = client.patch(
+        f"/api/v1/admin/users/{alice_id}",
+        json={"is_active": True},
+    )
+    assert reenabled.status_code == 200
+    assert reenabled.json()["is_active"] is True
+
+    reset = client.post(
+        f"/api/v1/admin/users/{alice_id}/password-reset",
+        json={"new_password": "pw-2"},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["username"] == "alice"
+
+    audit_logs = client.get("/api/v1/admin/audit-logs")
+    assert audit_logs.status_code == 200
+    action_kinds = [row["action_kind"] for row in audit_logs.json()["logs"]]
+    assert "admin.user_created" in action_kinds
+    assert "admin.user_updated" in action_kinds
+    assert "admin.user_password_reset" in action_kinds
+
+    non_admin_client = client.__class__(client.app)
+    try:
+        login = non_admin_client.post(
+            "/api/v1/auth/login",
+            json={"username": "alice", "password": "pw-2"},
+        )
+        assert login.status_code == 200
+        forbidden = non_admin_client.get("/api/v1/admin/users")
+        assert forbidden.status_code == 403
+        assert forbidden.json() == {"detail": "Admin role required"}
+    finally:
+        non_admin_client.close()
+
+
+def test_task_creation_get_and_design_listing_use_real_task_records(
+    client: TestClient,
+) -> None:
+    design_id = _create_design("WS5 Task API Design")
+    user_id = _create_local_user(username="builder", password="builder-pass", role="user")
+
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"username": "builder", "password": "builder-pass"},
+    )
+    assert login.status_code == 200
+
+    simulation = client.post(
+        "/api/v1/tasks/simulation",
+        json={
+            "design_id": design_id,
+            "schema_source_hash": "schema-a",
+            "simulation_setup_hash": "setup-a",
+            "request_payload": {"sweep": "single"},
+            "force_rerun": False,
+        },
+    )
+    assert simulation.status_code == 202
+    simulation_payload = simulation.json()
+    assert simulation_payload["dedupe_hit"] is False
+    assert simulation_payload["dispatched_lane"] == "simulation"
+    assert simulation_payload["worker_task_name"] == "simulation_smoke_task"
+    assert simulation_payload["task"]["design_id"] == design_id
+    assert simulation_payload["task"]["actor_id"] == user_id
+    simulation_task_id = int(simulation_payload["task"]["id"])
+
+    simulation_dedupe = client.post(
+        "/api/v1/tasks/simulation",
+        json={
+            "design_id": design_id,
+            "schema_source_hash": "schema-a",
+            "simulation_setup_hash": "setup-a",
+            "request_payload": {"sweep": "single"},
+            "force_rerun": False,
+        },
+    )
+    assert simulation_dedupe.status_code == 202
+    assert simulation_dedupe.json()["dedupe_hit"] is True
+    assert int(simulation_dedupe.json()["task"]["id"]) == simulation_task_id
+
+    post_processing = client.post(
+        "/api/v1/tasks/post-processing",
+        json={
+            "design_id": design_id,
+            "source_batch_id": 12,
+            "input_source": "raw_y",
+            "request_payload": {"mode_token": "0"},
+            "force_rerun": False,
+        },
+    )
+    assert post_processing.status_code == 202
+    assert post_processing.json()["dispatched_lane"] == "simulation"
+    assert post_processing.json()["worker_task_name"] == "post_processing_smoke_task"
+
+    characterization = client.post(
+        "/api/v1/tasks/characterization",
+        json={
+            "design_id": design_id,
+            "analysis_id": "admittance_extraction",
+            "trace_record_ids": [1, 2],
+            "selected_batch_ids": [12],
+            "trace_mode_group": "base",
+            "config_state": {"fit_window": 5},
+            "force_rerun": False,
+        },
+    )
+    assert characterization.status_code == 202
+    characterization_payload = characterization.json()
+    assert characterization_payload["dispatched_lane"] == "characterization"
+    assert characterization_payload["worker_task_name"] == "characterization_smoke_task"
+
+    task_detail = client.get(f"/api/v1/tasks/{simulation_task_id}")
+    assert task_detail.status_code == 200
+    assert task_detail.json()["id"] == simulation_task_id
+    assert task_detail.json()["status"] == "queued"
+
+    design_tasks = client.get(f"/api/v1/designs/{design_id}/tasks")
+    assert design_tasks.status_code == 200
+    task_kinds = [task["task_kind"] for task in design_tasks.json()["tasks"]]
+    assert task_kinds == ["characterization", "post_processing", "simulation"]
+
+
+def test_latest_result_lookup_endpoints_use_persisted_artifacts_only(
+    client: TestClient,
+) -> None:
+    design_id = _create_design("WS5 Latest Lookup Design")
+    admin_payload = _login(client)
+    admin_id = int(admin_payload["user"]["id"])
+
+    simulation_batch_id = _create_completed_trace_batch(
+        design_id=design_id,
+        bundle_type="circuit_simulation",
+        role="manual_export",
+        source_kind="circuit_simulation",
+        stage_kind="raw",
+        summary_payload={"trace_count": 12},
+    )
+    post_processing_batch_id = _create_completed_trace_batch(
+        design_id=design_id,
+        bundle_type="simulation_postprocess",
+        role="manual_export",
+        source_kind="circuit_simulation",
+        stage_kind="postprocess",
+        summary_payload={"flow": "ptc_y"},
+    )
+
+    with get_unit_of_work() as uow:
+        analysis_run = uow.result_bundles.analysis_runs.add(
+            AnalysisRunRecord(
+                design_id=design_id,
+                analysis_id="admittance_extraction",
+                analysis_label="Admittance Extraction",
+                run_id="run-1",
+                status="completed",
+                input_trace_ids=[1, 2],
+                input_batch_ids=[simulation_batch_id],
+                input_scope="selected_trace_records",
+                trace_mode_group="base",
+                config_payload={"fit_window": 5},
+                summary_payload={"peak_count": 1},
+            )
+        )
+        uow.commit()
+        assert analysis_run.id is not None
+        analysis_run_id = int(analysis_run.id)
+
+    simulation_task_id = _create_completed_task(
+        task_kind="simulation",
+        design_id=design_id,
+        requested_by="api",
+        actor_id=admin_id,
+        trace_batch_id=simulation_batch_id,
+        result_summary_payload={"flow": "simulation"},
+    )
+    post_processing_task_id = _create_completed_task(
+        task_kind="post_processing",
+        design_id=design_id,
+        requested_by="api",
+        actor_id=admin_id,
+        trace_batch_id=post_processing_batch_id,
+        result_summary_payload={"flow": "post_processing"},
+    )
+    characterization_task_id = _create_completed_task(
+        task_kind="characterization",
+        design_id=design_id,
+        requested_by="api",
+        actor_id=admin_id,
+        analysis_run_id=analysis_run_id,
+        result_summary_payload={"flow": "characterization"},
+    )
+
+    latest_simulation = client.get(f"/api/v1/designs/{design_id}/simulation/latest")
+    assert latest_simulation.status_code == 200
+    assert latest_simulation.json()["batch_id"] == simulation_batch_id
+    assert latest_simulation.json()["task_id"] == simulation_task_id
+    assert latest_simulation.json()["stage_kind"] == "raw"
+
+    latest_post_processing = client.get(f"/api/v1/designs/{design_id}/post-processing/latest")
+    assert latest_post_processing.status_code == 200
+    assert latest_post_processing.json()["batch_id"] == post_processing_batch_id
+    assert latest_post_processing.json()["task_id"] == post_processing_task_id
+    assert latest_post_processing.json()["stage_kind"] == "postprocess"
+
+    latest_characterization = client.get(f"/api/v1/designs/{design_id}/characterization/latest")
+    assert latest_characterization.status_code == 200
+    assert latest_characterization.json()["analysis_run_id"] == analysis_run_id
+    assert latest_characterization.json()["task_id"] == characterization_task_id
+    assert latest_characterization.json()["analysis_id"] == "admittance_extraction"

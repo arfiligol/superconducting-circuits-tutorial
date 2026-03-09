@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlmodel import Session, col, select
 
 from core.shared.persistence.models import UserRecord, normalize_user_role
@@ -60,10 +62,26 @@ class UserRepository:
         self._session.flush()
         return user
 
+    def set_role(self, user_id: int, role: str) -> UserRecord:
+        """Replace one user's role."""
+        user = self._require_user(user_id)
+        user.role = normalize_user_role(role)
+        self._session.add(user)
+        self._session.flush()
+        return user
+
     def set_active(self, user_id: int, is_active: bool) -> UserRecord:
         """Enable or disable one user."""
         user = self._require_user(user_id)
         user.is_active = is_active
+        self._session.add(user)
+        self._session.flush()
+        return user
+
+    def mark_login(self, user_id: int, *, logged_in_at: datetime) -> UserRecord:
+        """Update one user's last successful login timestamp."""
+        user = self._require_user(user_id)
+        user.last_login_at = logged_in_at
         self._session.add(user)
         self._session.flush()
         return user

@@ -25,6 +25,22 @@ def simulation_smoke_task(task_id: int) -> dict[str, Any]:
 
 
 @huey.task(retries=0)
+def post_processing_smoke_task(task_id: int) -> dict[str, Any]:
+    """Queue one minimal post-processing lifecycle round-trip on the simulation lane."""
+    return execute_managed_task(
+        task_id=task_id,
+        lane_name=_LANE_NAME,
+        worker_task_name="post_processing_smoke_task",
+        operation=lambda: TaskExecutionResult(
+            result_summary_payload={
+                "smoke_result": "ok",
+                "flow": "post_processing",
+            },
+        ),
+    )
+
+
+@huey.task(retries=0)
 def simulation_failure_task(
     task_id: int,
     message: str = "simulation smoke failure",
