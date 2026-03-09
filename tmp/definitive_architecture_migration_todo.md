@@ -1370,7 +1370,8 @@ Evidence:
 
 ### WS8. Characterization Alignment
 
-Status: `not started`
+Status: `completed`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS2-01`
 - `DA-WS4-03`
@@ -1379,7 +1380,7 @@ Depends on:
 
 Tasks:
 
-- [ ] DA-WS8-01 決定 characterization 是否同樣走 Huey task
+- [x] DA-WS8-01 決定 characterization 是否同樣走 Huey task
   - 分析不同 analysis 的執行時間：
     - 快速分析（< 2s，如 resonance extraction）→ 可先同步執行，但 contract 走 `TaskRecord`
     - 慢速分析（> 5s，如 SQUID fit）→ 應走 Huey worker
@@ -1391,33 +1392,132 @@ Tasks:
   - Implementation note:
     - 可以分批把不同 analysis 實際搬進 worker
     - 但架構上不再保留 page-local synchronous authority 路線
+  - WS8 outcome:
+    - canonical `/characterization` submit path 已改成 `POST /api/v1/tasks/characterization`
+    - API submission 現在建立 `TaskRecord(status=queued)` + pending `AnalysisRunRecord(status=queued)`
+    - dispatch metadata 固定進入獨立 `characterization` lane 的 `characterization_run_task`
 
-- [ ] DA-WS8-02 讓 `AnalysisRunRecord` 與 `TaskRecord` 對齊
+- [x] DA-WS8-02 讓 `AnalysisRunRecord` 與 `TaskRecord` 對齊
   - 確認 `AnalysisRunRecord` 是否已有足夠的 status/error 欄位
   - 若沒有，加入或透過 `TaskRecord` FK 補齊
+  - WS8 outcome:
+    - `AnalysisRunRepository.save(...)` 已支援 queued/running/completed/failed lifecycle update
+    - `create_pending_analysis_run(...)` 會在 submit 時先持久化 queued run
+    - worker path 透過 `save_analysis_run_status(...)` 寫回 running/failed/completed 狀態
+    - `TaskRecord.analysis_run_id` 成為 page/API/latest-result recovery 的 canonical linkage
 
-- [ ] DA-WS8-03 `/characterization` authority audit（類似 DA-WS6-01）
-  - 列出 characterization page 中所有 session-local authority 使用點
-  - `characterization/state.py` 檢查
-  - `app/services/characterization_runner.py` 的 input contract 檢查
-  - `app/services/characterization_trace_scope.py` (486 lines) 的 scope query 路徑檢查
+- [x] DA-WS8-03 `/characterization` authority audit（類似 DA-WS6-01）
+  - **A) page-local authority（accepted WS7 baseline, before WS8 edits）**
+    - execution path:
+      - `run_selected_analysis()` 直接建立 `CharacterizationRunRequest`
+      - 透過 `run.cpu_bound(invoke_sync_operation, operation)` 在 NiceGUI process 內執行 heavy analysis
+      - page 自己決定 queued/running/completed/failed 顯示，worker/task 不是 primary authority
+    - persistence path:
+      - shared boundary 雖然可 persist `AnalysisRunRecord`，但 page 仍是 canonical sequencing owner
+      - page-local log/history 與 refresh timing 仍決定使用者看到的 run truth
+    - refresh/recovery path:
+      - refresh 後雖可從 DB 看到 completed run artifacts，但沒有 canonical persisted task restore path
+      - page 沒有 `TaskRecord` polling / latest-task recovery authority
+    - status/progress path:
+      - `CharacterizationRuntimeState.analysis_status_history` 是 page-local truth
+      - long-running warning 為 page-local heartbeat 行為，refresh 後不會從 persisted task progress 重建
+  - **B) `characterization/state.py` inventory（WS8 after cutover）**
+    - 保留的 transient-only UI state：
+      - `analysis_status_history`
+      - `analysis_log_container`
+      - `selected_trace_ids_by_scope`
+      - `trace_table_state_by_scope`
+      - `analysis_scope_compatibility_cache`
+      - `active_log_context`
+    - 新的 persisted-tracking fields（allowed to mirror DB truth, not own it）：
+      - `current_task_id`
+      - `current_task_status`
+      - `current_analysis_run_id`
+      - `current_task_error`
+      - `current_task_analysis_id`
+      - `last_task_poll_signature`
+      - `long_running_warning_shown`
+  - **C) shared input contract audit**
+    - `app/services/characterization_task_contract.py` 現在定義 canonical persisted input：
+      - `PersistedCharacterizationTaskRequest`
+      - actor/context payload
+      - `analysis_id`, `run_id`, `trace_record_ids`, `selected_batch_ids`, `selected_scope_token`
+      - `config_state`, `summary_payload`
+    - page 不再以 live runtime result object 當 authority；worker 會從 `TaskRecord.request_payload` 重建 shared request
+  - **D) scope query path audit**
+    - `app/services/characterization_trace_scope.py` 仍是 page-side query helper，但它只負責 trace availability / source-summary query
+    - 它不再擁有 canonical execution/persistence authority
+    - run/result truth 現在回到 `TaskRecord` + `AnalysisRunRecord` + persisted artifacts
+  - **E) remaining page-local state after WS8**
+    - 保留的是可丟失的 UI 選擇/日誌呈現
+    - canonical execution, run persistence, latest result recovery, and heartbeat truth 已切到 persisted sources
 
-- [ ] DA-WS8-04 `/characterization` history/result navigation 改讀 persisted run
+- [x] DA-WS8-04 `/characterization` history/result navigation 改讀 persisted run
+  - page refresh authority 現在來自：
+    - `/api/v1/tasks/{id}`
+    - `/api/v1/designs/{design_id}/tasks`
+    - `/api/v1/designs/{design_id}/characterization/latest`
+  - `build_recovery_state(...)` 會恢復 latest characterization task、polling state、long-running warning 與 latest completed run context
+  - completed result view 仍讀 persisted `AnalysisRunRecord` / derived artifacts，不再依賴 page-local current result object
 
-- [ ] DA-WS8-05 analysis failure / diagnostics 寫回 persisted records
+- [x] DA-WS8-05 analysis failure / diagnostics 寫回 persisted records
+  - `characterization_run_task` worker path 會：
+    - heartbeat `TaskRecord.progress_payload`
+    - success 時寫回 completed `TaskRecord` + completed `AnalysisRunRecord`
+    - failure 時寫回 failed `TaskRecord.error_payload` + failed `AnalysisRunRecord.summary_payload`
+  - page polling 會從 persisted task error/progress 還原 queued/running/completed/failed 訊號，而不是只看 page-local exception
 
-- [ ] DA-WS8-06 characterization heartbeat/status UX parity
+- [x] DA-WS8-06 characterization heartbeat/status UX parity
   - 現況：
     - `characterization/state.py` 有 `analysis_status_history`
     - page 內已有 long-running heartbeat warning 行為
   - 目標：
     - 與 simulation 同樣切到 persisted progress source
     - refresh 後可重建近期 status / diagnostics
+  - WS8 outcome:
+    - queued/running/completed/failed 由 persisted polling 顯示
+    - long-running warning 由 persisted `TaskRecord.progress_payload.warning` 與 recovery timeout logic 觸發
+    - task id / analysis run id 會寫進 status lines，保留 debug visibility
+    - reload/new client 可重新找回 latest task/run，避免黑盒化
 
 Acceptance:
 - `Characterization` 與 simulation/post-processing 擁有一致的 persisted execution semantics。
 - `/characterization` F5 刷新後不失去 analysis 結果。
 - Characterization 的 debug / progress 可見性不退化。
+
+Progress:
+- canonical `/characterization` Run path now builds a persisted characterization request, creates `TaskRecord(status=queued)` plus linked queued `AnalysisRunRecord`, and dispatches `characterization_run_task` on the dedicated characterization lane instead of running heavy analysis in the NiceGUI process
+- characterization worker path now reconstructs the shared WS4 characterization boundary from `TaskRecord.request_payload`, writes heartbeat/progress into `TaskRecord.progress_payload`, persists success/failure into `TaskRecord` + `AnalysisRunRecord`, and emits stable worker failure payloads
+- refresh/reload authority now comes from persisted `/api/v1/tasks/{id}`, `/api/v1/designs/{design_id}/tasks`, and `/api/v1/designs/{design_id}/characterization/latest`; the page recovers latest queued/running/completed task/run state without page-local execution authority
+- characterization page-local state is reduced to transient UI selections and rendered status history; canonical run persistence, result authority, and progress truth now come from persisted records/artifacts
+
+Verification:
+- `uv run pytest tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_characterization.py tests/app/pages/test_characterization_result_loader.py tests/app/services/test_characterization_runner.py tests/core/shared/persistence/test_result_bundle_repository.py tests/core/shared/persistence/test_repository_contracts.py`
+- `uv run ruff check src/app/pages/characterization/__init__.py src/app/pages/characterization/api_client.py src/app/pages/characterization/result_loader.py src/app/pages/characterization/state.py src/app/services/characterization_runner.py src/app/services/characterization_task_contract.py src/app/services/latest_result_lookup.py src/app/services/task_submission.py src/core/shared/persistence/repositories/analysis_run_repository.py src/core/shared/persistence/repositories/contracts.py src/worker/characterization_execution.py src/worker/characterization_tasks.py src/worker/dispatch.py tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_characterization.py tests/app/pages/test_characterization_result_loader.py`
+- `uv run basedpyright src/app/pages/characterization/api_client.py src/app/pages/characterization/result_loader.py src/app/pages/characterization/state.py src/app/services/characterization_runner.py src/app/services/characterization_task_contract.py src/app/services/latest_result_lookup.py src/app/services/task_submission.py src/core/shared/persistence/repositories/analysis_run_repository.py src/core/shared/persistence/repositories/contracts.py src/worker/characterization_execution.py src/worker/characterization_tasks.py src/worker/dispatch.py`
+- `uv run basedpyright src/app/pages/characterization/__init__.py`
+- `uv run python -m py_compile src/app/pages/characterization/__init__.py src/app/pages/characterization/api_client.py src/app/pages/characterization/result_loader.py src/app/pages/characterization/state.py src/app/services/characterization_runner.py src/app/services/characterization_task_contract.py src/worker/characterization_execution.py src/worker/characterization_tasks.py`
+- `uv run python - <<'PY' ... submit characterization task via TestClient -> consume characterization worker -> poll task/latest result -> reopen client -> recover latest task/result ... PY`
+
+Evidence:
+- `src/app/pages/characterization/__init__.py`
+- `src/app/pages/characterization/api_client.py`
+- `src/app/pages/characterization/result_loader.py`
+- `src/app/pages/characterization/state.py`
+- `src/app/services/characterization_runner.py`
+- `src/app/services/characterization_task_contract.py`
+- `src/app/services/task_submission.py`
+- `src/app/services/latest_result_lookup.py`
+- `src/core/shared/persistence/repositories/analysis_run_repository.py`
+- `src/core/shared/persistence/repositories/contracts.py`
+- `src/worker/characterization_execution.py`
+- `src/worker/characterization_tasks.py`
+- `src/worker/dispatch.py`
+- `tests/app/api/test_api_v1.py`
+- `tests/worker/test_huey_workers.py`
+- `tests/app/pages/test_characterization.py`
+- `tests/app/pages/test_characterization_result_loader.py`
+- `tests/app/services/test_characterization_runner.py`
 
 ---
 

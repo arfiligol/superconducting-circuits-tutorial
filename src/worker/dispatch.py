@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from app.services.characterization_task_contract import (
+    extract_characterization_request_from_api_payload,
+)
 from app.services.post_processing_task_contract import (
     extract_post_processing_request_from_api_payload,
 )
@@ -85,6 +88,24 @@ def enqueue_task(
         )
 
     if task_kind == "characterization":
+        parameters = (
+            dict(request_payload.get("parameters", {}))
+            if (
+                isinstance(request_payload, dict)
+                and isinstance(request_payload.get("parameters"), dict)
+            )
+            else {}
+        )
+        characterization_request = extract_characterization_request_from_api_payload(parameters)
+        if characterization_request is not None:
+            from worker.characterization_tasks import characterization_run_task
+
+            characterization_run_task(task_id)
+            return DispatchedWorkerTask(
+                lane="characterization",
+                worker_task_name="characterization_run_task",
+            )
+
         from worker.characterization_tasks import characterization_smoke_task
 
         characterization_smoke_task(task_id)

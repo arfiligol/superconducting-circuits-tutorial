@@ -134,7 +134,11 @@ def _latest_trace_batch(
 def latest_characterization_result(design_id: int) -> LatestCharacterizationArtifact | None:
     """Return the newest persisted characterization run for one design."""
     with get_unit_of_work() as uow:
-        runs = uow.result_bundles.analysis_runs.list_by_design(design_id)
+        runs = [
+            run
+            for run in uow.result_bundles.analysis_runs.list_by_design(design_id)
+            if str(run.status).strip() == "completed"
+        ]
         if not runs:
             return None
         latest_run = max(

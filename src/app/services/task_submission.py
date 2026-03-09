@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any
 
+from app.services.characterization_runner import create_pending_analysis_run
+from app.services.characterization_task_contract import (
+    extract_characterization_request_from_api_payload,
+)
 from app.services.execution_context import ActorContext, UseCaseContext
 from app.services.post_processing_batch_persistence import (
     create_pending_post_processing_batch,
@@ -140,6 +144,12 @@ def create_api_task(
             if task_kind == "post_processing"
             else None
         )
+        characterization_request = (
+            extract_characterization_request_from_api_payload(dict(normalized_request_payload))
+            if task_kind == "characterization"
+            else None
+        )
+        analysis_run_id: int | None = None
         if simulation_request is not None:
             pending_batch = create_pending_simulation_batch(
                 uow=uow,
@@ -163,6 +173,13 @@ def create_api_task(
                 step_sequence=post_processing_request.step_sequence,
             )
             trace_batch_id = int(pending_batch.id or 0)
+        elif characterization_request is not None:
+            pending_analysis_run = create_pending_analysis_run(
+                characterization_request.to_run_request(),
+                selected_trace_ids=characterization_request.trace_record_ids,
+                uow=uow,
+            )
+            analysis_run_id = int(pending_analysis_run.id or 0)
         task = uow.tasks.create_task(
             task_kind=task_kind,
             design_id=design_id,
@@ -171,6 +188,7 @@ def create_api_task(
             actor_id=actor.actor_id,
             dedupe_key=None if force_rerun else dedupe_key,
             trace_batch_id=trace_batch_id,
+            analysis_run_id=analysis_run_id,
         )
         uow.audit_logs.append_log(
             actor_id=actor.actor_id,
@@ -216,6 +234,11 @@ def _dispatch_metadata_for_task(task: TaskRecord) -> DispatchedWorkerTask:
             return DispatchedWorkerTask("simulation", "post_processing_run_task")
         return DispatchedWorkerTask("simulation", "post_processing_smoke_task")
     if task.task_kind == "characterization":
+        characterization_request = extract_characterization_request_from_api_payload(
+            dict(task.request_payload.get("parameters", {}))
+        )
+        if characterization_request is not None and task.analysis_run_id is not None:
+            return DispatchedWorkerTask("characterization", "characterization_run_task")
         return DispatchedWorkerTask("characterization", "characterization_smoke_task")
     raise ValueError(f"Unsupported task kind '{task.task_kind}'.")
 

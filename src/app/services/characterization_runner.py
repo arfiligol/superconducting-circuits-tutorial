@@ -29,6 +29,7 @@ from core.analysis.domain import (
 )
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import AnalysisRunRecord
+from core.shared.persistence.unit_of_work import SqliteUnitOfWork
 
 
 def _utcnow() -> datetime:
@@ -301,6 +302,10 @@ def _build_analysis_run_record(
     request: CharacterizationRunRequest,
     *,
     selected_trace_ids: Sequence[int],
+    status: str = "completed",
+    analysis_run_id: int | None = None,
+    completed_at: datetime | None = None,
+    summary_payload: Mapping[str, object] | None = None,
 ) -> AnalysisRunRecord:
     """Build one logical analysis-run record for Characterization persistence."""
     normalized_config_payload: dict[str, object] = dict(request.config_state)
@@ -316,7 +321,7 @@ def _build_analysis_run_record(
         "selected_trace_mode_group",
         str(request.trace_mode_group or ""),
     )
-    normalized_summary_payload = dict(request.summary_payload)
+    normalized_summary_payload = dict(summary_payload or request.summary_payload)
     normalized_summary_payload.setdefault(
         "selected_trace_count",
         len([int(trace_id) for trace_id in selected_trace_ids]),
@@ -326,41 +331,91 @@ def _build_analysis_run_record(
         str(request.trace_mode_group or ""),
     )
     return AnalysisRunRecord(
+        id=analysis_run_id,
         design_id=request.dataset_id,
         analysis_id=request.analysis_id,
         analysis_label=str(request.analysis_label or request.analysis_id),
         run_id=str(request.run_id),
-        status="completed",
+        status=status,
         input_trace_ids=[int(trace_id) for trace_id in selected_trace_ids],
         input_batch_ids=[int(batch_id) for batch_id in request.selected_batch_ids],
         input_scope=str(request.selected_scope_token),
         trace_mode_group=str(request.trace_mode_group or ""),
         config_payload=normalized_config_payload,
         summary_payload=normalized_summary_payload,
+        completed_at=completed_at,
     )
 
 
 def _persist_analysis_run_record(
+    analysis_run: AnalysisRunRecord,
+    *,
+    uow: SqliteUnitOfWork | None = None,
+) -> AnalysisRunRecord:
+    """Persist one logical analysis run through the shared boundary."""
+    if uow is not None:
+        return uow.result_bundles.analysis_runs.save(analysis_run)
+    with get_unit_of_work() as local_uow:
+        persisted_run = local_uow.result_bundles.analysis_runs.save(analysis_run)
+        local_uow.commit()
+        return persisted_run
+
+
+def create_pending_analysis_run(
     request: CharacterizationRunRequest,
     *,
-    selected_trace_ids: Sequence[int],
+    selected_trace_ids: Sequence[int] | None = None,
+    uow: SqliteUnitOfWork | None = None,
 ) -> AnalysisRunRecord:
-    """Persist one completed logical analysis run through the shared boundary."""
-    with get_unit_of_work() as uow:
-        persisted_run = uow.result_bundles.analysis_runs.add(
-            _build_analysis_run_record(
-                request,
-                selected_trace_ids=selected_trace_ids,
-            )
-        )
-        uow.commit()
-    return persisted_run
+    """Create one queued logical analysis run before worker dispatch."""
+    trace_ids = tuple(
+        int(trace_id) for trace_id in (selected_trace_ids or request.trace_record_ids or ())
+    )
+    return _persist_analysis_run_record(
+        _build_analysis_run_record(
+            request,
+            selected_trace_ids=trace_ids,
+            status="queued",
+            summary_payload={
+                **dict(request.summary_payload),
+                "phase": "queued",
+                "selected_trace_count": len(trace_ids),
+            },
+        ),
+        uow=uow,
+    )
+
+
+def save_analysis_run_status(
+    request: CharacterizationRunRequest,
+    *,
+    analysis_run_id: int | None,
+    selected_trace_ids: Sequence[int],
+    status: str,
+    summary_payload: Mapping[str, object] | None = None,
+    completed_at: datetime | None = None,
+    uow: SqliteUnitOfWork | None = None,
+) -> AnalysisRunRecord:
+    """Update one logical analysis run to the requested persisted status."""
+    return _persist_analysis_run_record(
+        _build_analysis_run_record(
+            request,
+            selected_trace_ids=selected_trace_ids,
+            status=status,
+            analysis_run_id=analysis_run_id,
+            completed_at=completed_at,
+            summary_payload=summary_payload,
+        ),
+        uow=uow,
+    )
 
 
 def execute_characterization_run(
     request: CharacterizationRunRequest,
     *,
     progress_callback: ProgressCallback | None = None,
+    persist_analysis_run: bool = True,
+    analysis_run_id: int | None = None,
 ) -> CharacterizationRunResult:
     """Execute one characterization analysis run through the shared boundary."""
     trace_ids = list(request.trace_record_ids) if request.trace_record_ids is not None else None
@@ -439,10 +494,34 @@ def execute_characterization_run(
     else:
         raise ValueError(f"Unsupported analysis id: {request.analysis_id}")
 
-    persisted_analysis_run = _persist_analysis_run_record(
-        request,
-        selected_trace_ids=selected_trace_ids,
-    )
+    persisted_analysis_run = None
+    if persist_analysis_run:
+        completed_summary_payload = {
+            **dict(request.summary_payload),
+            "selected_trace_count": len(selected_trace_ids),
+            "selected_trace_mode_group": str(request.trace_mode_group or ""),
+        }
+        persisted_analysis_run = save_analysis_run_status(
+            request,
+            analysis_run_id=analysis_run_id,
+            selected_trace_ids=selected_trace_ids,
+            status="completed",
+            summary_payload=completed_summary_payload,
+            completed_at=_utcnow(),
+        )
+    else:
+        persisted_analysis_run = _build_analysis_run_record(
+            request,
+            selected_trace_ids=selected_trace_ids,
+            status="completed",
+            analysis_run_id=analysis_run_id,
+            completed_at=_utcnow(),
+            summary_payload={
+                **dict(request.summary_payload),
+                "selected_trace_count": len(selected_trace_ids),
+                "selected_trace_mode_group": str(request.trace_mode_group or ""),
+            },
+        )
     updates.append(
         emit_progress(
             progress_callback,
@@ -497,6 +576,8 @@ async def execute_characterization_run_async(
     progress_callback: ProgressCallback | None = None,
     heartbeat_interval_seconds: float = 5.0,
     long_running_warning_after_seconds: float = 60.0,
+    persist_analysis_run: bool = True,
+    analysis_run_id: int | None = None,
 ) -> CharacterizationRunResult:
     """Async adapter for the shared characterization boundary."""
     updates: list[TaskProgressUpdate] = []
@@ -510,6 +591,8 @@ async def execute_characterization_run_async(
         execute_characterization_run,
         request,
         progress_callback=_record_progress,
+        persist_analysis_run=persist_analysis_run,
+        analysis_run_id=analysis_run_id,
     )
     if executor is None:
         task = asyncio.create_task(asyncio.to_thread(operation))
@@ -595,9 +678,11 @@ __all__ = [
     "CharacterizationRunResult",
     "SweepSupportDiagnostic",
     "_diagnose_analysis_sweep_support_from_records",
+    "create_pending_analysis_run",
     "diagnose_analysis_sweep_support",
     "execute_analysis_run",
     "execute_characterization_run",
     "execute_characterization_run_async",
     "invoke_sync_operation",
+    "save_analysis_run_status",
 ]

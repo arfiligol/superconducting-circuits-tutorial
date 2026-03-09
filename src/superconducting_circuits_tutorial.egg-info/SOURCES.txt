@@ -21,6 +21,8 @@ src/app/pages/schema_editor.py
 src/app/pages/schemas.py
 src/app/pages/schemdraw_live_preview.py
 src/app/pages/characterization/__init__.py
+src/app/pages/characterization/api_client.py
+src/app/pages/characterization/result_loader.py
 src/app/pages/characterization/state.py
 src/app/pages/simulation/__init__.py
 src/app/pages/simulation/api_client.py
@@ -33,6 +35,7 @@ src/app/services/analysis_scope_evaluator.py
 src/app/services/auth_service.py
 src/app/services/browser_tooling.py
 src/app/services/characterization_runner.py
+src/app/services/characterization_task_contract.py
 src/app/services/characterization_trace_scope.py
 src/app/services/dataset_profile.py
 src/app/services/design_trace_workflow.py
@@ -172,6 +175,7 @@ src/superconducting_circuits_tutorial.egg-info/entry_points.txt
 src/superconducting_circuits_tutorial.egg-info/requires.txt
 src/superconducting_circuits_tutorial.egg-info/top_level.txt
 src/worker/__init__.py
+src/worker/characterization_execution.py
 src/worker/characterization_huey.py
 src/worker/characterization_tasks.py
 src/worker/config.py

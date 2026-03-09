@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.auth_service import authenticate_user, ensure_bootstrap_admin, hash_password
+from app.services.characterization_task_contract import build_characterization_submission
 from app.services.execution_context import build_ui_use_case_context
 from app.services.post_processing_task_contract import build_post_processing_submission
 from app.services.simulation_batch_persistence import (
@@ -510,6 +511,71 @@ def test_post_processing_task_submission_dispatches_real_worker_path_and_persist
     summary_payload = latest_payload["summary_payload"]["trace_batch_record"]["summary_payload"]
     assert summary_payload["run_kind"] == "single_result"
     assert summary_payload["input_source"] == "raw_y"
+
+
+def test_characterization_task_submission_dispatches_real_worker_path_and_persists_result(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    design_id = _create_design("WS8 Persisted Characterization Design")
+    _login(client, username="admin", password="admin")
+
+    submission = build_characterization_submission(
+        design_id=design_id,
+        analysis_id="admittance_extraction",
+        analysis_label="Admittance Extraction",
+        run_id="char-api-1",
+        trace_record_ids=[1, 2],
+        selected_batch_ids=[12],
+        selected_scope_token="all_dataset_records",
+        trace_mode_group="base",
+        config_state={"fit_window": 5},
+        summary_payload={"selected_trace_count": 2},
+        context=build_ui_use_case_context(
+            actor_id=1,
+            role="admin",
+            metadata={"flow": "characterization", "design_id": design_id},
+        ),
+        force_rerun=False,
+    )
+
+    characterization = client.post(
+        "/api/v1/tasks/characterization",
+        json=submission.api_request.model_dump(mode="json"),
+    )
+    assert characterization.status_code == 202
+    payload = characterization.json()
+    assert payload["dedupe_hit"] is False
+    assert payload["dispatched_lane"] == "characterization"
+    assert payload["worker_task_name"] == "characterization_run_task"
+    task_id = int(payload["task"]["id"])
+    analysis_run_id = int(payload["task"]["analysis_run_id"])
+
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_extract_service.ResonanceExtractService.extract_admittance",
+        lambda self, dataset_id, **kwargs: None,
+    )
+
+    characterization_huey = importlib.import_module("worker.characterization_huey")
+    processed = characterization_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    assert processed == 1
+
+    task_detail = client.get(f"/api/v1/tasks/{task_id}")
+    assert task_detail.status_code == 200
+    task_payload = task_detail.json()
+    assert task_payload["status"] == "completed"
+    assert task_payload["analysis_run_id"] == analysis_run_id
+    assert task_payload["result_summary_payload"]["worker_task_name"] == (
+        "characterization_run_task"
+    )
+
+    latest_characterization = client.get(f"/api/v1/designs/{design_id}/characterization/latest")
+    assert latest_characterization.status_code == 200
+    latest_payload = latest_characterization.json()
+    assert latest_payload["analysis_run_id"] == analysis_run_id
+    assert latest_payload["task_id"] == task_id
+    assert latest_payload["analysis_id"] == "admittance_extraction"
+    assert latest_payload["input_batch_ids"] == [12]
 
 
 def test_simulation_task_submission_dispatches_real_worker_path_and_persists_result(

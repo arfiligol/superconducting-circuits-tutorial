@@ -169,10 +169,33 @@ class AnalysisRunRepository:
         self._session.flush()
         return analysis_run_record_from_batch(batch)
 
+    def save(self, analysis_run: AnalysisRunRecord) -> AnalysisRunRecord:
+        """Insert or update one logical analysis run."""
+        if analysis_run.id is None:
+            return self.add(analysis_run)
+
+        batch = self._session.get(TraceBatchRecord, int(analysis_run.id))
+        if batch is None or not is_analysis_run_batch(batch):
+            raise ValueError(f"Analysis run ID {analysis_run.id} not found.")
+
+        updated = analysis_run_batch_from_record(analysis_run)
+        batch.dataset_id = updated.dataset_id
+        batch.bundle_type = updated.bundle_type
+        batch.role = updated.role
+        batch.status = updated.status
+        batch.source_meta = dict(updated.source_meta)
+        batch.config_snapshot = dict(updated.config_snapshot)
+        batch.result_payload = dict(updated.result_payload)
+        batch.created_at = updated.created_at
+        batch.completed_at = updated.completed_at
+        self._session.add(batch)
+        self._session.flush()
+        return analysis_run_record_from_batch(batch)
+
     def get(self, id: int) -> AnalysisRunRecord | None:
         """Load one logical analysis run by ID."""
         batch = self._session.get(TraceBatchRecord, id)
-        if not is_analysis_run_batch(batch):
+        if batch is None or not is_analysis_run_batch(batch):
             return None
         return analysis_run_record_from_batch(batch)
 

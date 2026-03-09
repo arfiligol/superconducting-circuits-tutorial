@@ -1,9 +1,11 @@
 """Tests for Characterization page helpers."""
 
+import inspect
+
+import app.pages.characterization as characterization_page
 from app.pages.characterization import (
     _analysis_run_provenance_text,
     _build_analysis_run_availability,
-    _build_analysis_run_record,
     _build_analysis_run_ui_state,
     _build_fit_parameter_table,
     _build_mode_vs_ljun_dataframe,
@@ -21,7 +23,11 @@ from app.pages.characterization import (
     _trace_mode_group_for_selected_rows,
     _trace_source_summary_payload,
 )
-from app.services.characterization_runner import SweepSupportDiagnostic
+from app.services.characterization_runner import (
+    CharacterizationRunRequest,
+    SweepSupportDiagnostic,
+    _build_analysis_run_record,
+)
 from app.services.result_artifact_registry import build_result_artifacts_for_analysis
 from core.shared.persistence.models import (
     AnalysisRunRecord,
@@ -32,16 +38,18 @@ from core.shared.persistence.models import (
 
 def test_build_analysis_run_record_captures_dataset_scope_input() -> None:
     run_record = _build_analysis_run_record(
-        design_id=9,
-        analysis_id="s21_resonance_fit",
-        analysis_label="S21 Resonance Fit",
-        run_id="char-test-run",
+        CharacterizationRunRequest(
+            dataset_id=9,
+            analysis_id="s21_resonance_fit",
+            analysis_label="S21 Resonance Fit",
+            run_id="char-test-run",
+            config_state={"model": "notch", "f_min": 4.5},
+            selected_batch_ids=[],
+            selected_scope_token="all_dataset_records",
+            trace_mode_group="base",
+            summary_payload={"selected_trace_count": 2},
+        ),
         selected_trace_ids=[101, 102],
-        selected_batch_ids=[],
-        selected_scope_token="all_dataset_records",
-        selected_trace_mode_group="base",
-        config_payload={"model": "notch", "f_min": 4.5},
-        summary_payload={"selected_trace_count": 2},
     )
 
     assert isinstance(run_record, AnalysisRunRecord)
@@ -632,3 +640,12 @@ def test_analysis_run_provenance_text_prefers_persisted_source_summary() -> None
     )
 
     assert _analysis_run_provenance_text(run_record) == "Import, Manual Export · batches #12, #14"
+
+
+def test_characterization_page_submits_persisted_api_task_instead_of_page_local_execution() -> None:
+    source = inspect.getsource(characterization_page)
+
+    assert "submit_characterization_task(" in source
+    assert "build_characterization_submission(" in source
+    assert "run.cpu_bound" not in source
+    assert "execute_characterization_run_async(" not in source

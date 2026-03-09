@@ -59,6 +59,13 @@ class CharacterizationRuntimeState:
 
     analysis_status_history: list[dict[str, str]]
     analysis_log_container: Any | None
+    current_task_id: int | None
+    current_task_status: str | None
+    current_analysis_run_id: int | None
+    current_task_error: str | None
+    current_task_analysis_id: str | None
+    last_task_poll_signature: str | None
+    long_running_warning_shown: bool
     selected_trace_ids_by_scope: dict[str, set[int]]
     trace_table_state_by_scope: dict[str, dict[str, object]]
     analysis_scope_compatibility_cache: dict[str, AnalysisScopeCompatibility]
@@ -70,6 +77,13 @@ class CharacterizationRuntimeState:
         return cls(
             analysis_status_history=[],
             analysis_log_container=None,
+            current_task_id=None,
+            current_task_status=None,
+            current_analysis_run_id=None,
+            current_task_error=None,
+            current_task_analysis_id=None,
+            last_task_poll_signature=None,
+            long_running_warning_shown=False,
             selected_trace_ids_by_scope={},
             trace_table_state_by_scope={},
             analysis_scope_compatibility_cache={},

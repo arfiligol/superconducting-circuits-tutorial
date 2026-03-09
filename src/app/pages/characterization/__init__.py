@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
@@ -10,9 +11,17 @@ from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from nicegui import app, run, ui
+from nicegui import app, ui
 
 from app.layout import app_shell
+from app.pages.characterization.api_client import (
+    ApiClientError,
+    get_design_tasks,
+    get_latest_characterization_result,
+    get_task,
+    submit_characterization_task,
+)
+from app.pages.characterization.result_loader import build_recovery_state
 from app.pages.characterization.state import (
     AnalysisRunAvailability,
     AnalysisRunUiState,
@@ -23,12 +32,10 @@ from app.pages.characterization.state import (
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
 from app.services.analysis_registry import list_dataset_analyses
 from app.services.characterization_runner import (
-    CharacterizationRunRequest,
     SweepSupportDiagnostic,
     diagnose_analysis_sweep_support,
-    execute_characterization_run_async,
-    invoke_sync_operation,
 )
+from app.services.characterization_task_contract import build_characterization_submission
 from app.services.characterization_trace_scope import (
     TraceSourceSummary,
     count_scope_trace_records,
@@ -1180,6 +1187,19 @@ def characterization_page():
 
         selected_dataset_ids = app.storage.user.get("selected_datasets", [])
         runtime_state = CharacterizationRuntimeState.create()
+        poll_timer: Any | None = None
+        pending_tasks: set[asyncio.Task[Any]] = set()
+
+        def _spawn_background_task(coro: Any) -> None:
+            task = asyncio.create_task(coro)
+            pending_tasks.add(task)
+            task.add_done_callback(pending_tasks.discard)
+
+        def _active_design_id() -> int | None:
+            active_id = app.storage.user.get("analysis_current_dataset")
+            if isinstance(active_id, int):
+                return active_id
+            return None
 
         def append_analysis_status(level: str, message: str) -> None:
             runtime_state.append_status(
@@ -1222,6 +1242,153 @@ def characterization_page():
                         ui.label(f"[{item['time']}] {item['message']}").classes(
                             "text-sm text-fg whitespace-pre-wrap break-all"
                         )
+
+        def _apply_polled_characterization_task_status(task: Any | None) -> None:
+            if task is None:
+                runtime_state.current_task_status = None
+                runtime_state.current_task_error = None
+                runtime_state.last_task_poll_signature = None
+                return
+
+            runtime_state.current_task_id = int(task.id)
+            runtime_state.current_task_status = str(task.status)
+            runtime_state.current_analysis_run_id = (
+                int(task.analysis_run_id) if task.analysis_run_id is not None else None
+            )
+            runtime_state.current_task_analysis_id = str(
+                task.request_payload.get("parameters", {}).get("analysis_id", "")
+            )
+            error_payload = getattr(task, "error_payload", {}) or {}
+            runtime_state.current_task_error = (
+                str(error_payload.get("summary"))
+                if isinstance(error_payload, Mapping) and error_payload.get("summary")
+                else None
+            )
+            status_signature = (
+                f"{task.id}:{task.status}:{task.analysis_run_id}:"
+                f"{task.completed_at.isoformat() if task.completed_at is not None else ''}:"
+                f"{runtime_state.current_task_error or ''}"
+            )
+            if status_signature == runtime_state.last_task_poll_signature:
+                return
+            runtime_state.last_task_poll_signature = status_signature
+
+            if task.status == "queued":
+                append_analysis_status(
+                    "info",
+                    f"Characterization queued: task=#{int(task.id)}, run={task.analysis_run_id}.",
+                )
+            elif task.status == "running":
+                append_analysis_status(
+                    "info",
+                    f"Characterization running: task=#{int(task.id)}, run={task.analysis_run_id}.",
+                )
+            elif task.status == "completed":
+                runtime_state.long_running_warning_shown = False
+                append_analysis_status(
+                    "positive",
+                    (
+                        f"Characterization completed: task=#{int(task.id)}, "
+                        f"run={task.analysis_run_id}."
+                    ),
+                )
+            elif task.status == "failed":
+                runtime_state.long_running_warning_shown = False
+                append_analysis_status(
+                    "negative",
+                    (
+                        f"Characterization failed: task=#{int(task.id)}, "
+                        f"run={task.analysis_run_id}. "
+                        f"{runtime_state.current_task_error or 'See task error payload.'}"
+                    ),
+                )
+
+        async def _refresh_characterization_authority(
+            *,
+            preferred_task_id: int | None = None,
+        ) -> None:
+            active_id = _active_design_id()
+            if active_id is None:
+                return
+            tasks_response = await get_design_tasks(active_id)
+            latest_result = await get_latest_characterization_result(active_id)
+            recovery_state = build_recovery_state(
+                tasks_response=tasks_response,
+                latest_result=latest_result,
+            )
+            task = recovery_state.task
+            if preferred_task_id is not None:
+                fetched_task = await get_task(preferred_task_id)
+                if fetched_task.task_kind == "characterization":
+                    task = fetched_task
+            if task is not None:
+                _apply_polled_characterization_task_status(task)
+                progress_payload = dict(task.progress_payload)
+                warning = str(progress_payload.get("warning", "")).strip()
+                if warning and not runtime_state.long_running_warning_shown:
+                    runtime_state.long_running_warning_shown = True
+                    append_analysis_status("warning", warning)
+            if recovery_state.long_running_warning and not runtime_state.long_running_warning_shown:
+                runtime_state.long_running_warning_shown = True
+                append_analysis_status(
+                    "warning",
+                    "Long-running analysis detected; persisted heartbeat polling is active.",
+                )
+            if poll_timer is not None:
+                poll_timer.active = recovery_state.should_poll
+            if latest_result is not None and latest_result.analysis_run_id:
+                runtime_state.current_analysis_run_id = int(latest_result.analysis_run_id)
+            if task is None and latest_result is not None:
+                render_dataset_view.refresh()
+
+        async def _poll_current_characterization_task() -> None:
+            if runtime_state.current_task_id is None:
+                if poll_timer is not None:
+                    poll_timer.active = False
+                return
+            try:
+                task = await get_task(int(runtime_state.current_task_id))
+                _apply_polled_characterization_task_status(task)
+                progress_payload = dict(task.progress_payload)
+                warning = str(progress_payload.get("warning", "")).strip()
+                if warning and not runtime_state.long_running_warning_shown:
+                    runtime_state.long_running_warning_shown = True
+                    append_analysis_status("warning", warning)
+                if task.status in {"completed", "failed"}:
+                    if poll_timer is not None:
+                        poll_timer.active = False
+                    await _refresh_characterization_authority(preferred_task_id=int(task.id))
+                    return
+                if task.status == "running" and task.analysis_run_id is not None:
+                    runtime_state.current_analysis_run_id = int(task.analysis_run_id)
+            except ApiClientError as exc:
+                append_analysis_status("negative", f"Characterization polling failed: {exc.detail}")
+                if poll_timer is not None:
+                    poll_timer.active = False
+
+        def _handle_characterization_dispatch(dispatch: Any) -> None:
+            runtime_state.current_task_id = int(dispatch.task.id)
+            runtime_state.current_task_status = str(dispatch.task.status)
+            runtime_state.current_analysis_run_id = (
+                int(dispatch.task.analysis_run_id)
+                if dispatch.task.analysis_run_id is not None
+                else None
+            )
+            runtime_state.current_task_error = None
+            runtime_state.current_task_analysis_id = str(
+                dispatch.task.request_payload.get("parameters", {}).get("analysis_id", "")
+            )
+            runtime_state.long_running_warning_shown = False
+            runtime_state.last_task_poll_signature = None
+            append_analysis_status(
+                "info",
+                (
+                    f"Characterization queued: task=#{dispatch.task.id}, "
+                    f"run={dispatch.task.analysis_run_id}, worker={dispatch.worker_task_name}."
+                ),
+            )
+            if poll_timer is not None:
+                poll_timer.active = True
 
         if not selected_dataset_ids:
             with ui.column().classes(
@@ -1887,18 +2054,18 @@ def characterization_page():
                                                 for batch_id in summary.get("source_batch_ids", [])
                                                 if isinstance(batch_id, int)
                                             ]
-                                            request = CharacterizationRunRequest(
+                                            submission = build_characterization_submission(
+                                                design_id=active_design_id,
                                                 analysis_id=analysis_id,
                                                 analysis_label=str(
                                                     selected_run_analysis["label"]
                                                 ),
-                                                dataset_id=active_design_id,
-                                                config_state=config_state,
                                                 run_id=run_id,
                                                 trace_record_ids=run_trace_ids,
                                                 selected_batch_ids=selected_batch_ids,
                                                 selected_scope_token=selected_scope_token,
                                                 trace_mode_group=selected_mode_group,
+                                                config_state=config_state,
                                                 summary_payload={
                                                     "selected_trace_count": len(run_trace_ids),
                                                     "selected_source_summary": (
@@ -1912,63 +2079,12 @@ def characterization_page():
                                                         "dataset_id": active_design_id,
                                                     }
                                                 ),
+                                                force_rerun=False,
                                             )
-                                            async def _cpu_bound_executor(operation):
-                                                return await run.cpu_bound(
-                                                    invoke_sync_operation,
-                                                    operation,
-                                                )
-
-                                            def _handle_progress(update: Any) -> None:
-                                                append_analysis_status(
-                                                    "warning"
-                                                    if update.phase == "warning"
-                                                    else (
-                                                        "positive"
-                                                        if update.phase == "completed"
-                                                        else "info"
-                                                    ),
-                                                    update.summary,
-                                                )
-
-                                            result = await execute_characterization_run_async(
-                                                request,
-                                                executor=_cpu_bound_executor,
-                                                heartbeat_interval_seconds=(
-                                                    _ANALYSIS_HEARTBEAT_SECONDS
-                                                ),
-                                                long_running_warning_after_seconds=(
-                                                    _ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS
-                                                ),
-                                                progress_callback=_handle_progress,
+                                            dispatch = await submit_characterization_task(
+                                                submission.api_request
                                             )
-                                            if (
-                                                result.analysis_run is not None
-                                                and result.analysis_run.id is not None
-                                            ):
-                                                runtime_state.set_log_context(
-                                                    run_id=run_id,
-                                                    dataset_id=active_design_id,
-                                                    analysis_id=analysis_id,
-                                                    bundle_id=result.analysis_run.id,
-                                                )
-
-                                            post_run_selection = (
-                                                _sync_result_view_selection_after_run(
-                                                    dataset_id=active_design_id,
-                                                    analysis=selected_run_analysis,
-                                                )
-                                            )
-                                            if not post_run_selection.artifact_id:
-                                                append_analysis_status(
-                                                    "info",
-                                                    (
-                                                        "Result View switched to the completed "
-                                                        "analysis, but no renderable artifacts "
-                                                        "were found."
-                                                    ),
-                                                )
-                                            render_dataset_view.refresh()
+                                            _handle_characterization_dispatch(dispatch)
                                         except NotImplementedError:
                                             append_analysis_status(
                                                 "warning",
@@ -2769,7 +2885,15 @@ def characterization_page():
 
                     def on_change(e):
                         app.storage.user["analysis_current_dataset"] = e.value
+                        runtime_state.current_task_id = None
+                        runtime_state.current_task_status = None
+                        runtime_state.current_analysis_run_id = None
+                        runtime_state.current_task_error = None
+                        runtime_state.current_task_analysis_id = None
+                        runtime_state.last_task_poll_signature = None
+                        runtime_state.long_running_warning_shown = False
                         render_dataset_view.refresh()
+                        _spawn_background_task(_refresh_characterization_authority())
 
                     dataset_select = (
                         ui.select(
@@ -2783,6 +2907,17 @@ def characterization_page():
                     _with_test_id(dataset_select, "characterization-dataset-select")
 
                 render_dataset_view()
+                poll_timer = ui.timer(
+                    2.0,
+                    callback=lambda: _spawn_background_task(_poll_current_characterization_task()),
+                    active=False,
+                )
+                ui.timer(
+                    0.2,
+                    callback=lambda: _spawn_background_task(_refresh_characterization_authority()),
+                    active=True,
+                    once=True,
+                )
 
         except Exception as e:
             ui.label(f"Error loading characterization: {e}").classes("text-danger")

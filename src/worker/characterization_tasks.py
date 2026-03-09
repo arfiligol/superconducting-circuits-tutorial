@@ -5,10 +5,22 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from worker.characterization_execution import execute_characterization_task
 from worker.characterization_huey import huey
 from worker.runtime import TaskExecutionResult, execute_managed_task, mark_task_running_before_crash
 
 _LANE_NAME = "characterization"
+
+
+@huey.task(retries=0)
+def characterization_run_task(task_id: int) -> dict[str, Any]:
+    """Execute one real persisted characterization task on the characterization lane."""
+    return execute_managed_task(
+        task_id=task_id,
+        lane_name=_LANE_NAME,
+        worker_task_name="characterization_run_task",
+        operation=lambda: execute_characterization_task(task_id),
+    )
 
 
 @huey.task(retries=0)

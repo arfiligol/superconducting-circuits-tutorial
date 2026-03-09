@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from app.pages.simulation.submit_actions import build_simulation_submission
+from app.services.characterization_task_contract import build_characterization_submission
 from app.services.execution_context import ActorContext, build_ui_use_case_context
 from app.services.post_processing_task_contract import build_post_processing_submission
 from app.services.simulation_batch_persistence import (
@@ -207,6 +208,84 @@ def test_characterization_lane_smoke_task_round_trips_taskrecord(
         assert task.status == "completed"
         assert task.result_summary_payload["lane"] == "characterization"
         assert task.result_summary_payload["smoke_result"] == "ok"
+
+
+def test_real_characterization_worker_task_persists_analysis_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _configure_worker_env(tmp_path, monkeypatch)
+    _simulation_huey, _simulation_tasks, characterization_huey, _characterization_tasks = (
+        _reload_worker_modules()
+    )
+
+    with get_unit_of_work() as uow:
+        design = uow.datasets.add(
+            DesignRecord(
+                name="WS8 Worker Persisted Characterization",
+                source_meta={},
+                parameters={},
+            )
+        )
+        uow.flush()
+        assert design.id is not None
+        design_id = int(design.id)
+        uow.commit()
+
+    submission = build_characterization_submission(
+        design_id=design_id,
+        analysis_id="admittance_extraction",
+        analysis_label="Admittance Extraction",
+        run_id="char-worker-1",
+        trace_record_ids=[11, 12],
+        selected_batch_ids=[7],
+        selected_scope_token="all_dataset_records",
+        trace_mode_group="base",
+        config_state={"fit_window": 5},
+        summary_payload={"selected_trace_count": 2},
+        context=build_ui_use_case_context(
+            actor_id=17,
+            role="user",
+            requested_by="test",
+            metadata={"flow": "characterization"},
+        ),
+        force_rerun=False,
+    )
+
+    submitted = create_api_task(
+        task_kind="characterization",
+        design_id=design_id,
+        request_payload=submission.api_request.model_dump(mode="json", exclude={"force_rerun"}),
+        actor=ActorContext(actor_id=17, requested_by="test", role="user", auth_source="test"),
+        force_rerun=False,
+    )
+
+    assert submitted.task.id is not None
+    assert submitted.task.analysis_run_id is not None
+    assert submitted.dispatch.worker_task_name == "characterization_run_task"
+    task_id = int(submitted.task.id)
+    analysis_run_id = int(submitted.task.analysis_run_id)
+
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_extract_service.ResonanceExtractService.extract_admittance",
+        lambda self, dataset_id, **kwargs: None,
+    )
+
+    processed = characterization_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+
+    assert processed == 1
+    with get_unit_of_work() as uow:
+        task = uow.tasks.get_task(task_id)
+        assert task is not None
+        assert task.status == "completed"
+        assert task.analysis_run_id == analysis_run_id
+        assert task.result_summary_payload["worker_task_name"] == "characterization_run_task"
+
+        analysis_run = uow.result_bundles.analysis_runs.get(analysis_run_id)
+        assert analysis_run is not None
+        assert analysis_run.status == "completed"
+        assert analysis_run.analysis_id == "admittance_extraction"
+        assert analysis_run.input_batch_ids == [7]
 
 
 def test_simulation_lane_failure_task_marks_failed(tmp_path: Path, monkeypatch) -> None:

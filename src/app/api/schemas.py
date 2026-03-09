@@ -175,10 +175,15 @@ class CharacterizationTaskCreateRequest(ApiModel):
 
     design_id: int
     analysis_id: str
+    analysis_label: str | None = None
+    run_id: str = ""
     trace_record_ids: list[int] = Field(default_factory=list)
     selected_batch_ids: list[int] = Field(default_factory=list)
+    selected_scope_token: str = ""
     trace_mode_group: str | None = None
     config_state: dict[str, str | float | int | None] = Field(default_factory=dict)
+    summary_payload: dict[str, Any] = Field(default_factory=dict)
+    request_payload: dict[str, Any] = Field(default_factory=dict)
     force_rerun: bool = False
 
 
