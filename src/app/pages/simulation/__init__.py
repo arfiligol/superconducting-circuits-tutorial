@@ -9,7 +9,6 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from itertools import product
 from typing import Any, TypedDict
 from uuid import uuid4
 
@@ -21,11 +20,13 @@ from app.layout import app_shell
 from app.pages.simulation.api_client import (
     ApiClientError,
     get_design_tasks,
+    get_latest_post_processing_result,
     get_latest_simulation_result,
     get_task,
+    submit_post_processing_task,
     submit_simulation_task,
 )
-from app.pages.simulation.result_loader import build_recovery_state
+from app.pages.simulation.result_loader import build_recovery_state, build_task_recovery_state
 from app.pages.simulation.state import (
     SimulationRuntimeState,
     TerminationSetupState,
@@ -36,19 +37,15 @@ from app.pages.simulation.state import (
 )
 from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.execution_context import build_ui_use_case_context
-from app.services.post_processing_runner import (
-    PostProcessingInputSource,
-    PostProcessingRunRequest,
-    PostProcessingRunResult,
-    build_compatibility_post_processing_source,
-    execute_post_processing_pipeline,
-)
 from app.services.post_processing_step_registry import (
     POST_PROCESS_STEP_OPTIONS,
     build_default_step_config,
     normalize_saved_step_config,
     preview_pipeline_labels,
     serialize_post_processing_step,
+)
+from app.services.post_processing_task_contract import (
+    build_post_processing_submission,
 )
 from app.services.simulation_setup_manager import (
     delete_setup,
@@ -88,7 +85,6 @@ from core.simulation.application.run_simulation import (
 )
 from core.simulation.application.trace_architecture import (
     TRACE_BATCH_BUNDLE_SCHEMA_KIND,
-    IncrementalPostProcessedSweepWriter,
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
     is_trace_batch_bundle_payload,
@@ -3122,81 +3118,6 @@ def _render_result_family_explorer(
     render()
 
 
-def _port_signal_node_map(circuit_definition: CircuitDefinition) -> dict[int, str]:
-    """Map each declared port index to its non-ground signal node."""
-    mapping: dict[int, str] = {}
-    for row in circuit_definition.expanded_definition.topology:
-        if not row.is_port:
-            continue
-        try:
-            port_index = int(row.value_ref)
-        except Exception:
-            continue
-        if circuit_definition.is_ground_node(row.node1) and not circuit_definition.is_ground_node(
-            row.node2
-        ):
-            mapping[port_index] = str(row.node2)
-            continue
-        if circuit_definition.is_ground_node(row.node2) and not circuit_definition.is_ground_node(
-            row.node1
-        ):
-            mapping[port_index] = str(row.node1)
-    return mapping
-
-
-def _estimate_port_ground_cap_weights(
-    circuit_definition: CircuitDefinition,
-    *,
-    port_a: int,
-    port_b: int,
-) -> tuple[float, float] | None:
-    """Estimate electrical-centroid weights from capacitor-to-ground totals."""
-    port_nodes = _port_signal_node_map(circuit_definition)
-    node_a = port_nodes.get(port_a)
-    node_b = port_nodes.get(port_b)
-    if node_a is None or node_b is None:
-        return None
-
-    cap_to_ground: dict[str, float] = {node_a: 0.0, node_b: 0.0}
-    for element in circuit_definition.to_ir().elements:
-        if element.kind != "capacitor" or element.is_port or element.is_mutual_coupling:
-            continue
-        if not isinstance(element.value_ref, str):
-            continue
-        if circuit_definition.is_ground_node(element.node1) and str(element.node2) in cap_to_ground:
-            cap_to_ground[str(element.node2)] += circuit_definition.resolve_component_value(
-                element.value_ref
-            )
-        elif (
-            circuit_definition.is_ground_node(element.node2) and str(element.node1) in cap_to_ground
-        ):
-            cap_to_ground[str(element.node1)] += circuit_definition.resolve_component_value(
-                element.value_ref
-            )
-
-    weight_a = cap_to_ground[node_a]
-    weight_b = cap_to_ground[node_b]
-    total = weight_a + weight_b
-    if total <= 0:
-        return None
-    return (weight_a / total, weight_b / total)
-
-
-def _execute_post_processing_pipeline_cpu(
-    request: PostProcessingRunRequest,
-) -> PostProcessingRunResult:
-    """Execute one post-processing run inside a CPU worker."""
-    return execute_post_processing_pipeline(
-        request,
-        estimate_auto_weights=lambda definition, port_a, port_b: (
-            _estimate_port_ground_cap_weights(
-                definition,
-                port_a=port_a,
-                port_b=port_b,
-            )
-        ),
-    )
-
 def _render_post_processing_panel(
     *,
     raw_result: SimulationResult,
@@ -3207,19 +3128,15 @@ def _render_post_processing_panel(
         [str, float], tuple[SimulationResult, dict[str, Any] | None, int | None]
     ]
     | None = None,
-    resolve_input_source: Callable[
-        [str, float], tuple[PostProcessingInputSource, int | None]
-    ]
-    | None = None,
-    resolve_input_sweep_point: Callable[[str, tuple[int, ...], float], SimulationResult | None]
-    | None = None,
     circuit_definition: CircuitDefinition | None = None,
     schema_id: int | None = None,
     schema_name: str | None = None,
     append_status: Callable[[str, str], None] | None = None,
     on_processing_start: Callable[[], None] | None = None,
-    on_result: Callable[[PostProcessingRunResult | None], None] | None = None,
+    on_result: Callable[[Any | None], None] | None = None,
     on_source_bundle_resolved: Callable[[int | None], None] | None = None,
+    resolve_termination_plan: Callable[[], dict[str, Any]] | None = None,
+    on_task_submitted: Callable[[Any], None] | None = None,
 ) -> None:
     """Render one dynamic card-list style Port-Level post-processing pipeline."""
 
@@ -3227,7 +3144,7 @@ def _render_post_processing_panel(
         if append_status is not None:
             append_status("info", message)
 
-    def emit_result(run_result: PostProcessingRunResult | None) -> None:
+    def emit_result(run_result: Any | None) -> None:
         if on_result is not None:
             on_result(run_result)
 
@@ -3264,35 +3181,6 @@ def _render_post_processing_panel(
         if resolve_input_bundle is not None:
             return resolve_input_bundle(source, reference_impedance_ohm)
         return (_active_input_result(source), None, None)
-
-    def _active_input_source(
-        source: str,
-        reference_impedance_ohm: float,
-    ) -> tuple[PostProcessingInputSource, int | None]:
-        if resolve_input_source is not None:
-            return resolve_input_source(source, reference_impedance_ohm)
-        active_result, active_sweep_payload, source_bundle_id = _active_input_bundle(
-            source,
-            reference_impedance_ohm,
-        )
-        return (
-            build_compatibility_post_processing_source(
-                source_batch_id=source_bundle_id,
-                result=active_result,
-                sweep_payload=active_sweep_payload,
-                authority="page_runtime_compatibility",
-            ),
-            source_bundle_id,
-        )
-
-    def _active_input_sweep_point(
-        source: str,
-        axis_indices: tuple[int, ...],
-        reference_impedance_ohm: float,
-    ) -> SimulationResult | None:
-        if resolve_input_sweep_point is not None:
-            return resolve_input_sweep_point(source, axis_indices, reference_impedance_ohm)
-        return None
 
     preview_raw_result = _preview_input_result("raw_y", 50.0) or raw_result
     port_options = _result_port_options(preview_raw_result)
@@ -3960,25 +3848,18 @@ def _render_post_processing_panel(
         try:
             input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
             input_y_source_select.value = input_source
-            (
-                _active_result,
-                active_sweep_payload,
-                source_simulation_bundle_id,
-            ) = _active_input_bundle(
-                input_source,
-                float(z0_input.value or 50.0),
+            _active_result, active_sweep_payload, source_simulation_bundle_id = (
+                _active_input_bundle(
+                    input_source,
+                    float(z0_input.value or 50.0),
+                )
             )
             reference_impedance_ohm = float(z0_input.value or 50.0)
-            request_source, resolved_source_bundle_id = _active_input_source(
-                input_source,
-                reference_impedance_ohm,
-            )
+            resolved_source_bundle_id = source_simulation_bundle_id
             if on_source_bundle_resolved is not None:
-                on_source_bundle_resolved(
-                    resolved_source_bundle_id
-                    if resolved_source_bundle_id is not None
-                    else source_simulation_bundle_id
-                )
+                on_source_bundle_resolved(resolved_source_bundle_id)
+            if resolved_source_bundle_id is None:
+                raise ValueError("Post-processing requires one persisted raw simulation batch.")
             resolved_run_kind = "single_result"
             if isinstance(_coerce_parameter_sweep_payload(active_sweep_payload), Mapping):
                 resolved_run_kind = "parameter_sweep"
@@ -3989,223 +3870,53 @@ def _render_post_processing_panel(
                 f"mode_filter={mode_filter_select.value or 'base'!s}, "
                 f"mode={resolved_mode}."
             )
-            request = PostProcessingRunRequest(
-                source=request_source,
+            submission = build_post_processing_submission(
+                design_id=int(schema_id or 0),
+                source_batch_id=int(resolved_source_bundle_id),
                 input_source=input_source,
                 mode_filter=str(mode_filter_select.value or "base"),
                 mode_token=str(mode_select.value or ""),
                 reference_impedance_ohm=reference_impedance_ohm,
                 step_sequence=[dict(step) for step in step_sequence],
+                termination_plan_payload=(
+                    dict(resolve_termination_plan())
+                    if resolve_termination_plan is not None
+                    else None
+                ),
                 circuit_definition=circuit_definition,
                 context=build_ui_use_case_context(
                     metadata={
                         "flow": "post_processing",
                         "schema_id": int(schema_id or 0),
+                        "source_batch_id": int(resolved_source_bundle_id),
                     }
                 ),
+                force_rerun=False,
             )
-
-            async def _run_with_heartbeat(
-                post_request: PostProcessingRunRequest,
-                *,
-                stage_label: str,
-            ) -> PostProcessingRunResult:
-                started_at = datetime.now()
-                heartbeat_warned = False
-                task = asyncio.create_task(
-                    run.cpu_bound(
-                        _execute_post_processing_pipeline_cpu,
-                        post_request,
-                    )
-                )
-                while True:
-                    try:
-                        return await asyncio.wait_for(
-                            asyncio.shield(task),
-                            timeout=_SIMULATION_HEARTBEAT_SECONDS,
-                        )
-                    except TimeoutError:
-                        elapsed_seconds = max(
-                            1,
-                            int((datetime.now() - started_at).total_seconds()),
-                        )
-                        log_info(
-                            f"{stage_label} still running... {elapsed_seconds}s elapsed."
-                        )
-                        if (
-                            not heartbeat_warned
-                            and elapsed_seconds >= _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS
-                        ):
-                            heartbeat_warned = True
-                            log_info(
-                                "Long-running post-processing detected; heartbeat "
-                                "continues every 5s."
-                            )
-
-            sweep_payload = _coerce_parameter_sweep_payload(active_sweep_payload)
-            if isinstance(sweep_payload, Mapping):
-                sweep_source = _resolve_sweep_result_source(sweep_payload=sweep_payload)
-                axis_ranges = [range(len(axis.values)) for axis in sweep_source.axes]
-                total_points = int(sweep_source.point_count)
-                axis_points = product(*axis_ranges) if axis_ranges else (tuple() for _ in range(1))
-                log_info(
-                    "Post-processing parameter sweep detected: "
-                    f"{total_points} point(s) will persist incrementally to TraceStore."
-                )
-                writer = IncrementalPostProcessedSweepWriter(
-                    design_id=int(schema_id or 0),
-                    design_name=str(schema_name or f"design-{schema_id or 0}"),
-                    run_id=f"post-{uuid4().hex[:8]}",
-                    sweep_axes=tuple(sweep_source.axes),
-                    representative_point_index=int(sweep_source.representative_point_index),
-                )
-                run_result: PostProcessingRunResult | None = None
-                resolved_normalized_steps: list[dict[str, Any]] = []
-                try:
-                    for point_number, axis_indices_tuple in enumerate(axis_points, start=1):
-                        axis_indices = tuple(int(index) for index in axis_indices_tuple)
-                        log_info(
-                            f"Post-processing sweep point {point_number}/{total_points} started."
-                        )
-                        point_result = _active_input_sweep_point(
-                            input_source,
-                            axis_indices,
-                            reference_impedance_ohm,
-                        )
-                        if not isinstance(point_result, SimulationResult):
-                            point = sweep_source.read_point(axis_indices)
-                            point_result = point.result if point is not None else None
-                        if not isinstance(point_result, SimulationResult):
-                            raise ValueError(
-                                "Sweep point payload is unavailable for post-processing."
-                            )
-                        point_request = PostProcessingRunRequest(
-                            source=build_compatibility_post_processing_source(
-                                source_batch_id=request.source.source_batch_id,
-                                result=point_result,
-                                authority="page_runtime_sweep_point",
-                            ),
-                            input_source=input_source,
-                            mode_filter=request.mode_filter,
-                            mode_token=request.mode_token,
-                            reference_impedance_ohm=reference_impedance_ohm,
-                            step_sequence=[dict(step) for step in step_sequence],
-                            circuit_definition=circuit_definition,
-                            context=request.context,
-                        )
-                        run_result = await _run_with_heartbeat(
-                            point_request,
-                            stage_label=(
-                                f"Post-processing sweep point {point_number}/{total_points}"
-                            ),
-                        )
-                        writer.append_point(
-                            point_index=point_number - 1,
-                            axis_indices=axis_indices,
-                            sweep=run_result.preview_sweep,
-                        )
-                        if not resolved_normalized_steps:
-                            resolved_normalized_steps = [
-                                dict(step) for step in run_result.normalized_steps
-                            ]
-                            for index, normalized in enumerate(resolved_normalized_steps):
-                                step_sequence[index].update(normalized)
-                        log_info(
-                            f"Persisted post-processing point {point_number}/{total_points} "
-                            "to TraceStore."
-                        )
-                    if run_result is None:
-                        raise ValueError("Post-processing sweep produced no output.")
-                    representative_axis_indices = tuple(
-                        int(index) for index in sweep_source.representative_axis_indices
-                    )
-                    run_result = PostProcessingRunResult(
-                        runtime_output=writer.build_payload(
-                            summary_payload={
-                                "trace_count": writer.trace_count,
-                                "run_kind": "parameter_sweep",
-                                "frequency_points": len(
-                                    writer.representative_sweep.frequencies_ghz
-                                ),
-                                "point_count": total_points,
-                                "representative_point_index": int(
-                                    sweep_source.representative_point_index
-                                ),
-                            }
-                        ),
-                        preview_sweep=writer.representative_sweep,
-                        flow_spec={
-                            **dict(run_result.flow_spec),
-                            "run_kind": "parameter_sweep",
-                            "point_count": total_points,
-                            "sweep_axes": [
-                                {
-                                    "target_value_ref": str(axis.target_value_ref),
-                                    "unit": str(axis.unit),
-                                    "values": [float(value) for value in axis.values],
-                                }
-                                for axis in sweep_source.axes
-                            ],
-                            "preview_projection": {
-                                "kind": "representative_point",
-                                "point_index": int(sweep_source.representative_point_index),
-                            "axis_indices": [
-                                int(value) for value in representative_axis_indices
-                            ],
-                                "axis_values": {
-                                    str(axis.target_value_ref): float(
-                                        axis.values[representative_axis_indices[position]]
-                                    )
-                                    for position, axis in enumerate(sweep_source.axes)
-                                },
-                            },
-                        },
-                        normalized_steps=resolved_normalized_steps,
-                        context=request.context,
-                        progress_updates=run_result.progress_updates,
-                    )
-                except Exception:
-                    writer.cleanup()
-                    raise
-            else:
-                run_result = await _run_with_heartbeat(
-                    request,
-                    stage_label="Post-processing pipeline",
-                )
-                for index, normalized in enumerate(run_result.normalized_steps):
-                    step_sequence[index].update(normalized)
-
-            sweep = run_result.sweep
-            flow_spec = run_result.flow_spec
-
-            hfss_comparable = bool(flow_spec.get("hfss_comparable"))
-            hfss_not_comparable_reason = str(flow_spec.get("hfss_not_comparable_reason", ""))
-            emit_result(run_result)
+            dispatch = await submit_post_processing_task(submission.api_request)
+            if on_task_submitted is not None:
+                on_task_submitted(dispatch)
+            emit_result(None)
             render_step_cards.refresh()
-
             log_info(
-                "Post Processing completed: "
-                f"mode={sweep.mode}, dim={sweep.dimension}, source={sweep.source_kind}, "
-                f"input={input_source}, run_kind={flow_spec.get('run_kind', 'single_result')}, "
-                f"hfss_comparable={hfss_comparable}."
+                "Post Processing queued: "
+                f"task=#{dispatch.task.id}, batch=#{dispatch.task.trace_batch_id}, "
+                f"input={input_source}, run_kind={resolved_run_kind}, "
+                f"worker={dispatch.worker_task_name}."
             )
-
             output_container.clear()
             with output_container:
-                ui.label("Pipeline output ready. Post Processing Result View is updated.").classes(
-                    "text-sm text-positive"
-                )
-                if hfss_comparable:
-                    ui.label("HFSS Comparable: Yes").classes("text-xs text-positive")
-                else:
-                    ui.label(f"HFSS Comparable: No ({hfss_not_comparable_reason})").classes(
-                        "text-xs text-warning"
-                    )
                 ui.label(
-                    f"Basis labels: {', '.join(sweep.labels)} | "
-                    f"dim={sweep.dimension} | "
-                    f"mode={SimulationResult.mode_token(sweep.mode)} | "
-                    f"input={flow_spec.get('input_y_source', input_source)}"
+                    "Post-processing task submitted. Result view will refresh from persisted data."
+                ).classes("text-sm text-positive")
+                ui.label(
+                    f"task=#{dispatch.task.id} | batch={dispatch.task.trace_batch_id}"
+                ).classes("text-xs text-muted")
+                ui.label(
+                    f"worker={dispatch.worker_task_name} | lane={dispatch.dispatched_lane}"
+                ).classes("text-xs text-muted")
+                ui.label(
+                    "Long-running tasks remain visible through persisted heartbeat polling."
                 ).classes("text-xs text-muted")
         except Exception as exc:
             invalidate_processed_state()
@@ -6756,6 +6467,7 @@ def _render_simulation_environment():
         post_processing_results_container: Any | None = None
         post_processing_sweep_results_container: Any | None = None
         poll_timer: Any | None = None
+        post_processing_poll_timer: Any | None = None
         raw_view_state = default_result_view_state(
             family_sources={
                 family: _first_option_key(options)
@@ -7123,14 +6835,77 @@ def _render_simulation_environment():
                     ),
                 )
 
+        def _apply_polled_post_processing_task_status(task: Any) -> None:
+            signature = _task_status_signature(task)
+            if runtime_state.last_post_processing_task_poll_signature == signature:
+                return
+            runtime_state.last_post_processing_task_poll_signature = signature
+            runtime_state.current_post_processing_task_id = (
+                int(task.id) if task.id is not None else None
+            )
+            runtime_state.current_post_processing_task_status = str(task.status)
+            runtime_state.current_post_processing_trace_batch_id = (
+                int(task.trace_batch_id) if task.trace_batch_id is not None else None
+            )
+            runtime_state.current_post_processing_task_error = None
+            if task.status == "queued":
+                append_status(
+                    "info",
+                    (
+                        f"Post-processing task queued: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}."
+                    ),
+                )
+                return
+            if task.status == "running":
+                append_status(
+                    "info",
+                    (
+                        f"Post-processing task running: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}."
+                    ),
+                )
+                return
+            if task.status == "completed":
+                append_status(
+                    "positive",
+                    (
+                        f"Post-processing task completed: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}."
+                    ),
+                )
+                return
+            if task.status == "failed":
+                error_summary = str(
+                    getattr(task, "error_payload", {}).get("summary")
+                    or getattr(task, "error_payload", {}).get("details", {}).get("message")
+                    or "Post-processing task failed."
+                )
+                runtime_state.current_post_processing_task_error = error_summary
+                append_status(
+                    "negative",
+                    (
+                        f"Post-processing task failed: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}. {error_summary}"
+                    ),
+                )
+
         async def _refresh_simulation_authority(*, preferred_task_id: int | None = None) -> None:
             tasks_response = await get_design_tasks(active_record_id)
             latest_result = await get_latest_simulation_result(active_record_id)
+            latest_post_processing_result = await get_latest_post_processing_result(
+                active_record_id
+            )
             recovery_state = build_recovery_state(
                 tasks_response=tasks_response,
                 latest_result=latest_result,
             )
+            post_processing_recovery_state = build_task_recovery_state(
+                tasks_response=tasks_response,
+                task_kind="post_processing",
+            )
             task = recovery_state.task
+            post_processing_task = post_processing_recovery_state.task
             if preferred_task_id is not None:
                 fetched_task = await get_task(preferred_task_id)
                 if (
@@ -7138,6 +6913,11 @@ def _render_simulation_environment():
                     and fetched_task.design_id == active_record_id
                 ):
                     task = fetched_task
+                elif (
+                    fetched_task.task_kind == "post_processing"
+                    and fetched_task.design_id == active_record_id
+                ):
+                    post_processing_task = fetched_task
             if task is not None:
                 _apply_polled_task_status(task)
                 progress_payload = dict(task.progress_payload)
@@ -7147,6 +6927,18 @@ def _render_simulation_environment():
                     append_status("warning", warning)
             if poll_timer is not None:
                 poll_timer.active = bool(task is not None and task.status in {"queued", "running"})
+            if post_processing_task is not None:
+                _apply_polled_post_processing_task_status(post_processing_task)
+                progress_payload = dict(post_processing_task.progress_payload)
+                warning = str(progress_payload.get("warning", "")).strip()
+                if warning and not runtime_state.post_processing_long_running_warning_shown:
+                    runtime_state.post_processing_long_running_warning_shown = True
+                    append_status("warning", warning)
+            if post_processing_poll_timer is not None:
+                post_processing_poll_timer.active = bool(
+                    post_processing_task is not None
+                    and post_processing_task.status in {"queued", "running"}
+                )
             if latest_result is not None:
                 resolved_post_process_source_bundle_id_ref["value"] = latest_result.batch_id
                 runtime_state.current_trace_batch_id = int(latest_result.batch_id)
@@ -7155,6 +6947,19 @@ def _render_simulation_environment():
                 render_simulation_result_view()
                 _render_simulation_sweep_result_view()
                 _render_post_processing_input_panel()
+                _render_post_processed_sweep_result_view()
+                render_post_processed_result_view()
+            if latest_post_processing_result is not None:
+                resolved_post_process_source_bundle_id_ref["value"] = (
+                    latest_post_processing_result.parent_batch_id
+                    or resolved_post_process_source_bundle_id_ref["value"]
+                )
+                _invalidate_persisted_authority_caches()
+                _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
+                post_processed_sweep_view_state.clear()
+                post_processed_sweep_view_state.update(default_sweep_result_view_state())
+                _render_post_processing_input_panel()
+                _render_post_processed_sweep_result_view()
                 render_post_processed_result_view()
 
         async def _poll_current_simulation_task() -> None:
@@ -7174,6 +6979,25 @@ def _render_simulation_environment():
             if task.status in {"completed", "failed"}:
                 if poll_timer is not None:
                     poll_timer.active = False
+                await _refresh_simulation_authority(preferred_task_id=int(task.id))
+
+        async def _poll_current_post_processing_task() -> None:
+            if runtime_state.current_post_processing_task_id is None:
+                return
+            try:
+                task = await get_task(int(runtime_state.current_post_processing_task_id))
+            except ApiClientError as exc:
+                append_status("warning", f"Post-processing task polling failed: {exc.detail}")
+                return
+            _apply_polled_post_processing_task_status(task)
+            progress_payload = dict(task.progress_payload)
+            warning = str(progress_payload.get("warning", "")).strip()
+            if warning and not runtime_state.post_processing_long_running_warning_shown:
+                runtime_state.post_processing_long_running_warning_shown = True
+                append_status("warning", warning)
+            if task.status in {"completed", "failed"}:
+                if post_processing_poll_timer is not None:
+                    post_processing_poll_timer.active = False
                 await _refresh_simulation_authority(preferred_task_id=int(task.id))
 
         def _raw_simulation_result() -> SimulationResult | None:
@@ -7273,94 +7097,6 @@ def _render_simulation_environment():
 
             return (raw_result, canonical_sweep_payload, source_bundle_id)
 
-        def _resolve_post_processing_input_source(
-            source: str,
-            reference_impedance_ohm: float,
-        ) -> tuple[PostProcessingInputSource, int | None]:
-            if source == "raw_y":
-                selected_design_ids = _selected_design_ids()
-                with get_unit_of_work() as uow:
-                    snapshot = _resolve_persisted_post_processing_input_snapshot(
-                        uow,
-                        design_ids=selected_design_ids,
-                    )
-                if isinstance(snapshot, Mapping):
-                    payload = snapshot.get("result_payload")
-                    if isinstance(payload, Mapping):
-                        source_bundle_id = int(snapshot["id"])
-                        resolved_post_process_source_bundle_id_ref["value"] = (
-                            source_bundle_id
-                        )
-                        run_kind = str(payload.get("run_kind", "")).strip() or "single_result"
-                        if is_trace_batch_bundle_payload(payload):
-                            trace_batch_record = payload.get("trace_batch_record", {})
-                            summary_payload = (
-                                trace_batch_record.get("summary_payload", {})
-                                if isinstance(trace_batch_record, Mapping)
-                                else {}
-                            )
-                            if isinstance(summary_payload, Mapping):
-                                run_kind = (
-                                    str(summary_payload.get("run_kind", "")).strip()
-                                    or "single_result"
-                                )
-                        return (
-                            PostProcessingInputSource(
-                                source_batch_id=source_bundle_id,
-                                canonical_payload=json.loads(json.dumps(dict(payload))),
-                                authority="persisted_trace_batch",
-                                run_kind=run_kind,
-                            ),
-                            source_bundle_id,
-                        )
-
-            active_result, active_sweep_payload, source_bundle_id = (
-                _resolve_post_processing_input_bundle(
-                    source,
-                    reference_impedance_ohm,
-                )
-            )
-            return (
-                build_compatibility_post_processing_source(
-                    source_batch_id=source_bundle_id,
-                    result=active_result,
-                    sweep_payload=active_sweep_payload,
-                    authority="compatibility_persisted_overlay",
-                ),
-                source_bundle_id,
-            )
-
-        def _resolve_post_processing_input_sweep_point(
-            source: str,
-            axis_indices: tuple[int, ...],
-            reference_impedance_ohm: float,
-        ) -> SimulationResult | None:
-            canonical_sweep_payload = None
-            _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                _persisted_post_processing_input_bundle()
-            )
-            if isinstance(persisted_sweep_payload, Mapping):
-                canonical_sweep_payload = _coerce_parameter_sweep_payload(
-                    persisted_sweep_payload
-                )
-                resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
-            if not isinstance(canonical_sweep_payload, Mapping):
-                return None
-            sweep_source = _resolve_sweep_result_source(sweep_payload=canonical_sweep_payload)
-            point = sweep_source.read_point(axis_indices)
-            if point is None:
-                return None
-            if source != "ptc_y":
-                return point.result
-            plan = _resolved_termination_plan()
-            if not bool(plan.get("enabled", False)):
-                return None
-            return compensate_simulation_result_port_terminations(
-                point.result,
-                resistance_ohm_by_port=dict(plan.get("resistance_ohm_by_port", {})),
-                reference_impedance_ohm=reference_impedance_ohm,
-            )
-
         def _render_post_processing_input_panel() -> None:
             if post_processing_container is None:
                 return
@@ -7402,8 +7138,6 @@ def _render_simulation_environment():
                         )
                     ),
                     resolve_input_bundle=_resolve_post_processing_input_bundle,
-                    resolve_input_source=_resolve_post_processing_input_source,
-                    resolve_input_sweep_point=_resolve_post_processing_input_sweep_point,
                     circuit_definition=latest_circuit_definition_ref["definition"],
                     schema_id=active_record_id,
                     schema_name=active_record.name,
@@ -7411,7 +7145,26 @@ def _render_simulation_environment():
                     on_processing_start=_render_post_processing_results_pending,
                     on_result=handle_post_processing_result,
                     on_source_bundle_resolved=_record_post_processing_source_bundle,
+                    resolve_termination_plan=_resolved_termination_plan,
+                    on_task_submitted=_handle_post_processing_dispatch,
                 )
+
+        def _handle_post_processing_dispatch(dispatch: Any) -> None:
+            runtime_state.current_post_processing_task_id = (
+                int(dispatch.task.id) if dispatch.task.id is not None else None
+            )
+            runtime_state.current_post_processing_task_status = str(dispatch.task.status)
+            runtime_state.current_post_processing_trace_batch_id = dispatch.task.trace_batch_id
+            runtime_state.current_post_processing_task_error = None
+            runtime_state.last_post_processing_task_poll_signature = None
+            runtime_state.post_processing_long_running_warning_shown = False
+            _invalidate_persisted_authority_caches()
+            _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
+            post_processed_sweep_view_state.clear()
+            post_processed_sweep_view_state.update(default_sweep_result_view_state())
+            render_post_processed_result_view()
+            if post_processing_poll_timer is not None:
+                post_processing_poll_timer.active = True
 
         def _render_post_processing_results_pending() -> None:
             if post_processing_results_container is None:
@@ -7423,6 +7176,12 @@ def _render_simulation_environment():
             ):
                 ui.spinner(size="2.25em").classes("text-primary")
                 ui.label("Updating Post Processing Result View...").classes("text-sm text-muted")
+            if post_processing_sweep_results_container is not None:
+                post_processing_sweep_results_container.clear()
+                with post_processing_sweep_results_container:
+                    ui.label(
+                        "Post-processed sweep explorer will refresh from persisted task output."
+                    ).classes("text-sm text-muted")
 
         def _raw_result_provider(
             _reference_impedance: float,
@@ -7454,38 +7213,14 @@ def _render_simulation_environment():
             _view_family: str,
             _source_token: str,
         ) -> tuple[SimulationResult, dict[int, str]] | None:
-            runtime_output = runtime_state.latest_post_processing_runtime
-            selected_design_ids = _selected_design_ids()
-            if selected_design_ids:
-                persisted_runtime_output, _flow_spec, _bundle_id, source_bundle_id = (
-                    _persisted_post_processing_output_bundle()
-                )
-                if isinstance(persisted_runtime_output, Mapping):
-                    runtime_output = persisted_runtime_output
-                    resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
-            if not (
-                isinstance(runtime_output, PortMatrixSweep)
-                or (
-                    isinstance(runtime_output, Mapping)
-                    and is_trace_batch_bundle_payload(runtime_output)
-                )
-            ):
-                persisted_runtime_output, _flow_spec, _bundle_id, source_bundle_id = (
-                    _persisted_post_processing_output_bundle()
-                )
-                if isinstance(persisted_runtime_output, Mapping):
-                    runtime_output = persisted_runtime_output
-                    resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
-            if not (
-                isinstance(runtime_output, PortMatrixSweep)
-                or (
-                    isinstance(runtime_output, Mapping)
-                    and is_trace_batch_bundle_payload(runtime_output)
-                )
-            ):
+            persisted_runtime_output, _flow_spec, _bundle_id, source_bundle_id = (
+                _persisted_post_processing_output_bundle()
+            )
+            if not isinstance(persisted_runtime_output, Mapping):
                 return None
+            resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
             bundle = _cached_trace_store_bundle_from_post_processed_runtime(
-                runtime_output,
+                persisted_runtime_output,
                 reference_impedance_ohm=reference_impedance,
             )
             return (_result_from_trace_store_bundle(bundle), dict(bundle.port_label_by_index))
@@ -7528,8 +7263,22 @@ def _render_simulation_environment():
         def _render_post_processed_sweep_result_view() -> None:
             if post_processing_sweep_results_container is None:
                 return
-            runtime_output = runtime_state.latest_post_processing_runtime
-            flow_spec = runtime_state.latest_flow_spec
+            runtime_output, flow_spec, _bundle_id, source_bundle_id = (
+                _persisted_post_processing_output_bundle()
+            )
+            if not isinstance(runtime_output, Mapping):
+                post_processing_sweep_results_container.clear()
+                with post_processing_sweep_results_container:
+                    if runtime_state.current_post_processing_task_status in {"queued", "running"}:
+                        ui.label(
+                            "Post-processed sweep explorer will refresh from persisted task output."
+                        ).classes("text-sm text-muted")
+                    else:
+                        ui.label(
+                            "Post-processed sweep explorer is available after a "
+                            "parameter-sweep post-processing run."
+                        ).classes("text-sm text-muted")
+                return
             typed_flow_spec = flow_spec if isinstance(flow_spec, Mapping) else {}
             post_sweep_context_lines = _build_simulation_workflow_context_lines(
                 circuit_record=active_record,
@@ -7539,11 +7288,11 @@ def _render_simulation_environment():
                 provenance_tokens=(
                     f"input={typed_flow_spec.get('input_y_source', 'raw_y')!s}",
                     (
-                        f"source-bundle=#{int(resolved_post_process_source_bundle_id_ref['value'])}"
-                        if resolved_post_process_source_bundle_id_ref["value"] is not None
-                        else "source-bundle=live_runtime"
+                        f"source-bundle=#{int(source_bundle_id)}"
+                        if source_bundle_id is not None
+                        else "source-bundle=persisted_batch"
                     ),
-                    "save-path=Save Post-Processed Results",
+                    "save-path=worker_persisted",
                 ),
             )
             if not _post_processed_runtime_is_sweep(runtime_output, typed_flow_spec):
@@ -7563,6 +7312,7 @@ def _render_simulation_environment():
                     testid_prefix="post-processed-sweep",
                 )
                 return
+            resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
             try:
                 trace_store_bundle = _cached_trace_store_bundle_from_post_processed_runtime(
                     runtime_output,
@@ -7681,119 +7431,39 @@ def _render_simulation_environment():
                 testid_prefix="raw-result-view",
             )
 
-        def _save_post_processed_results_from_view() -> None:
-            runtime_output = runtime_state.latest_post_processing_runtime
-            flow_spec = runtime_state.latest_flow_spec
-            if not _can_save_post_processed_results(runtime_output, flow_spec):
-                (
-                    persisted_runtime_output,
-                    _persisted_flow_spec,
-                    persisted_bundle_id,
-                    _source_bundle_id,
-                ) = _persisted_post_processing_output_bundle()
-                if (
-                    isinstance(persisted_runtime_output, Mapping)
-                    and persisted_bundle_id is not None
-                ):
-                    ui.notify(
-                        (
-                            "Selected design already has one persisted post-processing batch "
-                            f"(#{persisted_bundle_id})."
-                        ),
-                        type="info",
-                    )
-                    return
-                ui.notify("Run Post Processing first.", type="warning")
-                return
-            if not (
-                isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun))
-                or (
-                    isinstance(runtime_output, Mapping)
-                    and is_trace_batch_bundle_payload(runtime_output)
-                )
-            ):
-                ui.notify("Post-processed runtime output is unavailable.", type="warning")
-                return
-            _save_post_processed_results_dialog(
-                runtime_output=runtime_output,
-                representative_sweep=(
-                    runtime_state.latest_sweep
-                    if isinstance(runtime_state.latest_sweep, PortMatrixSweep)
-                    else None
-                ),
-                flow_spec=dict(flow_spec),
-                circuit_record=active_record,
-                source_simulation_bundle_id=resolved_post_process_source_bundle_id_ref["value"],
-                source_sweep_payload=_persisted_post_processing_input_bundle()[1],
-                schema_source_hash=(
-                    str(
-                        persisted_post_process_input_cache.get("snapshot", {}).get(
-                            "schema_source_hash",
-                            "",
-                        )
-                    ).strip()
-                    or None
-                ),
-                simulation_setup_hash=(
-                    str(
-                        persisted_post_process_input_cache.get("snapshot", {}).get(
-                            "simulation_setup_hash",
-                            "",
-                        )
-                    ).strip()
-                    or None
-                ),
-            )
-
         def render_post_processed_result_view() -> None:
             if post_processing_results_container is None:
                 return
 
-            runtime_output = runtime_state.latest_post_processing_runtime
-            sweep = runtime_state.latest_sweep
-            flow_spec = runtime_state.latest_flow_spec
-            persisted_postprocess_authority = False
-            resolved_source_bundle_id = resolved_post_process_source_bundle_id_ref["value"]
-            selected_design_ids = _selected_design_ids()
-            has_runtime_output = isinstance(
-                runtime_output,
-                (PortMatrixSweep, PortMatrixSweepRun),
-            ) or (
-                isinstance(runtime_output, Mapping)
-                and is_trace_batch_bundle_payload(runtime_output)
+            runtime_output, flow_spec, _persisted_batch_id, resolved_source_bundle_id = (
+                _persisted_post_processing_output_bundle()
             )
-            if selected_design_ids:
-                (
-                    persisted_runtime_output,
-                    persisted_flow_spec,
-                    _persisted_batch_id,
-                    persisted_source_bundle_id,
-                ) = _persisted_post_processing_output_bundle()
-                if isinstance(persisted_runtime_output, Mapping):
-                    runtime_output = persisted_runtime_output
-                    flow_spec = persisted_flow_spec
-                    sweep = None
-                    resolved_source_bundle_id = persisted_source_bundle_id
-                    persisted_postprocess_authority = True
-                    has_runtime_output = True
-            if not has_runtime_output:
-                (
-                    persisted_runtime_output,
-                    persisted_flow_spec,
-                    _persisted_batch_id,
-                    persisted_source_bundle_id,
-                ) = _persisted_post_processing_output_bundle()
-                if isinstance(persisted_runtime_output, Mapping):
-                    runtime_output = persisted_runtime_output
-                    flow_spec = persisted_flow_spec
-                    sweep = None
-                    resolved_source_bundle_id = persisted_source_bundle_id
-                    persisted_postprocess_authority = True
-            save_enabled = _can_save_post_processed_results(runtime_output, flow_spec) and not (
-                persisted_postprocess_authority
-            )
+            if not isinstance(runtime_output, Mapping):
+                post_processing_results_container.clear()
+                with post_processing_results_container:
+                    if runtime_state.current_post_processing_task_status in {"queued", "running"}:
+                        ui.spinner(size="2em").classes("text-primary mb-2")
+                        ui.label(
+                            "Post-processing task is running. "
+                            "Results will load from persisted output."
+                        ).classes("text-sm text-muted")
+                        ui.label(
+                            f"task=#{runtime_state.current_post_processing_task_id} | "
+                            f"batch={runtime_state.current_post_processing_trace_batch_id}"
+                        ).classes("text-xs text-muted")
+                    elif runtime_state.current_post_processing_task_status == "failed":
+                        ui.icon("error", size="lg").classes("text-danger mb-2")
+                        ui.label(
+                            runtime_state.current_post_processing_task_error
+                            or "Post-processing task failed."
+                        ).classes("text-sm text-danger")
+                    else:
+                        ui.icon("data_object", size="xl").classes("text-muted mb-4 opacity-50")
+                        ui.label("Run Post Processing to view pipeline output traces.").classes(
+                            "text-sm text-muted mt-2"
+                        )
+                return
             context_line = None
-            typed_sweep = sweep if isinstance(sweep, PortMatrixSweep) else None
             typed_flow_spec = flow_spec if isinstance(flow_spec, dict) else None
             post_context_lines = _build_simulation_workflow_context_lines(
                 circuit_record=active_record,
@@ -7815,14 +7485,10 @@ def _render_simulation_environment():
                         if resolved_source_bundle_id is not None
                         else "source-bundle=persisted_batch"
                     ),
-                    (
-                        "save-path=Save Post-Processed Results"
-                        if save_enabled
-                        else "save-path=already persisted"
-                    ),
+                    "save-path=worker_persisted",
                 ),
             )
-            if isinstance(typed_sweep, PortMatrixSweep) and isinstance(typed_flow_spec, dict):
+            if isinstance(typed_flow_spec, dict):
                 step_count = len(typed_flow_spec.get("steps", []))
                 input_source = str(typed_flow_spec.get("input_y_source", "raw_y"))
                 hfss_comparable = bool(typed_flow_spec.get("hfss_comparable", False))
@@ -7845,8 +7511,8 @@ def _render_simulation_environment():
                     )
                 context_line = (
                     f"Pipeline steps applied: {step_count} | "
-                    f"mode={SimulationResult.mode_token(typed_sweep.mode)} | "
-                    f"basis={', '.join(typed_sweep.labels)} | "
+                    f"mode={typed_flow_spec.get('mode_token', 'unknown')} | "
+                    f"basis={', '.join(typed_flow_spec.get('basis_labels', []))} | "
                     f"input={input_source}{preview_token} | {hfss_token}"
                 )
             if _post_processed_runtime_is_sweep(runtime_output, typed_flow_spec):
@@ -7885,11 +7551,6 @@ def _render_simulation_environment():
                     ),
                     summary_prefix=context_line,
                     testid_prefix="post-processed-sweep",
-                    save_button_label=(
-                        "Save Post-Processed Results" if save_enabled else None
-                    ),
-                    on_save_click=_save_post_processed_results_from_view,
-                    save_enabled=save_enabled,
                     context_lines=post_context_lines,
                 )
                 return
@@ -7903,26 +7564,17 @@ def _render_simulation_environment():
                     "Result View consumes the latest Post Processing pipeline output node."
                 ),
                 empty_message="Run Post Processing to generate the pipeline output node.",
-                save_button_label="Save Post-Processed Results" if save_enabled else None,
-                on_save_click=_save_post_processed_results_from_view,
-                save_enabled=save_enabled,
                 context_line=context_line,
                 context_lines=post_context_lines,
                 testid_prefix="post-result-view",
             )
 
-        def handle_post_processing_result(run_result: PostProcessingRunResult | None) -> None:
-            if isinstance(run_result, PostProcessingRunResult):
-                runtime_state.latest_post_processing_runtime = run_result.runtime_output
-                runtime_state.latest_sweep = run_result.preview_sweep
-                runtime_state.latest_flow_spec = run_result.flow_spec
-            else:
-                runtime_state.latest_post_processing_runtime = None
-                runtime_state.latest_sweep = None
-                runtime_state.latest_flow_spec = None
+        def handle_post_processing_result(_run_result: Any | None) -> None:
+            _invalidate_persisted_authority_caches()
             _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
             post_processed_sweep_view_state.clear()
             post_processed_sweep_view_state.update(default_sweep_result_view_state())
+            _render_post_processed_sweep_result_view()
             render_post_processed_result_view()
 
         # --- Single-column full-width flow ---
@@ -9293,6 +8945,14 @@ def _render_simulation_environment():
                         runtime_state.current_task_error = None
                         runtime_state.last_task_poll_signature = None
                         runtime_state.long_running_warning_shown = False
+                        runtime_state.current_post_processing_task_id = None
+                        runtime_state.current_post_processing_task_status = None
+                        runtime_state.current_post_processing_trace_batch_id = None
+                        runtime_state.current_post_processing_task_error = None
+                        runtime_state.last_post_processing_task_poll_signature = None
+                        runtime_state.post_processing_long_running_warning_shown = False
+                        if post_processing_poll_timer is not None:
+                            post_processing_poll_timer.active = False
                         _invalidate_persisted_authority_caches()
                         handle_post_processing_result(None)
                         simulation_results_container.clear()
@@ -9788,6 +9448,14 @@ def _render_simulation_environment():
                         runtime_state.current_task_error = summary
                         runtime_state.current_task_status = "failed"
                         runtime_state.long_running_warning_shown = False
+                        runtime_state.current_post_processing_task_id = None
+                        runtime_state.current_post_processing_task_status = None
+                        runtime_state.current_post_processing_trace_batch_id = None
+                        runtime_state.current_post_processing_task_error = None
+                        runtime_state.last_post_processing_task_poll_signature = None
+                        runtime_state.post_processing_long_running_warning_shown = False
+                        if post_processing_poll_timer is not None:
+                            post_processing_poll_timer.active = False
                         _invalidate_persisted_authority_caches()
                         handle_post_processing_result(None)
                         simulation_results_container.clear()
@@ -9889,10 +9557,16 @@ def _render_simulation_environment():
 
             render_simulation_result_view()
             _render_post_processing_input_panel()
+            _render_post_processed_sweep_result_view()
             render_post_processed_result_view()
             poll_timer = ui.timer(
                 2.0,
                 callback=lambda: asyncio.create_task(_poll_current_simulation_task()),
+                active=False,
+            )
+            post_processing_poll_timer = ui.timer(
+                2.0,
+                callback=lambda: asyncio.create_task(_poll_current_post_processing_task()),
                 active=False,
             )
             ui.timer(

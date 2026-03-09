@@ -1493,11 +1493,28 @@ def test_post_processing_panel_exposes_setup_save_load_controls() -> None:
 
 
 def test_post_processing_panel_exposes_input_source_and_hfss_fields() -> None:
+    panel_source = inspect.getsource(simulation_page._render_post_processing_panel)
+    assert "Input Y Source" in panel_source
+    assert '"input_y_source"' in panel_source
+    result_source = inspect.getsource(simulation_page._render_simulation_environment)
+    assert '"hfss_comparable"' in result_source
+    assert '"hfss_not_comparable_reason"' in result_source
+
+
+def test_post_processing_panel_submits_persisted_api_task_instead_of_cpu_bound_execution() -> None:
     source = inspect.getsource(simulation_page._render_post_processing_panel)
-    assert "Input Y Source" in source
-    assert '"input_y_source"' in source
-    assert '"hfss_comparable"' in source
-    assert '"hfss_not_comparable_reason"' in source
+    assert "submit_post_processing_task" in source
+    assert "build_post_processing_submission" in source
+    assert "run.cpu_bound" not in source
+
+
+def test_simulation_environment_uses_persisted_post_processing_authority_not_runtime_fields(
+) -> None:
+    source = inspect.getsource(simulation_page._render_simulation_environment)
+    assert "_persisted_post_processing_output_bundle()" in source
+    assert "latest_post_processing_runtime" not in source
+    assert "latest_flow_spec" not in source
+    assert "latest_sweep" not in source
 
 
 def test_raw_result_provider_scopes_ptc_to_yz_families_only() -> None:
@@ -2441,7 +2458,7 @@ def test_build_sweep_metric_rows_updates_when_sweep_value_changes() -> None:
     assert first["figure"].data[0].y[0] != second["figure"].data[0].y[0]
 
 
-def test_build_sweep_metric_rows_reuses_cached_series_for_same_payload(
+def test_build_sweep_metric_rows_recomputes_without_process_global_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     payload = simulation_sweep_run_to_payload(
@@ -2490,10 +2507,12 @@ def test_build_sweep_metric_rows_reuses_cached_series_for_same_payload(
         "frequency_index": 0,
         "dark_mode": True,
     }
-    _build_sweep_metric_rows(**kwargs)
-    _build_sweep_metric_rows(**kwargs)
+    first_payload = _build_sweep_metric_rows(**kwargs)
+    second_payload = _build_sweep_metric_rows(**kwargs)
 
-    assert call_count == 1
+    assert call_count == 2
+    assert first_payload["slice_point_count"] == second_payload["slice_point_count"]
+    assert first_payload["trace_labels"] == second_payload["trace_labels"]
 
 
 def test_build_sweep_metric_rows_multi_axis_slice_and_multi_trace() -> None:

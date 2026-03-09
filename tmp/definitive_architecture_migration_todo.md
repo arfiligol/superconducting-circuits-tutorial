@@ -1305,20 +1305,66 @@ Evidence:
 
 ### WS7. Post-Processing Sessionless Cutover
 
-Status: `not started`
+Status: `completed`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS6-02`
 - `DA-WS6-03`
 
 Tasks:
 
-- [ ] DA-WS7-01 post-processing input authority 改成 persisted source batch
-- [ ] DA-WS7-02 rerun flow 可從 saved raw batch 重啟
-- [ ] DA-WS7-03 post-processing result view 只從 persisted batch + TraceStore 讀取
-- [ ] DA-WS7-04 斷線/重整後仍能查到 post-processing 狀態與結果
+- [x] DA-WS7-01 post-processing input authority 改成 persisted source batch
+  - canonical post-processing submission 現在使用 persisted `source_batch_id` 建立 `TaskRecord(status=queued)` 與 linked post-processing `TraceBatchRecord(status=in_progress)`
+  - shared post-processing worker contract 不再要求 live `SimulationResult` authority；`PersistedPostProcessingTaskRequest` 攜帶 source batch、flow spec、termination plan 與 actor context
+  - `/simulation` page 的 canonical post-processing run path 改為 `build_post_processing_submission(...) -> POST /api/v1/tasks/post-processing`
+
+- [x] DA-WS7-02 rerun flow 可從 saved raw batch 重啟
+  - persisted raw simulation batch 現在可直接驅動 `post_processing_run_task`
+  - worker 會從 saved raw batch / TraceStore rebuild input bundle，執行 shared WS4 post-processing boundary，並把結果寫回新的 persisted post-processing batch
+  - source lineage 透過 `parent_batch_id` + `provenance_payload.source_simulation_bundle_id` 保留
+
+- [x] DA-WS7-03 post-processing result view 只從 persisted batch + TraceStore 讀取
+  - page-local `latest_post_processing_runtime`、`latest_flow_spec`、`latest_sweep` 不再作為 canonical authority
+  - result view 現在只透過 `_persisted_post_processing_output_bundle()` 讀取 persisted batch + TraceStore
+  - HFSS comparability / pipeline metadata 改由 persisted flow spec 恢復，而不是 live runtime object
+
+- [x] DA-WS7-04 斷線/重整後仍能查到 post-processing 狀態與結果
+  - page refresh authority 來自 `/api/v1/designs/{design_id}/tasks` 與 `/api/v1/designs/{design_id}/post-processing/latest`
+  - `build_task_recovery_state(..., task_kind=\"post_processing\")` 會恢復 queued/running/completed/failed 狀態、polling 與 long-running warning
+  - new client / reload 可重新找回 latest post-processing task、result batch、source raw batch lineage 與 rendered output
 
 Acceptance:
 - Definitive Architecture 中最核心的一條 requirement 落地：raw batch 可在沒有 live result 的情況下再加工。
+
+Progress:
+- canonical post-processing path now submits persisted-source requests through `/api/v1/tasks/post-processing`; the NiceGUI page no longer runs post-processing as the authority path inside `run.cpu_bound(...)`
+- simulation-lane worker path now executes real persisted post-processing work via `post_processing_run_task`, writes heartbeat/progress into `TaskRecord.progress_payload`, and persists completed/failed `TraceBatchRecord` state with stable `error_payload`
+- result rendering and rerun flow now rebuild from persisted raw/post-processing batches and TraceStore only; page-local runtime previews are no longer the source of truth
+- refresh/reload recovery now restores latest post-processing task, status, result batch, and source-batch lineage from persisted `/api/v1` lookups plus `build_task_recovery_state(...)`
+
+Verification:
+- `uv run pytest tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_simulation_result_views.py tests/app/pages/test_simulation_result_loader.py tests/app/services/test_post_processing_runner.py`
+- `uv run ruff check src/app/services/post_processing_support.py src/app/services/post_processing_task_contract.py src/app/services/post_processing_batch_persistence.py src/worker/post_processing_execution.py src/app/pages/simulation/api_client.py src/app/pages/simulation/result_loader.py src/app/pages/simulation/state.py src/worker/dispatch.py src/worker/simulation_tasks.py src/app/services/task_submission.py src/app/pages/simulation/__init__.py tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_simulation_result_views.py tests/app/pages/test_simulation_result_loader.py`
+- `uv run basedpyright src/app/services/post_processing_support.py src/app/services/post_processing_task_contract.py src/app/services/post_processing_batch_persistence.py src/worker/post_processing_execution.py src/worker/dispatch.py src/worker/simulation_tasks.py src/app/pages/simulation/api_client.py src/app/pages/simulation/result_loader.py src/app/pages/simulation/state.py src/app/services/task_submission.py`
+- `uv run basedpyright src/app/pages/simulation/__init__.py`
+- `uv run python -m py_compile src/app/services/post_processing_support.py src/app/services/post_processing_task_contract.py src/app/services/post_processing_batch_persistence.py src/worker/post_processing_execution.py src/app/pages/simulation/api_client.py src/app/pages/simulation/result_loader.py src/app/pages/simulation/state.py src/worker/dispatch.py src/worker/simulation_tasks.py src/app/services/task_submission.py src/app/pages/simulation/__init__.py tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_simulation_result_views.py tests/app/pages/test_simulation_result_loader.py`
+- `uv run python - <<'PY' ... submit post-processing task from a persisted raw batch -> consume simulation worker -> reopen client -> recover latest post-processing task/result/source lineage ... PY`
+
+Evidence:
+- `src/app/services/post_processing_support.py`
+- `src/app/services/post_processing_task_contract.py`
+- `src/app/services/post_processing_batch_persistence.py`
+- `src/worker/post_processing_execution.py`
+- `src/worker/simulation_tasks.py`
+- `src/worker/dispatch.py`
+- `src/app/pages/simulation/__init__.py`
+- `src/app/pages/simulation/api_client.py`
+- `src/app/pages/simulation/result_loader.py`
+- `src/app/pages/simulation/state.py`
+- `tests/app/api/test_api_v1.py`
+- `tests/worker/test_huey_workers.py`
+- `tests/app/pages/test_simulation_result_views.py`
+- `tests/app/pages/test_simulation_result_loader.py`
 
 ---
 

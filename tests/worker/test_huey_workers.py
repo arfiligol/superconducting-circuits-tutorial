@@ -11,6 +11,11 @@ from pathlib import Path
 
 from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.execution_context import ActorContext, build_ui_use_case_context
+from app.services.post_processing_task_contract import build_post_processing_submission
+from app.services.simulation_batch_persistence import (
+    create_pending_simulation_batch,
+    persist_simulation_result_into_batch,
+)
 from app.services.simulation_runner import SimulationRunResult
 from app.services.task_submission import create_api_task
 from core.shared.persistence import database
@@ -118,6 +123,33 @@ def _sample_simulation_result() -> SimulationResult:
         y_parameter_mode_real={"om=0|op=1|im=0|ip=1": [1.0, 1.1, 1.2]},
         y_parameter_mode_imag={"om=0|op=1|im=0|ip=1": [0.0, 0.0, 0.0]},
     )
+
+
+def _create_completed_raw_batch(*, design_id: int) -> int:
+    with get_unit_of_work() as uow:
+        batch = create_pending_simulation_batch(
+            uow=uow,
+            design_id=design_id,
+            source_meta={"origin": "worker_test", "storage": "trace_store"},
+            config_snapshot={"setup_kind": "circuit_simulation.raw", "setup_version": "1.0"},
+            schema_source_hash="schema-post",
+            simulation_setup_hash="setup-post",
+            sweep_setup_hash=None,
+        )
+        uow.flush()
+        assert batch.id is not None
+        batch_id = int(batch.id)
+        persist_simulation_result_into_batch(
+            uow=uow,
+            batch_id=batch_id,
+            result=_sample_simulation_result(),
+            source_meta={"origin": "worker_test", "storage": "trace_store"},
+            config_snapshot={"setup_kind": "circuit_simulation.raw", "setup_version": "1.0"},
+            schema_source_hash="schema-post",
+            simulation_setup_hash="setup-post",
+        )
+        uow.commit()
+        return batch_id
 
 
 def test_lane_huey_paths_are_separate_from_app_db(tmp_path: Path, monkeypatch) -> None:
@@ -289,6 +321,80 @@ def test_real_simulation_worker_task_persists_trace_batch(
             snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"]
             >= 1
         )
+
+
+def test_real_post_processing_worker_task_persists_trace_batch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _configure_worker_env(tmp_path, monkeypatch)
+    simulation_huey, _simulation_tasks, _characterization_huey, _characterization_tasks = (
+        _reload_worker_modules()
+    )
+
+    with get_unit_of_work() as uow:
+        design = uow.datasets.add(
+            DesignRecord(
+                name="WS7 Worker Persisted Post-Processing",
+                source_meta={},
+                parameters={},
+            )
+        )
+        uow.flush()
+        assert design.id is not None
+        design_id = int(design.id)
+        uow.commit()
+
+    source_batch_id = _create_completed_raw_batch(design_id=design_id)
+    submission = build_post_processing_submission(
+        design_id=design_id,
+        source_batch_id=source_batch_id,
+        input_source="raw_y",
+        mode_filter="base",
+        mode_token="0",
+        reference_impedance_ohm=50.0,
+        step_sequence=[],
+        termination_plan_payload=None,
+        circuit_definition=_sample_simulation_circuit(),
+        context=build_ui_use_case_context(
+            actor_id=9,
+            role="user",
+            requested_by="test",
+            metadata={"flow": "post_processing"},
+        ),
+        force_rerun=False,
+    )
+
+    submitted = create_api_task(
+        task_kind="post_processing",
+        design_id=design_id,
+        request_payload=submission.api_request.model_dump(mode="json", exclude={"force_rerun"}),
+        actor=ActorContext(actor_id=9, requested_by="test", role="user", auth_source="test"),
+        force_rerun=False,
+    )
+
+    assert submitted.task.id is not None
+    assert submitted.task.trace_batch_id is not None
+    assert submitted.dispatch.worker_task_name == "post_processing_run_task"
+    task_id = int(submitted.task.id)
+    trace_batch_id = int(submitted.task.trace_batch_id)
+
+    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+
+    assert processed == 1
+    with get_unit_of_work() as uow:
+        task = uow.tasks.get_task(task_id)
+        assert task is not None
+        assert task.status == "completed"
+        assert task.trace_batch_id == trace_batch_id
+        assert task.result_summary_payload["source_batch_id"] == source_batch_id
+
+        snapshot = uow.result_bundles.get_trace_batch_snapshot(trace_batch_id)
+        assert snapshot is not None
+        assert snapshot["status"] == "completed"
+        assert snapshot["stage_kind"] == "postprocess"
+        assert snapshot["parent_batch_id"] == source_batch_id
+        assert snapshot["provenance_payload"]["source_simulation_bundle_id"] == source_batch_id
 
 
 def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -> None:

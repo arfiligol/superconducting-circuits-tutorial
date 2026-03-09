@@ -14,6 +14,11 @@ from fastapi.testclient import TestClient
 from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.auth_service import authenticate_user, ensure_bootstrap_admin, hash_password
 from app.services.execution_context import build_ui_use_case_context
+from app.services.post_processing_task_contract import build_post_processing_submission
+from app.services.simulation_batch_persistence import (
+    create_pending_simulation_batch,
+    persist_simulation_result_into_batch,
+)
 from app.services.simulation_runner import SimulationRunResult
 from core.shared.persistence import database, get_unit_of_work
 from core.shared.persistence.models import AnalysisRunRecord, DesignRecord, TraceBatchRecord
@@ -125,6 +130,32 @@ def _create_completed_trace_batch(
         assert batch.id is not None
         uow.commit()
         return int(batch.id)
+
+
+def _create_completed_raw_simulation_batch(*, design_id: int) -> int:
+    with get_unit_of_work() as uow:
+        batch = create_pending_simulation_batch(
+            uow=uow,
+            design_id=design_id,
+            source_meta={"origin": "api_test", "storage": "trace_store"},
+            config_snapshot={"setup_kind": "circuit_simulation.raw", "setup_version": "1.0"},
+            schema_source_hash="schema-post",
+            simulation_setup_hash="setup-post",
+            sweep_setup_hash=None,
+        )
+        assert batch.id is not None
+        batch_id = int(batch.id)
+        persist_simulation_result_into_batch(
+            uow=uow,
+            batch_id=batch_id,
+            result=_sample_simulation_result(),
+            source_meta={"origin": "api_test", "storage": "trace_store"},
+            config_snapshot={"setup_kind": "circuit_simulation.raw", "setup_version": "1.0"},
+            schema_source_hash="schema-post",
+            simulation_setup_hash="setup-post",
+        )
+        uow.commit()
+        return batch_id
 
 
 def _create_completed_task(
@@ -421,6 +452,64 @@ def test_task_creation_get_and_design_listing_use_real_task_records(
     assert design_tasks.status_code == 200
     task_kinds = [task["task_kind"] for task in design_tasks.json()["tasks"]]
     assert task_kinds == ["characterization", "post_processing", "simulation"]
+
+
+def test_post_processing_task_submission_dispatches_real_worker_path_and_persists_result(
+    client: TestClient,
+) -> None:
+    design_id = _create_design("WS7 Persisted Post-Processing Design")
+    _login(client, username="admin", password="admin")
+    source_batch_id = _create_completed_raw_simulation_batch(design_id=design_id)
+
+    submission = build_post_processing_submission(
+        design_id=design_id,
+        source_batch_id=source_batch_id,
+        input_source="raw_y",
+        mode_filter="base",
+        mode_token="0",
+        reference_impedance_ohm=50.0,
+        step_sequence=[],
+        termination_plan_payload=None,
+        circuit_definition=_sample_simulation_circuit(),
+        context=build_ui_use_case_context(
+            actor_id=1,
+            role="admin",
+            metadata={"flow": "post_processing", "design_id": design_id},
+        ),
+        force_rerun=False,
+    )
+
+    post_processing = client.post(
+        "/api/v1/tasks/post-processing",
+        json=submission.api_request.model_dump(mode="json"),
+    )
+    assert post_processing.status_code == 202
+    payload = post_processing.json()
+    assert payload["dedupe_hit"] is False
+    assert payload["dispatched_lane"] == "simulation"
+    assert payload["worker_task_name"] == "post_processing_run_task"
+    task_id = int(payload["task"]["id"])
+    trace_batch_id = int(payload["task"]["trace_batch_id"])
+
+    simulation_huey = importlib.import_module("worker.simulation_huey")
+    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    assert processed == 1
+
+    task_detail = client.get(f"/api/v1/tasks/{task_id}")
+    assert task_detail.status_code == 200
+    task_payload = task_detail.json()
+    assert task_payload["status"] == "completed"
+    assert task_payload["trace_batch_id"] == trace_batch_id
+    assert task_payload["result_summary_payload"]["source_batch_id"] == source_batch_id
+
+    latest_post_processing = client.get(f"/api/v1/designs/{design_id}/post-processing/latest")
+    assert latest_post_processing.status_code == 200
+    latest_payload = latest_post_processing.json()
+    assert latest_payload["batch_id"] == trace_batch_id
+    assert latest_payload["parent_batch_id"] == source_batch_id
+    summary_payload = latest_payload["summary_payload"]["trace_batch_record"]["summary_payload"]
+    assert summary_payload["run_kind"] == "single_result"
+    assert summary_payload["input_source"] == "raw_y"
 
 
 def test_simulation_task_submission_dispatches_real_worker_path_and_persists_result(

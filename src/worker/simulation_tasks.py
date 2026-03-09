@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from worker.post_processing_execution import execute_post_processing_task
 from worker.runtime import (
     TaskExecutionResult,
     execute_managed_task,
@@ -37,6 +38,17 @@ def simulation_smoke_task(task_id: int) -> dict[str, Any]:
         operation=lambda: TaskExecutionResult(
             result_summary_payload={"smoke_result": "ok"},
         ),
+    )
+
+
+@huey.task(retries=0)
+def post_processing_run_task(task_id: int) -> dict[str, Any]:
+    """Execute one real persisted post-processing task on the simulation lane."""
+    return execute_managed_task(
+        task_id=task_id,
+        lane_name=_LANE_NAME,
+        worker_task_name="post_processing_run_task",
+        operation=lambda: execute_post_processing_task(task_id),
     )
 
 

@@ -8,6 +8,12 @@ from hashlib import sha256
 from typing import Any
 
 from app.services.execution_context import ActorContext, UseCaseContext
+from app.services.post_processing_batch_persistence import (
+    create_pending_post_processing_batch,
+)
+from app.services.post_processing_task_contract import (
+    extract_post_processing_request_from_api_payload,
+)
 from app.services.simulation_batch_persistence import create_pending_simulation_batch
 from app.services.simulation_task_contract import extract_simulation_request_from_api_payload
 from core.shared.persistence import get_unit_of_work
@@ -129,6 +135,11 @@ def create_api_task(
             if task_kind == "simulation"
             else None
         )
+        post_processing_request = (
+            extract_post_processing_request_from_api_payload(dict(normalized_request_payload))
+            if task_kind == "post_processing"
+            else None
+        )
         if simulation_request is not None:
             pending_batch = create_pending_simulation_batch(
                 uow=uow,
@@ -138,6 +149,18 @@ def create_api_task(
                 schema_source_hash=simulation_request.schema_source_hash,
                 simulation_setup_hash=simulation_request.simulation_setup_hash,
                 sweep_setup_hash=simulation_request.sweep_setup_hash,
+            )
+            trace_batch_id = int(pending_batch.id or 0)
+        elif post_processing_request is not None:
+            pending_batch = create_pending_post_processing_batch(
+                uow=uow,
+                design_id=int(design_id),
+                source_batch_id=int(post_processing_request.source_batch_id),
+                input_source=post_processing_request.input_source,
+                mode_filter=post_processing_request.mode_filter,
+                mode_token=post_processing_request.mode_token,
+                reference_impedance_ohm=post_processing_request.reference_impedance_ohm,
+                step_sequence=post_processing_request.step_sequence,
             )
             trace_batch_id = int(pending_batch.id or 0)
         task = uow.tasks.create_task(
@@ -186,6 +209,11 @@ def _dispatch_metadata_for_task(task: TaskRecord) -> DispatchedWorkerTask:
             return DispatchedWorkerTask("simulation", "simulation_run_task")
         return DispatchedWorkerTask("simulation", "simulation_smoke_task")
     if task.task_kind == "post_processing":
+        post_processing_request = extract_post_processing_request_from_api_payload(
+            dict(task.request_payload.get("parameters", {}))
+        )
+        if post_processing_request is not None and task.trace_batch_id is not None:
+            return DispatchedWorkerTask("simulation", "post_processing_run_task")
         return DispatchedWorkerTask("simulation", "post_processing_smoke_task")
     if task.task_kind == "characterization":
         return DispatchedWorkerTask("characterization", "characterization_smoke_task")

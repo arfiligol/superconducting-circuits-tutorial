@@ -38,8 +38,11 @@ src/app/services/dataset_profile.py
 src/app/services/design_trace_workflow.py
 src/app/services/execution_context.py
 src/app/services/latest_result_lookup.py
+src/app/services/post_processing_batch_persistence.py
 src/app/services/post_processing_runner.py
 src/app/services/post_processing_step_registry.py
+src/app/services/post_processing_support.py
+src/app/services/post_processing_task_contract.py
 src/app/services/result_artifact_registry.py
 src/app/services/schematic_preview.py
 src/app/services/schemdraw_live_preview.py
@@ -173,6 +176,7 @@ src/worker/characterization_huey.py
 src/worker/characterization_tasks.py
 src/worker/config.py
 src/worker/dispatch.py
+src/worker/post_processing_execution.py
 src/worker/runtime.py
 src/worker/simulation_execution.py
 src/worker/simulation_huey.py

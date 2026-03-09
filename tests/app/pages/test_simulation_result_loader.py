@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.api.schemas import DesignTasksResponse, LatestTraceBatchResponse, TaskResponse
-from app.pages.simulation.result_loader import build_recovery_state, latest_simulation_task
+from app.pages.simulation.result_loader import (
+    build_recovery_state,
+    build_task_recovery_state,
+    latest_post_processing_task,
+    latest_simulation_task,
+)
 
 
 def _utcnow() -> datetime:
@@ -133,3 +138,62 @@ def test_build_recovery_state_recovers_latest_result_without_transient_task_stat
     assert recovery.latest_result.batch_id == 55
     assert recovery.should_poll is False
     assert recovery.long_running_warning is False
+
+
+def test_latest_post_processing_task_prefers_newest_post_processing_task() -> None:
+    created_at = _utcnow()
+    tasks = DesignTasksResponse(
+        tasks=[
+            _task_response(
+                task_id=11,
+                task_kind="simulation",
+                status="completed",
+                created_at=created_at,
+            ),
+            _task_response(
+                task_id=12,
+                task_kind="post_processing",
+                status="running",
+                created_at=created_at,
+            ),
+            _task_response(
+                task_id=10,
+                task_kind="post_processing",
+                status="completed",
+                created_at=created_at - timedelta(minutes=1),
+            ),
+        ]
+    )
+
+    task = latest_post_processing_task(tasks)
+
+    assert task is not None
+    assert task.id == 12
+    assert task.status == "running"
+
+
+def test_build_task_recovery_state_tracks_post_processing_polling_and_warning() -> None:
+    now = _utcnow()
+    tasks = DesignTasksResponse(
+        tasks=[
+            _task_response(
+                task_id=31,
+                task_kind="post_processing",
+                status="running",
+                created_at=now - timedelta(minutes=5),
+                started_at=now - timedelta(seconds=90),
+                heartbeat_at=now - timedelta(seconds=8),
+            )
+        ]
+    )
+
+    recovery = build_task_recovery_state(
+        tasks_response=tasks,
+        task_kind="post_processing",
+        now=now,
+    )
+
+    assert recovery.task is not None
+    assert recovery.task.id == 31
+    assert recovery.should_poll is True
+    assert recovery.long_running_warning is True

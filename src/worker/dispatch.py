@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from app.services.post_processing_task_contract import (
+    extract_post_processing_request_from_api_payload,
+)
 from app.services.simulation_task_contract import extract_simulation_request_from_api_payload
 
 LaneName = Literal["simulation", "characterization"]
@@ -55,6 +58,24 @@ def enqueue_task(
         )
 
     if task_kind == "post_processing":
+        parameters = (
+            dict(request_payload.get("parameters", {}))
+            if (
+                isinstance(request_payload, dict)
+                and isinstance(request_payload.get("parameters"), dict)
+            )
+            else {}
+        )
+        post_processing_request = extract_post_processing_request_from_api_payload(parameters)
+        if post_processing_request is not None and trace_batch_id is not None:
+            from worker.simulation_tasks import post_processing_run_task
+
+            post_processing_run_task(task_id)
+            return DispatchedWorkerTask(
+                lane="simulation",
+                worker_task_name="post_processing_run_task",
+            )
+
         from worker.simulation_tasks import post_processing_smoke_task
 
         post_processing_smoke_task(task_id)

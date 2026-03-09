@@ -10,6 +10,7 @@ from nicegui import ui
 from app.api.schemas import (
     DesignTasksResponse,
     LatestTraceBatchResponse,
+    PostProcessingTaskCreateRequest,
     SimulationTaskCreateRequest,
     TaskDispatchResponse,
     TaskResponse,
@@ -75,6 +76,18 @@ async def submit_simulation_task(payload: SimulationTaskCreateRequest) -> TaskDi
     return TaskDispatchResponse.model_validate(response_body)
 
 
+async def submit_post_processing_task(
+    payload: PostProcessingTaskCreateRequest,
+) -> TaskDispatchResponse:
+    """Submit one real post-processing task through the public v1 API."""
+    response_body = await _fetch_json(
+        "POST",
+        "/api/v1/tasks/post-processing",
+        body=payload.model_dump(mode="json"),
+    )
+    return TaskDispatchResponse.model_validate(response_body)
+
+
 async def get_task(task_id: int) -> TaskResponse:
     """Fetch one persisted task through the public v1 API."""
     response_body = await _fetch_json("GET", f"/api/v1/tasks/{int(task_id)}")
@@ -93,6 +106,20 @@ async def get_latest_simulation_result(design_id: int) -> LatestTraceBatchRespon
         response_body = await _fetch_json(
             "GET",
             f"/api/v1/designs/{int(design_id)}/simulation/latest",
+        )
+    except ApiClientError as exc:
+        if exc.status_code == 404:
+            return None
+        raise
+    return LatestTraceBatchResponse.model_validate(response_body)
+
+
+async def get_latest_post_processing_result(design_id: int) -> LatestTraceBatchResponse | None:
+    """Fetch the latest completed post-processing batch for one design."""
+    try:
+        response_body = await _fetch_json(
+            "GET",
+            f"/api/v1/designs/{int(design_id)}/post-processing/latest",
         )
     except ApiClientError as exc:
         if exc.status_code == 404:

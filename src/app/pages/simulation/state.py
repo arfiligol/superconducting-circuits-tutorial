@@ -56,9 +56,12 @@ class SimulationRuntimeState:
     current_task_error: str | None = None
     last_task_poll_signature: str | None = None
     long_running_warning_shown: bool = False
-    latest_sweep: Any | None = None
-    latest_post_processing_runtime: Any | None = None
-    latest_flow_spec: dict[str, Any] | None = None
+    current_post_processing_task_id: int | None = None
+    current_post_processing_task_status: str | None = None
+    current_post_processing_trace_batch_id: int | None = None
+    current_post_processing_task_error: str | None = None
+    last_post_processing_task_poll_signature: str | None = None
+    post_processing_long_running_warning_shown: bool = False
     termination_last_warning: str = ""
     termination_last_summary: str = ""
     active_log_context: dict[str, str] = field(default_factory=dict)
