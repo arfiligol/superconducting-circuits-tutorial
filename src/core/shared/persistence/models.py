@@ -11,6 +11,17 @@ from typing import Optional
 
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
+ALLOWED_USER_ROLES = frozenset({"admin", "user"})
+
+
+def normalize_user_role(role: str) -> str:
+    """Return one persisted user role or raise for unsupported values."""
+    normalized = role.strip()
+    if normalized not in ALLOWED_USER_ROLES:
+        allowed = ", ".join(sorted(ALLOWED_USER_ROLES))
+        raise ValueError(f"Unsupported user role '{role}'. Expected one of: {allowed}.")
+    return normalized
+
 
 class DeviceType(str, Enum):
     """Device type for derived parameters."""
@@ -263,6 +274,67 @@ class AnalysisRunRecord(SQLModel, table=False):
     summary_payload: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
+
+
+class UserRecord(SQLModel, table=True):
+    """Local user account for multi-user app and API authentication."""
+
+    __tablename__ = "user_records"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    password_hash: str
+    role: str = Field(index=True)
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_login_at: datetime | None = None
+
+
+class AuditLogRecord(SQLModel, table=True):
+    """Audit trail for actor-driven task and write operations."""
+
+    __tablename__ = "audit_log_records"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    actor_id: int | None = Field(default=None, foreign_key="user_records.id", index=True)
+    action_kind: str = Field(index=True)
+    resource_kind: str = Field(index=True)
+    resource_id: str = Field(index=True)
+    summary: str
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class TaskRecord(SQLModel, table=True):
+    """Universal execution boundary for queued/running/completed task lifecycle."""
+
+    __tablename__ = "task_records"  # type: ignore[assignment]
+
+    id: int | None = Field(default=None, primary_key=True)
+    task_kind: str = Field(index=True)
+    status: str = Field(index=True)
+    design_id: int = Field(foreign_key="dataset_records.id", index=True)
+    trace_batch_id: int | None = Field(
+        default=None,
+        foreign_key="result_bundle_records.id",
+        index=True,
+    )
+    analysis_run_id: int | None = Field(
+        default=None,
+        foreign_key="result_bundle_records.id",
+        index=True,
+    )
+    requested_by: str
+    actor_id: int | None = Field(default=None, foreign_key="user_records.id", index=True)
+    dedupe_key: str | None = Field(default=None, index=True)
+    request_payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    progress_payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    result_summary_payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    error_payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    started_at: datetime | None = Field(default=None, index=True)
+    heartbeat_at: datetime | None = Field(default=None, index=True)
+    completed_at: datetime | None = Field(default=None, index=True)
 
 
 class DerivedParameter(SQLModel, table=True):
