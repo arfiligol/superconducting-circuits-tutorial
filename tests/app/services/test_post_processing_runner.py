@@ -6,6 +6,7 @@ import pytest
 
 from app.services.execution_context import ActorContext, UseCaseContext
 from app.services.post_processing_runner import (
+    PostProcessingInputSource,
     PostProcessingRunRequest,
     execute_post_processing_pipeline,
 )
@@ -46,19 +47,32 @@ def _sample_result() -> SimulationResult:
     )
 
 
+def _source_from_result(
+    result: SimulationResult | None = None,
+    *,
+    source_batch_id: int | None = 12,
+    authority: str = "persisted_trace_batch",
+) -> PostProcessingInputSource:
+    resolved_result = result or _sample_result()
+    return PostProcessingInputSource(
+        source_batch_id=source_batch_id,
+        canonical_payload=resolved_result.model_dump(mode="json"),
+        authority=authority,
+        run_kind="single_result",
+    )
+
+
 def test_execute_post_processing_pipeline_requires_mode_selection() -> None:
     with pytest.raises(ValueError, match="Please select one mode before running post-processing"):
         execute_post_processing_pipeline(
             PostProcessingRunRequest(
-                result=_sample_result(),
-                sweep_payload=None,
+                source=_source_from_result(),
                 input_source="raw_y",
                 mode_filter="base",
                 mode_token="",
                 reference_impedance_ohm=50.0,
                 step_sequence=[],
                 circuit_definition=None,
-                has_ptc_result=False,
             ),
             estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
         )
@@ -67,8 +81,7 @@ def test_execute_post_processing_pipeline_requires_mode_selection() -> None:
 def test_execute_post_processing_pipeline_identity_marks_not_hfss_comparable() -> None:
     run = execute_post_processing_pipeline(
         PostProcessingRunRequest(
-            result=_sample_result(),
-            sweep_payload=None,
+            source=_source_from_result(),
             input_source="raw_y",
             mode_filter="base",
             mode_token="0",
@@ -82,7 +95,6 @@ def test_execute_post_processing_pipeline_identity_marks_not_hfss_comparable() -
                 }
             ],
             circuit_definition=None,
-            has_ptc_result=False,
         ),
         estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
     )
@@ -98,8 +110,7 @@ def test_execute_post_processing_pipeline_identity_marks_not_hfss_comparable() -
 def test_execute_post_processing_pipeline_ct_plus_kron_marks_hfss_comparable() -> None:
     run = execute_post_processing_pipeline(
         PostProcessingRunRequest(
-            result=_sample_result(),
-            sweep_payload=None,
+            source=_source_from_result(),
             input_source="ptc_y",
             mode_filter="base",
             mode_token="0",
@@ -124,7 +135,6 @@ def test_execute_post_processing_pipeline_ct_plus_kron_marks_hfss_comparable() -
                 },
             ],
             circuit_definition=None,
-            has_ptc_result=True,
         ),
         estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
     )
@@ -165,15 +175,18 @@ def test_execute_post_processing_pipeline_preserves_full_parameter_sweep_runtime
 
     run = execute_post_processing_pipeline(
         PostProcessingRunRequest(
-            result=first,
-            sweep_payload=sweep_payload,
+            source=PostProcessingInputSource(
+                source_batch_id=77,
+                canonical_payload=sweep_payload,
+                authority="persisted_trace_batch",
+                run_kind="parameter_sweep",
+            ),
             input_source="raw_y",
             mode_filter="base",
             mode_token="0",
             reference_impedance_ohm=50.0,
             step_sequence=[],
             circuit_definition=None,
-            has_ptc_result=False,
         ),
         estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
     )
@@ -202,15 +215,13 @@ def test_execute_post_processing_pipeline_returns_context_and_progress() -> None
 
     run = execute_post_processing_pipeline(
         PostProcessingRunRequest(
-            result=_sample_result(),
-            sweep_payload=None,
+            source=_source_from_result(source_batch_id=42),
             input_source="raw_y",
             mode_filter="base",
             mode_token="0",
             reference_impedance_ohm=50.0,
             step_sequence=[],
             circuit_definition=None,
-            has_ptc_result=False,
             context=context,
         ),
         estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
@@ -219,5 +230,57 @@ def test_execute_post_processing_pipeline_returns_context_and_progress() -> None
 
     assert run.context == context
     assert [update.phase for update in run.progress_updates] == ["running", "completed"]
+    assert progress_updates[0].to_payload()["details"]["source_batch_id"] == 42
     assert progress_updates[0].to_payload()["details"]["requested_by"] == "api"
     assert progress_updates[1].to_payload()["details"]["point_count"] == 1
+
+
+def test_execute_post_processing_pipeline_accepts_persisted_style_source_payload() -> None:
+    source = PostProcessingInputSource(
+        source_batch_id=91,
+        canonical_payload=simulation_sweep_run_to_payload(
+            SimulationSweepRun(
+                axes=(
+                    SimulationSweepAxis(
+                        target_value_ref="Lj",
+                        values=(900.0, 1100.0),
+                        unit="pH",
+                    ),
+                ),
+                points=(
+                    SimulationSweepPointResult(
+                        point_index=0,
+                        axis_indices=(0,),
+                        axis_values={"Lj": 900.0},
+                        result=_sample_result(),
+                    ),
+                    SimulationSweepPointResult(
+                        point_index=1,
+                        axis_indices=(1,),
+                        axis_values={"Lj": 1100.0},
+                        result=_sample_result(),
+                    ),
+                ),
+                representative_point_index=0,
+            )
+        ),
+        authority="persisted_trace_batch",
+        run_kind="parameter_sweep",
+    )
+
+    run = execute_post_processing_pipeline(
+        PostProcessingRunRequest(
+            source=source,
+            input_source="raw_y",
+            mode_filter="base",
+            mode_token="0",
+            reference_impedance_ohm=50.0,
+            step_sequence=[],
+            circuit_definition=None,
+        ),
+        estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
+    )
+
+    assert isinstance(run.runtime_output, PortMatrixSweepRun)
+    assert run.flow_spec["run_kind"] == "parameter_sweep"
+    assert run.flow_spec["point_count"] == 2

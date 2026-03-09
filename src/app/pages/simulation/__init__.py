@@ -28,8 +28,10 @@ from app.pages.simulation.state import (
 )
 from app.services.execution_context import build_ui_use_case_context
 from app.services.post_processing_runner import (
+    PostProcessingInputSource,
     PostProcessingRunRequest,
     PostProcessingRunResult,
+    build_compatibility_post_processing_source,
     execute_post_processing_pipeline,
 )
 from app.services.post_processing_step_registry import (
@@ -3296,6 +3298,10 @@ def _render_post_processing_panel(
         [str, float], tuple[SimulationResult, dict[str, Any] | None, int | None]
     ]
     | None = None,
+    resolve_input_source: Callable[
+        [str, float], tuple[PostProcessingInputSource, int | None]
+    ]
+    | None = None,
     resolve_input_sweep_point: Callable[[str, tuple[int, ...], float], SimulationResult | None]
     | None = None,
     circuit_definition: CircuitDefinition | None = None,
@@ -3349,6 +3355,26 @@ def _render_post_processing_panel(
         if resolve_input_bundle is not None:
             return resolve_input_bundle(source, reference_impedance_ohm)
         return (_active_input_result(source), None, None)
+
+    def _active_input_source(
+        source: str,
+        reference_impedance_ohm: float,
+    ) -> tuple[PostProcessingInputSource, int | None]:
+        if resolve_input_source is not None:
+            return resolve_input_source(source, reference_impedance_ohm)
+        active_result, active_sweep_payload, source_bundle_id = _active_input_bundle(
+            source,
+            reference_impedance_ohm,
+        )
+        return (
+            build_compatibility_post_processing_source(
+                source_batch_id=source_bundle_id,
+                result=active_result,
+                sweep_payload=active_sweep_payload,
+                authority="page_runtime_compatibility",
+            ),
+            source_bundle_id,
+        )
 
     def _active_input_sweep_point(
         source: str,
@@ -4025,13 +4051,25 @@ def _render_post_processing_panel(
         try:
             input_source = _resolve_option_key(input_y_source_options, input_y_source_select.value)
             input_y_source_select.value = input_source
-            active_result, active_sweep_payload, source_simulation_bundle_id = _active_input_bundle(
+            (
+                _active_result,
+                active_sweep_payload,
+                source_simulation_bundle_id,
+            ) = _active_input_bundle(
                 input_source,
                 float(z0_input.value or 50.0),
             )
-            if on_source_bundle_resolved is not None:
-                on_source_bundle_resolved(source_simulation_bundle_id)
             reference_impedance_ohm = float(z0_input.value or 50.0)
+            request_source, resolved_source_bundle_id = _active_input_source(
+                input_source,
+                reference_impedance_ohm,
+            )
+            if on_source_bundle_resolved is not None:
+                on_source_bundle_resolved(
+                    resolved_source_bundle_id
+                    if resolved_source_bundle_id is not None
+                    else source_simulation_bundle_id
+                )
             resolved_run_kind = "single_result"
             if isinstance(_coerce_parameter_sweep_payload(active_sweep_payload), Mapping):
                 resolved_run_kind = "parameter_sweep"
@@ -4043,15 +4081,13 @@ def _render_post_processing_panel(
                 f"mode={resolved_mode}."
             )
             request = PostProcessingRunRequest(
-                result=active_result,
-                sweep_payload=active_sweep_payload,
+                source=request_source,
                 input_source=input_source,
                 mode_filter=str(mode_filter_select.value or "base"),
                 mode_token=str(mode_select.value or ""),
                 reference_impedance_ohm=reference_impedance_ohm,
                 step_sequence=[dict(step) for step in step_sequence],
                 circuit_definition=circuit_definition,
-                has_ptc_result=isinstance(ptc_result, SimulationResult),
                 context=build_ui_use_case_context(
                     metadata={
                         "flow": "post_processing",
@@ -4135,15 +4171,17 @@ def _render_post_processing_panel(
                                 "Sweep point payload is unavailable for post-processing."
                             )
                         point_request = PostProcessingRunRequest(
-                            result=point_result,
-                            sweep_payload=None,
+                            source=build_compatibility_post_processing_source(
+                                source_batch_id=request.source.source_batch_id,
+                                result=point_result,
+                                authority="page_runtime_sweep_point",
+                            ),
                             input_source=input_source,
                             mode_filter=request.mode_filter,
                             mode_token=request.mode_token,
                             reference_impedance_ohm=reference_impedance_ohm,
                             step_sequence=[dict(step) for step in step_sequence],
                             circuit_definition=circuit_definition,
-                            has_ptc_result=isinstance(ptc_result, SimulationResult),
                             context=request.context,
                         )
                         run_result = await _run_with_heartbeat(
@@ -7250,6 +7288,68 @@ def _render_simulation_environment():
 
             return (raw_result, canonical_sweep_payload, source_bundle_id)
 
+        def _resolve_post_processing_input_source(
+            source: str,
+            reference_impedance_ohm: float,
+        ) -> tuple[PostProcessingInputSource, int | None]:
+            selected_design_ids = _selected_design_ids()
+            if source == "raw_y" and selected_design_ids:
+                with get_unit_of_work() as uow:
+                    snapshot = _resolve_persisted_post_processing_input_snapshot(
+                        uow,
+                        design_ids=selected_design_ids,
+                    )
+                if isinstance(snapshot, Mapping):
+                    payload = snapshot.get("result_payload")
+                    if isinstance(payload, Mapping):
+                        source_bundle_id = int(snapshot["id"])
+                        resolved_post_process_source_bundle_id_ref["value"] = (
+                            source_bundle_id
+                        )
+                        run_kind = str(payload.get("run_kind", "")).strip() or "single_result"
+                        if is_trace_batch_bundle_payload(payload):
+                            trace_batch_record = payload.get("trace_batch_record", {})
+                            summary_payload = (
+                                trace_batch_record.get("summary_payload", {})
+                                if isinstance(trace_batch_record, Mapping)
+                                else {}
+                            )
+                            if isinstance(summary_payload, Mapping):
+                                run_kind = (
+                                    str(summary_payload.get("run_kind", "")).strip()
+                                    or "single_result"
+                                )
+                        return (
+                            PostProcessingInputSource(
+                                source_batch_id=source_bundle_id,
+                                canonical_payload=json.loads(json.dumps(dict(payload))),
+                                authority="persisted_trace_batch",
+                                run_kind=run_kind,
+                            ),
+                            source_bundle_id,
+                        )
+
+            active_result, active_sweep_payload, source_bundle_id = (
+                _resolve_post_processing_input_bundle(
+                    source,
+                    reference_impedance_ohm,
+                )
+            )
+            authority = (
+                "compatibility_persisted_overlay"
+                if selected_design_ids and source_bundle_id is not None
+                else "compatibility_live_runtime"
+            )
+            return (
+                build_compatibility_post_processing_source(
+                    source_batch_id=source_bundle_id,
+                    result=active_result,
+                    sweep_payload=active_sweep_payload,
+                    authority=authority,
+                ),
+                source_bundle_id,
+            )
+
         def _resolve_post_processing_input_sweep_point(
             source: str,
             axis_indices: tuple[int, ...],
@@ -7326,6 +7426,7 @@ def _render_simulation_environment():
                         )
                     ),
                     resolve_input_bundle=_resolve_post_processing_input_bundle,
+                    resolve_input_source=_resolve_post_processing_input_source,
                     resolve_input_sweep_point=_resolve_post_processing_input_sweep_point,
                     circuit_definition=latest_circuit_definition_ref["definition"],
                     schema_id=active_record_id,

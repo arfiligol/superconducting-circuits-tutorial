@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -28,7 +26,8 @@ from app.services.characterization_runner import (
     CharacterizationRunRequest,
     SweepSupportDiagnostic,
     diagnose_analysis_sweep_support,
-    execute_characterization_run,
+    execute_characterization_run_async,
+    invoke_sync_operation,
 )
 from app.services.characterization_trace_scope import (
     TraceSourceSummary,
@@ -669,57 +668,6 @@ def _to_int(value: object, default: int) -> int:
         except ValueError:
             return default
     return default
-
-
-def _build_analysis_run_record(
-    *,
-    design_id: int,
-    analysis_id: str,
-    analysis_label: str,
-    run_id: str,
-    selected_trace_ids: Sequence[int],
-    selected_batch_ids: Sequence[int],
-    selected_scope_token: str,
-    selected_trace_mode_group: str,
-    config_payload: dict[str, object],
-    summary_payload: dict[str, object] | None = None,
-) -> AnalysisRunRecord:
-    """Build one logical analysis-run record for Characterization persistence."""
-    normalized_config_payload = dict(config_payload)
-    normalized_config_payload.setdefault(
-        "selected_trace_ids",
-        [int(trace_id) for trace_id in selected_trace_ids],
-    )
-    normalized_config_payload.setdefault(
-        "selected_trace_count",
-        len([int(trace_id) for trace_id in selected_trace_ids]),
-    )
-    normalized_config_payload.setdefault(
-        "selected_trace_mode_group",
-        selected_trace_mode_group,
-    )
-    normalized_summary_payload = dict(summary_payload or {})
-    normalized_summary_payload.setdefault(
-        "selected_trace_count",
-        len([int(trace_id) for trace_id in selected_trace_ids]),
-    )
-    normalized_summary_payload.setdefault(
-        "selected_trace_mode_group",
-        selected_trace_mode_group,
-    )
-    return AnalysisRunRecord(
-        design_id=design_id,
-        analysis_id=analysis_id,
-        analysis_label=analysis_label,
-        run_id=run_id,
-        status="completed",
-        input_trace_ids=[int(trace_id) for trace_id in selected_trace_ids],
-        input_batch_ids=[int(batch_id) for batch_id in selected_batch_ids],
-        input_scope=selected_scope_token,
-        trace_mode_group=selected_trace_mode_group,
-        config_payload=normalized_config_payload,
-        summary_payload=normalized_summary_payload,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1932,15 +1880,31 @@ def characterization_page():
                                         try:
                                             if active_design_id is None:
                                                 raise ValueError("Active design id is missing.")
-
-                                            job_started_at = datetime.now()
-                                            heartbeat_warned = False
+                                            selected_batch_ids = [
+                                                int(batch_id)
+                                                for summary in selected_source_summary
+                                                if isinstance(summary, Mapping)
+                                                for batch_id in summary.get("source_batch_ids", [])
+                                                if isinstance(batch_id, int)
+                                            ]
                                             request = CharacterizationRunRequest(
                                                 analysis_id=analysis_id,
+                                                analysis_label=str(
+                                                    selected_run_analysis["label"]
+                                                ),
                                                 dataset_id=active_design_id,
                                                 config_state=config_state,
+                                                run_id=run_id,
                                                 trace_record_ids=run_trace_ids,
+                                                selected_batch_ids=selected_batch_ids,
+                                                selected_scope_token=selected_scope_token,
                                                 trace_mode_group=selected_mode_group,
+                                                summary_payload={
+                                                    "selected_trace_count": len(run_trace_ids),
+                                                    "selected_source_summary": (
+                                                        selected_source_summary
+                                                    ),
+                                                },
                                                 context=build_ui_use_case_context(
                                                     metadata={
                                                         "flow": "characterization",
@@ -1949,99 +1913,51 @@ def characterization_page():
                                                     }
                                                 ),
                                             )
-                                            run_task = asyncio.create_task(
-                                                run.cpu_bound(
-                                                    execute_characterization_run,
-                                                    request,
+                                            async def _cpu_bound_executor(operation):
+                                                return await run.cpu_bound(
+                                                    invoke_sync_operation,
+                                                    operation,
                                                 )
-                                            )
-                                            while True:
-                                                try:
-                                                    await asyncio.wait_for(
-                                                        asyncio.shield(run_task),
-                                                        timeout=_ANALYSIS_HEARTBEAT_SECONDS,
-                                                    )
-                                                    break
-                                                except TimeoutError:
-                                                    elapsed_seconds = max(
-                                                        1,
-                                                        int(
-                                                            (
-                                                                datetime.now() - job_started_at
-                                                            ).total_seconds()
-                                                        ),
-                                                    )
-                                                    append_analysis_status(
-                                                        "info",
-                                                        (
-                                                            "Analysis worker still running... "
-                                                            f"{elapsed_seconds}s elapsed."
-                                                        ),
-                                                    )
-                                                    if (
-                                                        not heartbeat_warned
-                                                        and elapsed_seconds
-                                                        >= _ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS
-                                                    ):
-                                                        heartbeat_warned = True
-                                                        append_analysis_status(
-                                                            "warning",
-                                                            (
-                                                                "Long-running analysis detected; "
-                                                                "worker heartbeat continues "
-                                                                "every 5s."
-                                                            ),
-                                                        )
-                                            with get_unit_of_work() as write_uow:
-                                                analysis_run = _build_analysis_run_record(
-                                                    design_id=active_design_id,
-                                                    analysis_id=analysis_id,
-                                                    analysis_label=str(
-                                                        selected_run_analysis["label"]
+
+                                            def _handle_progress(update: Any) -> None:
+                                                append_analysis_status(
+                                                    "warning"
+                                                    if update.phase == "warning"
+                                                    else (
+                                                        "positive"
+                                                        if update.phase == "completed"
+                                                        else "info"
                                                     ),
+                                                    update.summary,
+                                                )
+
+                                            result = await execute_characterization_run_async(
+                                                request,
+                                                executor=_cpu_bound_executor,
+                                                heartbeat_interval_seconds=(
+                                                    _ANALYSIS_HEARTBEAT_SECONDS
+                                                ),
+                                                long_running_warning_after_seconds=(
+                                                    _ANALYSIS_LONG_RUNNING_WARN_AFTER_SECONDS
+                                                ),
+                                                progress_callback=_handle_progress,
+                                            )
+                                            if (
+                                                result.analysis_run is not None
+                                                and result.analysis_run.id is not None
+                                            ):
+                                                runtime_state.set_log_context(
                                                     run_id=run_id,
-                                                    selected_trace_ids=run_trace_ids,
-                                                    selected_batch_ids=[],
-                                                    selected_scope_token=selected_scope_token,
-                                                    selected_trace_mode_group=selected_mode_group,
-                                                    config_payload=dict(config_state),
-                                                    summary_payload={
-                                                        "selected_trace_count": len(run_trace_ids),
-                                                        "selected_source_summary": (
-                                                            selected_source_summary
-                                                        ),
-                                                    },
+                                                    dataset_id=active_design_id,
+                                                    analysis_id=analysis_id,
+                                                    bundle_id=result.analysis_run.id,
                                                 )
-                                                persisted_run = (
-                                                    write_uow.result_bundles.analysis_runs.add(
-                                                        analysis_run
-                                                    )
-                                                )
-                                                write_uow.commit()
-                                                if persisted_run.id is not None:
-                                                    runtime_state.set_log_context(
-                                                        run_id=run_id,
-                                                        dataset_id=active_design_id,
-                                                        analysis_id=analysis_id,
-                                                        bundle_id=persisted_run.id,
-                                                    )
-                                                    append_analysis_status(
-                                                        "info",
-                                                        (
-                                                            "Recorded analysis run "
-                                                            f"#{persisted_run.id}."
-                                                        ),
-                                                    )
 
                                             post_run_selection = (
                                                 _sync_result_view_selection_after_run(
                                                     dataset_id=active_design_id,
                                                     analysis=selected_run_analysis,
                                                 )
-                                            )
-                                            append_analysis_status(
-                                                "positive",
-                                                f"{selected_run_analysis['label']} completed.",
                                             )
                                             if not post_run_selection.artifact_id:
                                                 append_analysis_status(

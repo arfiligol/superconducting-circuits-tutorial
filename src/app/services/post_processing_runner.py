@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -21,23 +22,38 @@ from core.simulation.application.post_processing import (
     PortMatrixSweepRun,
     build_port_y_sweep,
 )
-from core.simulation.application.run_simulation import simulation_sweep_run_from_payload
+from core.simulation.application.run_simulation import (
+    simulation_sweep_run_from_payload,
+    simulation_sweep_run_to_payload,
+)
+from core.simulation.application.trace_architecture import (
+    is_trace_batch_bundle_payload,
+    load_raw_simulation_bundle,
+)
 from core.simulation.domain.circuit import CircuitDefinition, SimulationResult
+
+
+@dataclass(frozen=True)
+class PostProcessingInputSource:
+    """Persisted-oriented input boundary for one post-processing execution."""
+
+    source_batch_id: int | None
+    canonical_payload: Mapping[str, Any]
+    authority: str
+    run_kind: str
 
 
 @dataclass(frozen=True)
 class PostProcessingRunRequest:
     """Input DTO for one post-processing pipeline execution."""
 
-    result: SimulationResult
-    sweep_payload: dict[str, Any] | None
+    source: PostProcessingInputSource
     input_source: str
     mode_filter: str
     mode_token: str
     reference_impedance_ohm: float
     step_sequence: list[dict[str, Any]]
     circuit_definition: CircuitDefinition | None
-    has_ptc_result: bool
     context: UseCaseContext = field(default_factory=UseCaseContext)
 
 
@@ -56,6 +72,48 @@ class PostProcessingRunResult:
     def sweep(self) -> PortMatrixSweep:
         """Backward-compatible UI preview sweep accessor."""
         return self.preview_sweep
+
+
+def build_compatibility_post_processing_source(
+    *,
+    source_batch_id: int | None,
+    result: SimulationResult,
+    sweep_payload: Mapping[str, Any] | None = None,
+    authority: str,
+) -> PostProcessingInputSource:
+    """Build one compatibility input source from legacy runtime objects outside the boundary."""
+    if isinstance(sweep_payload, Mapping):
+        normalized_payload = json.loads(json.dumps(dict(sweep_payload)))
+        run_kind = str(normalized_payload.get("run_kind", "parameter_sweep")).strip()
+        return PostProcessingInputSource(
+            source_batch_id=source_batch_id,
+            canonical_payload=normalized_payload,
+            authority=authority,
+            run_kind=run_kind or "parameter_sweep",
+        )
+    return PostProcessingInputSource(
+        source_batch_id=source_batch_id,
+        canonical_payload=result.model_dump(mode="json"),
+        authority=authority,
+        run_kind="single_result",
+    )
+
+
+def _decode_post_processing_source(
+    source: PostProcessingInputSource,
+) -> tuple[SimulationResult, dict[str, Any] | None]:
+    """Decode one persisted-style post-processing input source into execution-ready data."""
+    payload = source.canonical_payload
+    if is_trace_batch_bundle_payload(payload):
+        result, sweep_payload = load_raw_simulation_bundle(payload)
+        normalized_sweep_payload = None
+        if isinstance(sweep_payload, Mapping):
+            normalized_sweep_payload = json.loads(json.dumps(sweep_payload))
+        return result, normalized_sweep_payload
+    if str(payload.get("run_kind", "")).strip() == "parameter_sweep":
+        sweep_run = simulation_sweep_run_from_payload(payload)
+        return sweep_run.representative_result, simulation_sweep_run_to_payload(sweep_run)
+    return SimulationResult.model_validate(payload), None
 
 
 def execute_post_processing_pipeline(
@@ -78,10 +136,13 @@ def execute_post_processing_pipeline(
                     "source": request.context.source,
                     "requested_by": request.context.requested_by,
                     "input_source": request.input_source,
+                    "source_batch_id": request.source.source_batch_id,
+                    "authority": request.source.authority,
                 },
             ),
         )
     )
+    active_result, active_sweep_payload = _decode_post_processing_source(request.source)
     mode_token = str(request.mode_token or "").strip()
     if not mode_token:
         raise ValueError("Please select one mode before running post-processing.")
@@ -124,10 +185,10 @@ def execute_post_processing_pipeline(
     runtime_output: PortMatrixSweep | PortMatrixSweepRun
 
     if (
-        isinstance(request.sweep_payload, dict)
-        and str(request.sweep_payload.get("run_kind", "")).strip() == "parameter_sweep"
+        isinstance(active_sweep_payload, dict)
+        and str(active_sweep_payload.get("run_kind", "")).strip() == "parameter_sweep"
     ):
-        input_sweep_run = simulation_sweep_run_from_payload(request.sweep_payload)
+        input_sweep_run = simulation_sweep_run_from_payload(active_sweep_payload)
         if not input_sweep_run.points:
             raise ValueError("Parameter sweep payload has no points for post-processing.")
         point_outputs: list[PortMatrixSweepPoint] = []
@@ -183,7 +244,7 @@ def execute_post_processing_pipeline(
         resolved_normalized_steps = normalized_steps or []
     else:
         preview_sweep, resolved_flow_steps, resolved_normalized_steps = _execute_single_result(
-            request.result
+            active_result
         )
         runtime_output = preview_sweep
 
@@ -193,7 +254,7 @@ def execute_post_processing_pipeline(
         for step in resolved_normalized_steps
     )
     hfss_not_comparable_reasons: list[str] = []
-    if not request.has_ptc_result:
+    if request.input_source != "ptc_y":
         hfss_not_comparable_reasons.append("Port Termination Compensation is disabled.")
     if request.input_source != "ptc_y":
         hfss_not_comparable_reasons.append("Input Y Source is not PTC Y.")
@@ -229,6 +290,8 @@ def execute_post_processing_pipeline(
                     "requested_by": request.context.requested_by,
                     "run_kind": run_kind,
                     "point_count": point_count,
+                    "source_batch_id": request.source.source_batch_id,
+                    "authority": request.source.authority,
                     "hfss_comparable": hfss_comparable,
                 },
             ),
@@ -260,8 +323,10 @@ async def execute_post_processing_pipeline_async(
 
 
 __all__ = [
+    "PostProcessingInputSource",
     "PostProcessingRunRequest",
     "PostProcessingRunResult",
+    "build_compatibility_post_processing_source",
     "execute_post_processing_pipeline",
     "execute_post_processing_pipeline_async",
 ]

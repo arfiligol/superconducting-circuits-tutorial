@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import numpy as np
@@ -9,15 +10,18 @@ import pytest
 
 from app.services.characterization_runner import (
     CharacterizationRunRequest,
+    CharacterizationRunResult,
     SweepSupportDiagnostic,
     _diagnose_analysis_sweep_support_from_records,
     execute_analysis_run,
     execute_characterization_run,
+    execute_characterization_run_async,
 )
 from app.services.execution_context import ActorContext, UseCaseContext
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
-from core.shared.persistence import DataRecord
+from core.shared.persistence import DataRecord, database, get_unit_of_work
+from core.shared.persistence.models import DesignRecord
 
 
 def _record(
@@ -67,6 +71,11 @@ def _trace_record(
         "axis_values": axis_values,
         "store_ref": {"values": values},
     }
+
+
+def _configure_temp_database(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "characterization.db"))
+    database.get_engine.cache_clear()
 
 
 def test_execute_analysis_run_dispatches_admittance_extraction(
@@ -189,8 +198,157 @@ def test_execute_characterization_run_returns_context_and_progress(
     }
     assert result.context.actor.actor_id == 9
     assert result.selected_trace_ids == (1, 2)
-    assert [update.phase for update in result.progress_updates] == ["running", "completed"]
+    assert [update.phase for update in result.progress_updates] == [
+        "running",
+        "persisted",
+        "completed",
+    ]
     assert progress_updates[0].to_payload()["details"]["analysis_id"] == "admittance_extraction"
+
+
+def test_execute_characterization_run_persists_analysis_run_contract(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_temp_database(tmp_path, monkeypatch)
+    progress_updates: list[object] = []
+
+    try:
+        with get_unit_of_work() as uow:
+            design = uow.datasets.add(
+                DesignRecord(
+                    name="Characterization Boundary Design",
+                    source_meta={},
+                    parameters={},
+                )
+            )
+            uow.flush()
+            assert design.id is not None
+            design_id = int(design.id)
+            uow.commit()
+
+        monkeypatch.setattr(
+            "core.analysis.application.services.resonance_extract_service.ResonanceExtractService.extract_admittance",
+            lambda self, dataset_id, **kwargs: None,
+        )
+
+        result = execute_characterization_run(
+            CharacterizationRunRequest(
+                analysis_id="admittance_extraction",
+                analysis_label="Admittance Extraction",
+                dataset_id=design_id,
+                config_state={},
+                run_id="analysis-run-1",
+                trace_record_ids=[11, 12],
+                selected_batch_ids=[7],
+                selected_scope_token="selected_trace_records",
+                trace_mode_group="base",
+                summary_payload={"selected_source_summary": [{"source_kind": "persisted_batch"}]},
+                context=UseCaseContext(
+                    actor=ActorContext(actor_id=4, role="admin", requested_by="ui"),
+                    source="ui",
+                    task_id=99,
+                ),
+            ),
+            progress_callback=progress_updates.append,
+        )
+
+        assert result.analysis_run is not None
+        assert result.analysis_run.id is not None
+        assert result.selected_batch_ids == (7,)
+        assert [update.phase for update in result.progress_updates] == [
+            "running",
+            "persisted",
+            "completed",
+        ]
+
+        with get_unit_of_work() as uow:
+            persisted_run = uow.result_bundles.analysis_runs.get(int(result.analysis_run.id))
+
+        assert persisted_run is not None
+        assert persisted_run.analysis_id == "admittance_extraction"
+        assert persisted_run.analysis_label == "Admittance Extraction"
+        assert persisted_run.run_id == "analysis-run-1"
+        assert persisted_run.input_trace_ids == [11, 12]
+        assert persisted_run.input_batch_ids == [7]
+        assert persisted_run.input_scope == "selected_trace_records"
+        assert persisted_run.summary_payload["selected_source_summary"] == [
+            {"source_kind": "persisted_batch"}
+        ]
+        assert progress_updates[1].to_payload()["details"]["analysis_run_id"] == int(
+            result.analysis_run.id
+        )
+    finally:
+        database.get_engine.cache_clear()
+
+
+def test_execute_characterization_run_async_owns_heartbeat_and_warning_progress(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_temp_database(tmp_path, monkeypatch)
+    progress_updates: list[object] = []
+
+    try:
+        with get_unit_of_work() as uow:
+            design = uow.datasets.add(
+                DesignRecord(
+                    name="Characterization Async Design",
+                    source_meta={},
+                    parameters={},
+                )
+            )
+            uow.flush()
+            assert design.id is not None
+            design_id = int(design.id)
+            uow.commit()
+
+        monkeypatch.setattr(
+            "core.analysis.application.services.resonance_extract_service.ResonanceExtractService.extract_admittance",
+            lambda self, dataset_id, **kwargs: None,
+        )
+
+        async def _delayed_executor(
+            operation,
+        ) -> CharacterizationRunResult:
+            await asyncio.sleep(0.02)
+            return operation()
+
+        result = asyncio.run(
+            execute_characterization_run_async(
+                CharacterizationRunRequest(
+                    analysis_id="admittance_extraction",
+                    analysis_label="Admittance Extraction",
+                    dataset_id=design_id,
+                    config_state={},
+                    run_id="analysis-run-async",
+                    trace_record_ids=[21],
+                    selected_scope_token="selected_trace_records",
+                    trace_mode_group="base",
+                    context=UseCaseContext(
+                        actor=ActorContext(actor_id=8, role="user", requested_by="api"),
+                        source="worker",
+                        task_id=44,
+                    ),
+                ),
+                executor=_delayed_executor,
+                heartbeat_interval_seconds=0.005,
+                long_running_warning_after_seconds=0.01,
+                progress_callback=progress_updates.append,
+            )
+        )
+
+        phases = [update.phase for update in result.progress_updates]
+        assert phases[0] == "heartbeat"
+        assert "warning" in phases
+        assert "persisted" in phases
+        assert phases[-1] == "completed"
+        assert result.analysis_run is not None
+        assert progress_updates[-1].to_payload()["details"]["analysis_run_id"] == int(
+            result.analysis_run.id or 0
+        )
+    finally:
+        database.get_engine.cache_clear()
 
 
 def test_diagnose_analysis_sweep_support_marks_y11_and_squid_ready_for_2d_ljun() -> None:

@@ -771,16 +771,23 @@ Progress:
   - `details`
 - WS3 worker runtime 已改用 shared progress payload helper 產生 `TaskRecord.progress_payload` / completion summary payload
 - simulation page 已把 Julia solver 呼叫改成 shared `SimulationRunRequest -> execute_simulation_run` boundary
-- post-processing page 已以 enriched `PostProcessingRunRequest(context=...)` 執行 shared boundary，page-local code 不再直接持有 actor/session-specific authority
-- characterization page 已把 run dispatch 改成 shared `CharacterizationRunRequest -> execute_characterization_run` boundary
+- post-processing shared boundary 現在接受 `PostProcessingInputSource` persisted-style authority shape：
+  - raw post-processing 優先直接吃 persisted raw batch payload + `source_batch_id`
+  - 舊的 `latest_simulation_result` / `latest_simulation_sweep_payload` 只保留在 page adapter 相容層，不再是 shared boundary authority
+- characterization shared boundary 現在持有 run normalization / persistence / heartbeat-progress contract：
+  - page 只 render progress
+  - `AnalysisRunRecord` persistence 已移入 shared boundary
+  - async heartbeat/warning 也由 shared boundary 提供
 - 已新增 tests 證明 shared use-case modules 可由 worker-facing import 使用，且不會拉進 `app.pages.*`
 
 Verification:
 - `uv run pytest tests/app/services/test_simulation_runner.py tests/app/services/test_post_processing_runner.py tests/app/services/test_characterization_runner.py tests/worker/test_huey_workers.py tests/core/shared/persistence/test_task_auth_audit_repository.py tests/core/shared/persistence/test_result_bundle_repository.py tests/core/shared/persistence/test_reconcile.py tests/core/shared/persistence/test_repository_contracts.py tests/core/shared/persistence/test_database_bootstrap.py`
 - `uv run ruff check src/app/services/execution_context.py src/app/services/task_progress.py src/app/services/simulation_runner.py src/app/services/post_processing_runner.py src/app/services/characterization_runner.py src/worker/runtime.py tests/app/services/test_simulation_runner.py tests/app/services/test_post_processing_runner.py tests/app/services/test_characterization_runner.py tests/worker/test_huey_workers.py src/app/pages/simulation/__init__.py src/app/pages/characterization/__init__.py`
+- `uv run basedpyright src/app/services/execution_context.py src/app/services/task_progress.py src/app/services/simulation_runner.py src/app/services/post_processing_runner.py src/app/services/characterization_runner.py src/worker/runtime.py`
 - `uv run basedpyright src/app/services/execution_context.py src/app/services/task_progress.py src/app/services/simulation_runner.py src/app/services/post_processing_runner.py src/app/services/characterization_runner.py src/worker/runtime.py src/app/pages/simulation/__init__.py src/app/pages/characterization/__init__.py`
 - `uv run python -m py_compile src/app/pages/simulation/__init__.py src/app/pages/characterization/__init__.py`
 - `uv run python - <<'PY' ... execute_simulation_run(...) ... PY`
+- `uv run python - <<'PY' ... execute_post_processing_pipeline(PostProcessingRunRequest(source=PostProcessingInputSource(...))) ... PY`
 
 Evidence:
 - `src/app/services/execution_context.py`

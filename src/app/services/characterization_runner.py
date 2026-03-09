@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from functools import partial
 from typing import Literal
 
 from app.services.execution_context import UseCaseContext
@@ -26,6 +28,19 @@ from core.analysis.domain import (
     normalize_trace_record,
 )
 from core.shared.persistence import get_unit_of_work
+from core.shared.persistence.models import AnalysisRunRecord
+
+
+def _utcnow() -> datetime:
+    """Return one naive UTC timestamp without using deprecated utcnow()."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def invoke_sync_operation(
+    operation: Callable[[], CharacterizationRunResult],
+) -> CharacterizationRunResult:
+    """Run one zero-arg sync operation for injected async executors."""
+    return operation()
 
 
 @dataclass(frozen=True)
@@ -43,8 +58,13 @@ class CharacterizationRunRequest:
     analysis_id: str
     dataset_id: int
     config_state: Mapping[str, str | float | int | None]
+    analysis_label: str | None = None
+    run_id: str = ""
     trace_record_ids: Sequence[int] | None = None
+    selected_batch_ids: Sequence[int] = ()
+    selected_scope_token: str = ""
     trace_mode_group: str | None = None
+    summary_payload: Mapping[str, object] = field(default_factory=dict)
     context: UseCaseContext = field(default_factory=UseCaseContext)
 
 
@@ -55,10 +75,18 @@ class CharacterizationRunResult:
     analysis_id: str
     dataset_id: int
     selected_trace_ids: tuple[int, ...]
+    selected_batch_ids: tuple[int, ...]
+    analysis_run: AnalysisRunRecord | None
     trace_mode_group: str
     sweep_support: SweepSupportDiagnostic | None
     context: UseCaseContext
     progress_updates: tuple[TaskProgressUpdate, ...] = ()
+
+
+CharacterizationAsyncExecutor = Callable[
+    [Callable[[], CharacterizationRunResult]],
+    Awaitable[CharacterizationRunResult],
+]
 
 
 def _value_ndim(values: object) -> int:
@@ -269,6 +297,66 @@ def _config_str(
     return str(value)
 
 
+def _build_analysis_run_record(
+    request: CharacterizationRunRequest,
+    *,
+    selected_trace_ids: Sequence[int],
+) -> AnalysisRunRecord:
+    """Build one logical analysis-run record for Characterization persistence."""
+    normalized_config_payload: dict[str, object] = dict(request.config_state)
+    normalized_config_payload.setdefault(
+        "selected_trace_ids",
+        [int(trace_id) for trace_id in selected_trace_ids],
+    )
+    normalized_config_payload.setdefault(
+        "selected_trace_count",
+        len([int(trace_id) for trace_id in selected_trace_ids]),
+    )
+    normalized_config_payload.setdefault(
+        "selected_trace_mode_group",
+        str(request.trace_mode_group or ""),
+    )
+    normalized_summary_payload = dict(request.summary_payload)
+    normalized_summary_payload.setdefault(
+        "selected_trace_count",
+        len([int(trace_id) for trace_id in selected_trace_ids]),
+    )
+    normalized_summary_payload.setdefault(
+        "selected_trace_mode_group",
+        str(request.trace_mode_group or ""),
+    )
+    return AnalysisRunRecord(
+        design_id=request.dataset_id,
+        analysis_id=request.analysis_id,
+        analysis_label=str(request.analysis_label or request.analysis_id),
+        run_id=str(request.run_id),
+        status="completed",
+        input_trace_ids=[int(trace_id) for trace_id in selected_trace_ids],
+        input_batch_ids=[int(batch_id) for batch_id in request.selected_batch_ids],
+        input_scope=str(request.selected_scope_token),
+        trace_mode_group=str(request.trace_mode_group or ""),
+        config_payload=normalized_config_payload,
+        summary_payload=normalized_summary_payload,
+    )
+
+
+def _persist_analysis_run_record(
+    request: CharacterizationRunRequest,
+    *,
+    selected_trace_ids: Sequence[int],
+) -> AnalysisRunRecord:
+    """Persist one completed logical analysis run through the shared boundary."""
+    with get_unit_of_work() as uow:
+        persisted_run = uow.result_bundles.analysis_runs.add(
+            _build_analysis_run_record(
+                request,
+                selected_trace_ids=selected_trace_ids,
+            )
+        )
+        uow.commit()
+    return persisted_run
+
+
 def execute_characterization_run(
     request: CharacterizationRunRequest,
     *,
@@ -284,6 +372,8 @@ def execute_characterization_run(
     if sweep_support is not None and sweep_support.status == "blocked":
         raise ValueError(f"Sweep support: blocked - {sweep_support.reason}")
     updates: list[TaskProgressUpdate] = []
+    selected_trace_ids = tuple(trace_ids or [])
+    selected_batch_ids = tuple(int(batch_id) for batch_id in request.selected_batch_ids)
     updates.append(
         emit_progress(
             progress_callback,
@@ -296,7 +386,7 @@ def execute_characterization_run(
                     "source": request.context.source,
                     "requested_by": request.context.requested_by,
                     "analysis_id": request.analysis_id,
-                    "selected_trace_count": len(trace_ids or []),
+                    "selected_trace_count": len(selected_trace_ids),
                 },
             ),
         )
@@ -349,19 +439,40 @@ def execute_characterization_run(
     else:
         raise ValueError(f"Unsupported analysis id: {request.analysis_id}")
 
+    persisted_analysis_run = _persist_analysis_run_record(
+        request,
+        selected_trace_ids=selected_trace_ids,
+    )
+    updates.append(
+        emit_progress(
+            progress_callback,
+            progress_update(
+                phase="persisted",
+                summary=f"Recorded analysis run #{persisted_analysis_run.id}.",
+                stage_label="characterization",
+                details={
+                    "analysis_run_id": persisted_analysis_run.id,
+                    "analysis_id": request.analysis_id,
+                    "run_id": str(request.run_id),
+                },
+            ),
+        )
+    )
+
     updates.append(
         emit_progress(
             progress_callback,
             progress_update(
                 phase="completed",
-                summary="Characterization execution completed.",
+                summary=f"{request.analysis_label or request.analysis_id} completed.",
                 stage_label="characterization",
                 details={
                     "source": request.context.source,
                     "requested_by": request.context.requested_by,
                     "analysis_id": request.analysis_id,
-                    "selected_trace_count": len(trace_ids or []),
+                    "selected_trace_count": len(selected_trace_ids),
                     "trace_mode_group": str(request.trace_mode_group or ""),
+                    "analysis_run_id": persisted_analysis_run.id,
                 },
             ),
         )
@@ -369,7 +480,9 @@ def execute_characterization_run(
     return CharacterizationRunResult(
         analysis_id=request.analysis_id,
         dataset_id=request.dataset_id,
-        selected_trace_ids=tuple(trace_ids or []),
+        selected_trace_ids=selected_trace_ids,
+        selected_batch_ids=selected_batch_ids,
+        analysis_run=persisted_analysis_run,
         trace_mode_group=str(request.trace_mode_group or ""),
         sweep_support=sweep_support,
         context=request.context,
@@ -380,14 +493,76 @@ def execute_characterization_run(
 async def execute_characterization_run_async(
     request: CharacterizationRunRequest,
     *,
+    executor: CharacterizationAsyncExecutor | None = None,
     progress_callback: ProgressCallback | None = None,
+    heartbeat_interval_seconds: float = 5.0,
+    long_running_warning_after_seconds: float = 60.0,
 ) -> CharacterizationRunResult:
     """Async adapter for the shared characterization boundary."""
-    return await asyncio.to_thread(
+    updates: list[TaskProgressUpdate] = []
+
+    def _record_progress(update: TaskProgressUpdate) -> None:
+        updates.append(update)
+        if progress_callback is not None:
+            progress_callback(update)
+
+    operation = partial(
         execute_characterization_run,
         request,
-        progress_callback=progress_callback,
+        progress_callback=_record_progress,
     )
+    if executor is None:
+        task = asyncio.create_task(asyncio.to_thread(operation))
+    else:
+        async def _run_with_executor() -> CharacterizationRunResult:
+            return await executor(partial(invoke_sync_operation, operation))
+
+        task = asyncio.create_task(_run_with_executor())
+
+    started_at = _utcnow()
+    warning_emitted = False
+    while True:
+        try:
+            result = await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=heartbeat_interval_seconds,
+            )
+            return replace(result, progress_updates=tuple(updates))
+        except TimeoutError:
+            elapsed_seconds = max(1, int((_utcnow() - started_at).total_seconds()))
+            _record_progress(
+                progress_update(
+                    phase="heartbeat",
+                    summary=f"Analysis worker still running... {elapsed_seconds}s elapsed.",
+                    stage_label="characterization",
+                    stale_after_seconds=int(long_running_warning_after_seconds),
+                    details={
+                        "analysis_id": request.analysis_id,
+                        "elapsed_seconds": elapsed_seconds,
+                    },
+                )
+            )
+            if (
+                not warning_emitted
+                and elapsed_seconds >= int(long_running_warning_after_seconds)
+            ):
+                warning_emitted = True
+                _record_progress(
+                    progress_update(
+                        phase="warning",
+                        summary=(
+                            "Long-running analysis detected; worker heartbeat "
+                            "continues every 5s."
+                        ),
+                        stage_label="characterization",
+                        warning="long_running_analysis",
+                        stale_after_seconds=int(long_running_warning_after_seconds),
+                        details={
+                            "analysis_id": request.analysis_id,
+                            "elapsed_seconds": elapsed_seconds,
+                        },
+                    )
+                )
 
 
 def execute_analysis_run(
@@ -406,6 +581,7 @@ def execute_analysis_run(
             config_state=config_state,
             trace_record_ids=trace_record_ids,
             trace_mode_group=trace_mode_group,
+            analysis_label=analysis_id,
         )
     )
 
@@ -419,4 +595,5 @@ __all__ = [
     "execute_analysis_run",
     "execute_characterization_run",
     "execute_characterization_run_async",
+    "invoke_sync_operation",
 ]
