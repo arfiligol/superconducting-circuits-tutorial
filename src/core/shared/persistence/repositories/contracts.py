@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
-from core.shared.persistence.models import AnalysisRunRecord
+from core.shared.persistence.models import AnalysisRunRecord, AuditLogRecord, TaskRecord, UserRecord
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 TraceIndexRow = dict[str, str | int]
@@ -31,6 +31,97 @@ class AnalysisRunPersistenceContract(Protocol):
     def list_by_design(self, design_id: int) -> list[AnalysisRunRecord]: ...
 
     def list_summaries_by_design(self, design_id: int) -> list[AnalysisRunSummary]: ...
+
+
+@runtime_checkable
+class TaskPersistenceContract(Protocol):
+    """Task lifecycle persistence API for persisted orchestration flows."""
+
+    def create_task(
+        self,
+        task_kind: str,
+        design_id: int,
+        request_payload: dict[str, Any],
+        requested_by: str,
+        *,
+        actor_id: int | None = None,
+        dedupe_key: str | None = None,
+        trace_batch_id: int | None = None,
+        analysis_run_id: int | None = None,
+    ) -> TaskRecord: ...
+
+    def mark_running(self, task_id: int) -> None: ...
+
+    def heartbeat(self, task_id: int, progress_payload: dict[str, Any]) -> None: ...
+
+    def mark_completed(
+        self,
+        task_id: int,
+        trace_batch_id: int | None,
+        result_summary_payload: dict[str, Any],
+        *,
+        analysis_run_id: int | None = None,
+    ) -> None: ...
+
+    def mark_failed(self, task_id: int, error_payload: dict[str, Any]) -> None: ...
+
+    def get_task(self, task_id: int) -> TaskRecord | None: ...
+
+    def list_tasks_by_design(
+        self,
+        design_id: int,
+        status_filter: str | list[str] | tuple[str, ...] | None = None,
+    ) -> list[TaskRecord]: ...
+
+    def get_latest_task_by_kind(self, design_id: int, task_kind: str) -> TaskRecord | None: ...
+
+    def find_active_by_dedupe_key(self, dedupe_key: str) -> TaskRecord | None: ...
+
+    def list_stale_running_tasks(self, before_heartbeat_at: Any) -> list[TaskRecord]: ...
+
+
+@runtime_checkable
+class UserPersistenceContract(Protocol):
+    """Local-user persistence API for session and admin flows."""
+
+    def get_by_username(self, username: str) -> UserRecord | None: ...
+
+    def get_by_id(self, user_id: int) -> UserRecord | None: ...
+
+    def create_user(
+        self,
+        username: str,
+        password_hash: str,
+        role: str,
+        *,
+        is_active: bool = True,
+    ) -> UserRecord: ...
+
+    def list_users(self) -> list[UserRecord]: ...
+
+    def set_password(self, user_id: int, password_hash: str) -> UserRecord: ...
+
+    def set_active(self, user_id: int, is_active: bool) -> UserRecord: ...
+
+
+@runtime_checkable
+class AuditLogPersistenceContract(Protocol):
+    """Audit-log persistence API for actor-traceable actions."""
+
+    def append_log(
+        self,
+        *,
+        actor_id: int | None,
+        action_kind: str,
+        resource_kind: str,
+        resource_id: str | int,
+        summary: str,
+        payload: dict[str, Any] | None = None,
+    ) -> AuditLogRecord: ...
+
+    def list_logs(self) -> list[AuditLogRecord]: ...
+
+    def list_logs_by_actor(self, actor_id: int) -> list[AuditLogRecord]: ...
 
 
 class TraceBatchSnapshot(TypedDict):

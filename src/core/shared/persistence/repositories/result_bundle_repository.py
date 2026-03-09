@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from copy import deepcopy
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import String, and_, asc, case, delete, desc, func, not_, or_
@@ -18,6 +19,11 @@ from core.shared.persistence.repositories.contracts import (
     TraceBatchSnapshot,
 )
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
+
+
+def _utcnow() -> datetime:
+    """Return one naive UTC timestamp without using deprecated utcnow()."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _sideband_parameter_predicate(parameter_col: Any) -> Any:
@@ -105,6 +111,28 @@ def _resolved_setup_version(batch: TraceBatchRecord) -> str | None:
     return None
 
 
+def _merge_summary_payload(
+    result_payload: dict[str, Any],
+    summary_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge summary metadata into either canonical trace-batch or legacy payload shape."""
+    if not summary_payload:
+        return dict(result_payload)
+
+    merged = deepcopy(result_payload)
+    trace_batch_record = merged.get("trace_batch_record")
+    if isinstance(trace_batch_record, dict):
+        existing_summary = trace_batch_record.get("summary_payload")
+        trace_batch_record["summary_payload"] = {
+            **(existing_summary if isinstance(existing_summary, dict) else {}),
+            **summary_payload,
+        }
+        merged["trace_batch_record"] = trace_batch_record
+        return merged
+
+    return {**merged, **summary_payload}
+
+
 class TraceBatchRepository:
     """Repository for trace-batch metadata and membership operations."""
 
@@ -125,6 +153,8 @@ class TraceBatchRepository:
         batch = self._session.get(TraceBatchRecord, id)
         if batch is None or batch.id is None:
             return None
+        if str(batch.status) != "completed":
+            return None
         return {
             "id": int(batch.id),
             "design_id": int(batch.dataset_id),
@@ -143,6 +173,8 @@ class TraceBatchRepository:
         """Get one detached legacy snapshot for provenance reads."""
         batch = self._session.get(TraceBatchRecord, id)
         if batch is None or batch.id is None:
+            return None
+        if str(batch.status) != "completed":
             return None
         return {
             "id": int(batch.id),
@@ -166,6 +198,69 @@ class TraceBatchRepository:
     def add(self, batch: TraceBatchRecord) -> TraceBatchRecord:
         """Add a new trace batch."""
         self._session.add(batch)
+        return batch
+
+    def mark_in_progress(
+        self,
+        batch_id: int,
+        *,
+        summary_payload: dict[str, Any] | None = None,
+    ) -> TraceBatchRecord:
+        """Mark one trace batch as in progress."""
+        batch = self.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Trace batch ID {batch_id} not found.")
+        batch.status = "in_progress"
+        batch.completed_at = None
+        if isinstance(summary_payload, dict):
+            batch.result_payload = _merge_summary_payload(
+                dict(batch.result_payload),
+                dict(summary_payload),
+            )
+        self._session.add(batch)
+        self._session.flush()
+        return batch
+
+    def mark_completed(
+        self,
+        batch_id: int,
+        *,
+        summary_payload: dict[str, Any] | None = None,
+    ) -> TraceBatchRecord:
+        """Mark one trace batch as completed."""
+        batch = self.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Trace batch ID {batch_id} not found.")
+        batch.status = "completed"
+        batch.completed_at = _utcnow()
+        if isinstance(summary_payload, dict):
+            batch.result_payload = _merge_summary_payload(
+                dict(batch.result_payload),
+                dict(summary_payload),
+            )
+        self._session.add(batch)
+        self._session.flush()
+        return batch
+
+    def mark_failed(
+        self,
+        batch_id: int,
+        *,
+        summary_payload: dict[str, Any] | None = None,
+    ) -> TraceBatchRecord:
+        """Mark one trace batch as failed."""
+        batch = self.get(batch_id)
+        if batch is None:
+            raise ValueError(f"Trace batch ID {batch_id} not found.")
+        batch.status = "failed"
+        batch.completed_at = _utcnow()
+        if isinstance(summary_payload, dict):
+            batch.result_payload = _merge_summary_payload(
+                dict(batch.result_payload),
+                dict(summary_payload),
+            )
+        self._session.add(batch)
+        self._session.flush()
         return batch
 
     def delete(self, batch: TraceBatchRecord) -> None:
@@ -204,6 +299,15 @@ class TraceBatchRepository:
         statement = self._dataset_statement(dataset_id=dataset_id).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
 
+    def list_incomplete_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
+        """List non-completed batches under one dataset."""
+        statement = (
+            self._dataset_statement(dataset_id=dataset_id)
+            .where(TraceBatchRecord.status != "completed")
+            .order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        )
+        return list(self._session.exec(statement).all())
+
     def list_cache_by_design(self, design_id: int) -> list[TraceBatchRecord]:
         """List cache-role batches under one design."""
         return self.list_cache_by_dataset(design_id)
@@ -233,6 +337,15 @@ class TraceBatchRepository:
         statement = (
             select(TraceBatchRecord)
             .where(TraceBatchRecord.parent_batch_id == parent_batch_id)
+            .order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        )
+        return list(self._session.exec(statement).all())
+
+    def list_incomplete_batches(self) -> list[TraceBatchRecord]:
+        """List all non-completed trace batches across designs."""
+        statement = (
+            select(TraceBatchRecord)
+            .where(TraceBatchRecord.status != "completed")
             .order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         )
         return list(self._session.exec(statement).all())

@@ -222,6 +222,91 @@ def test_result_bundle_repository_get_snapshot_returns_detached_dto() -> None:
         assert refreshed.result_payload["points"][0]["source_point_index"] == 0
 
 
+def test_result_bundle_repository_hides_incomplete_snapshots_and_lists_incomplete_batches() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Incomplete Batches", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        completed = ResultBundleRepository(session).add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="circuit_simulation",
+                role="cache",
+                status="completed",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        incomplete = ResultBundleRepository(session).add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="simulation_postprocess",
+                role="derived_from_simulation",
+                status="in_progress",
+                source_meta={},
+                config_snapshot={},
+                result_payload={},
+            )
+        )
+        session.flush()
+        assert completed.id is not None
+        assert incomplete.id is not None
+
+        repo = ResultBundleRepository(session)
+        assert repo.get_snapshot(completed.id) is not None
+        assert repo.get_trace_batch_snapshot(completed.id) is not None
+        assert repo.get_snapshot(incomplete.id) is None
+        assert repo.get_trace_batch_snapshot(incomplete.id) is None
+        assert [batch.id for batch in repo.list_incomplete_by_dataset(dataset.id)] == [
+            incomplete.id
+        ]
+        assert [batch.id for batch in repo.list_incomplete_batches()] == [incomplete.id]
+
+
+def test_result_bundle_repository_merges_summary_into_trace_batch_payload() -> None:
+    with _memory_session() as session:
+        dataset = DatasetRepository(session).add(
+            DatasetRecord(name="Summary Merge", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert dataset.id is not None
+
+        bundle = ResultBundleRepository(session).add(
+            ResultBundleRecord(
+                dataset_id=dataset.id,
+                bundle_type="circuit_simulation",
+                role="cache",
+                status="in_progress",
+                source_meta={},
+                config_snapshot={},
+                result_payload={
+                    "trace_batch_record": {
+                        "summary_payload": {
+                            "trace_count": 3,
+                        }
+                    }
+                },
+            )
+        )
+        session.flush()
+        assert bundle.id is not None
+
+        updated = ResultBundleRepository(session).mark_failed(
+            bundle.id,
+            summary_payload={"error_code": "write_failed"},
+        )
+
+        assert updated.status == "failed"
+        assert updated.result_payload["trace_batch_record"]["summary_payload"] == {
+            "trace_count": 3,
+            "error_code": "write_failed",
+        }
+
+
 def test_data_record_repository_index_page_filters_and_sorts() -> None:
     with _memory_session() as session:
         dataset = DatasetRepository(session).add(

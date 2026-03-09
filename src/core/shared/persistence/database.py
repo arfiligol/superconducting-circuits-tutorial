@@ -4,6 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 from sqlmodel import Session, create_engine
 
 # Database file location
@@ -28,6 +29,7 @@ def init_db() -> None:
     from sqlmodel import SQLModel
 
     from core.shared.persistence.models import (  # noqa: F401 - Import for side effects
+        AuditLogRecord,
         DataRecord,
         DatasetRecord,
         DatasetTagLink,
@@ -36,6 +38,8 @@ def init_db() -> None:
         ResultBundleDataLink,
         ResultBundleRecord,
         Tag,
+        TaskRecord,
+        UserRecord,
     )
 
     engine = get_engine()
@@ -43,7 +47,7 @@ def init_db() -> None:
     _ensure_legacy_sqlite_compat_columns(engine)
 
 
-def _ensure_legacy_sqlite_compat_columns(engine) -> None:
+def _ensure_legacy_sqlite_compat_columns(engine: Engine) -> None:
     """Add newly introduced columns when working against an older local SQLite file."""
     compat_columns = {
         "data_records": {
@@ -51,8 +55,7 @@ def _ensure_legacy_sqlite_compat_columns(engine) -> None:
         },
         "result_bundle_records": {
             "parent_batch_id": (
-                "ALTER TABLE result_bundle_records "
-                "ADD COLUMN parent_batch_id INTEGER"
+                "ALTER TABLE result_bundle_records ADD COLUMN parent_batch_id INTEGER"
             ),
         },
     }
@@ -62,8 +65,7 @@ def _ensure_legacy_sqlite_compat_columns(engine) -> None:
             return
         for table_name, columns in compat_columns.items():
             existing_columns = {
-                str(row[1])
-                for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
+                str(row[1]) for row in connection.execute(text(f"PRAGMA table_info({table_name})"))
             }
             for column_name, statement in columns.items():
                 if column_name in existing_columns:

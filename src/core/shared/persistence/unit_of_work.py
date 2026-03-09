@@ -6,12 +6,15 @@ from sqlmodel import Session
 
 from core.shared.persistence.database import get_session, init_db
 from core.shared.persistence.repositories import (
+    AuditLogRepository,
     CircuitRepository,
     DataRecordRepository,
     DatasetRepository,
     DerivedParameterRepository,
     ResultBundleRepository,
     TagRepository,
+    TaskRepository,
+    UserRepository,
 )
 
 
@@ -51,6 +54,21 @@ class SqliteUnitOfWork:
     def circuits(self) -> CircuitRepository:
         """Access CircuitRecord repository."""
         return CircuitRepository(self._session)
+
+    @property
+    def tasks(self) -> TaskRepository:
+        """Access TaskRecord repository."""
+        return TaskRepository(self._session)
+
+    @property
+    def users(self) -> UserRepository:
+        """Access UserRecord repository."""
+        return UserRepository(self._session)
+
+    @property
+    def audit_logs(self) -> AuditLogRepository:
+        """Access AuditLogRecord repository."""
+        return AuditLogRepository(self._session)
 
     def __enter__(self) -> "SqliteUnitOfWork":
         """Enter context manager."""

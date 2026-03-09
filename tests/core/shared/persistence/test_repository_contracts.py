@@ -5,18 +5,22 @@ from sqlmodel import Session, SQLModel, create_engine
 from core.shared.persistence.models import DesignRecord
 from core.shared.persistence.repositories import (
     AnalysisRunPersistenceContract,
+    AuditLogPersistenceContract,
     DataRecordCharacterizationContract,
     ResultBundleCharacterizationContract,
     ResultBundleDatasetSummaryContract,
     ResultBundleRepository,
     ResultBundleSnapshotContract,
+    TaskPersistenceContract,
     TraceBatchCharacterizationContract,
     TraceBatchDesignSummaryContract,
     TraceBatchRepository,
     TraceBatchSnapshotContract,
     TraceCharacterizationContract,
     TraceRepository,
+    UserPersistenceContract,
 )
+from core.shared.persistence.unit_of_work import SqliteUnitOfWork
 
 
 def _memory_session() -> Session:
@@ -87,3 +91,16 @@ def test_legacy_aliases_still_expose_canonical_repositories() -> None:
         assert TraceRepository is not None
         assert TraceBatchRepository is not None
         assert ResultBundleRepository is TraceBatchRepository
+
+
+def test_unit_of_work_exposes_task_auth_and_audit_contracts() -> None:
+    with _memory_session() as session:
+        uow = SqliteUnitOfWork(session)
+
+        assert isinstance(uow.tasks, TaskPersistenceContract)
+        assert isinstance(uow.users, UserPersistenceContract)
+        assert isinstance(uow.audit_logs, AuditLogPersistenceContract)
+
+        assert uow.tasks.get_task(1) is None
+        assert uow.users.get_by_id(1) is None
+        assert uow.audit_logs.list_logs() == []
