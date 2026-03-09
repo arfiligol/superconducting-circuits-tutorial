@@ -9,10 +9,20 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from app.pages.simulation.submit_actions import build_simulation_submission
+from app.services.execution_context import ActorContext, build_ui_use_case_context
+from app.services.simulation_runner import SimulationRunResult
+from app.services.task_submission import create_api_task
 from core.shared.persistence import database
 from core.shared.persistence.models import DesignRecord
 from core.shared.persistence.reconcile import reconcile_stale_tasks_and_batches
 from core.shared.persistence.unit_of_work import get_unit_of_work
+from core.simulation.domain.circuit import (
+    FrequencyRange,
+    SimulationConfig,
+    SimulationResult,
+    parse_circuit_definition_source,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,6 +39,7 @@ def _configure_worker_env(tmp_path: Path, monkeypatch) -> None:
         "SC_CHARACTERIZATION_HUEY_DB_PATH",
         str(tmp_path / "characterization_huey.db"),
     )
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     database.get_engine.cache_clear()
 
 
@@ -75,6 +86,38 @@ def _create_task(task_kind: str) -> int:
         uow.commit()
         assert task.id is not None
         return task.id
+
+
+def _sample_simulation_circuit():
+    return parse_circuit_definition_source(
+        {
+            "name": "WS6 Worker Simulation",
+            "parameters": [{"name": "Lj", "default": 1000.0, "unit": "pH"}],
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "Lj1", "value_ref": "Lj", "unit": "pH"},
+                {"name": "C1", "default": 120.0, "unit": "fF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R1", "1", "0", "R50"),
+                ("Lj1", "1", "2", "Lj1"),
+                ("C1", "2", "0", "C1"),
+            ],
+        }
+    )
+
+
+def _sample_simulation_result() -> SimulationResult:
+    return SimulationResult(
+        frequencies_ghz=[4.0, 4.5, 5.0],
+        s11_real=[0.1, 0.2, 0.25],
+        s11_imag=[0.0, -0.05, -0.1],
+        port_indices=[1],
+        mode_indices=[(0,)],
+        y_parameter_mode_real={"om=0|op=1|im=0|ip=1": [1.0, 1.1, 1.2]},
+        y_parameter_mode_imag={"om=0|op=1|im=0|ip=1": [0.0, 0.0, 0.0]},
+    )
 
 
 def test_lane_huey_paths_are_separate_from_app_db(tmp_path: Path, monkeypatch) -> None:
@@ -152,6 +195,100 @@ def test_simulation_lane_failure_task_marks_failed(tmp_path: Path, monkeypatch) 
         assert task.error_payload["error_code"] == "worker_task_failed"
         assert task.error_payload["details"]["message"] == "boom"
         assert task.error_payload["details"]["lane"] == "simulation"
+
+
+def test_real_simulation_worker_task_persists_trace_batch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _configure_worker_env(tmp_path, monkeypatch)
+    simulation_huey, _simulation_tasks, _characterization_huey, _characterization_tasks = (
+        _reload_worker_modules()
+    )
+
+    with get_unit_of_work() as uow:
+        design = uow.datasets.add(
+            DesignRecord(
+                name="WS6 Worker Persisted Simulation",
+                source_meta={},
+                parameters={},
+            )
+        )
+        uow.flush()
+        assert design.id is not None
+        design_id = int(design.id)
+        uow.commit()
+
+    submission = build_simulation_submission(
+        design_id=design_id,
+        design_name="WS6 Worker Persisted Simulation",
+        circuit=_sample_simulation_circuit(),
+        freq_range=FrequencyRange(start_ghz=4.0, stop_ghz=5.0, points=3),
+        config=SimulationConfig(),
+        config_snapshot={"setup_kind": "circuit_simulation.raw", "setup_version": "1.0"},
+        source_meta={"origin": "worker_test", "storage": "design_trace_store"},
+        schema_source_hash="schema-ws6",
+        simulation_setup_hash="setup-ws6",
+        sweep_setup_payload=None,
+        sweep_setup_hash=None,
+        context=build_ui_use_case_context(
+            actor_id=7,
+            role="user",
+            requested_by="test",
+            metadata={"flow": "simulation"},
+        ),
+        force_rerun=False,
+    )
+
+    submitted = create_api_task(
+        task_kind="simulation",
+        design_id=design_id,
+        request_payload=submission.api_request.model_dump(mode="json", exclude={"force_rerun"}),
+        actor=ActorContext(actor_id=7, requested_by="test", role="user", auth_source="test"),
+        force_rerun=False,
+    )
+
+    assert submitted.task.id is not None
+    assert submitted.task.trace_batch_id is not None
+    assert submitted.dispatch.worker_task_name == "simulation_run_task"
+    task_id = int(submitted.task.id)
+    trace_batch_id = int(submitted.task.trace_batch_id)
+
+    simulation_execution = importlib.import_module("worker.simulation_execution")
+
+    def _fake_execute_simulation_run(request, *, progress_callback=None, execute=None):
+        return SimulationRunResult(
+            simulation_result=_sample_simulation_result(),
+            context=request.context,
+        )
+
+    monkeypatch.setattr(
+        simulation_execution,
+        "execute_simulation_run",
+        _fake_execute_simulation_run,
+    )
+
+    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+
+    assert processed == 1
+    with get_unit_of_work() as uow:
+        task = uow.tasks.get_task(task_id)
+        assert task is not None
+        assert task.status == "completed"
+        assert task.trace_batch_id == trace_batch_id
+        assert task.result_summary_payload["worker_task_name"] == "simulation_run_task"
+
+        snapshot = uow.result_bundles.get_trace_batch_snapshot(trace_batch_id)
+        assert snapshot is not None
+        assert snapshot["status"] == "completed"
+        assert snapshot["stage_kind"] == "raw"
+        assert snapshot["summary_payload"]["trace_batch_record"]["summary_payload"][
+            "frequency_points"
+        ] == 3
+        assert (
+            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"]
+            >= 1
+        )
 
 
 def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -> None:

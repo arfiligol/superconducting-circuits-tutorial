@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -50,17 +50,15 @@ class SimulationRuntimeState:
     """Single mutable state source for Simulation page runtime."""
 
     status_history: list[dict[str, str]] = field(default_factory=list)
+    current_task_id: int | None = None
+    current_task_status: str | None = None
+    current_trace_batch_id: int | None = None
+    current_task_error: str | None = None
+    last_task_poll_signature: str | None = None
+    long_running_warning_shown: bool = False
     latest_sweep: Any | None = None
     latest_post_processing_runtime: Any | None = None
     latest_flow_spec: dict[str, Any] | None = None
-    latest_circuit_record: Any | None = None
-    latest_source_simulation_bundle_id: int | None = None
-    latest_schema_source_hash: str | None = None
-    latest_simulation_setup_hash: str | None = None
-    latest_sweep_setup_hash: str | None = None
-    latest_simulation_result: Any | None = None
-    latest_simulation_sweep_payload: dict[str, Any] | None = None
-    latest_raw_save_callback: Callable[[], None] | None = None
     termination_last_warning: str = ""
     termination_last_summary: str = ""
     active_log_context: dict[str, str] = field(default_factory=dict)

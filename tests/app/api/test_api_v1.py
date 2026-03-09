@@ -11,9 +11,18 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.auth_service import authenticate_user, ensure_bootstrap_admin, hash_password
+from app.services.execution_context import build_ui_use_case_context
+from app.services.simulation_runner import SimulationRunResult
 from core.shared.persistence import database, get_unit_of_work
 from core.shared.persistence.models import AnalysisRunRecord, DesignRecord, TraceBatchRecord
+from core.simulation.domain.circuit import (
+    FrequencyRange,
+    SimulationConfig,
+    SimulationResult,
+    parse_circuit_definition_source,
+)
 
 
 def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -23,6 +32,7 @@ def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         "SC_CHARACTERIZATION_HUEY_DB_PATH",
         str(tmp_path / "characterization_huey.db"),
     )
+    monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     monkeypatch.setenv("SC_SESSION_SECRET", "ws5-test-secret")
     database.get_engine.cache_clear()
     for module_name in (
@@ -145,6 +155,40 @@ def _create_completed_task(
         )
         uow.commit()
         return int(task.id)
+
+
+def _sample_simulation_circuit():
+    return parse_circuit_definition_source(
+        {
+            "name": "WS6 Persisted Simulation",
+            "parameters": [
+                {"name": "Lj", "default": 1000.0, "unit": "pH"},
+            ],
+            "components": [
+                {"name": "R50", "default": 50.0, "unit": "Ohm"},
+                {"name": "Lj1", "value_ref": "Lj", "unit": "pH"},
+                {"name": "C1", "default": 120.0, "unit": "fF"},
+            ],
+            "topology": [
+                ("P1", "1", "0", 1),
+                ("R1", "1", "0", "R50"),
+                ("Lj1", "1", "2", "Lj1"),
+                ("C1", "2", "0", "C1"),
+            ],
+        }
+    )
+
+
+def _sample_simulation_result() -> SimulationResult:
+    return SimulationResult(
+        frequencies_ghz=[4.0, 4.5, 5.0],
+        s11_real=[0.1, 0.2, 0.25],
+        s11_imag=[0.0, -0.05, -0.1],
+        port_indices=[1],
+        mode_indices=[(0,)],
+        y_parameter_mode_real={"om=0|op=1|im=0|ip=1": [1.0, 1.1, 1.2]},
+        y_parameter_mode_imag={"om=0|op=1|im=0|ip=1": [0.0, 0.0, 0.0]},
+    )
 
 
 def test_auth_endpoints_and_page_guard(client: TestClient) -> None:
@@ -377,6 +421,94 @@ def test_task_creation_get_and_design_listing_use_real_task_records(
     assert design_tasks.status_code == 200
     task_kinds = [task["task_kind"] for task in design_tasks.json()["tasks"]]
     assert task_kinds == ["characterization", "post_processing", "simulation"]
+
+
+def test_simulation_task_submission_dispatches_real_worker_path_and_persists_result(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    design_id = _create_design("WS6 Persisted Simulation Design")
+    _login(client, username="admin", password="admin")
+
+    submission = build_simulation_submission(
+        design_id=design_id,
+        design_name="WS6 Persisted Simulation Design",
+        circuit=_sample_simulation_circuit(),
+        freq_range=FrequencyRange(start_ghz=4.0, stop_ghz=5.0, points=3),
+        config=SimulationConfig(),
+        config_snapshot={"setup_kind": "circuit_simulation.raw", "setup_version": "1.0"},
+        source_meta={"origin": "api_test", "storage": "design_trace_store"},
+        schema_source_hash="schema-ws6",
+        simulation_setup_hash="setup-ws6",
+        sweep_setup_payload=None,
+        sweep_setup_hash=None,
+        context=build_ui_use_case_context(
+            actor_id=1,
+            role="admin",
+            metadata={"flow": "simulation", "design_id": design_id},
+        ),
+        force_rerun=False,
+    )
+
+    simulation = client.post(
+        "/api/v1/tasks/simulation",
+        json=submission.api_request.model_dump(mode="json"),
+    )
+    assert simulation.status_code == 202
+    payload = simulation.json()
+    assert payload["dedupe_hit"] is False
+    assert payload["dispatched_lane"] == "simulation"
+    assert payload["worker_task_name"] == "simulation_run_task"
+    assert payload["task"]["status"] == "queued"
+    assert payload["task"]["trace_batch_id"] is not None
+    task_id = int(payload["task"]["id"])
+    trace_batch_id = int(payload["task"]["trace_batch_id"])
+
+    simulation_huey = importlib.import_module("worker.simulation_huey")
+    simulation_execution = importlib.import_module("worker.simulation_execution")
+
+    def _fake_execute_simulation_run(request, *, progress_callback=None, execute=None):
+        return SimulationRunResult(
+            simulation_result=_sample_simulation_result(),
+            context=request.context,
+        )
+
+    monkeypatch.setattr(
+        simulation_execution,
+        "execute_simulation_run",
+        _fake_execute_simulation_run,
+    )
+
+    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    assert processed == 1
+
+    task_detail = client.get(f"/api/v1/tasks/{task_id}")
+    assert task_detail.status_code == 200
+    assert task_detail.json()["status"] == "completed"
+    assert task_detail.json()["trace_batch_id"] == trace_batch_id
+    assert task_detail.json()["result_summary_payload"]["worker_task_name"] == "simulation_run_task"
+
+    latest_simulation = client.get(f"/api/v1/designs/{design_id}/simulation/latest")
+    assert latest_simulation.status_code == 200
+    latest_payload = latest_simulation.json()
+    assert latest_payload["batch_id"] == trace_batch_id
+    assert latest_payload["task_id"] == task_id
+    assert latest_payload["stage_kind"] == "raw"
+    assert latest_payload["summary_payload"]["trace_batch_record"]["summary_payload"][
+        "frequency_points"
+    ] == 3
+
+    with get_unit_of_work() as uow:
+        snapshot = uow.result_bundles.get_trace_batch_snapshot(trace_batch_id)
+        assert isinstance(snapshot, dict)
+        assert snapshot["status"] == "completed"
+        assert snapshot["summary_payload"]["trace_batch_record"]["summary_payload"][
+            "frequency_points"
+        ] == 3
+        assert (
+            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"]
+            >= 1
+        )
 
 
 def test_latest_result_lookup_endpoints_use_persisted_artifacts_only(

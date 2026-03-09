@@ -5,10 +5,26 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from worker.runtime import TaskExecutionResult, execute_managed_task, mark_task_running_before_crash
+from worker.runtime import (
+    TaskExecutionResult,
+    execute_managed_task,
+    mark_task_running_before_crash,
+)
+from worker.simulation_execution import execute_simulation_task
 from worker.simulation_huey import huey
 
 _LANE_NAME = "simulation"
+
+
+@huey.task(retries=0)
+def simulation_run_task(task_id: int) -> dict[str, Any]:
+    """Execute one real persisted simulation task through the WS6 worker boundary."""
+    return execute_managed_task(
+        task_id=task_id,
+        lane_name=_LANE_NAME,
+        worker_task_name="simulation_run_task",
+        operation=lambda: execute_simulation_task(task_id),
+    )
 
 
 @huey.task(retries=0)

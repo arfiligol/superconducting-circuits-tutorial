@@ -8,6 +8,8 @@ from hashlib import sha256
 from typing import Any
 
 from app.services.execution_context import ActorContext, UseCaseContext
+from app.services.simulation_batch_persistence import create_pending_simulation_batch
+from app.services.simulation_task_contract import extract_simulation_request_from_api_payload
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import DesignRecord, TaskRecord
 from worker.dispatch import DispatchedWorkerTask, TaskSubmissionKind, enqueue_task
@@ -97,7 +99,7 @@ def create_api_task(
         if not force_rerun:
             existing = uow.tasks.find_active_by_dedupe_key(dedupe_key)
             if existing is not None:
-                dispatch = _dispatch_metadata_for_task_kind(task_kind)
+                dispatch = _dispatch_metadata_for_task(existing)
                 uow.audit_logs.append_log(
                     actor_id=actor.actor_id,
                     action_kind="task.dedupe_reused",
@@ -121,6 +123,23 @@ def create_api_task(
             "parameters": normalized_request_payload,
             "context": context.to_payload(),
         }
+        trace_batch_id: int | None = None
+        simulation_request = (
+            extract_simulation_request_from_api_payload(dict(normalized_request_payload))
+            if task_kind == "simulation"
+            else None
+        )
+        if simulation_request is not None:
+            pending_batch = create_pending_simulation_batch(
+                uow=uow,
+                design_id=int(design_id),
+                source_meta=simulation_request.source_meta,
+                config_snapshot=simulation_request.config_snapshot,
+                schema_source_hash=simulation_request.schema_source_hash,
+                simulation_setup_hash=simulation_request.simulation_setup_hash,
+                sweep_setup_hash=simulation_request.sweep_setup_hash,
+            )
+            trace_batch_id = int(pending_batch.id or 0)
         task = uow.tasks.create_task(
             task_kind=task_kind,
             design_id=design_id,
@@ -128,6 +147,7 @@ def create_api_task(
             requested_by=context.requested_by,
             actor_id=actor.actor_id,
             dedupe_key=None if force_rerun else dedupe_key,
+            trace_batch_id=trace_batch_id,
         )
         uow.audit_logs.append_log(
             actor_id=actor.actor_id,
@@ -147,19 +167,29 @@ def create_api_task(
 
     if detached_task.id is None:
         raise ValueError("Task submission did not produce a persisted task ID.")
-    dispatch = enqueue_task(task_kind, task_id=int(detached_task.id))
+    dispatch = enqueue_task(
+        task_kind,
+        task_id=int(detached_task.id),
+        request_payload=dict(detached_task.request_payload),
+        trace_batch_id=detached_task.trace_batch_id,
+    )
     return SubmittedTask(task=detached_task, dispatch=dispatch, dedupe_hit=False)
 
 
-def _dispatch_metadata_for_task_kind(task_kind: TaskSubmissionKind) -> DispatchedWorkerTask:
+def _dispatch_metadata_for_task(task: TaskRecord) -> DispatchedWorkerTask:
     """Return static dispatch metadata without enqueueing a new task."""
-    if task_kind == "simulation":
+    if task.task_kind == "simulation":
+        simulation_request = extract_simulation_request_from_api_payload(
+            dict(task.request_payload.get("parameters", {}))
+        )
+        if simulation_request is not None and task.trace_batch_id is not None:
+            return DispatchedWorkerTask("simulation", "simulation_run_task")
         return DispatchedWorkerTask("simulation", "simulation_smoke_task")
-    if task_kind == "post_processing":
+    if task.task_kind == "post_processing":
         return DispatchedWorkerTask("simulation", "post_processing_smoke_task")
-    if task_kind == "characterization":
+    if task.task_kind == "characterization":
         return DispatchedWorkerTask("characterization", "characterization_smoke_task")
-    raise ValueError(f"Unsupported task kind '{task_kind}'.")
+    raise ValueError(f"Unsupported task kind '{task.task_kind}'.")
 
 
 def require_design(design_id: int) -> DesignRecord:

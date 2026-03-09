@@ -18,6 +18,14 @@ import plotly.graph_objects as go
 from nicegui import app, run, ui
 
 from app.layout import app_shell
+from app.pages.simulation.api_client import (
+    ApiClientError,
+    get_design_tasks,
+    get_latest_simulation_result,
+    get_task,
+    submit_simulation_task,
+)
+from app.pages.simulation.result_loader import build_recovery_state
 from app.pages.simulation.state import (
     SimulationRuntimeState,
     TerminationSetupState,
@@ -26,6 +34,7 @@ from app.pages.simulation.state import (
     default_result_view_state,
     default_sweep_result_view_state,
 )
+from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.execution_context import build_ui_use_case_context
 from app.services.post_processing_runner import (
     PostProcessingInputSource,
@@ -41,7 +50,6 @@ from app.services.post_processing_step_registry import (
     preview_pipeline_labels,
     serialize_post_processing_step,
 )
-from app.services.simulation_runner import SimulationRunRequest, execute_simulation_run
 from app.services.simulation_setup_manager import (
     delete_setup,
     get_setup_by_id,
@@ -71,8 +79,6 @@ from core.simulation.application.run_simulation import (
     SimulationSweepPlan,
     SimulationSweepPointResult,
     SimulationSweepRun,
-    apply_simulation_sweep_config_overrides,
-    apply_simulation_sweep_overrides,
     build_linear_sweep_values,
     build_simulation_sweep_plan,
     list_simulation_sweep_targets,
@@ -83,7 +89,6 @@ from core.simulation.application.run_simulation import (
 from core.simulation.application.trace_architecture import (
     TRACE_BATCH_BUNDLE_SCHEMA_KIND,
     IncrementalPostProcessedSweepWriter,
-    IncrementalRawSimulationSweepWriter,
     build_post_processed_trace_specs,
     build_raw_simulation_trace_specs,
     is_trace_batch_bundle_payload,
@@ -223,9 +228,6 @@ _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS = 60
 _SWEEP_MAX_AXIS_COUNT = 4
 _SWEEP_MAX_CARTESIAN_POINTS = 625
 _SWEEP_PROGRESS_MAX_LOG_LINES = 40
-_SWEEP_RUN_CACHE_LIMIT = 8
-_SWEEP_POINT_LOOKUP_CACHE_LIMIT = 8
-_SWEEP_SERIES_CACHE_LIMIT = 512
 _SWEEP_MODE_OPTIONS = {
     "cartesian": "Cartesian",
     "paired": "Paired (reserved)",
@@ -240,17 +242,6 @@ class _ResultTraceSelection(TypedDict):
     output_port: int
     input_mode: tuple[int, ...]
     input_port: int
-
-
-_SWEEP_RUN_CACHE: dict[tuple[int, int, int], SimulationSweepRun] = {}
-_SWEEP_POINT_LOOKUP_CACHE: dict[
-    tuple[int, int, int], dict[tuple[int, ...], SimulationSweepPointResult]
-] = {}
-_SWEEP_SERIES_CACHE: dict[
-    tuple[Any, ...],
-    tuple[list[float | None], str, str],
-] = {}
-_TRACE_STORE_AUTHORITY_CACHE: dict[tuple[Any, ...], _TraceStoreResultBundle] = {}
 
 
 @dataclass(frozen=True)
@@ -367,14 +358,6 @@ def _with_test_id(element: Any, test_id: str) -> Any:
         if isinstance(props, dict):
             props["data-testid"] = test_id
     return element
-
-
-def _cache_store_limited(cache: dict[Any, Any], key: Any, value: Any, *, limit: int) -> Any:
-    """Insert one cache entry while keeping insertion-ordered size bounded."""
-    cache[key] = value
-    while len(cache) > limit:
-        cache.pop(next(iter(cache)))
-    return value
 
 
 def _trace_store_axis(
@@ -770,17 +753,8 @@ def _trace_store_bundle_from_post_processed_sweep_run(
 def _cached_trace_store_bundle_from_result(
     result: SimulationResult,
 ) -> _TraceStoreResultBundle:
-    """Cache one single-result TraceStore bundle by result object identity."""
-    cache_key = ("single_result", id(result))
-    cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    return _cache_store_limited(
-        _TRACE_STORE_AUTHORITY_CACHE,
-        cache_key,
-        _trace_store_bundle_from_simulation_result(result),
-        limit=_SWEEP_RUN_CACHE_LIMIT,
-    )
+    """Build one single-result TraceStore bundle without process-global caching."""
+    return _trace_store_bundle_from_simulation_result(result)
 
 
 def _cached_trace_store_bundle_from_sweep_payload(
@@ -788,36 +762,16 @@ def _cached_trace_store_bundle_from_sweep_payload(
     *,
     port_label_by_index: Mapping[int, str] | None = None,
 ) -> _TraceStoreResultBundle:
-    """Cache one sweep TraceStore bundle by payload object identity."""
-    cache_key = (
-        "simulation_sweep",
-        id(payload),
-        tuple(
-            sorted((int(port), str(label)) for port, label in (port_label_by_index or {}).items())
-        ),
-    )
-    cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
+    """Build one sweep TraceStore bundle without process-global caching."""
     if is_trace_batch_bundle_payload(payload):
-        return _cache_store_limited(
-            _TRACE_STORE_AUTHORITY_CACHE,
-            cache_key,
-            _trace_store_bundle_from_trace_batch_payload(
-                payload,
-                port_label_by_index=port_label_by_index,
-            ),
-            limit=_SWEEP_RUN_CACHE_LIMIT,
+        return _trace_store_bundle_from_trace_batch_payload(
+            payload,
+            port_label_by_index=port_label_by_index,
         )
     sweep_run = _cached_sweep_run_from_payload(payload)
-    return _cache_store_limited(
-        _TRACE_STORE_AUTHORITY_CACHE,
-        cache_key,
-        _trace_store_bundle_from_sweep_run(
-            sweep_run,
-            port_label_by_index=port_label_by_index,
-        ),
-        limit=_SWEEP_RUN_CACHE_LIMIT,
+    return _trace_store_bundle_from_sweep_run(
+        sweep_run,
+        port_label_by_index=port_label_by_index,
     )
 
 
@@ -826,28 +780,17 @@ def _cached_trace_store_bundle_from_post_processed_runtime(
     *,
     reference_impedance_ohm: float,
 ) -> _TraceStoreResultBundle:
-    """Cache one post-processed TraceStore bundle by runtime identity and Z0."""
-    cache_key = ("post_processed", id(runtime_output), float(reference_impedance_ohm))
-    cached = _TRACE_STORE_AUTHORITY_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
+    """Build one post-processed TraceStore bundle without process-global caching."""
     if isinstance(runtime_output, Mapping) and is_trace_batch_bundle_payload(runtime_output):
-        authority = _trace_store_bundle_from_trace_batch_payload(runtime_output)
-    elif isinstance(runtime_output, PortMatrixSweepRun):
-        authority = _trace_store_bundle_from_post_processed_sweep_run(
+        return _trace_store_bundle_from_trace_batch_payload(runtime_output)
+    if isinstance(runtime_output, PortMatrixSweepRun):
+        return _trace_store_bundle_from_post_processed_sweep_run(
             runtime_output,
             reference_impedance_ohm=reference_impedance_ohm,
         )
-    else:
-        authority = _trace_store_bundle_from_post_processed_sweep(
-            runtime_output,
-            reference_impedance_ohm=reference_impedance_ohm,
-        )
-    return _cache_store_limited(
-        _TRACE_STORE_AUTHORITY_CACHE,
-        cache_key,
-        authority,
-        limit=_SWEEP_RUN_CACHE_LIMIT,
+    return _trace_store_bundle_from_post_processed_sweep(
+        runtime_output,
+        reference_impedance_ohm=reference_impedance_ohm,
     )
 
 
@@ -1095,37 +1038,15 @@ def _resolve_representative_axis_index(
 
 
 def _cached_sweep_run_from_payload(payload: Mapping[str, Any]) -> SimulationSweepRun:
-    """Decode one sweep payload once per in-memory payload object."""
-    cache_key = (
-        id(payload),
-        int(payload.get("point_count", 0) or 0),
-        int(payload.get("representative_point_index", 0) or 0),
-    )
-    cached = _SWEEP_RUN_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    return _cache_store_limited(
-        _SWEEP_RUN_CACHE,
-        cache_key,
-        simulation_sweep_run_from_payload(payload),
-        limit=_SWEEP_RUN_CACHE_LIMIT,
-    )
+    """Decode one sweep payload deterministically without process-global caching."""
+    return simulation_sweep_run_from_payload(payload)
 
 
 def _cached_sweep_point_lookup(
     sweep_run: SimulationSweepRun,
 ) -> dict[tuple[int, ...], SimulationSweepPointResult]:
     """Build one direct point lookup keyed by normalized axis-index tuples."""
-    cache_key = (
-        id(sweep_run),
-        int(sweep_run.dimension),
-        int(sweep_run.point_count),
-    )
-    cached = _SWEEP_POINT_LOOKUP_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-
-    resolved = {
+    return {
         tuple(
             _resolve_sweep_point_axis_index(
                 point,
@@ -1136,12 +1057,6 @@ def _cached_sweep_point_lookup(
         ): point
         for point in sweep_run.points
     }
-    return _cache_store_limited(
-        _SWEEP_POINT_LOOKUP_CACHE,
-        cache_key,
-        resolved,
-        limit=_SWEEP_POINT_LOOKUP_CACHE_LIMIT,
-    )
 
 
 def _user_storage_get(key: str, default: Any = None) -> Any:
@@ -3281,12 +3196,6 @@ def _execute_post_processing_pipeline_cpu(
             )
         ),
     )
-
-
-def _execute_simulation_run_cpu(request: SimulationRunRequest) -> SimulationResult:
-    """Execute one simulation use case inside a CPU worker."""
-    return execute_simulation_run(request).simulation_result
-
 
 def _render_post_processing_panel(
     *,
@@ -5790,24 +5699,6 @@ def _sweep_metric_series_for_point(
         "input_mode": tuple(trace_selection.get("input_mode", (0,))),
         "input_port": int(trace_selection.get("input_port", 1)),
     }
-    cache_key = (
-        id(result),
-        family,
-        metric,
-        str(lead_selection["trace"]),
-        tuple(lead_selection["output_mode"]),
-        int(lead_selection["output_port"]),
-        tuple(lead_selection["input_mode"]),
-        int(lead_selection["input_port"]),
-        float(z0),
-        bool(dark_mode),
-        tuple(
-            sorted((int(port), str(label)) for port, label in (port_label_by_index or {}).items())
-        ),
-    )
-    cached = _SWEEP_SERIES_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
     figure = _build_simulation_result_figure(
         result=result,
         view_family=family,
@@ -5835,12 +5726,7 @@ def _sweep_metric_series_for_point(
         resolved_values.append(value if np.isfinite(value) else None)
     trace_label = str(getattr(figure.data[0], "name", "") or "")
     y_axis_title = str(getattr(figure.layout.yaxis.title, "text", "") or "")
-    return _cache_store_limited(
-        _SWEEP_SERIES_CACHE,
-        cache_key,
-        (resolved_values, trace_label, y_axis_title),
-        limit=_SWEEP_SERIES_CACHE_LIMIT,
-    )
+    return (resolved_values, trace_label, y_axis_title)
 
 
 def _build_sweep_metric_rows(
@@ -6869,6 +6755,7 @@ def _render_simulation_environment():
         post_processing_container: Any | None = None
         post_processing_results_container: Any | None = None
         post_processing_sweep_results_container: Any | None = None
+        poll_timer: Any | None = None
         raw_view_state = default_result_view_state(
             family_sources={
                 family: _first_option_key(options)
@@ -7023,6 +6910,7 @@ def _render_simulation_environment():
             "bundle_id": None,
             "result": None,
             "sweep_payload": None,
+            "snapshot": None,
         }
         persisted_post_process_output_cache: dict[str, Any] = {
             "selection": None,
@@ -7032,7 +6920,7 @@ def _render_simulation_environment():
             "source_bundle_id": None,
         }
         resolved_post_process_source_bundle_id_ref = {
-            "value": runtime_state.latest_source_simulation_bundle_id
+            "value": None
         }
 
         def _selected_design_ids() -> tuple[int, ...]:
@@ -7058,6 +6946,7 @@ def _render_simulation_environment():
                         "bundle_id": None,
                         "result": None,
                         "sweep_payload": None,
+                        "snapshot": None,
                     }
                 )
                 return (None, None, None)
@@ -7073,6 +6962,7 @@ def _render_simulation_environment():
                         "bundle_id": None,
                         "result": None,
                         "sweep_payload": None,
+                        "snapshot": None,
                     }
                 )
                 return (None, None, None)
@@ -7083,6 +6973,7 @@ def _render_simulation_environment():
                     "bundle_id": int(snapshot["id"]),
                     "result": result,
                     "sweep_payload": sweep_payload,
+                    "snapshot": snapshot,
                 }
             )
             return (result, sweep_payload, int(snapshot["id"]))
@@ -7148,25 +7039,150 @@ def _render_simulation_environment():
             )
             return (dict(payload), flow_spec, bundle_id, source_bundle_id)
 
+        def _invalidate_persisted_authority_caches() -> None:
+            persisted_post_process_input_cache.update(
+                {
+                    "selection": None,
+                    "bundle_id": None,
+                    "result": None,
+                    "sweep_payload": None,
+                    "snapshot": None,
+                }
+            )
+            persisted_post_process_output_cache.update(
+                {
+                    "selection": None,
+                    "bundle_id": None,
+                    "runtime_output": None,
+                    "flow_spec": None,
+                    "source_bundle_id": None,
+                }
+            )
+
+        def _task_status_signature(task: Any) -> str:
+            return "|".join(
+                [
+                    str(getattr(task, "id", "")),
+                    str(getattr(task, "status", "")),
+                    str(getattr(task, "trace_batch_id", "")),
+                    str(getattr(task, "heartbeat_at", "")),
+                    str(getattr(task, "completed_at", "")),
+                ]
+            )
+
+        def _apply_polled_task_status(task: Any) -> None:
+            signature = _task_status_signature(task)
+            if runtime_state.last_task_poll_signature == signature:
+                return
+            runtime_state.last_task_poll_signature = signature
+            runtime_state.current_task_id = int(task.id) if task.id is not None else None
+            runtime_state.current_task_status = str(task.status)
+            runtime_state.current_trace_batch_id = (
+                int(task.trace_batch_id) if task.trace_batch_id is not None else None
+            )
+            runtime_state.current_task_error = None
+            if task.status == "queued":
+                append_status(
+                    "info",
+                    (
+                        f"Simulation task queued: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}."
+                    ),
+                )
+                return
+            if task.status == "running":
+                append_status(
+                    "info",
+                    (
+                        f"Simulation task running: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}."
+                    ),
+                )
+                return
+            if task.status == "completed":
+                append_status(
+                    "positive",
+                    (
+                        f"Simulation task completed: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}."
+                    ),
+                )
+                return
+            if task.status == "failed":
+                error_summary = str(
+                    getattr(task, "error_payload", {}).get("summary")
+                    or getattr(task, "error_payload", {}).get("details", {}).get("message")
+                    or "Simulation task failed."
+                )
+                runtime_state.current_task_error = error_summary
+                append_status(
+                    "negative",
+                    (
+                        f"Simulation task failed: task=#{int(task.id)}, "
+                        f"batch=#{task.trace_batch_id}. {error_summary}"
+                    ),
+                )
+
+        async def _refresh_simulation_authority(*, preferred_task_id: int | None = None) -> None:
+            tasks_response = await get_design_tasks(active_record_id)
+            latest_result = await get_latest_simulation_result(active_record_id)
+            recovery_state = build_recovery_state(
+                tasks_response=tasks_response,
+                latest_result=latest_result,
+            )
+            task = recovery_state.task
+            if preferred_task_id is not None:
+                fetched_task = await get_task(preferred_task_id)
+                if (
+                    fetched_task.task_kind == "simulation"
+                    and fetched_task.design_id == active_record_id
+                ):
+                    task = fetched_task
+            if task is not None:
+                _apply_polled_task_status(task)
+                progress_payload = dict(task.progress_payload)
+                warning = str(progress_payload.get("warning", "")).strip()
+                if warning and not runtime_state.long_running_warning_shown:
+                    runtime_state.long_running_warning_shown = True
+                    append_status("warning", warning)
+            if poll_timer is not None:
+                poll_timer.active = bool(task is not None and task.status in {"queued", "running"})
+            if latest_result is not None:
+                resolved_post_process_source_bundle_id_ref["value"] = latest_result.batch_id
+                runtime_state.current_trace_batch_id = int(latest_result.batch_id)
+                _invalidate_persisted_authority_caches()
+                _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
+                render_simulation_result_view()
+                _render_simulation_sweep_result_view()
+                _render_post_processing_input_panel()
+                render_post_processed_result_view()
+
+        async def _poll_current_simulation_task() -> None:
+            if runtime_state.current_task_id is None:
+                return
+            try:
+                task = await get_task(int(runtime_state.current_task_id))
+            except ApiClientError as exc:
+                append_status("warning", f"Task polling failed: {exc.detail}")
+                return
+            _apply_polled_task_status(task)
+            progress_payload = dict(task.progress_payload)
+            warning = str(progress_payload.get("warning", "")).strip()
+            if warning and not runtime_state.long_running_warning_shown:
+                runtime_state.long_running_warning_shown = True
+                append_status("warning", warning)
+            if task.status in {"completed", "failed"}:
+                if poll_timer is not None:
+                    poll_timer.active = False
+                await _refresh_simulation_authority(preferred_task_id=int(task.id))
+
         def _raw_simulation_result() -> SimulationResult | None:
-            selected_design_ids = _selected_design_ids()
-            if selected_design_ids:
-                persisted_result, _persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
-                )
-                if isinstance(persisted_result, SimulationResult):
-                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
-                    return persisted_result
-            result = runtime_state.latest_simulation_result
-            if isinstance(result, SimulationResult):
-                return result
-            if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
-                bundle = _cached_trace_store_bundle_from_sweep_payload(
-                    runtime_state.latest_simulation_sweep_payload,
-                )
-                result = bundle.representative_result
-                runtime_state.latest_simulation_result = result
-                return result
+            persisted_result, _persisted_sweep_payload, persisted_bundle_id = (
+                _persisted_post_processing_input_bundle()
+            )
+            if isinstance(persisted_result, SimulationResult):
+                resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
+                return persisted_result
             return None
 
         def _ptc_simulation_result(
@@ -7196,26 +7212,13 @@ def _render_simulation_environment():
             *,
             reference_impedance_ohm: float,
         ) -> dict[str, Any] | None:
-            selected_design_ids = _selected_design_ids()
             raw_sweep_payload = None
-            if selected_design_ids:
-                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
-                )
-                if isinstance(persisted_sweep_payload, Mapping):
-                    raw_sweep_payload = _coerce_parameter_sweep_payload(persisted_sweep_payload)
-                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
-            if not isinstance(raw_sweep_payload, Mapping):
-                raw_sweep_payload = _coerce_parameter_sweep_payload(
-                    runtime_state.latest_simulation_sweep_payload
-                )
-            if not isinstance(raw_sweep_payload, Mapping):
-                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
-                )
-                if isinstance(persisted_sweep_payload, Mapping):
-                    raw_sweep_payload = _coerce_parameter_sweep_payload(persisted_sweep_payload)
-                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
+            _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                _persisted_post_processing_input_bundle()
+            )
+            if isinstance(persisted_sweep_payload, Mapping):
+                raw_sweep_payload = _coerce_parameter_sweep_payload(persisted_sweep_payload)
+                resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             if not isinstance(raw_sweep_payload, Mapping):
                 return None
             plan = _resolved_termination_plan()
@@ -7238,42 +7241,24 @@ def _render_simulation_environment():
             source: str,
             reference_impedance_ohm: float,
         ) -> tuple[SimulationResult, dict[str, Any] | None, int | None]:
-            selected_design_ids = _selected_design_ids()
             persisted_result = None
             persisted_sweep_payload = None
             persisted_bundle_id = None
-            if selected_design_ids:
-                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
+            _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                _persisted_post_processing_input_bundle()
+            )
+            if isinstance(_persisted_result, SimulationResult):
+                persisted_result = _persisted_result
+            if isinstance(persisted_sweep_payload, Mapping):
+                persisted_sweep_payload = _coerce_parameter_sweep_payload(
+                    persisted_sweep_payload
                 )
-                if isinstance(_persisted_result, SimulationResult):
-                    persisted_result = _persisted_result
-                if isinstance(persisted_sweep_payload, Mapping):
-                    persisted_sweep_payload = _coerce_parameter_sweep_payload(
-                        persisted_sweep_payload
-                    )
             raw_result = persisted_result
-            if not isinstance(raw_result, SimulationResult):
-                raw_result = _raw_simulation_result()
             if not isinstance(raw_result, SimulationResult):
                 raise ValueError("Simulation result is unavailable.")
 
             canonical_sweep_payload = persisted_sweep_payload
             source_bundle_id = persisted_bundle_id
-            if not isinstance(canonical_sweep_payload, Mapping):
-                canonical_sweep_payload = _coerce_parameter_sweep_payload(
-                    runtime_state.latest_simulation_sweep_payload
-                )
-                source_bundle_id = runtime_state.latest_source_simulation_bundle_id
-            if not isinstance(canonical_sweep_payload, Mapping):
-                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
-                )
-                if isinstance(persisted_sweep_payload, Mapping):
-                    canonical_sweep_payload = _coerce_parameter_sweep_payload(
-                        persisted_sweep_payload
-                    )
-                    source_bundle_id = persisted_bundle_id
             if source_bundle_id is not None:
                 resolved_post_process_source_bundle_id_ref["value"] = source_bundle_id
             if source == "ptc_y":
@@ -7292,8 +7277,8 @@ def _render_simulation_environment():
             source: str,
             reference_impedance_ohm: float,
         ) -> tuple[PostProcessingInputSource, int | None]:
-            selected_design_ids = _selected_design_ids()
-            if source == "raw_y" and selected_design_ids:
+            if source == "raw_y":
+                selected_design_ids = _selected_design_ids()
                 with get_unit_of_work() as uow:
                     snapshot = _resolve_persisted_post_processing_input_snapshot(
                         uow,
@@ -7335,17 +7320,12 @@ def _render_simulation_environment():
                     reference_impedance_ohm,
                 )
             )
-            authority = (
-                "compatibility_persisted_overlay"
-                if selected_design_ids and source_bundle_id is not None
-                else "compatibility_live_runtime"
-            )
             return (
                 build_compatibility_post_processing_source(
                     source_batch_id=source_bundle_id,
                     result=active_result,
                     sweep_payload=active_sweep_payload,
-                    authority=authority,
+                    authority="compatibility_persisted_overlay",
                 ),
                 source_bundle_id,
             )
@@ -7355,18 +7335,15 @@ def _render_simulation_environment():
             axis_indices: tuple[int, ...],
             reference_impedance_ohm: float,
         ) -> SimulationResult | None:
-            canonical_sweep_payload = _coerce_parameter_sweep_payload(
-                runtime_state.latest_simulation_sweep_payload
+            canonical_sweep_payload = None
+            _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                _persisted_post_processing_input_bundle()
             )
-            if not isinstance(canonical_sweep_payload, Mapping):
-                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
+            if isinstance(persisted_sweep_payload, Mapping):
+                canonical_sweep_payload = _coerce_parameter_sweep_payload(
+                    persisted_sweep_payload
                 )
-                if isinstance(persisted_sweep_payload, Mapping):
-                    canonical_sweep_payload = _coerce_parameter_sweep_payload(
-                        persisted_sweep_payload
-                    )
-                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
+                resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             if not isinstance(canonical_sweep_payload, Mapping):
                 return None
             sweep_source = _resolve_sweep_result_source(sweep_payload=canonical_sweep_payload)
@@ -7410,7 +7387,6 @@ def _render_simulation_environment():
 
             def _record_post_processing_source_bundle(bundle_id: int | None) -> None:
                 resolved_post_process_source_bundle_id_ref["value"] = bundle_id
-                runtime_state.latest_source_simulation_bundle_id = bundle_id
 
             with post_processing_container:
                 _render_post_processing_panel(
@@ -7518,20 +7494,24 @@ def _render_simulation_environment():
             if simulation_sweep_results_container is None:
                 return
             trace_store_bundle = None
-            if isinstance(runtime_state.latest_simulation_sweep_payload, Mapping):
+            _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                _persisted_post_processing_input_bundle()
+            )
+            if isinstance(persisted_sweep_payload, Mapping):
                 trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
-                    runtime_state.latest_simulation_sweep_payload,
+                    persisted_sweep_payload,
                 )
+                resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             context_lines = _build_simulation_workflow_context_lines(
                 circuit_record=active_record,
                 source_kind="circuit_simulation",
                 stage_kind="raw",
                 run_kind="parameter_sweep",
-                provenance_tokens=("live_solver_runtime", "save-path=Save Raw Simulation Results"),
+                provenance_tokens=("persisted_batch", "save-path=worker_persisted"),
             )
             _render_sweep_result_view_container(
                 container=simulation_sweep_results_container,
-                sweep_payload=runtime_state.latest_simulation_sweep_payload,
+                sweep_payload=persisted_sweep_payload,
                 trace_store_bundle=trace_store_bundle,
                 view_state=sweep_result_view_state,
                 family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
@@ -7559,8 +7539,8 @@ def _render_simulation_environment():
                 provenance_tokens=(
                     f"input={typed_flow_spec.get('input_y_source', 'raw_y')!s}",
                     (
-                        f"source-bundle=#{int(runtime_state.latest_source_simulation_bundle_id)}"
-                        if runtime_state.latest_source_simulation_bundle_id is not None
+                        f"source-bundle=#{int(resolved_post_process_source_bundle_id_ref['value'])}"
+                        if resolved_post_process_source_bundle_id_ref["value"] is not None
                         else "source-bundle=live_runtime"
                     ),
                     "save-path=Save Post-Processed Results",
@@ -7634,27 +7614,16 @@ def _render_simulation_environment():
             if simulation_results_container is None:
                 return
 
-            raw_save_callback = runtime_state.latest_raw_save_callback
-            selected_design_ids = _selected_design_ids()
-            resolved_raw_sweep_payload = None
-            raw_context_authority = (
-                "persisted_batch" if selected_design_ids else "live_solver_runtime"
+            _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
+                _persisted_post_processing_input_bundle()
             )
-            if selected_design_ids:
-                _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
-                    _persisted_post_processing_input_bundle()
-                )
-                if isinstance(persisted_sweep_payload, Mapping):
-                    resolved_raw_sweep_payload = _coerce_parameter_sweep_payload(
-                        persisted_sweep_payload
-                    )
-                    resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
-                    raw_save_callback = None
-            if not isinstance(resolved_raw_sweep_payload, Mapping):
-                resolved_raw_sweep_payload = _coerce_parameter_sweep_payload(
-                    runtime_state.latest_simulation_sweep_payload
-                )
-                raw_context_authority = "live_solver_runtime"
+            resolved_raw_sweep_payload = (
+                _coerce_parameter_sweep_payload(persisted_sweep_payload)
+                if isinstance(persisted_sweep_payload, Mapping)
+                else None
+            )
+            if persisted_bundle_id is not None:
+                resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             if isinstance(resolved_raw_sweep_payload, Mapping):
                 trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
                     resolved_raw_sweep_payload,
@@ -7665,8 +7634,8 @@ def _render_simulation_environment():
                     stage_kind="raw",
                     run_kind="parameter_sweep",
                     provenance_tokens=(
-                        raw_context_authority,
-                        "save-path=Save Raw Simulation Results",
+                        "persisted_batch",
+                        "save-path=worker_persisted",
                     ),
                 )
                 _render_sweep_result_view_container(
@@ -7682,9 +7651,6 @@ def _render_simulation_environment():
                     ),
                     empty_message="Sweep compare view is available after a parameter sweep run.",
                     testid_prefix="simulation-sweep",
-                    save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
-                    on_save_click=raw_save_callback,
-                    save_enabled=raw_save_callback is not None,
                     context_lines=context_lines,
                 )
                 return
@@ -7695,12 +7661,8 @@ def _render_simulation_environment():
                 stage_kind="raw",
                 run_kind="single_run",
                 provenance_tokens=(
-                    (
-                        "live_solver_runtime"
-                        if raw_save_callback is not None
-                        else "persisted_batch"
-                    ),
-                    "save-path=Save Raw Simulation Results",
+                    "persisted_batch",
+                    "save-path=worker_persisted",
                 ),
             )
             _render_result_family_explorer(
@@ -7715,9 +7677,6 @@ def _render_simulation_environment():
                     "Run simulation to inspect raw result traces. "
                     "Cross-source compare becomes available only after saving into a Design."
                 ),
-                save_button_label="Save Raw Simulation Results" if raw_save_callback else None,
-                on_save_click=raw_save_callback,
-                save_enabled=raw_save_callback is not None,
                 context_lines=raw_context_lines,
                 testid_prefix="raw-result-view",
             )
@@ -7763,11 +7722,27 @@ def _render_simulation_environment():
                     else None
                 ),
                 flow_spec=dict(flow_spec),
-                circuit_record=runtime_state.latest_circuit_record,
-                source_simulation_bundle_id=runtime_state.latest_source_simulation_bundle_id,
-                source_sweep_payload=runtime_state.latest_simulation_sweep_payload,
-                schema_source_hash=runtime_state.latest_schema_source_hash,
-                simulation_setup_hash=runtime_state.latest_simulation_setup_hash,
+                circuit_record=active_record,
+                source_simulation_bundle_id=resolved_post_process_source_bundle_id_ref["value"],
+                source_sweep_payload=_persisted_post_processing_input_bundle()[1],
+                schema_source_hash=(
+                    str(
+                        persisted_post_process_input_cache.get("snapshot", {}).get(
+                            "schema_source_hash",
+                            "",
+                        )
+                    ).strip()
+                    or None
+                ),
+                simulation_setup_hash=(
+                    str(
+                        persisted_post_process_input_cache.get("snapshot", {}).get(
+                            "simulation_setup_hash",
+                            "",
+                        )
+                    ).strip()
+                    or None
+                ),
             )
 
         def render_post_processed_result_view() -> None:
@@ -7778,7 +7753,7 @@ def _render_simulation_environment():
             sweep = runtime_state.latest_sweep
             flow_spec = runtime_state.latest_flow_spec
             persisted_postprocess_authority = False
-            resolved_source_bundle_id = runtime_state.latest_source_simulation_bundle_id
+            resolved_source_bundle_id = resolved_post_process_source_bundle_id_ref["value"]
             selected_design_ids = _selected_design_ids()
             has_runtime_output = isinstance(
                 runtime_output,
@@ -8710,7 +8685,7 @@ def _render_simulation_environment():
                     refresh_termination_controls()
                     if applying_saved_setup:
                         return
-                    if not isinstance(runtime_state.latest_simulation_result, SimulationResult):
+                    if not isinstance(_raw_simulation_result(), SimulationResult):
                         return
                     handle_post_processing_result(None)
                     render_simulation_result_view()
@@ -9312,13 +9287,13 @@ def _render_simulation_environment():
                     try:
                         sim_button.disable()
                         sim_button.props("loading")
-                        runtime_state.latest_simulation_result = None
-                        runtime_state.latest_circuit_record = None
-                        runtime_state.latest_source_simulation_bundle_id = None
-                        runtime_state.latest_schema_source_hash = None
-                        runtime_state.latest_simulation_setup_hash = None
-                        runtime_state.latest_sweep_setup_hash = None
-                        runtime_state.latest_simulation_sweep_payload = None
+                        runtime_state.current_task_id = None
+                        runtime_state.current_task_status = None
+                        runtime_state.current_trace_batch_id = None
+                        runtime_state.current_task_error = None
+                        runtime_state.last_task_poll_signature = None
+                        runtime_state.long_running_warning_shown = False
+                        _invalidate_persisted_authority_caches()
                         handle_post_processing_result(None)
                         simulation_results_container.clear()
                         if simulation_sweep_results_container is not None:
@@ -9509,7 +9484,6 @@ def _render_simulation_environment():
                         sweep_plan: SimulationSweepPlan | None = None
                         sweep_snapshot: dict[str, Any] | None = None
                         sweep_setup_hash: str | None = None
-                        sweep_result_payload: dict[str, Any] | None = None
                         sweep_mode = str(sweep_setup_payload.get("mode", "cartesian"))
                         if sweep_enabled:
                             if sweep_mode != "cartesian":
@@ -9711,386 +9685,94 @@ def _render_simulation_environment():
                                 "info",
                                 f"Sweep setup hash: {sweep_setup_hash}",
                             )
-                        append_status("info", "Checking result cache...")
+                        append_status("info", "Submitting persisted simulation task...")
                         simulation_results_container.clear()
                         with simulation_results_container:
                             ui.spinner(size="3em").classes("text-primary")
-                            ui.label("Checking cached results...").classes("text-muted mt-2")
+                            ui.label("Queueing simulation task...").classes("text-muted mt-2")
                         await asyncio.sleep(0)
-
-                        async def _load_cache_with_heartbeat() -> (
-                            tuple[int, int, SimulationResult | None, dict[str, Any] | None] | None
-                        ):
-                            cache_started_at = datetime.now()
-                            heartbeat_warned = False
-                            cache_task = asyncio.create_task(
-                                run.io_bound(
-                                    _load_cached_simulation_result_io,
-                                    schema_source_hash=schema_source_hash,
-                                    simulation_setup_hash=simulation_setup_hash,
-                                )
-                            )
-                            while True:
-                                try:
-                                    return await asyncio.wait_for(
-                                        asyncio.shield(cache_task),
-                                        timeout=_SIMULATION_HEARTBEAT_SECONDS,
-                                    )
-                                except TimeoutError:
-                                    elapsed_seconds = max(
-                                        1,
-                                        int((datetime.now() - cache_started_at).total_seconds()),
-                                    )
-                                    append_status(
-                                        "info",
-                                        (
-                                            "Cache lookup still running... "
-                                            f"{elapsed_seconds}s elapsed."
-                                        ),
-                                    )
-                                    if (
-                                        not heartbeat_warned
-                                        and elapsed_seconds
-                                        >= _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS
-                                    ):
-                                        heartbeat_warned = True
-                                        append_status(
-                                            "warning",
-                                            (
-                                                "Long-running cache reconstruction detected; "
-                                                "trace-store cache heartbeat continues every 5s."
-                                            ),
-                                        )
-
-                        cache_bundle_id: int | None = None
-                        cache_result = None
-                        cache_result = await _load_cache_with_heartbeat()
-
-                        if cache_result is not None:
+                        runtime_state.set_log_context(
+                            run_id=simulation_run_id,
+                            circuit_id=latest_record.id,
+                        )
+                        append_status(
+                            "info",
                             (
-                                cache_bundle_id,
-                                cache_dataset_id,
-                                result,
-                                sweep_result_payload,
-                            ) = cache_result
-                            runtime_state.set_log_context(
-                                run_id=simulation_run_id,
-                                circuit_id=latest_record.id,
-                                dataset_id=cache_dataset_id,
-                                bundle_id=cache_bundle_id,
+                                "Canonical execution path is now worker-backed. "
+                                "NiceGUI only queues the persisted task and polls status."
+                            ),
+                        )
+                        if simulation_sweep_results_container is not None:
+                            simulation_sweep_results_container.clear()
+                            with simulation_sweep_results_container:
+                                ui.label(
+                                    "Sweep Result View is waiting for persisted worker output."
+                                ).classes("text-sm text-muted")
+                        post_processing_container.clear()
+                        with post_processing_container:
+                            ui.label("Waiting for persisted simulation output...").classes(
+                                "text-sm text-muted"
                             )
-                            append_status(
-                                "positive",
-                                (
-                                    "Cache hit: matched completed bundle by "
-                                    "schema_source_hash + simulation_setup_hash. "
-                                    f"Loaded #{cache_bundle_id} without rerunning Julia."
-                                ),
-                            )
-                            if sweep_result_payload is not None:
-                                append_status(
-                                    "info",
-                                    (
-                                        "Loaded cached parameter sweep payload "
-                                        "("
-                                        f"{_resolved_sweep_point_count(sweep_result_payload)} "
-                                        "points)."
-                                    ),
-                                )
-                        else:
-                            runtime_state.set_log_context(
-                                run_id=simulation_run_id,
-                                circuit_id=latest_record.id,
-                            )
+                        with post_processing_results_container:
+                            ui.label(
+                                "Post-processed results will refresh from persisted batches."
+                            ).classes("text-sm text-muted")
+                        if post_processing_sweep_results_container is not None:
+                            post_processing_sweep_results_container.clear()
+                            with post_processing_sweep_results_container:
+                                ui.label(
+                                    "Post-processed sweep explorer is waiting for persisted output."
+                                ).classes("text-sm text-muted")
+
+                        submission = build_simulation_submission(
+                            design_id=int(latest_record.id),
+                            design_name=str(latest_record.name),
+                            circuit=latest_circuit_def,
+                            freq_range=freq_range,
+                            config=config,
+                            config_snapshot=setup_snapshot,
+                            source_meta={
+                                "origin": "simulation_page",
+                                "storage": "design_trace_store",
+                                "run_id": simulation_run_id,
+                                "circuit_id": latest_record.id,
+                                "circuit_name": latest_record.name,
+                            },
+                            schema_source_hash=schema_source_hash,
+                            simulation_setup_hash=simulation_setup_hash,
+                            sweep_setup_payload=sweep_setup_payload,
+                            sweep_setup_hash=sweep_setup_hash,
+                            context=build_ui_use_case_context(
+                                metadata={
+                                    "flow": "simulation",
+                                    "run_id": simulation_run_id,
+                                    "schema_id": int(latest_record.id or 0),
+                                }
+                            ),
+                            force_rerun=False,
+                        )
+                        dispatch = await submit_simulation_task(submission.api_request)
+                        runtime_state.current_task_id = int(dispatch.task.id)
+                        runtime_state.current_task_status = str(dispatch.task.status)
+                        runtime_state.current_trace_batch_id = dispatch.task.trace_batch_id
+                        runtime_state.current_task_error = None
+                        runtime_state.last_task_poll_signature = None
+                        if poll_timer is not None:
+                            poll_timer.active = True
+                        _apply_polled_task_status(dispatch.task)
+                        append_status(
+                            "info",
+                            (
+                                f"Dispatched worker task '{dispatch.worker_task_name}' "
+                                f"on lane '{dispatch.dispatched_lane}'."
+                            ),
+                        )
+                        if dispatch.dedupe_hit:
                             append_status(
                                 "info",
-                                (
-                                    "Cache miss: no completed bundle matched "
-                                    "schema_source_hash + simulation_setup_hash."
-                                ),
+                                "Soft dedupe reused the active persisted simulation task.",
                             )
-                            append_status("info", "Submitting job to Julia worker...")
-                            simulation_results_container.clear()
-                            if simulation_sweep_results_container is not None:
-                                simulation_sweep_results_container.clear()
-                            post_processing_container.clear()
-                            with simulation_results_container:
-                                ui.spinner(size="3em").classes("text-primary")
-                                ui.label("Running Simulation...").classes("text-muted mt-2")
-                            if simulation_sweep_results_container is not None:
-                                with simulation_sweep_results_container:
-                                    ui.label(
-                                        "Sweep Result View is waiting for simulation output."
-                                    ).classes("text-sm text-muted")
-                            with post_processing_container:
-                                ui.label("Waiting for simulation output...").classes(
-                                    "text-sm text-muted"
-                                )
-
-                            async def _run_solver_with_heartbeat(
-                                circuit_for_run: CircuitDefinition,
-                                *,
-                                stage_label: str,
-                                config_for_run: SimulationConfig,
-                            ) -> SimulationResult:
-                                job_started_at = datetime.now()
-                                heartbeat_warned = False
-                                request = SimulationRunRequest(
-                                    circuit=circuit_for_run,
-                                    freq_range=freq_range,
-                                    config=config_for_run,
-                                    context=build_ui_use_case_context(
-                                        metadata={
-                                            "flow": "simulation",
-                                            "stage_label": stage_label,
-                                            "schema_id": int(latest_record.id or 0),
-                                        }
-                                    ),
-                                    stage_label=stage_label,
-                                )
-                                result_task = asyncio.create_task(
-                                    run.cpu_bound(
-                                        _execute_simulation_run_cpu,
-                                        request,
-                                    )
-                                )
-                                while True:
-                                    try:
-                                        return await asyncio.wait_for(
-                                            asyncio.shield(result_task),
-                                            timeout=_SIMULATION_HEARTBEAT_SECONDS,
-                                        )
-                                    except TimeoutError:
-                                        elapsed_seconds = max(
-                                            1,
-                                            int((datetime.now() - job_started_at).total_seconds()),
-                                        )
-                                        append_status(
-                                            "info",
-                                            (
-                                                f"{stage_label} still running... "
-                                                f"{elapsed_seconds}s elapsed."
-                                            ),
-                                        )
-                                        if (
-                                            not heartbeat_warned
-                                            and elapsed_seconds
-                                            >= _SIMULATION_LONG_RUNNING_WARN_AFTER_SECONDS
-                                        ):
-                                            heartbeat_warned = True
-                                            append_status(
-                                                "warning",
-                                                (
-                                                    "Long-running simulation detected; "
-                                                    "worker heartbeat continues every 5s."
-                                                ),
-                                            )
-
-                            if sweep_plan is None:
-                                result = await _run_solver_with_heartbeat(
-                                    latest_circuit_def,
-                                    stage_label="Julia worker",
-                                    config_for_run=config,
-                                )
-                            else:
-                                sweep_writer = IncrementalRawSimulationSweepWriter(
-                                    design_id=int(latest_record.id),
-                                    design_name=str(latest_record.name),
-                                    run_id=simulation_run_id,
-                                    sweep_axes=tuple(sweep_plan.axes),
-                                )
-                                sweep_progress_log_step = _sweep_progress_log_step(
-                                    sweep_plan.point_count
-                                )
-                                try:
-                                    for point in sweep_plan.points:
-                                        point_no = int(point.point_index) + 1
-                                        if _should_log_sweep_point_progress(
-                                            point_index=point.point_index,
-                                            point_count=sweep_plan.point_count,
-                                            step=sweep_progress_log_step,
-                                        ):
-                                            progress_pct = round(
-                                                (point_no / sweep_plan.point_count) * 100.0
-                                            )
-                                            if point_no in {1, sweep_plan.point_count}:
-                                                point_tokens = ", ".join(
-                                                    (
-                                                        f"{target}={_format_sweep_value_token(value)}"
-                                                        for target, value in sorted(
-                                                            point.value_ref_overrides.items()
-                                                        )
-                                                    )
-                                                )
-                                                append_status(
-                                                    "info",
-                                                    (
-                                                        "Sweep point "
-                                                        f"{point_no}/{sweep_plan.point_count} "
-                                                        f"({progress_pct}%): {point_tokens}."
-                                                    ),
-                                                )
-                                            else:
-                                                append_status(
-                                                    "info",
-                                                    (
-                                                        "Sweep point "
-                                                        f"{point_no}/{sweep_plan.point_count} "
-                                                        f"({progress_pct}%)."
-                                                    ),
-                                                )
-                                        swept_circuit = apply_simulation_sweep_overrides(
-                                            circuit=latest_circuit_def,
-                                            value_ref_overrides=point.value_ref_overrides,
-                                        )
-                                        swept_config = apply_simulation_sweep_config_overrides(
-                                            config=config,
-                                            target_overrides=point.value_ref_overrides,
-                                        )
-                                        point_result = await _run_solver_with_heartbeat(
-                                            swept_circuit,
-                                            stage_label=(
-                                                f"Sweep point {point_no}/{sweep_plan.point_count}"
-                                            ),
-                                            config_for_run=swept_config,
-                                        )
-                                        sweep_writer.append_point(
-                                            point_index=int(point.point_index),
-                                            axis_indices=tuple(point.axis_indices),
-                                            axis_values=dict(point.value_ref_overrides),
-                                            result=point_result,
-                                        )
-                                        append_status(
-                                            "info",
-                                            (
-                                                "Persisted sweep point "
-                                                f"{point_no}/{sweep_plan.point_count} "
-                                                "to TraceStore."
-                                            ),
-                                        )
-                                except Exception:
-                                    sweep_writer.cleanup()
-                                    raise
-
-                                result = sweep_writer.representative_result
-                                sweep_result_payload = sweep_writer.build_payload(
-                                    summary_payload={
-                                        "trace_count": sweep_writer.trace_count,
-                                        "run_kind": "parameter_sweep",
-                                        "frequency_points": len(result.frequencies_ghz),
-                                        "point_count": int(sweep_plan.point_count),
-                                        "representative_point_index": 0,
-                                    }
-                                )
-
-                            try:
-                                cache_dataset_id: int | None = None
-                                cache_dataset_id, cache_bundle_id = await run.io_bound(
-                                    _persist_simulation_result_bundle_io,
-                                    result=result,
-                                    schema_source_hash=schema_source_hash,
-                                    simulation_setup_hash=simulation_setup_hash,
-                                    source_meta={
-                                        "origin": "circuit_simulation",
-                                        "storage": "system_cache",
-                                        "run_id": simulation_run_id,
-                                        "circuit_id": latest_record.id,
-                                        "circuit_name": latest_record.name,
-                                    },
-                                    config_snapshot=setup_snapshot,
-                                    sweep_setup_hash=sweep_setup_hash,
-                                    result_payload=sweep_result_payload,
-                                )
-                                runtime_state.set_log_context(
-                                    run_id=simulation_run_id,
-                                    circuit_id=latest_record.id,
-                                    dataset_id=cache_dataset_id,
-                                    bundle_id=cache_bundle_id,
-                                )
-                                append_status(
-                                    "info",
-                                    f"Cached result bundle #{cache_bundle_id} stored for reuse.",
-                                )
-                            except Exception as cache_exc:
-                                append_status(
-                                    "warning",
-                                    f"Result cache write skipped: {cache_exc}",
-                                )
-
-                        # Save state for persistence
-                        last_sim_result = result if isinstance(result, SimulationResult) else None
-                        last_sweep_result_payload = sweep_result_payload
-                        last_sweep_setup_hash = sweep_setup_hash
-                        last_freq_range = freq_range
-                        last_setup_snapshot = setup_snapshot
-                        last_schema_source_hash = schema_source_hash
-                        last_simulation_setup_hash = simulation_setup_hash
-                        if last_sweep_result_payload is None:
-                            frequency_point_count = (
-                                len(result.frequencies_ghz)
-                                if isinstance(result, SimulationResult)
-                                else 0
-                            )
-                            append_status(
-                                "positive",
-                                (
-                                    "Simulation completed successfully "
-                                    f"({frequency_point_count} points)."
-                                ),
-                            )
-                        else:
-                            frequency_point_count = (
-                                len(result.frequencies_ghz)
-                                if isinstance(result, SimulationResult)
-                                else _resolved_frequency_point_count_from_payload(
-                                    last_sweep_result_payload
-                                )
-                            )
-                            append_status(
-                                "positive",
-                                (
-                                    "Parameter sweep completed successfully "
-                                    f"({_resolved_sweep_point_count(last_sweep_result_payload)} "
-                                    "points, "
-                                    f"{frequency_point_count} freq points each)."
-                                ),
-                            )
-
-                        def on_save_click():
-                            save_result = last_sim_result
-                            if not isinstance(save_result, SimulationResult):
-                                if isinstance(last_sweep_result_payload, Mapping):
-                                    save_result = _cached_trace_store_bundle_from_sweep_payload(
-                                        last_sweep_result_payload
-                                    ).representative_result
-                                else:
-                                    raise ValueError(
-                                        "Representative simulation result is unavailable."
-                                    )
-                            _save_simulation_results_dialog(
-                                latest_record,
-                                last_freq_range,
-                                save_result,
-                                setup_snapshot=last_setup_snapshot,
-                                schema_source_hash=last_schema_source_hash,
-                                simulation_setup_hash=last_simulation_setup_hash,
-                                sweep_setup_hash=last_sweep_setup_hash,
-                                sweep_result_payload=last_sweep_result_payload,
-                            )
-
-                        runtime_state.latest_raw_save_callback = on_save_click
-                        runtime_state.latest_simulation_result = last_sim_result
-                        runtime_state.latest_simulation_sweep_payload = last_sweep_result_payload
-                        _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
-                        runtime_state.latest_circuit_record = latest_record
-                        runtime_state.latest_source_simulation_bundle_id = cache_bundle_id
-                        runtime_state.latest_schema_source_hash = last_schema_source_hash
-                        runtime_state.latest_simulation_setup_hash = last_simulation_setup_hash
-                        runtime_state.latest_sweep_setup_hash = last_sweep_setup_hash
-                        render_simulation_result_view()
-                        handle_post_processing_result(None)
-                        _render_post_processing_input_panel()
-                        render_post_processed_result_view()
+                        await _refresh_simulation_authority(preferred_task_id=int(dispatch.task.id))
 
                     except Exception as e:
                         summary, detail = _summarize_simulation_error(e)
@@ -10103,14 +9785,10 @@ def _render_simulation_environment():
                             append_status("warning", hint)
                             detail = f"{detail}\n\nLikely cause from current configuration:\n{hint}"
                         append_status("negative", summary)
-                        runtime_state.latest_raw_save_callback = None
-                        runtime_state.latest_simulation_result = None
-                        runtime_state.latest_circuit_record = None
-                        runtime_state.latest_source_simulation_bundle_id = None
-                        runtime_state.latest_schema_source_hash = None
-                        runtime_state.latest_simulation_setup_hash = None
-                        runtime_state.latest_sweep_setup_hash = None
-                        runtime_state.latest_simulation_sweep_payload = None
+                        runtime_state.current_task_error = summary
+                        runtime_state.current_task_status = "failed"
+                        runtime_state.long_running_warning_shown = False
+                        _invalidate_persisted_authority_caches()
                         handle_post_processing_result(None)
                         simulation_results_container.clear()
                         if simulation_sweep_results_container is not None:
@@ -10212,6 +9890,17 @@ def _render_simulation_environment():
             render_simulation_result_view()
             _render_post_processing_input_panel()
             render_post_processed_result_view()
+            poll_timer = ui.timer(
+                2.0,
+                callback=lambda: asyncio.create_task(_poll_current_simulation_task()),
+                active=False,
+            )
+            ui.timer(
+                0.2,
+                callback=lambda: asyncio.create_task(_refresh_simulation_authority()),
+                active=True,
+                once=True,
+            )
 
     sim_env()
 

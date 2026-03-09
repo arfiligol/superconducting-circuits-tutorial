@@ -370,7 +370,7 @@ Acceptance:
 
 ### WS2. Task Persistence Boundary
 
-Status: `in progress`
+Status: `completed`
 Depends on:
 - `DA-WS1-01`
 - `DA-WS1-02`
@@ -1116,14 +1116,15 @@ Acceptance:
 
 ### WS6. Simulation UI Cutover
 
-Status: `not started`
+Status: `in progress`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS5-02`
 - `DA-WS5-03`
 
 Tasks:
 
-- [ ] DA-WS6-01 列出 `/simulation` 目前所有 authority 使用點
+- [x] DA-WS6-01 列出 `/simulation` 目前所有 authority 使用點
   - **A) `SimulationRuntimeState.latest_*` 欄位（14 個）**：
     - `latest_sweep` — 模擬 sweep payload
     - `latest_simulation_result` — SimulationResult domain object（可能數百 MB）
@@ -1150,8 +1151,65 @@ Tasks:
     - 行 10117: 儲存模擬結果到 cache dataset
     - 行 10806: 儲存到 dataset
   - 先做完整 mapping 到 spreadsheet/table，不要直接邊找邊改
+  - `2026-03-09` pre-cutover inventory（accepted WS5 baseline, before WS6 edits）：
+    - `latest_sweep`
+      - line `7761`: post-processing save dialog uses it as representative sweep authority
+      - lines `7778-7779`: post-processed result view uses it as local runtime fallback
+      - lines `7942, 7946`: page mutates it after post-processing completion/reset
+    - `latest_simulation_result`
+      - lines `7160-7168`: raw-result authority and fallback reconstruction path
+      - line `8713`: result-card guard requires it for direct page-local rendering
+      - lines `10082, 10107, 9315`: run path writes/resets it
+    - `latest_simulation_sweep_payload`
+      - lines `7163-7168`: canonical sweep authority fallback to rebuild representative raw result
+      - lines `7210, 7265, 7359, 7521-7534, 7655`: post-processing input and source metadata fallback
+      - lines `7768, 10083, 10113, 9321`: save path and run reset/writeback authority
+    - `latest_post_processing_runtime`
+      - lines `7481, 7551, 7726, 7777, 10431+`: post-processing result/save authority
+      - lines `7941, 7945`: page mutates it after post-processing completion/reset
+    - `latest_post_processing_bundle_id`
+      - no surviving `SimulationRuntimeState` field in the accepted WS5 baseline
+      - equivalent authority currently leaks through `persisted_post_process_output_cache["bundle_id"]` and `_persisted_post_processing_output_bundle()`
+    - `latest_source_simulation_bundle_id`
+      - lines `7035, 7267, 7413, 7562-7563, 7767, 7781, 10086, 10109, 9317`: source-batch authority for post-processing and save paths
+    - `latest_flow_spec`
+      - lines `7552, 7727, 7779, 7943, 7947`: post-processing pipeline authority and view rendering fallback
+    - `latest_circuit_record`
+      - line `7766`: save dialog authority for post-processing provenance
+      - lines `9316, 10085, 10108`: direct run writes/resets it
+    - `latest_schema_source_hash`
+      - lines `7769, 10087, 10110, 9318`: page-local authority for raw/post-process persistence identity
+    - `latest_simulation_setup_hash`
+      - lines `7770, 10088, 10111, 9319`: page-local authority for raw/post-process persistence identity
+    - `latest_sweep_setup_hash`
+      - lines `7771?` effective use is via `last_sweep_setup_hash` -> `10089, 10112, 9320`: page-local authority for sweep provenance identity
+    - `latest_raw_save_callback`
+      - line `7637`: result-card authority for Save Raw Simulation Results button
+      - lines `10081, 10106`: run path injects/clears one page-local closure
+    - `termination_last_warning`
+      - lines `7241-7244`: sticky warning suppression for compensated raw result fallback
+      - lines `7290-7293`: sticky warning suppression for compensated sweep fallback
+    - `termination_last_summary`
+      - sticky page-local termination summary authority in the setup UX; not persisted and therefore lost on refresh
+  - **B) module-level process-global cache dict mapping（accepted WS5 baseline）**：
+    - `_SWEEP_RUN_CACHE`
+      - lines `1104-1111`: caches decoded `SimulationSweepRun` by payload identity
+    - `_SWEEP_POINT_LOOKUP_CACHE`
+      - lines `1124-1143`: caches axis-index -> sweep point lookup tables
+    - `_SWEEP_SERIES_CACHE`
+      - lines `5808-5842`: caches plotted scalar series for sweep compare cards
+    - `_TRACE_STORE_AUTHORITY_CACHE`
+      - lines `775-850`: caches single-result, sweep, and post-processed TraceStore bundles
+  - **C) `run.io_bound()` call-site mapping（accepted WS5 baseline）**：
+    - line `7504`: persist post-processing result bundle from the page
+    - line `9354`: load latest circuit record + definition before starting a run
+    - line `9988`: persist raw simulation result bundle into the cache dataset
+    - line `10386`: save raw simulation results into a dataset via dialog
+    - line `10694`: save post-processed results into a dataset via dialog
+  - DA-WS6-01 note:
+    - TODO originally said “4 處” `run.io_bound()` call sites, but the accepted WS5 baseline contains **5** live call sites in `/simulation` after WS4/WS5 edits. WS6 must preserve the full inventory, then cut only the canonical authority paths first.
 
-- [ ] DA-WS6-02 切 simulation submit path
+- [x] DA-WS6-02 切 simulation submit path
   - 現在按 Run 應只：
     - validate form
     - 建立 `TaskRecord(status=queued)` + 空 `TraceBatchRecord(status=in_progress)`
@@ -1159,7 +1217,7 @@ Tasks:
     - 顯示 queued/running state（用 `ui.timer` polling）
   - Julia 呼叫（行 ~9980 `run_simulation()`）移入 worker task
 
-- [ ] DA-WS6-03 切 result polling / refresh path
+- [x] DA-WS6-03 切 result polling / refresh path
   - UI 應從 `/api/tasks/{id}` + persisted batch 查結果
   - reconnect / F5 後流程：
     1. 讀 `TaskRecord` by current design_id → 找到最新 task
@@ -1168,7 +1226,7 @@ Tasks:
     4. 若 `status=failed` → 顯示 error summary
   - 用 `ui.timer(interval=2.0, callback=poll)` 而非 WebSocket push（simpler）
 
-- [ ] DA-WS6-04 降低 page-local state 職責
+- [x] DA-WS6-04 降低 page-local state 職責
   - 保留（transient UI state，OK to lose on F5）：
     - form draft values
     - transient UI selection (mode, trace selection)
@@ -1188,7 +1246,7 @@ Tasks:
     - phase 1 不保留任何 module-level process-global cache
     - 所有結果回到 persisted source + deterministic recomputation
 
-- [ ] DA-WS6-05 拆 `simulation/__init__.py`
+- [x] DA-WS6-05 拆 `simulation/__init__.py`
   - 10832 行不可能一次重寫，按 area 拆：
     - `simulation/api_client.py` — API 呼叫封裝（submit, poll, load result）
     - `simulation/submit_actions.py` — form validation + task creation
@@ -1197,7 +1255,7 @@ Tasks:
     - `simulation/state.py` — 保留，但大幅縮減為 transient-only state
   - 拆分順序：先抽 `api_client` + `submit_actions`（最小 viable 切割）
 
-- [ ] DA-WS6-06 simulation heartbeat/status UX parity
+- [x] DA-WS6-06 simulation heartbeat/status UX parity
   - 目前 `status_history` 與 long-running heartbeat warning 是使用者可見行為
   - cutover 後必須保留：
     - queued/running/completed/failed 明確可見
@@ -1210,6 +1268,38 @@ Acceptance:
 - Julia 呼叫不在 NiceGUI process 中發生。
 - Module-level caches 已全部移除，不再存在 authority/optimization 混淆。
 - simulation 的 heartbeat/status UX 未退化到黑盒狀態。
+
+Progress:
+- canonical Run path now builds a persisted simulation request, creates `TaskRecord(status=queued)` plus linked pending raw `TraceBatchRecord(status=in_progress)`, and dispatches `simulation_run_task` on the simulation lane instead of running Julia in the NiceGUI process
+- simulation worker path now reconstructs the shared WS4 simulation boundary from `TaskRecord.request_payload`, writes heartbeat/progress into `TaskRecord.progress_payload`, persists success/failure into `TaskRecord` + `TraceBatchRecord`, and emits stable worker error payloads
+- `/simulation` refresh authority now comes from persisted `/api/v1/tasks/{id}`, `/api/v1/designs/{design_id}/tasks`, and `/api/v1/designs/{design_id}/simulation/latest`; the page recovers queued/running/completed state after reload without relying on `latest_simulation_result`
+- `SimulationRuntimeState` no longer carries raw simulation authority fields, `latest_raw_save_callback` is removed, and the frozen module-level caches `_SWEEP_RUN_CACHE`, `_SWEEP_POINT_LOOKUP_CACHE`, `_SWEEP_SERIES_CACHE`, `_TRACE_STORE_AUTHORITY_CACHE` are removed rather than replaced
+- minimum required page split landed under `src/app/pages/simulation/` with `api_client.py`, `submit_actions.py`, `result_loader.py`, and `state.py`; page orchestration now calls into those modules instead of re-burying the cutover in `__init__.py`
+- heartbeat/status UX parity is preserved via persisted task polling, long-running warnings, and visible task/batch identifiers in the page status history
+
+Verification:
+- `uv run pytest tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_simulation_result_loader.py`
+- `uv run ruff check src/app/pages/simulation/__init__.py src/app/pages/simulation/api_client.py src/app/pages/simulation/result_loader.py src/app/pages/simulation/submit_actions.py src/app/pages/simulation/state.py src/app/services/simulation_task_contract.py src/app/services/simulation_batch_persistence.py src/worker/simulation_execution.py src/worker/simulation_tasks.py src/worker/dispatch.py src/app/services/task_submission.py tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py tests/app/pages/test_simulation_result_loader.py`
+- `uv run basedpyright src/app/services/simulation_task_contract.py src/app/services/simulation_batch_persistence.py src/app/services/task_submission.py src/worker/dispatch.py src/worker/simulation_execution.py src/worker/simulation_tasks.py src/app/pages/simulation/api_client.py src/app/pages/simulation/result_loader.py src/app/pages/simulation/submit_actions.py src/app/pages/simulation/state.py`
+- `uv run basedpyright src/app/pages/simulation/__init__.py`
+- `uv run python -m py_compile src/app/pages/simulation/__init__.py src/app/pages/simulation/api_client.py src/app/pages/simulation/result_loader.py src/app/pages/simulation/submit_actions.py src/app/pages/simulation/state.py src/app/services/simulation_task_contract.py src/app/services/simulation_batch_persistence.py src/worker/simulation_execution.py src/worker/simulation_tasks.py src/worker/dispatch.py src/app/services/task_submission.py`
+- `uv run python - <<'PY' ... submit simulation task via TestClient -> consume simulation worker -> poll task/latest result -> reopen client -> recover latest task/result ... PY`
+
+Evidence:
+- `src/app/pages/simulation/__init__.py`
+- `src/app/pages/simulation/api_client.py`
+- `src/app/pages/simulation/submit_actions.py`
+- `src/app/pages/simulation/result_loader.py`
+- `src/app/pages/simulation/state.py`
+- `src/app/services/simulation_task_contract.py`
+- `src/app/services/simulation_batch_persistence.py`
+- `src/app/services/task_submission.py`
+- `src/worker/dispatch.py`
+- `src/worker/simulation_execution.py`
+- `src/worker/simulation_tasks.py`
+- `tests/app/api/test_api_v1.py`
+- `tests/worker/test_huey_workers.py`
+- `tests/app/pages/test_simulation_result_loader.py`
 
 ---
 
