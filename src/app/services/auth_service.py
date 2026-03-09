@@ -105,23 +105,41 @@ def bootstrap_admin_credentials() -> tuple[str, str]:
 
 
 def ensure_bootstrap_admin() -> UserRecord:
-    """Ensure at least one local admin user exists for phase-1 local auth."""
+    """Ensure at least one active, login-capable admin exists for phase-1 local auth."""
     username, password = bootstrap_admin_credentials()
+    bootstrap_password_hash = hash_password(password)
     with get_unit_of_work() as uow:
-        users = uow.users.list_users()
-        if users:
-            for user in users:
-                if user.role == "admin":
-                    return _detach_user(user)
         existing = uow.users.get_by_username(username)
         if existing is not None:
+            changed = False
             if existing.role != "admin":
                 existing = uow.users.set_role(existing.id or 0, "admin")
+                changed = True
+            if not existing.is_active:
+                existing = uow.users.set_active(existing.id or 0, True)
+                changed = True
+            if not verify_password(password, existing.password_hash):
+                existing = uow.users.set_password(existing.id or 0, bootstrap_password_hash)
+                changed = True
+            if changed:
+                uow.audit_logs.append_log(
+                    actor_id=existing.id,
+                    action_kind="auth.bootstrap_admin_recovered",
+                    resource_kind="user",
+                    resource_id=existing.id or username,
+                    summary=f"Bootstrap admin user '{username}' recovered.",
+                    payload={"username": username, "role": "admin", "is_active": True},
+                )
                 uow.commit()
             return _detach_user(existing)
+
+        for user in uow.users.list_users():
+            if user.role == "admin" and user.is_active:
+                return _detach_user(user)
+
         created = uow.users.create_user(
             username=username,
-            password_hash=hash_password(password),
+            password_hash=bootstrap_password_hash,
             role="admin",
             is_active=True,
         )

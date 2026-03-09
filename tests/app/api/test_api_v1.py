@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.services.auth_service import ensure_bootstrap_admin, hash_password
+from app.services.auth_service import authenticate_user, ensure_bootstrap_admin, hash_password
 from core.shared.persistence import database, get_unit_of_work
 from core.shared.persistence.models import AnalysisRunRecord, DesignRecord, TraceBatchRecord
 
@@ -249,6 +249,49 @@ def test_admin_user_management_and_audit_api(client: TestClient) -> None:
         non_admin_client.close()
 
 
+def test_admin_role_validation_returns_controlled_client_errors(client: TestClient) -> None:
+    _login(client)
+
+    invalid_create = client.post(
+        "/api/v1/admin/users",
+        json={
+            "username": "bad-role",
+            "password": "pw-1",
+            "role": "guest",
+            "is_active": True,
+        },
+    )
+    assert invalid_create.status_code == 422
+    assert invalid_create.json()["detail"][0]["loc"] == ["body", "role"]
+
+    created = client.post(
+        "/api/v1/admin/users",
+        json={
+            "username": "role-test",
+            "password": "pw-1",
+            "role": "admin",
+            "is_active": True,
+        },
+    )
+    assert created.status_code == 201
+    user_id = int(created.json()["id"])
+    assert created.json()["role"] == "admin"
+
+    invalid_patch = client.patch(
+        f"/api/v1/admin/users/{user_id}",
+        json={"role": "guest"},
+    )
+    assert invalid_patch.status_code == 422
+    assert invalid_patch.json()["detail"][0]["loc"] == ["body", "role"]
+
+    valid_patch = client.patch(
+        f"/api/v1/admin/users/{user_id}",
+        json={"role": "user"},
+    )
+    assert valid_patch.status_code == 200
+    assert valid_patch.json()["role"] == "user"
+
+
 def test_task_creation_get_and_design_listing_use_real_task_records(
     client: TestClient,
 ) -> None:
@@ -422,3 +465,37 @@ def test_latest_result_lookup_endpoints_use_persisted_artifacts_only(
     assert latest_characterization.json()["analysis_run_id"] == analysis_run_id
     assert latest_characterization.json()["task_id"] == characterization_task_id
     assert latest_characterization.json()["analysis_id"] == "admittance_extraction"
+
+
+def test_bootstrap_admin_recovery_restores_active_login_capable_admin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure_test_environment(tmp_path, monkeypatch)
+    ensure_bootstrap_admin()
+
+    with get_unit_of_work() as uow:
+        admin = uow.users.get_by_username("admin")
+        assert admin is not None
+        assert admin.id is not None
+        uow.users.set_active(int(admin.id), False)
+        uow.commit()
+
+    assert authenticate_user("admin", "admin") is None
+
+    recovered = ensure_bootstrap_admin()
+    assert recovered.username == "admin"
+    assert recovered.role == "admin"
+    assert recovered.is_active is True
+
+    with get_unit_of_work() as uow:
+        persisted_admin = uow.users.get_by_username("admin")
+        assert persisted_admin is not None
+        assert persisted_admin.role == "admin"
+        assert persisted_admin.is_active is True
+
+    authenticated = authenticate_user("admin", "admin")
+    assert authenticated is not None
+    assert authenticated.username == "admin"
+    assert authenticated.role == "admin"
+    assert authenticated.is_active is True

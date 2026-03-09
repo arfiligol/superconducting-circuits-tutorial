@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from core.shared.persistence.models import normalize_user_role
 
 
 class ApiModel(BaseModel):
@@ -54,12 +56,24 @@ class CreateUserRequest(ApiModel):
     role: str
     is_active: bool = True
 
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, value: str) -> str:
+        return normalize_user_role(value)
+
 
 class UpdateUserRequest(ApiModel):
     """Admin request payload for updating local-user state."""
 
     role: str | None = None
     is_active: bool | None = None
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_user_role(value)
 
     @model_validator(mode="after")
     def _require_one_field(self) -> UpdateUserRequest:
