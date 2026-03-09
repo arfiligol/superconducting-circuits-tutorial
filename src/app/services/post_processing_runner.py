@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from app.services.execution_context import UseCaseContext
 from app.services.post_processing_step_registry import run_post_processing_step
+from app.services.task_progress import (
+    ProgressCallback,
+    TaskProgressUpdate,
+    emit_progress,
+    progress_update,
+)
 from core.simulation.application.post_processing import (
     PortMatrixSweep,
     PortMatrixSweepPoint,
@@ -30,6 +38,7 @@ class PostProcessingRunRequest:
     step_sequence: list[dict[str, Any]]
     circuit_definition: CircuitDefinition | None
     has_ptc_result: bool
+    context: UseCaseContext = field(default_factory=UseCaseContext)
 
 
 @dataclass(frozen=True)
@@ -40,6 +49,8 @@ class PostProcessingRunResult:
     preview_sweep: PortMatrixSweep
     flow_spec: dict[str, Any]
     normalized_steps: list[dict[str, Any]]
+    context: UseCaseContext
+    progress_updates: tuple[TaskProgressUpdate, ...] = ()
 
     @property
     def sweep(self) -> PortMatrixSweep:
@@ -51,8 +62,26 @@ def execute_post_processing_pipeline(
     request: PostProcessingRunRequest,
     *,
     estimate_auto_weights: Callable[[CircuitDefinition, int, int], tuple[float, float] | None],
+    progress_callback: ProgressCallback | None = None,
 ) -> PostProcessingRunResult:
     """Execute all enabled post-processing steps and build one flow-spec snapshot."""
+    updates: list[TaskProgressUpdate] = []
+    updates.append(
+        emit_progress(
+            progress_callback,
+            progress_update(
+                phase="running",
+                summary="Post-processing execution started.",
+                stage_label="post_processing",
+                stale_after_seconds=60,
+                details={
+                    "source": request.context.source,
+                    "requested_by": request.context.requested_by,
+                    "input_source": request.input_source,
+                },
+            ),
+        )
+    )
     mode_token = str(request.mode_token or "").strip()
     if not mode_token:
         raise ValueError("Please select one mode before running post-processing.")
@@ -188,11 +217,45 @@ def execute_post_processing_pipeline(
         "hfss_comparable": hfss_comparable,
         "hfss_not_comparable_reason": hfss_not_comparable_reason,
     }
+    updates.append(
+        emit_progress(
+            progress_callback,
+            progress_update(
+                phase="completed",
+                summary="Post-processing execution completed.",
+                stage_label="post_processing",
+                details={
+                    "source": request.context.source,
+                    "requested_by": request.context.requested_by,
+                    "run_kind": run_kind,
+                    "point_count": point_count,
+                    "hfss_comparable": hfss_comparable,
+                },
+            ),
+        )
+    )
     return PostProcessingRunResult(
         runtime_output=runtime_output,
         preview_sweep=preview_sweep,
         flow_spec=flow_spec,
         normalized_steps=resolved_normalized_steps,
+        context=request.context,
+        progress_updates=tuple(updates),
+    )
+
+
+async def execute_post_processing_pipeline_async(
+    request: PostProcessingRunRequest,
+    *,
+    estimate_auto_weights: Callable[[CircuitDefinition, int, int], tuple[float, float] | None],
+    progress_callback: ProgressCallback | None = None,
+) -> PostProcessingRunResult:
+    """Async adapter for the shared post-processing boundary."""
+    return await asyncio.to_thread(
+        execute_post_processing_pipeline,
+        request,
+        estimate_auto_weights=estimate_auto_weights,
+        progress_callback=progress_callback,
     )
 
 
@@ -200,4 +263,5 @@ __all__ = [
     "PostProcessingRunRequest",
     "PostProcessingRunResult",
     "execute_post_processing_pipeline",
+    "execute_post_processing_pipeline_async",
 ]

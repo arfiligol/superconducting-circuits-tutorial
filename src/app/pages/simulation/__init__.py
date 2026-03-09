@@ -26,6 +26,7 @@ from app.pages.simulation.state import (
     default_result_view_state,
     default_sweep_result_view_state,
 )
+from app.services.execution_context import build_ui_use_case_context
 from app.services.post_processing_runner import (
     PostProcessingRunRequest,
     PostProcessingRunResult,
@@ -38,6 +39,7 @@ from app.services.post_processing_step_registry import (
     preview_pipeline_labels,
     serialize_post_processing_step,
 )
+from app.services.simulation_runner import SimulationRunRequest, execute_simulation_run
 from app.services.simulation_setup_manager import (
     delete_setup,
     get_setup_by_id,
@@ -72,7 +74,6 @@ from core.simulation.application.run_simulation import (
     build_linear_sweep_values,
     build_simulation_sweep_plan,
     list_simulation_sweep_targets,
-    run_simulation,
     simulation_sweep_run_from_payload,
     simulation_sweep_run_to_payload,
     simulation_sweep_setup_snapshot,
@@ -3280,6 +3281,11 @@ def _execute_post_processing_pipeline_cpu(
     )
 
 
+def _execute_simulation_run_cpu(request: SimulationRunRequest) -> SimulationResult:
+    """Execute one simulation use case inside a CPU worker."""
+    return execute_simulation_run(request).simulation_result
+
+
 def _render_post_processing_panel(
     *,
     raw_result: SimulationResult,
@@ -4046,6 +4052,12 @@ def _render_post_processing_panel(
                 step_sequence=[dict(step) for step in step_sequence],
                 circuit_definition=circuit_definition,
                 has_ptc_result=isinstance(ptc_result, SimulationResult),
+                context=build_ui_use_case_context(
+                    metadata={
+                        "flow": "post_processing",
+                        "schema_id": int(schema_id or 0),
+                    }
+                ),
             )
 
             async def _run_with_heartbeat(
@@ -4132,6 +4144,7 @@ def _render_post_processing_panel(
                             step_sequence=[dict(step) for step in step_sequence],
                             circuit_definition=circuit_definition,
                             has_ptc_result=isinstance(ptc_result, SimulationResult),
+                            context=request.context,
                         )
                         run_result = await _run_with_heartbeat(
                             point_request,
@@ -4201,6 +4214,8 @@ def _render_post_processing_panel(
                             },
                         },
                         normalized_steps=resolved_normalized_steps,
+                        context=request.context,
+                        progress_updates=run_result.progress_updates,
                     )
                 except Exception:
                     writer.cleanup()
@@ -9719,12 +9734,23 @@ def _render_simulation_environment():
                             ) -> SimulationResult:
                                 job_started_at = datetime.now()
                                 heartbeat_warned = False
+                                request = SimulationRunRequest(
+                                    circuit=circuit_for_run,
+                                    freq_range=freq_range,
+                                    config=config_for_run,
+                                    context=build_ui_use_case_context(
+                                        metadata={
+                                            "flow": "simulation",
+                                            "stage_label": stage_label,
+                                            "schema_id": int(latest_record.id or 0),
+                                        }
+                                    ),
+                                    stage_label=stage_label,
+                                )
                                 result_task = asyncio.create_task(
                                     run.cpu_bound(
-                                        run_simulation,
-                                        circuit_for_run,
-                                        freq_range,
-                                        config_for_run,
+                                        _execute_simulation_run_cpu,
+                                        request,
                                     )
                                 )
                                 while True:

@@ -697,13 +697,14 @@ Evidence:
 
 ### WS4. Shared Application Use Cases
 
-Status: `not started`
+Status: `completed`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS3-02`
 
 Tasks:
 
-- [ ] DA-WS4-01 梳理 simulation shared use case 邊界
+- [x] DA-WS4-01 梳理 simulation shared use case 邊界
   - 把 page 內純 orchestration 邏輯抽成 worker/UI/CLI 都可共用的 function
   - 優先抽：
     - create simulation run request
@@ -711,22 +712,22 @@ Tasks:
     - persist running batch
     - persist success/failure summary
 
-- [ ] DA-WS4-02 梳理 post-processing shared use case 邊界
+- [x] DA-WS4-02 梳理 post-processing shared use case 邊界
   - 目標：
     - input 改為 persisted source batch / persisted trace refs
     - 不再依賴 `latest_simulation_result`
 
-- [ ] DA-WS4-03 梳理 characterization shared use case 邊界
+- [x] DA-WS4-03 梳理 characterization shared use case 邊界
   - 目標：
     - analysis run contract 與 worker task contract 對齊
     - future-proof 到 `/api/characterization-runs`
 
-- [ ] DA-WS4-04 決定 sync vs async adapter 層
+- [x] DA-WS4-04 決定 sync vs async adapter 層
   - CLI 可能要支援：
     - `--wait` 同步等待完成
     - `--detach` 只建立 task 後離開
 
-- [ ] DA-WS4-05 heartbeat / progress payload parity
+- [x] DA-WS4-05 heartbeat / progress payload parity
   - 現況：
     - simulation page 與 characterization page 都有 page-local heartbeat/status_history UX
   - 目標：
@@ -737,7 +738,7 @@ Tasks:
     - heartbeat warning threshold
     - user-facing summary lines 的來源
 
-- [ ] DA-WS4-06 actor context propagation
+- [x] DA-WS4-06 actor context propagation
   - 目標：
     - login session / API actor → use case request context → `TaskRecord.actor_id` / `AuditLogRecord.actor_id`
     - worker 執行時仍保留「誰觸發了這個 task」的 actor context
@@ -750,6 +751,50 @@ Acceptance:
 - 重要流程不再被 page event handler 或 CLI command body 綁死。
 - heartbeat 與 progress UX 不因 cutover 而消失。
 - auth 加入後，不需要重寫 application/use-case boundary。
+
+Progress:
+- 已新增 shared execution contracts：
+  - `app/services/execution_context.py`
+  - `app/services/task_progress.py`
+- 已建立三條可共用的 request/result/context boundary：
+  - `app/services/simulation_runner.py`
+  - `app/services/post_processing_runner.py`
+  - `app/services/characterization_runner.py`
+- `ActorContext` / `UseCaseContext` 已提供 `actor_id + role + requested_by + source + task_id + dedupe/force_rerun` shape，後續 API/auth 可直接沿用而不需把 session object 帶進 domain/application
+- `TaskProgressUpdate` 已定義 reusable progress payload shape：
+  - `phase`
+  - `summary`
+  - `stage_label`
+  - `current_step` / `total_steps`
+  - `warning`
+  - `stale_after_seconds`
+  - `details`
+- WS3 worker runtime 已改用 shared progress payload helper 產生 `TaskRecord.progress_payload` / completion summary payload
+- simulation page 已把 Julia solver 呼叫改成 shared `SimulationRunRequest -> execute_simulation_run` boundary
+- post-processing page 已以 enriched `PostProcessingRunRequest(context=...)` 執行 shared boundary，page-local code 不再直接持有 actor/session-specific authority
+- characterization page 已把 run dispatch 改成 shared `CharacterizationRunRequest -> execute_characterization_run` boundary
+- 已新增 tests 證明 shared use-case modules 可由 worker-facing import 使用，且不會拉進 `app.pages.*`
+
+Verification:
+- `uv run pytest tests/app/services/test_simulation_runner.py tests/app/services/test_post_processing_runner.py tests/app/services/test_characterization_runner.py tests/worker/test_huey_workers.py tests/core/shared/persistence/test_task_auth_audit_repository.py tests/core/shared/persistence/test_result_bundle_repository.py tests/core/shared/persistence/test_reconcile.py tests/core/shared/persistence/test_repository_contracts.py tests/core/shared/persistence/test_database_bootstrap.py`
+- `uv run ruff check src/app/services/execution_context.py src/app/services/task_progress.py src/app/services/simulation_runner.py src/app/services/post_processing_runner.py src/app/services/characterization_runner.py src/worker/runtime.py tests/app/services/test_simulation_runner.py tests/app/services/test_post_processing_runner.py tests/app/services/test_characterization_runner.py tests/worker/test_huey_workers.py src/app/pages/simulation/__init__.py src/app/pages/characterization/__init__.py`
+- `uv run basedpyright src/app/services/execution_context.py src/app/services/task_progress.py src/app/services/simulation_runner.py src/app/services/post_processing_runner.py src/app/services/characterization_runner.py src/worker/runtime.py src/app/pages/simulation/__init__.py src/app/pages/characterization/__init__.py`
+- `uv run python -m py_compile src/app/pages/simulation/__init__.py src/app/pages/characterization/__init__.py`
+- `uv run python - <<'PY' ... execute_simulation_run(...) ... PY`
+
+Evidence:
+- `src/app/services/execution_context.py`
+- `src/app/services/task_progress.py`
+- `src/app/services/simulation_runner.py`
+- `src/app/services/post_processing_runner.py`
+- `src/app/services/characterization_runner.py`
+- `src/worker/runtime.py`
+- `src/app/pages/simulation/__init__.py`
+- `src/app/pages/characterization/__init__.py`
+- `tests/app/services/test_simulation_runner.py`
+- `tests/app/services/test_post_processing_runner.py`
+- `tests/app/services/test_characterization_runner.py`
+- `tests/worker/test_huey_workers.py`
 
 ---
 

@@ -8,10 +8,13 @@ import numpy as np
 import pytest
 
 from app.services.characterization_runner import (
+    CharacterizationRunRequest,
     SweepSupportDiagnostic,
     _diagnose_analysis_sweep_support_from_records,
     execute_analysis_run,
+    execute_characterization_run,
 )
+from app.services.execution_context import ActorContext, UseCaseContext
 from core.analysis.application.services.resonance_extract_service import ResonanceExtractService
 from core.analysis.application.services.resonance_fit_service import ResonanceFitService
 from core.shared.persistence import DataRecord
@@ -139,6 +142,55 @@ def test_execute_analysis_run_dispatches_squid_fitting_with_defaults(
     assert captured["trace_mode_group"] == "sideband"
     assert config.fit_model == "FIXED_C"
     assert config.fixed_c_pf == pytest.approx(0.123)
+
+
+def test_execute_characterization_run_returns_context_and_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    progress_updates = []
+
+    def _fake_extract_admittance(
+        self: object,
+        dataset_id: str,
+        *,
+        record_ids: list[int] | None = None,
+        trace_mode_group: str | None = None,
+    ) -> None:
+        captured["dataset_id"] = dataset_id
+        captured["record_ids"] = record_ids
+        captured["trace_mode_group"] = trace_mode_group
+
+    monkeypatch.setattr(
+        "core.analysis.application.services.resonance_extract_service.ResonanceExtractService.extract_admittance",
+        _fake_extract_admittance,
+    )
+
+    result = execute_characterization_run(
+        CharacterizationRunRequest(
+            analysis_id="admittance_extraction",
+            dataset_id=12,
+            config_state={},
+            trace_record_ids=[1, 2],
+            trace_mode_group="base",
+            context=UseCaseContext(
+                actor=ActorContext(actor_id=9, role="user", requested_by="api"),
+                source="worker",
+                task_id=22,
+            ),
+        ),
+        progress_callback=progress_updates.append,
+    )
+
+    assert captured == {
+        "dataset_id": "12",
+        "record_ids": [1, 2],
+        "trace_mode_group": "base",
+    }
+    assert result.context.actor.actor_id == 9
+    assert result.selected_trace_ids == (1, 2)
+    assert [update.phase for update in result.progress_updates] == ["running", "completed"]
+    assert progress_updates[0].to_payload()["details"]["analysis_id"] == "admittance_extraction"
 
 
 def test_diagnose_analysis_sweep_support_marks_y11_and_squid_ready_for_2d_ljun() -> None:

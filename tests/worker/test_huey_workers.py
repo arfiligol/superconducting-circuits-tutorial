@@ -234,3 +234,28 @@ def test_app_import_does_not_import_worker_or_julia_adapter_modules() -> None:
     assert output_lines == ["APP_IMPORT_OK", "False", "False", "True", "False"]
     combined_output = f"{result.stdout}\n{result.stderr}".lower()
     assert "juliacall" not in combined_output
+
+
+def test_shared_use_case_modules_import_without_page_modules() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "import app.services.simulation_runner; "
+                "import app.services.post_processing_runner; "
+                "import app.services.characterization_runner; "
+                "print('USE_CASE_IMPORT_OK'); "
+                "print(any(name.startswith('app.pages.') for name in sys.modules))"
+            ),
+        ],
+        cwd=_REPO_ROOT,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip().splitlines() == ["USE_CASE_IMPORT_OK", "False"]

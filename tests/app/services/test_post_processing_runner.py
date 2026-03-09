@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.services.execution_context import ActorContext, UseCaseContext
 from app.services.post_processing_runner import (
     PostProcessingRunRequest,
     execute_post_processing_pipeline,
@@ -189,3 +190,34 @@ def test_execute_post_processing_pipeline_preserves_full_parameter_sweep_runtime
     assert run.preview_sweep.trace(0, 0) == [1.0 + 0.0j, 1.0 + 0.0j]
     assert run.runtime_output.points[1].sweep.trace(0, 0) == [3.0 + 0.0j, 4.0 + 0.0j]
     assert run.runtime_output.points[1].sweep.trace(1, 1) == [5.0 + 0.0j, 6.0 + 0.0j]
+
+
+def test_execute_post_processing_pipeline_returns_context_and_progress() -> None:
+    progress_updates = []
+    context = UseCaseContext(
+        actor=ActorContext(actor_id=5, role="admin", requested_by="api"),
+        source="worker",
+        task_id=42,
+    )
+
+    run = execute_post_processing_pipeline(
+        PostProcessingRunRequest(
+            result=_sample_result(),
+            sweep_payload=None,
+            input_source="raw_y",
+            mode_filter="base",
+            mode_token="0",
+            reference_impedance_ohm=50.0,
+            step_sequence=[],
+            circuit_definition=None,
+            has_ptc_result=False,
+            context=context,
+        ),
+        estimate_auto_weights=lambda _definition, _port_a, _port_b: (0.5, 0.5),
+        progress_callback=progress_updates.append,
+    )
+
+    assert run.context == context
+    assert [update.phase for update in run.progress_updates] == ["running", "completed"]
+    assert progress_updates[0].to_payload()["details"]["requested_by"] == "api"
+    assert progress_updates[1].to_payload()["details"]["point_count"] == 1

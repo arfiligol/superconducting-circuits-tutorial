@@ -22,12 +22,15 @@ src/app/services/characterization_runner.py
 src/app/services/characterization_trace_scope.py
 src/app/services/dataset_profile.py
 src/app/services/design_trace_workflow.py
+src/app/services/execution_context.py
 src/app/services/post_processing_runner.py
 src/app/services/post_processing_step_registry.py
 src/app/services/result_artifact_registry.py
 src/app/services/schematic_preview.py
 src/app/services/schemdraw_live_preview.py
+src/app/services/simulation_runner.py
 src/app/services/simulation_setup_manager.py
+src/app/services/task_progress.py
 src/core/__init__.py
 src/core/analysis/__init__.py
 src/core/analysis/application/__init__.py

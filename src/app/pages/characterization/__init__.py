@@ -25,9 +25,10 @@ from app.pages.characterization.state import (
 from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
 from app.services.analysis_registry import list_dataset_analyses
 from app.services.characterization_runner import (
+    CharacterizationRunRequest,
     SweepSupportDiagnostic,
     diagnose_analysis_sweep_support,
-    execute_analysis_run,
+    execute_characterization_run,
 )
 from app.services.characterization_trace_scope import (
     TraceSourceSummary,
@@ -41,6 +42,7 @@ from app.services.dataset_profile import (
     design_profile_summary_text,
     normalize_dataset_profile,
 )
+from app.services.execution_context import build_ui_use_case_context
 from app.services.result_artifact_registry import (
     RESULT_CATEGORY_LABELS,
     artifact_categories,
@@ -1933,14 +1935,24 @@ def characterization_page():
 
                                             job_started_at = datetime.now()
                                             heartbeat_warned = False
+                                            request = CharacterizationRunRequest(
+                                                analysis_id=analysis_id,
+                                                dataset_id=active_design_id,
+                                                config_state=config_state,
+                                                trace_record_ids=run_trace_ids,
+                                                trace_mode_group=selected_mode_group,
+                                                context=build_ui_use_case_context(
+                                                    metadata={
+                                                        "flow": "characterization",
+                                                        "analysis_id": analysis_id,
+                                                        "dataset_id": active_design_id,
+                                                    }
+                                                ),
+                                            )
                                             run_task = asyncio.create_task(
                                                 run.cpu_bound(
-                                                    execute_analysis_run,
-                                                    analysis_id=analysis_id,
-                                                    dataset_id=active_design_id,
-                                                    config_state=config_state,
-                                                    trace_record_ids=run_trace_ids,
-                                                    trace_mode_group=selected_mode_group,
+                                                    execute_characterization_run,
+                                                    request,
                                                 )
                                             )
                                             while True:

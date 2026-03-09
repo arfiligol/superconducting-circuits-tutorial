@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from app.services.task_progress import progress_update
 from core.shared.persistence.reconcile import ReconcileSummary, reconcile_stale_tasks_and_batches
 from core.shared.persistence.unit_of_work import get_unit_of_work
 from worker.config import LaneName
@@ -39,13 +40,18 @@ class HueyLike(Protocol):
 
 def _task_start_payload(*, lane_name: LaneName, worker_task_name: str) -> dict[str, Any]:
     """Return progress payload stored when a worker starts one task."""
-    return {
-        "lane": lane_name,
-        "phase": "running",
-        "worker_task_name": worker_task_name,
-        "worker_pid": os.getpid(),
-        "started_at": _utcnow().isoformat(),
-    }
+    return progress_update(
+        phase="running",
+        summary=f"{worker_task_name} started in the {lane_name} lane.",
+        stage_label=worker_task_name,
+        stale_after_seconds=300,
+        details={
+            "lane": lane_name,
+            "worker_task_name": worker_task_name,
+            "worker_pid": os.getpid(),
+            "started_at": _utcnow().isoformat(),
+        },
+    ).to_payload(extra={"lane": lane_name, "worker_task_name": worker_task_name})
 
 
 def _task_success_payload(
@@ -55,13 +61,24 @@ def _task_success_payload(
     summary_payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Return one completed-task summary payload."""
-    return {
-        **summary_payload,
-        "lane": lane_name,
-        "worker_task_name": worker_task_name,
-        "worker_pid": os.getpid(),
-        "completed_at": _utcnow().isoformat(),
-    }
+    return progress_update(
+        phase="completed",
+        summary=f"{worker_task_name} completed in the {lane_name} lane.",
+        stage_label=worker_task_name,
+        details={
+            **summary_payload,
+            "lane": lane_name,
+            "worker_task_name": worker_task_name,
+            "worker_pid": os.getpid(),
+            "completed_at": _utcnow().isoformat(),
+        },
+    ).to_payload(
+        extra={
+            **summary_payload,
+            "lane": lane_name,
+            "worker_task_name": worker_task_name,
+        }
+    )
 
 
 def _task_error_payload(
