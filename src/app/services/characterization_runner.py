@@ -527,7 +527,11 @@ async def execute_characterization_run_async(
                 asyncio.shield(task),
                 timeout=heartbeat_interval_seconds,
             )
-            return replace(result, progress_updates=tuple(updates))
+            combined_updates = list(updates)
+            for update in result.progress_updates:
+                if update not in combined_updates:
+                    combined_updates.append(update)
+            return replace(result, progress_updates=tuple(combined_updates))
         except TimeoutError:
             elapsed_seconds = max(1, int((_utcnow() - started_at).total_seconds()))
             _record_progress(

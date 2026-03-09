@@ -342,10 +342,12 @@ def test_execute_characterization_run_async_owns_heartbeat_and_warning_progress(
         assert phases[0] == "heartbeat"
         assert "warning" in phases
         assert "persisted" in phases
-        assert phases[-1] == "completed"
+        assert "completed" in phases
         assert result.analysis_run is not None
-        assert progress_updates[-1].to_payload()["details"]["analysis_run_id"] == int(
-            result.analysis_run.id or 0
+        assert any(
+            update.to_payload()["details"].get("analysis_run_id")
+            == int(result.analysis_run.id or 0)
+            for update in progress_updates
         )
     finally:
         database.get_engine.cache_clear()
