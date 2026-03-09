@@ -1,5 +1,6 @@
 """Database engine and session management."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
@@ -11,12 +12,21 @@ from sqlmodel import Session, create_engine
 DATABASE_PATH = Path(__file__).parent.parent.parent.parent.parent / "data" / "database.db"
 
 
+def resolve_database_path() -> Path:
+    """Resolve the metadata DB path with optional environment override."""
+    override = os.getenv("SC_DATABASE_PATH")
+    if override is None or not override.strip():
+        return DATABASE_PATH
+    return Path(override).expanduser()
+
+
 @lru_cache
 def get_engine():
     """Get the SQLite engine (singleton)."""
+    database_path = resolve_database_path()
     # Ensure parent directory exists
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    return create_engine(f"sqlite:///{DATABASE_PATH}", echo=False)
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    return create_engine(f"sqlite:///{database_path}", echo=False)
 
 
 def get_session() -> Session:

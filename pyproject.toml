@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "ipython>=9.7.0",
+    "huey>=2.5",
     "juliacall>=0.9.31",
     "lmfit>=1.3.1",
     "matplotlib>=3.10.7",
@@ -30,13 +31,15 @@ dependencies = [
 [project.scripts]
 sc = "scripts.cli.entry:app"
 sc-app = "app.main:start"
+sc-worker-simulation = "worker.simulation_huey:main"
+sc-worker-characterization = "worker.characterization_huey:main"
 
 [tool.uv]
 package = true
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["core*", "scripts*", "app*"]
+include = ["app*", "core*", "scripts*", "worker*"]
 
 [tool.basedpyright]
 typeCheckingMode = "basic"
