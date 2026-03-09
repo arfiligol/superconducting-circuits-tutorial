@@ -1116,7 +1116,7 @@ Acceptance:
 
 ### WS6. Simulation UI Cutover
 
-Status: `in progress`
+Status: `completed`
 Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS5-02`
