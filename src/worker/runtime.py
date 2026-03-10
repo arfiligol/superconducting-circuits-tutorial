@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Any
+
+from rq import Queue
+from rq.job import Job
 
 from app.services.task_progress import progress_update
 from core.shared.persistence.reconcile import ReconcileSummary, reconcile_stale_tasks_and_batches
 from core.shared.persistence.unit_of_work import get_unit_of_work
-from worker.config import LaneName
+from worker.config import LaneName, ensure_connection_available
 
 
 def _utcnow() -> datetime:
@@ -28,14 +32,6 @@ class TaskExecutionResult:
     result_summary_payload: dict[str, Any] = field(default_factory=dict)
     trace_batch_id: int | None = None
     analysis_run_id: int | None = None
-
-
-class HueyLike(Protocol):
-    """Small protocol for Huey objects used by the custom lane consumer."""
-
-    def dequeue(self) -> object | None: ...
-
-    def execute(self, task: object) -> object | None: ...
 
 
 def _task_start_payload(*, lane_name: LaneName, worker_task_name: str) -> dict[str, Any]:
@@ -220,30 +216,43 @@ def reconcile_stale_worker_tasks(*, stale_after_seconds: int) -> ReconcileSummar
 
 
 def consume_queued_tasks(
-    huey: HueyLike,
     *,
+    queue: Queue,
     lane_name: LaneName,
     max_tasks: int | None,
     idle_timeout: float,
     poll_interval: float,
     reconcile_stale_after_seconds: int | None = None,
 ) -> int:
-    """Consume queued Huey tasks serially for one worker lane."""
+    """Consume queued RQ jobs serially for one worker lane."""
     if reconcile_stale_after_seconds is not None:
         reconcile_stale_worker_tasks(stale_after_seconds=reconcile_stale_after_seconds)
+
+    connection = ensure_connection_available(lane_name)
+
+    if max_tasks is not None and max_tasks <= 0:
+        return 0
 
     processed = 0
     idle_deadline = time.monotonic() + max(0.0, idle_timeout)
     while max_tasks is None or processed < max_tasks:
-        task = huey.dequeue()
-        if task is None:
+        if int(queue.count) <= 0:
             if time.monotonic() >= idle_deadline:
                 break
             time.sleep(max(0.01, poll_interval))
             continue
 
         idle_deadline = time.monotonic() + max(0.0, idle_timeout)
-        huey.execute(task)
+        job_id = queue.pop_job_id()
+        if job_id is None:
+            time.sleep(max(0.01, poll_interval))
+            continue
+        job = Job.fetch(job_id, connection=connection)
+        try:
+            job.perform()
+        finally:
+            with contextlib.suppress(Exception):
+                job.delete()
         processed += 1
 
     return processed

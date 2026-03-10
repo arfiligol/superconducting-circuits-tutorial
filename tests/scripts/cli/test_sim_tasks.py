@@ -25,6 +25,7 @@ from core.simulation.domain.circuit import SimulationResult
 
 def _configure_cli_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
+    monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://cli-{tmp_path.name}")
     monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
     monkeypatch.setenv(
         "SC_CHARACTERIZATION_HUEY_DB_PATH",
@@ -34,7 +35,13 @@ def _configure_cli_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     database.get_engine.cache_clear()
     for module_name in (
         "app.main",
+        "app.services.latest_result_lookup",
+        "app.services.post_processing_task_contract",
+        "app.services.simulation_submission",
+        "app.services.task_submission",
+        "scripts.cli",
         "scripts.cli.entry",
+        "scripts.simulation",
         "scripts.simulation.task_cli",
         "worker.dispatch",
         "worker.simulation_huey",
@@ -46,6 +53,7 @@ def _configure_cli_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         "worker.simulation_execution",
     ):
         sys.modules.pop(module_name, None)
+    importlib.import_module("worker.config").reset_fake_backend_cache()
 
 
 def _sample_circuit_source() -> dict[str, object]:
@@ -130,7 +138,7 @@ def _simulation_worker_thread(delay_seconds: float = 0.15) -> threading.Thread:
         time.sleep(delay_seconds)
         importlib.import_module("worker.simulation_huey").consume(
             max_tasks=1,
-            idle_timeout=0.2,
+            idle_timeout=2.0,
             poll_interval=0.01,
         )
 

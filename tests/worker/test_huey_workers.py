@@ -9,6 +9,8 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
 from app.pages.simulation.submit_actions import build_simulation_submission
 from app.services.characterization_task_contract import build_characterization_submission
 from app.services.execution_context import ActorContext, build_ui_use_case_context
@@ -40,6 +42,7 @@ def _utcnow() -> datetime:
 
 def _configure_worker_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
+    monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://worker-{tmp_path.name}")
     monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
     monkeypatch.setenv(
         "SC_CHARACTERIZATION_HUEY_DB_PATH",
@@ -47,6 +50,9 @@ def _configure_worker_env(tmp_path: Path, monkeypatch) -> None:
     )
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     database.get_engine.cache_clear()
+    for module_name in ("worker.config",):
+        sys.modules.pop(module_name, None)
+    importlib.import_module("worker.config").reset_fake_backend_cache()
 
 
 def _reload_worker_modules() -> tuple[object, object, object, object]:
@@ -92,6 +98,16 @@ def _create_task(task_kind: str) -> int:
         uow.commit()
         assert task.id is not None
         return task.id
+
+
+def _enqueue_test_job(queue: object, task_func: object, *args: object) -> None:
+    queue.enqueue(
+        task_func,
+        *args,
+        job_timeout=-1,
+        failure_ttl=86400,
+        result_ttl=3600,
+    )
 
 
 def _sample_simulation_circuit():
@@ -176,7 +192,7 @@ def test_simulation_lane_smoke_task_round_trips_taskrecord(
     )
     task_id = _create_task("simulation_smoke")
 
-    simulation_tasks.simulation_smoke_task(task_id)
+    _enqueue_test_job(simulation_huey.queue, simulation_tasks.simulation_smoke_task, task_id)
     processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
@@ -198,7 +214,11 @@ def test_characterization_lane_smoke_task_round_trips_taskrecord(
     )
     task_id = _create_task("characterization_smoke")
 
-    characterization_tasks.characterization_smoke_task(task_id)
+    _enqueue_test_job(
+        characterization_huey.queue,
+        characterization_tasks.characterization_smoke_task,
+        task_id,
+    )
     processed = characterization_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
@@ -295,7 +315,12 @@ def test_simulation_lane_failure_task_marks_failed(tmp_path: Path, monkeypatch) 
     )
     task_id = _create_task("simulation_failure")
 
-    simulation_tasks.simulation_failure_task(task_id, "boom")
+    _enqueue_test_job(
+        simulation_huey.queue,
+        simulation_tasks.simulation_failure_task,
+        task_id,
+        "boom",
+    )
     processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
@@ -483,12 +508,15 @@ def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -
     )
     task_id = _create_task("simulation_crash")
 
-    simulation_tasks.simulation_crash_task(task_id, 86)
+    redis_url = os.getenv("SC_RQ_REDIS_URL")
+    if not redis_url or redis_url.startswith("fakeredis://"):
+        pytest.skip("Crash-isolation enqueue requires a real Redis backend for cross-process RQ.")
+
+    _enqueue_test_job(simulation_huey.queue, simulation_tasks.simulation_crash_task, task_id, 86)
     env = {
         **os.environ,
         "SC_DATABASE_PATH": str(database.resolve_database_path()),
-        "SC_SIMULATION_HUEY_DB_PATH": str(simulation_huey.BROKER_PATH),
-        "SC_CHARACTERIZATION_HUEY_DB_PATH": str(tmp_path / "characterization_huey.db"),
+        "SC_RQ_REDIS_URL": redis_url,
     }
     result = subprocess.run(
         [

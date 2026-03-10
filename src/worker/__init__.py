@@ -1,1 +1,1 @@
-"""Huey-based worker lanes for persisted task execution."""
+"""RQ-based worker lanes for persisted task execution."""

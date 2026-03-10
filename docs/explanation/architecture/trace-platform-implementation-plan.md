@@ -87,10 +87,12 @@ WS10 後的本地 runtime 拓樸固定為：
 - `TaskRecord` 是 UI / API / CLI 共用的 universal execution boundary
 - `simulation` 與 `post-processing` 共用 simulation lane，但 lane 內部序列化
 - `characterization` 使用獨立 characterization lane，lane 內部序列化
-- app DB 與兩個 Huey broker DB 分離：
+- app DB 與 RQ queue backend 分離：
   - `SC_DATABASE_PATH`
-  - `SC_SIMULATION_HUEY_DB_PATH`
-  - `SC_CHARACTERIZATION_HUEY_DB_PATH`
+  - `SC_RQ_REDIS_URL`（preferred）
+  - `SC_REDIS_URL`（fallback alias）
+  - `SC_SIMULATION_QUEUE_NAME`
+  - `SC_CHARACTERIZATION_QUEUE_NAME`
 - numeric authority 保持在 `SC_TRACE_STORE_ROOT` 指向的 TraceStore
 - app 與 worker startup 都會執行 safe reconcile，讓 restart 後的 stale tasks / batches 可回到 persisted truth
 

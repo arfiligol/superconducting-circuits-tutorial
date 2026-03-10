@@ -1,4 +1,4 @@
-"""Characterization-lane Huey stack and consumer entrypoint."""
+"""Characterization-lane RQ stack and consumer entrypoint."""
 
 from __future__ import annotations
 
@@ -6,12 +6,20 @@ from core.shared.persistence.startup_reconcile import (
     default_stale_timeout_seconds,
     run_startup_reconcile,
 )
-from worker.config import create_huey, resolve_huey_broker_path
+from worker.config import (
+    create_queue,
+    resolve_legacy_broker_path_hint,
+    resolve_queue_name,
+    resolve_redis_url,
+)
 from worker.runtime import build_consumer_parser, consume_queued_tasks
 
 LANE_NAME = "characterization"
-BROKER_PATH = resolve_huey_broker_path(LANE_NAME)
-huey = create_huey(LANE_NAME)
+REDIS_URL = resolve_redis_url(LANE_NAME)
+QUEUE_NAME = resolve_queue_name(LANE_NAME)
+BROKER_PATH = resolve_legacy_broker_path_hint(LANE_NAME)
+queue = create_queue(LANE_NAME)
+huey = queue
 
 from worker import characterization_tasks as _characterization_tasks  # noqa: E402,F401
 
@@ -25,7 +33,7 @@ def consume(
 ) -> int:
     """Consume queued characterization-lane tasks serially."""
     return consume_queued_tasks(
-        huey,
+        queue=queue,
         lane_name=LANE_NAME,
         max_tasks=max_tasks,
         idle_timeout=idle_timeout,
@@ -53,6 +61,7 @@ def main() -> None:
         f"failed_batches={reconcile_summary.failed_batch_ids} "
         f"orphan_batches={reconcile_summary.orphan_batch_ids}"
     )
+    print(f"characterization lane rq backend queue={QUEUE_NAME} redis={REDIS_URL}")
     processed = consume(
         max_tasks=args.max_tasks,
         idle_timeout=args.idle_timeout,

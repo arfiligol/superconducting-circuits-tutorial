@@ -62,13 +62,21 @@ WS10 之後的本地開發拓樸固定為三個進程：
 - `SC_APP_PORT`（default `8080`）
 - `SC_DATABASE_PATH`
 - `SC_TRACE_STORE_ROOT`
-- `SC_SIMULATION_HUEY_DB_PATH`
-- `SC_CHARACTERIZATION_HUEY_DB_PATH`
+- `SC_RQ_REDIS_URL`（preferred）
+- `SC_REDIS_URL`（fallback alias）
+- `SC_SIMULATION_QUEUE_NAME`
+- `SC_CHARACTERIZATION_QUEUE_NAME`
 - `SC_SESSION_SECRET`
 - `SC_BOOTSTRAP_ADMIN_USERNAME`
 - `SC_BOOTSTRAP_ADMIN_PASSWORD`
 - `SC_WORKER_STALE_TIMEOUT_SECONDS`
 - `SC_CLI_USERNAME`
+
+!!! note "RQ backend"
+    worker lanes 現在使用 `RQ + Redis`。正式 runtime 應提供可達的 Redis，
+    例如設定 `SC_RQ_REDIS_URL=redis://127.0.0.1:6379/0`。
+    舊的 `SC_SIMULATION_HUEY_DB_PATH` / `SC_CHARACTERIZATION_HUEY_DB_PATH`
+    只保留給測試與過渡相容層，不再是主要設定面。
 
 可選的一鍵 helper：
 

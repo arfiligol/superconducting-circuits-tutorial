@@ -69,6 +69,7 @@ def _sample_simulation_result() -> SimulationResult:
 
 def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
+    monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://runtime-{tmp_path.name}")
     monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
     monkeypatch.setenv(
         "SC_CHARACTERIZATION_HUEY_DB_PATH",
@@ -80,6 +81,7 @@ def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     database.get_engine.cache_clear()
     for module_name in (
         "app.main",
+        "app.services.task_submission",
         "worker.characterization_huey",
         "worker.characterization_tasks",
         "worker.config",
@@ -89,6 +91,7 @@ def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         "worker.simulation_execution",
     ):
         sys.modules.pop(module_name, None)
+    importlib.import_module("worker.config").reset_fake_backend_cache()
 
 
 def _configure_subprocess_environment(tmp_path: Path) -> dict[str, str]:
@@ -96,6 +99,7 @@ def _configure_subprocess_environment(tmp_path: Path) -> dict[str, str]:
     runtime_env.update(
         {
             "SC_DATABASE_PATH": str(tmp_path / "database.db"),
+            "SC_RQ_REDIS_URL": f"fakeredis://runtime-{tmp_path.name}",
             "SC_SIMULATION_HUEY_DB_PATH": str(tmp_path / "simulation_huey.db"),
             "SC_CHARACTERIZATION_HUEY_DB_PATH": str(tmp_path / "characterization_huey.db"),
             "SC_TRACE_STORE_ROOT": str(tmp_path / "trace_store"),
@@ -206,7 +210,7 @@ def _simulation_worker_thread(delay_seconds: float = 0.05) -> threading.Thread:
         time.sleep(delay_seconds)
         importlib.import_module("worker.simulation_huey").consume(
             max_tasks=1,
-            idle_timeout=0.5,
+            idle_timeout=2.0,
             poll_interval=0.01,
         )
 

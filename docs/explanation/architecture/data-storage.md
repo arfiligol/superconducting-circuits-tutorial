@@ -273,8 +273,9 @@ WS10 後的 local runtime contract 是：
 這三者共享同一個 metadata DB 與 TraceStore authority，但 queue broker 仍分離：
 
 - app DB: `SC_DATABASE_PATH`
-- simulation broker DB: `SC_SIMULATION_HUEY_DB_PATH`
-- characterization broker DB: `SC_CHARACTERIZATION_HUEY_DB_PATH`
+- queue backend: `SC_RQ_REDIS_URL`（preferred） / `SC_REDIS_URL`（fallback alias）
+- simulation queue name: `SC_SIMULATION_QUEUE_NAME`
+- characterization queue name: `SC_CHARACTERIZATION_QUEUE_NAME`
 - TraceStore root: `SC_TRACE_STORE_ROOT`
 
 因此：

@@ -52,6 +52,7 @@ run_app_startup_smoke() {
   SC_APP_HOST="${SC_APP_HOST:-127.0.0.1}" \
   SC_APP_PORT="$port" \
   NICEGUI_SCREEN_TEST_PORT="$port" \
+  SC_RQ_REDIS_URL="${SC_RQ_REDIS_URL:-fakeredis://integrator-smoke}" \
   uv run python - <<'PY'
 import contextlib
 import http.client
@@ -96,8 +97,14 @@ finally:
 PY
 }
 
-run_required "sc-worker-simulation startup" uv run sc-worker-simulation --max-tasks 0
-run_required "sc-worker-characterization startup" uv run sc-worker-characterization --max-tasks 0
+run_required \
+  "sc-worker-simulation startup" \
+  env SC_RQ_REDIS_URL="${SC_RQ_REDIS_URL:-fakeredis://integrator-smoke}" \
+  uv run sc-worker-simulation --max-tasks 0
+run_required \
+  "sc-worker-characterization startup" \
+  env SC_RQ_REDIS_URL="${SC_RQ_REDIS_URL:-fakeredis://integrator-smoke}" \
+  uv run sc-worker-characterization --max-tasks 0
 run_required "sc-app startup" run_app_startup_smoke
 run_required \
   "focused runtime validation" \

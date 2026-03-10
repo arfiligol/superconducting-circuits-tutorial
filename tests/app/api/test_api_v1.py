@@ -33,6 +33,7 @@ from core.simulation.domain.circuit import (
 
 def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
+    monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://api-{tmp_path.name}")
     monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
     monkeypatch.setenv(
         "SC_CHARACTERIZATION_HUEY_DB_PATH",
@@ -50,6 +51,7 @@ def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
         "worker.simulation_tasks",
     ):
         sys.modules.pop(module_name, None)
+    importlib.import_module("worker.config").reset_fake_backend_cache()
 
 
 @pytest.fixture()

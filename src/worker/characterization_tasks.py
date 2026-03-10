@@ -1,4 +1,4 @@
-"""Characterization-lane smoke and failure tasks."""
+"""Characterization-lane smoke and failure task functions for RQ."""
 
 from __future__ import annotations
 
@@ -6,13 +6,11 @@ import os
 from typing import Any
 
 from worker.characterization_execution import execute_characterization_task
-from worker.characterization_huey import huey
 from worker.runtime import TaskExecutionResult, execute_managed_task, mark_task_running_before_crash
 
 _LANE_NAME = "characterization"
 
 
-@huey.task(retries=0)
 def characterization_run_task(task_id: int) -> dict[str, Any]:
     """Execute one real persisted characterization task on the characterization lane."""
     return execute_managed_task(
@@ -23,7 +21,6 @@ def characterization_run_task(task_id: int) -> dict[str, Any]:
     )
 
 
-@huey.task(retries=0)
 def characterization_smoke_task(task_id: int) -> dict[str, Any]:
     """Queue one minimal successful characterization-lane lifecycle round-trip."""
     return execute_managed_task(
@@ -36,7 +33,6 @@ def characterization_smoke_task(task_id: int) -> dict[str, Any]:
     )
 
 
-@huey.task(retries=0)
 def characterization_failure_task(
     task_id: int,
     message: str = "characterization smoke failure",
@@ -50,7 +46,6 @@ def characterization_failure_task(
     )
 
 
-@huey.task(retries=0)
 def characterization_crash_task(task_id: int, exit_code: int = 86) -> None:
     """Queue one task that intentionally crashes the characterization worker process."""
     mark_task_running_before_crash(

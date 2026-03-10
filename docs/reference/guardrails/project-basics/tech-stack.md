@@ -21,6 +21,7 @@ tags:
 | `numpy`, `pandas` | 數值與資料處理 |
 | `plotly` | 互動式視覺化 |
 | `nicegui` | Web UI 與本地應用 shell |
+| `rq`, `redis` | 背景工作佇列與 worker runtime |
 | `CodeMirror`（透過 `nicegui.ui.codemirror`） | Schema Editor |
 | `Ruff WebAssembly`（`@astral-sh/ruff-wasm`） | 瀏覽器端格式化 |
 | `Panzoom` | SVG zoom/pan 互動層 |
@@ -94,6 +95,7 @@ Application / UI layer 不得自行解析 local `store_uri` path；backend locat
     - **DB / ORM**: `sqlmodel`, `sqlalchemy`
     - **Vis**: `plotly`
     - **WebUI**: `nicegui`, `ui.codemirror`, `Ruff WebAssembly`, `Panzoom`
+    - **Queue / Workers**: `rq`, `redis`
     - **CLI**: `typer`
     - **Logging**: `rich`
     - **Testing**: `pytest`, `Playwright`

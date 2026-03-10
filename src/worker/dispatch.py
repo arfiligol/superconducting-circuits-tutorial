@@ -12,6 +12,7 @@ from app.services.post_processing_task_contract import (
     extract_post_processing_request_from_api_payload,
 )
 from app.services.simulation_task_contract import extract_simulation_request_from_api_payload
+from worker.config import create_queue
 
 LaneName = Literal["simulation", "characterization"]
 TaskSubmissionKind = Literal["simulation", "post_processing", "characterization"]
@@ -46,7 +47,13 @@ def enqueue_task(
         if simulation_request is not None and trace_batch_id is not None:
             from worker.simulation_tasks import simulation_run_task
 
-            simulation_run_task(task_id)
+            create_queue("simulation").enqueue(
+                simulation_run_task,
+                task_id,
+                job_timeout=-1,
+                failure_ttl=86400,
+                result_ttl=3600,
+            )
             return DispatchedWorkerTask(
                 lane="simulation",
                 worker_task_name="simulation_run_task",
@@ -54,7 +61,13 @@ def enqueue_task(
 
         from worker.simulation_tasks import simulation_smoke_task
 
-        simulation_smoke_task(task_id)
+        create_queue("simulation").enqueue(
+            simulation_smoke_task,
+            task_id,
+            job_timeout=-1,
+            failure_ttl=86400,
+            result_ttl=3600,
+        )
         return DispatchedWorkerTask(
             lane="simulation",
             worker_task_name="simulation_smoke_task",
@@ -73,7 +86,13 @@ def enqueue_task(
         if post_processing_request is not None and trace_batch_id is not None:
             from worker.simulation_tasks import post_processing_run_task
 
-            post_processing_run_task(task_id)
+            create_queue("simulation").enqueue(
+                post_processing_run_task,
+                task_id,
+                job_timeout=-1,
+                failure_ttl=86400,
+                result_ttl=3600,
+            )
             return DispatchedWorkerTask(
                 lane="simulation",
                 worker_task_name="post_processing_run_task",
@@ -81,7 +100,13 @@ def enqueue_task(
 
         from worker.simulation_tasks import post_processing_smoke_task
 
-        post_processing_smoke_task(task_id)
+        create_queue("simulation").enqueue(
+            post_processing_smoke_task,
+            task_id,
+            job_timeout=-1,
+            failure_ttl=86400,
+            result_ttl=3600,
+        )
         return DispatchedWorkerTask(
             lane="simulation",
             worker_task_name="post_processing_smoke_task",
@@ -100,7 +125,13 @@ def enqueue_task(
         if characterization_request is not None:
             from worker.characterization_tasks import characterization_run_task
 
-            characterization_run_task(task_id)
+            create_queue("characterization").enqueue(
+                characterization_run_task,
+                task_id,
+                job_timeout=-1,
+                failure_ttl=86400,
+                result_ttl=3600,
+            )
             return DispatchedWorkerTask(
                 lane="characterization",
                 worker_task_name="characterization_run_task",
@@ -108,7 +139,13 @@ def enqueue_task(
 
         from worker.characterization_tasks import characterization_smoke_task
 
-        characterization_smoke_task(task_id)
+        create_queue("characterization").enqueue(
+            characterization_smoke_task,
+            task_id,
+            job_timeout=-1,
+            failure_ttl=86400,
+            result_ttl=3600,
+        )
         return DispatchedWorkerTask(
             lane="characterization",
             worker_task_name="characterization_smoke_task",
