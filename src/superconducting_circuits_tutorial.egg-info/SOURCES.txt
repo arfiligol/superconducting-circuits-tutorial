@@ -110,6 +110,7 @@ src/core/shared/persistence/__init__.py
 src/core/shared/persistence/database.py
 src/core/shared/persistence/models.py
 src/core/shared/persistence/reconcile.py
+src/core/shared/persistence/startup_reconcile.py
 src/core/shared/persistence/trace_store.py
 src/core/shared/persistence/unit_of_work.py
 src/core/shared/persistence/repositories/__init__.py

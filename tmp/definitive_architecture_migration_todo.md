@@ -597,10 +597,13 @@ Tasks:
 - [x] DA-WS3-02 建立 Huey app / consumer entrypoint
   - 建議結構：
     - `src/worker/__init__.py`
-    - `src/worker/huey_app.py` — Huey instance 定義（`SqliteHuey(filename='data/huey.db')`）
-    - `src/worker/tasks.py` — task 函數定義
-  - `pyproject.toml` 加入 worker entrypoint：`sc-worker = "worker.entry:main"` 或直接用 `huey_consumer worker.huey_app.huey`
-  - NiceGUI Process 不 import `worker.tasks`（避免觸發 Julia init）
+    - `src/worker/simulation_huey.py` — simulation lane `SqliteHuey`
+    - `src/worker/characterization_huey.py` — characterization lane `SqliteHuey`
+    - lane-specific task modules / execution modules
+  - `pyproject.toml` worker entrypoints：
+    - `sc-worker-simulation`
+    - `sc-worker-characterization`
+  - NiceGUI Process 不 import worker task modules（避免觸發 Julia init）
 
 - [x] DA-WS3-03 建立最小 smoke task
   - 只更新 `TaskRecord` status，證明 queue → worker → DB writeback path 正常
@@ -1626,7 +1629,8 @@ Evidence:
 
 ### WS10. Deployment / Dev Scripts / Docs / Regression Hardening
 
-Status: `not started`
+Status: `completed`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS6-03` (至少 simulation cutover 的 polling path 完成)
 - `DA-WS7-01`
@@ -1635,38 +1639,49 @@ Depends on:
 
 Tasks:
 
-- [ ] DA-WS10-01 補 dev startup scripts
+- [x] DA-WS10-01 補 dev startup scripts
   - **本地模式**：
     ```bash
     # 終端 1
     uv run sc-app
     # 終端 2
-    uv run huey_consumer worker.huey_app.huey
+    uv run sc-worker-simulation
+    # 終端 3
+    uv run sc-worker-characterization
     ```
-  - **一鍵啟動** (optional)：`scripts/dev_start.sh` 用 `&` 背景啟動兩者
-  - **遠端模式**：
+  - **一鍵啟動**：`scripts/dev_start.sh` / `scripts/dev_stop.sh`
+  - **遠端 / LAN 模式**：
     ```bash
-    SC_APP_HOST=0.0.0.0 SC_DEPLOYMENT_SCOPE=trusted_lan uv run sc-app
-    uv run huey_consumer worker.huey_app.huey
+    SC_APP_HOST=0.0.0.0 uv run sc-app
+    uv run sc-worker-simulation
+    uv run sc-worker-characterization
     ```
-  - `pyproject.toml` 新增 script entry：`sc-worker = ...`
+  - accepted script entries：
+    - `sc-app`
+    - `sc-worker-simulation`
+    - `sc-worker-characterization`
+  - app / worker startup 都會自動執行 safe startup reconcile
 
-- [ ] DA-WS10-02 補 `.env` / config surface 文件
+- [x] DA-WS10-02 補 `.env` / config surface 文件
   - `SC_APP_HOST` (default: `127.0.0.1`)
   - `SC_APP_PORT` (default: `8080`)
-  - `SC_HUEY_DB` (default: `data/huey.db`)
   - `SC_DATABASE_PATH` (default: `data/database.db`)
-  - `SC_TRACE_STORE_PATH` (default: `data/trace_store`)
+  - `SC_TRACE_STORE_ROOT` (default: `data/trace_store`)
+  - `SC_SIMULATION_HUEY_DB_PATH` (default: `data/simulation_huey.db`)
+  - `SC_CHARACTERIZATION_HUEY_DB_PATH` (default: `data/characterization_huey.db`)
   - `SC_SESSION_SECRET`
   - `SC_BOOTSTRAP_ADMIN_USERNAME`
   - `SC_BOOTSTRAP_ADMIN_PASSWORD`
+  - `SC_WORKER_STALE_TIMEOUT_SECONDS`
+  - `SC_CLI_USERNAME`
   - 寫成 `.env.example` 文件
   - auth bootstrap 規則：
     - 首次啟動可透過 env 建立 admin user
+    - 若唯一 admin 被停用，startup/ensure path 仍會恢復 bootstrap admin
     - 實際密碼不可寫死在 repo
     - `.env.example` 只放 placeholder
 
-- [ ] DA-WS10-03 補 regression matrix
+- [x] DA-WS10-03 補 regression matrix
   - **Unit tests**:
     - TaskRecord CRUD + status transitions
     - TaskRepository contract tests
@@ -1686,23 +1701,35 @@ Tasks:
     - logout → session invalidation
     - admin 可看 audit logs / user management
     - normal user 不可進 admin-only surface
+  - WS10 landed matrix:
+    - task dispatch → worker consume → DB writeback
+    - persisted batch + TraceStore write consistency
+    - post-processing rerun from saved batch
+    - characterization persisted run recovery
+    - login/logout + page protection
+    - admin/user authorization split
+    - startup / restart / recovery drills
 
-- [ ] DA-WS10-04 更新 architecture docs
+- [x] DA-WS10-04 更新 architecture docs
   - 僅在 code contract 穩定後更新，不要先寫假文件
   - 更新 `docs/explanation/architecture/trace-platform-implementation-plan.md`
-  - 更新 Guardrails 中的 folder structure / tech stack
+  - 更新 `docs/explanation/architecture/data-storage.md`
+  - 更新 `docs/reference/guardrails/execution-verification/build-commands.md`
   - 更新 deployment/auth note：phase 1 使用本地帳密、多使用者 session auth、共享 queue
 
-- [ ] DA-WS10-05 補 integrator smoke suite
+- [x] DA-WS10-05 補 integrator smoke suite
   - 至少：
     - `uv run ruff format . --check`
     - `uv run ruff check .`
     - `uv run basedpyright`
-    - targeted `uv run pytest tests/core/ tests/app/`
-    - `uv run sc-app &` 啟動不 crash（5 秒後 kill）
-    - `uv run huey_consumer worker.huey_app.huey &` 啟動不 crash（5 秒後 kill）
+    - targeted `uv run pytest tests/core tests/app tests/scripts`
+    - `uv run sc-app` startup smoke
+    - `uv run sc-worker-simulation --max-tasks 0`
+    - `uv run sc-worker-characterization --max-tasks 0`
+  - `scripts/run_integrator_smoke_suite.sh` 已改成 accepted dual-worker commands
+  - extended Playwright smoke 以 `SC_SMOKE_INCLUDE_EXTENDED=1` opt-in
 
-- [ ] DA-WS10-06 未受 cutover 影響的頁面驗證
+- [x] DA-WS10-06 未受 cutover 影響的頁面驗證
   - 以下頁面不在 WS6-WS8 的改動範圍內，但共享 persistence 層，需確認不被 break：
     - `raw_data.py` (32KB) — Data Browser
     - `dashboard.py` (16KB) — 參數儀表板
@@ -1711,7 +1738,7 @@ Tasks:
     - `schemdraw_live_preview.py` (15KB) — 電路圖預覽
   - Verification：啟動 app 後確認每個頁面可正常載入、讀取資料
 
-- [ ] DA-WS10-07 restart / recovery drill
+- [x] DA-WS10-07 restart / recovery drill
   - 至少演練：
     - app 存活、worker 重啟
     - worker 存活、app 重啟
@@ -1725,6 +1752,32 @@ Acceptance:
 - 新架構不只可以寫，還可以被團隊穩定啟動、驗證、接手。
 - 所有未改動的頁面功能不受影響。
 - restart/recovery semantics 經過實測，而不是只存在文字假設。
+
+Progress:
+- startup/config surface 已與 accepted dual-lane architecture 對齊：`sc-app`、`sc-worker-simulation`、`sc-worker-characterization`
+- app 與兩個 worker entrypoint 現在都會執行 safe startup reconcile，`SC_APP_HOST` / `SC_TRACE_STORE_ROOT` / lane-specific Huey env names 也已落地到 code 與 `.env.example`
+- `scripts/dev_start.sh` / `scripts/dev_stop.sh` 與 `scripts/run_integrator_smoke_suite.sh` 已可直接啟動與驗證 app + dual worker lanes
+- regression matrix 已補上 runtime startup/restart drills、未受影響頁面驗證、CLI-no-web-server path、以及 persisted task/result recovery 證據
+
+Verification:
+- `uv run pytest tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py tests/scripts/cli/test_sim_tasks.py`
+- `uv run ruff check src/core/shared/persistence/startup_reconcile.py src/app/main.py src/worker/simulation_huey.py src/worker/characterization_huey.py tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py tests/scripts/cli/test_sim_tasks.py`
+- `uv run basedpyright src/core/shared/persistence/startup_reconcile.py src/app/main.py src/worker/simulation_huey.py src/worker/characterization_huey.py tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py`
+- `uv run python -m py_compile src/core/shared/persistence/startup_reconcile.py src/app/main.py src/worker/simulation_huey.py src/worker/characterization_huey.py tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py`
+- `./scripts/run_integrator_smoke_suite.sh`
+- docs verification commands in `docs/reference/guardrails/execution-verification/build-commands.md`
+
+Evidence:
+- `src/core/shared/persistence/startup_reconcile.py`
+- `src/app/main.py`
+- `src/worker/simulation_huey.py`
+- `src/worker/characterization_huey.py`
+- `.env.example`
+- `scripts/dev_start.sh`
+- `scripts/dev_stop.sh`
+- `scripts/run_integrator_smoke_suite.sh`
+- `tests/app/pages/test_unaffected_page_routes.py`
+- `tests/scripts/test_runtime_smokes.py`
 
 ---
 
@@ -1892,14 +1945,14 @@ Acceptance:
 完成所有 WS1-WS10 後，以下問題必須全部回答 Yes：
 
 - [ ] `uv run sc-app` 啟動時不觸發 Julia 初始化？
-- [ ] `uv run sc-worker` 啟動後可以消費任務？
+- [ ] `uv run sc-worker-simulation` 與 `uv run sc-worker-characterization` 啟動後都可以消費各自 lane 的任務？
 - [ ] 在 simulation 頁面按 Run → task 被 dispatch 到 worker → 結果寫入 DB？
 - [ ] Worker 跑 Julia 時 crash (kill -9) → NiceGUI 仍存活？
 - [ ] 任務狀態可從 DB 查到且 UI 正確顯示 running/completed/failed？
 - [ ] F5 重新整理後 → 能從 DB 恢復到最新任務的結果？
 - [ ] 同一個 submit 連點兩次，不會建立語意未定義的 duplicate task？
 - [ ] 已保存的 raw batch 可在沒有 live session 的情況下重新 post-process？
-- [ ] CLI `uv run sc sim lc ...` 仍然能獨立執行（不需要 worker running）？
+- [ ] CLI `uv run sc sim ...` 可在不依賴本地 web server 的情況下穩定執行，且 `--wait` / `--detach` contract 符合預期？
 - [ ] app/worker 重啟後，stale/running/completed task 的呈現與 reconcile 行為可預期？
 - [ ] 多位使用者可正常 login/logout，且 session 保護 UI pages 與 `/api/v1/*`？
 - [ ] `admin` / `user` 角色行為符合預期，且 audit logs 可追查 actor？

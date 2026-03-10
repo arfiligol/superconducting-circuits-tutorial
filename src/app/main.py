@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ from app.api.dependencies import get_session_principal, session_user_key
 from app.api.router import api_v1_router
 from app.services.auth_service import ensure_bootstrap_admin, get_active_user
 from app.services.browser_tooling import shared_frontend_tooling_head_html
+from core.shared.persistence.startup_reconcile import run_startup_reconcile
 
 _STATIC_REGISTERED_ATTR = "_sc_static_registered"
 _PAGES_REGISTERED_ATTR = "_sc_pages_registered"
@@ -27,6 +29,8 @@ _SESSION_REGISTERED_ATTR = "_sc_session_registered"
 _PAGE_GUARD_REGISTERED_ATTR = "_sc_page_guard_registered"
 _BOOTSTRAP_ADMIN_ATTR = "_sc_bootstrap_admin_ensured"
 _RUN_CONFIG_REGISTERED_ATTR = "_sc_run_config_registered"
+
+logger = logging.getLogger(__name__)
 
 _PUBLIC_PAGE_PATHS = frozenset({"/login"})
 _PUBLIC_PATH_PREFIXES = (
@@ -39,6 +43,11 @@ _PUBLIC_PATH_PREFIXES = (
 def _session_secret() -> str:
     """Return the signed-cookie secret used for NiceGUI and WS5 sessions."""
     return os.getenv("SC_SESSION_SECRET", "SC_DATA_BROWSER_SECRET")
+
+
+def _app_host() -> str:
+    """Return the host binding for the NiceGUI server."""
+    return str(os.getenv("SC_APP_HOST", "127.0.0.1") or "127.0.0.1").strip() or "127.0.0.1"
 
 
 def _next_target(request: Request) -> str:
@@ -187,6 +196,13 @@ def start():
         os.execv(sys.executable, [sys.executable, "-m", "app.main"])
 
     configure_app()
+    reconcile_summary = run_startup_reconcile(source="app")
+    logger.info(
+        "app startup reconcile stale_tasks=%s failed_batches=%s orphan_batches=%s",
+        reconcile_summary.stale_task_ids,
+        reconcile_summary.failed_batch_ids,
+        reconcile_summary.orphan_batch_ids,
+    )
 
     # Inject CSS globally via a head_html string
     # This guarantees the styles are loaded before content renders
@@ -213,6 +229,7 @@ def start():
     #   (set SC_APP_RELOAD=1 for development hot reload)
     ui.run(
         title="SC Tutorial App",
+        host=_app_host(),
         port=int(os.getenv("SC_APP_PORT", "8080")),
         dark=True,
         show=False,  # Wait until everything loads cleanly, user can click or we can show later

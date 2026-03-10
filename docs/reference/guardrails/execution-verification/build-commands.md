@@ -48,6 +48,60 @@ uv run sc analysis fit lc-squid DatasetName
 uv run sc plot admittance DatasetName
 ```
 
+## App / Worker Startup
+
+WS10 之後的本地開發拓樸固定為三個進程：
+
+- `uv run sc-app`
+- `uv run sc-worker-simulation`
+- `uv run sc-worker-characterization`
+
+常用環境變數：
+
+- `SC_APP_HOST`（default `127.0.0.1`）
+- `SC_APP_PORT`（default `8080`）
+- `SC_DATABASE_PATH`
+- `SC_TRACE_STORE_ROOT`
+- `SC_SIMULATION_HUEY_DB_PATH`
+- `SC_CHARACTERIZATION_HUEY_DB_PATH`
+- `SC_SESSION_SECRET`
+- `SC_BOOTSTRAP_ADMIN_USERNAME`
+- `SC_BOOTSTRAP_ADMIN_PASSWORD`
+- `SC_WORKER_STALE_TIMEOUT_SECONDS`
+- `SC_CLI_USERNAME`
+
+可選的一鍵 helper：
+
+```bash
+./scripts/dev_start.sh
+./scripts/dev_stop.sh
+```
+
+!!! warning "Bootstrap admin"
+    `.env.example` 只提供 placeholder。第一次啟動時系統可能依照
+    `SC_BOOTSTRAP_ADMIN_USERNAME` / `SC_BOOTSTRAP_ADMIN_PASSWORD`
+    建立或恢復 bootstrap admin；實際操作環境必須覆寫預設值。
+
+## Integrator Smoke
+
+```bash
+# 必跑 smoke
+./scripts/run_integrator_smoke_suite.sh
+
+# 含 Playwright extended smoke
+SC_SMOKE_INCLUDE_EXTENDED=1 ./scripts/run_integrator_smoke_suite.sh
+```
+
+`run_integrator_smoke_suite.sh` 目前包含：
+
+- `uv run ruff format . --check`
+- `uv run ruff check .`
+- `uv run basedpyright`
+- `uv run pytest tests/core tests/app tests/scripts`
+- `uv run sc-worker-simulation --max-tasks 0`
+- `uv run sc-worker-characterization --max-tasks 0`
+- `uv run sc-app` startup probe（透過 `/login` readiness smoke）
+
 ## 文件
 
 ```bash
@@ -144,5 +198,13 @@ PY
     - `.md` compatibility route check (legacy `.md` URL auto-redirects to canonical route)
     - Broken nav scan (warning/diff): `rg -n "href=\"[^\"]+\\.md\"" docs/site`
 - **Scripts**: `uv run <script_name>` (e.g. `uv run sc-fit-squid`).
+- **App / Workers**:
+    - App: `uv run sc-app`
+    - Simulation worker: `uv run sc-worker-simulation`
+    - Characterization worker: `uv run sc-worker-characterization`
+    - Dev helpers: `./scripts/dev_start.sh`, `./scripts/dev_stop.sh`
+- **Integrator Smoke**:
+    - Required smoke: `./scripts/run_integrator_smoke_suite.sh`
+    - Extended smoke: `SC_SMOKE_INCLUDE_EXTENDED=1 ./scripts/run_integrator_smoke_suite.sh`
 - **Clean**: `uv cache clean`
 ```

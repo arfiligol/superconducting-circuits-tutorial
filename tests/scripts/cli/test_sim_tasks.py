@@ -33,6 +33,7 @@ def _configure_cli_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     database.get_engine.cache_clear()
     for module_name in (
+        "app.main",
         "scripts.cli.entry",
         "scripts.simulation.task_cli",
         "worker.dispatch",

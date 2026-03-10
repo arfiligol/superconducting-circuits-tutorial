@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: Design/Trace/TraceStore 心智模型與資料責任分層
-version: v1.0.0
-last_updated: 2026-03-08
+version: v1.1.0
+last_updated: 2026-03-10
 updated_by: codex
 ---
 
@@ -262,6 +262,28 @@ UI 不應再把 live session state 當成 run authority。
 - input authority = selected trace ids / input batch ids
 - output authority = `DerivedParameterRecord` + analysis artifacts
 
+### Runtime topology
+
+WS10 後的 local runtime contract 是：
+
+- app process: `uv run sc-app`
+- simulation lane: `uv run sc-worker-simulation`
+- characterization lane: `uv run sc-worker-characterization`
+
+這三者共享同一個 metadata DB 與 TraceStore authority，但 queue broker 仍分離：
+
+- app DB: `SC_DATABASE_PATH`
+- simulation broker DB: `SC_SIMULATION_HUEY_DB_PATH`
+- characterization broker DB: `SC_CHARACTERIZATION_HUEY_DB_PATH`
+- TraceStore root: `SC_TRACE_STORE_ROOT`
+
+因此：
+
+- UI / API / CLI 都寫入同一套 persisted task / batch / analysis-run contract
+- simulation 與 post-processing 在 simulation lane 執行
+- characterization 在獨立 lane 執行
+- app 與 worker restart 後仍可由 startup reconcile 恢復 stale task / batch truth
+
 ### Why this matters
 
 如果 `Simulation` / `Post-Processing` 仍依賴 live session：
@@ -277,17 +299,13 @@ Persisted orchestration 的目標是：
 - CLI 只是另一個 interaction surface
 - backend 一律依據 persisted records 執行
 
-### Current vs Target
+### Current Runtime State
 
-- `Current`
-  - trace numeric payload 已進 TraceStore
-  - result views 大致已是 slice-first
-  - 但 `/simulation` run / post-processing 仍保留部分 live-session orchestration
-- `Target`
-  - `Run Simulation` 直接建立 / 更新 persisted `TraceBatchRecord`
-  - `Run Post Processing` 直接選 persisted raw source batch
-  - cache hit 只縮短 run path，不得成為 post-processing / Characterization 的 authority 來源
-  - UI / CLI 都不再要求「先有目前頁面的 live result」
+- trace numeric payload 已進 TraceStore
+- `/simulation` 與 `/post-processing` 以 persisted `TaskRecord + TraceBatchRecord` 作為 authority
+- `/characterization` 以 persisted `TaskRecord + AnalysisRunRecord` 作為 authority
+- refresh / reconnect / CLI rerun 都以 persisted state 重新解析，不依賴 page-local `latest_*`
+- cache hit 只縮短 run path，不再成為 workflow authority
 
 ## Related
 
