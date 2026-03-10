@@ -3111,6 +3111,7 @@ def _render_post_processing_panel(
     *,
     raw_result: SimulationResult,
     ptc_result: SimulationResult | None = None,
+    design_id: int | None = None,
     initial_input_y_source: str = "raw_y",
     on_input_y_source_change: Callable[[str], None] | None = None,
     resolve_input_bundle: Callable[
@@ -3851,6 +3852,10 @@ def _render_post_processing_panel(
                 on_source_bundle_resolved(resolved_source_bundle_id)
             if resolved_source_bundle_id is None:
                 raise ValueError("Post-processing requires one persisted raw simulation batch.")
+            if design_id is None:
+                raise ValueError(
+                    "Select at least one active dataset before running post-processing."
+                )
             resolved_run_kind = "single_result"
             if isinstance(_coerce_parameter_sweep_payload(active_sweep_payload), Mapping):
                 resolved_run_kind = "parameter_sweep"
@@ -3862,7 +3867,7 @@ def _render_post_processing_panel(
                 f"mode={resolved_mode}."
             )
             submission = build_post_processing_submission(
-                design_id=int(schema_id or 0),
+                design_id=int(design_id or 0),
                 source_batch_id=int(resolved_source_bundle_id),
                 input_source=input_source,
                 mode_filter=str(mode_filter_select.value or "base"),
@@ -3878,6 +3883,7 @@ def _render_post_processing_panel(
                 context=build_ui_use_case_context(
                     metadata={
                         "flow": "post_processing",
+                        "design_id": int(design_id or 0),
                         "schema_id": int(schema_id or 0),
                         "source_batch_id": int(resolved_source_bundle_id),
                     }
@@ -6635,6 +6641,12 @@ def _render_simulation_environment():
         def _selected_design_ids() -> tuple[int, ...]:
             return _normalize_selected_design_ids(app.storage.user.get("selected_datasets", []))
 
+        def _active_persisted_design_id() -> int | None:
+            selected_design_ids = _selected_design_ids()
+            if not selected_design_ids:
+                return None
+            return int(selected_design_ids[0])
+
         def _persisted_post_processing_input_bundle() -> tuple[
             SimulationResult | None, dict[str, Any] | None, int | None
         ]:
@@ -6975,15 +6987,71 @@ def _render_simulation_environment():
             preferred_task_id: int | None = None,
             hydrate_views: bool = False,
         ) -> None:
-            tasks_response = await get_design_tasks(active_record_id, client=owner_client)
-            latest_result = await get_latest_simulation_result(
-                active_record_id,
-                client=owner_client,
-            )
-            latest_post_processing_result = await get_latest_post_processing_result(
-                active_record_id,
-                client=owner_client,
-            )
+            persisted_design_id = _active_persisted_design_id()
+            if persisted_design_id is None:
+                if poll_timer is not None:
+                    poll_timer.active = False
+                if post_processing_poll_timer is not None:
+                    post_processing_poll_timer.active = False
+                return
+            try:
+                tasks_response = await get_design_tasks(
+                    persisted_design_id,
+                    client=owner_client,
+                )
+                latest_result = await get_latest_simulation_result(
+                    persisted_design_id,
+                    client=owner_client,
+                )
+                latest_post_processing_result = await get_latest_post_processing_result(
+                    persisted_design_id,
+                    client=owner_client,
+                )
+            except ApiClientError as exc:
+                if exc.status_code != 404:
+                    raise
+                runtime_state.current_task_id = None
+                runtime_state.current_task_status = None
+                runtime_state.current_trace_batch_id = None
+                runtime_state.current_task_error = None
+                runtime_state.current_post_processing_task_id = None
+                runtime_state.current_post_processing_task_status = None
+                runtime_state.current_post_processing_trace_batch_id = None
+                runtime_state.current_post_processing_task_error = None
+                if poll_timer is not None:
+                    poll_timer.active = False
+                if post_processing_poll_timer is not None:
+                    post_processing_poll_timer.active = False
+                simulation_results_container.clear()
+                with simulation_results_container:
+                    ui.icon("info", size="lg").classes("text-primary mb-2")
+                    ui.label(
+                        "Select a valid active dataset to load persisted simulation tasks."
+                    ).classes("text-sm text-muted")
+                if simulation_sweep_results_container is not None:
+                    simulation_sweep_results_container.clear()
+                    with simulation_sweep_results_container:
+                        ui.label(
+                            "Sweep Result View is unavailable until an active dataset is selected."
+                        ).classes("text-sm text-muted")
+                post_processing_container.clear()
+                with post_processing_container:
+                    ui.label(
+                        "Post Processing is unavailable until an active dataset is selected."
+                    ).classes("text-sm text-muted")
+                post_processing_results_container.clear()
+                with post_processing_results_container:
+                    ui.label(
+                        "Post-processing results are unavailable until an active dataset is selected."
+                    ).classes("text-sm text-muted")
+                if post_processing_sweep_results_container is not None:
+                    post_processing_sweep_results_container.clear()
+                    with post_processing_sweep_results_container:
+                        ui.label(
+                            "Post-processed sweep explorer is unavailable until an active dataset "
+                            "is selected."
+                        ).classes("text-sm text-muted")
+                return
             recovery_state = build_recovery_state(
                 tasks_response=tasks_response,
                 latest_result=latest_result,
@@ -6998,12 +7066,12 @@ def _render_simulation_environment():
                 fetched_task = await get_task(preferred_task_id, client=owner_client)
                 if (
                     fetched_task.task_kind == "simulation"
-                    and fetched_task.design_id == active_record_id
+                    and fetched_task.design_id == persisted_design_id
                 ):
                     task = fetched_task
                 elif (
                     fetched_task.task_kind == "post_processing"
-                    and fetched_task.design_id == active_record_id
+                    and fetched_task.design_id == persisted_design_id
                 ):
                     post_processing_task = fetched_task
             if task is not None:
@@ -7219,12 +7287,12 @@ def _render_simulation_environment():
                 resolved_post_process_source_bundle_id_ref["value"] = bundle_id
 
             with post_processing_container:
-                _render_post_processing_panel(
-                    raw_result=raw_result,
-                    ptc_result=ptc_result,
-                    initial_input_y_source=str(
-                        post_processing_input_state.get("input_y_source", "raw_y")
-                    ),
+                    _render_post_processing_panel(
+                        raw_result=raw_result,
+                        ptc_result=ptc_result,
+                        initial_input_y_source=str(
+                            post_processing_input_state.get("input_y_source", "raw_y")
+                        ),
                     on_input_y_source_change=(
                         lambda source: post_processing_input_state.__setitem__(
                             "input_y_source",
@@ -7232,10 +7300,11 @@ def _render_simulation_environment():
                         )
                     ),
                     resolve_input_bundle=_resolve_post_processing_input_bundle,
-                    circuit_definition=latest_circuit_definition_ref["definition"],
-                    schema_id=active_record_id,
-                    schema_name=active_record.name,
-                    append_status=append_status,
+                        circuit_definition=latest_circuit_definition_ref["definition"],
+                        design_id=_active_persisted_design_id(),
+                        schema_id=active_record_id,
+                        schema_name=active_record.name,
+                        append_status=append_status,
                     on_processing_start=_render_post_processing_results_pending,
                     on_result=handle_post_processing_result,
                     on_source_bundle_resolved=_record_post_processing_source_bundle,
@@ -9483,10 +9552,15 @@ def _render_simulation_environment():
                                     "Post-processed sweep explorer is waiting for persisted output."
                                 ).classes("text-sm text-muted")
 
+                        persisted_design_id = _active_persisted_design_id()
+                        if persisted_design_id is None:
+                            raise ValueError(
+                                "Select at least one active dataset before running simulation."
+                            )
                         if latest_record.id is None:
                             raise ValueError("Latest schema id is unavailable.")
                         submission = build_simulation_submission(
-                            design_id=latest_record.id,
+                            design_id=persisted_design_id,
                             design_name=str(latest_record.name),
                             circuit=latest_circuit_def,
                             freq_range=freq_range,

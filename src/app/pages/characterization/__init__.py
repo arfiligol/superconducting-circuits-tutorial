@@ -1342,11 +1342,27 @@ def characterization_page():
             active_id = _active_design_id()
             if active_id is None:
                 return
-            tasks_response = await get_design_tasks(active_id, client=owner_client)
-            latest_result = await get_latest_characterization_result(
-                active_id,
-                client=owner_client,
-            )
+            try:
+                tasks_response = await get_design_tasks(active_id, client=owner_client)
+                latest_result = await get_latest_characterization_result(
+                    active_id,
+                    client=owner_client,
+                )
+            except ApiClientError as exc:
+                if exc.status_code != 404:
+                    raise
+                runtime_state.current_task_id = None
+                runtime_state.current_task_status = None
+                runtime_state.current_analysis_run_id = None
+                runtime_state.current_task_error = None
+                if poll_timer is not None:
+                    poll_timer.active = False
+                append_analysis_status(
+                    "warning",
+                    "Active dataset is unavailable; characterization persistence view is paused.",
+                )
+                render_dataset_view.refresh()
+                return
             recovery_state = build_recovery_state(
                 tasks_response=tasks_response,
                 latest_result=latest_result,
