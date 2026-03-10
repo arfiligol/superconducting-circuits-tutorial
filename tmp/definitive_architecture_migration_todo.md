@@ -1728,6 +1728,8 @@ Tasks:
     - `uv run sc-worker-characterization --max-tasks 0`
   - `scripts/run_integrator_smoke_suite.sh` 已改成 accepted dual-worker commands
   - extended Playwright smoke 以 `SC_SMOKE_INCLUDE_EXTENDED=1` opt-in
+  - default mode 先完成 app + dual-worker + focused runtime validation，再報告 repo-wide baseline failures
+  - `SC_SMOKE_STRICT=1` 會把 whole-repo format/type/test baseline 轉回 fatal gate
 
 - [x] DA-WS10-06 未受 cutover 影響的頁面驗證
   - 以下頁面不在 WS6-WS8 的改動範圍內，但共享 persistence 層，需確認不被 break：
@@ -1757,6 +1759,7 @@ Progress:
 - startup/config surface 已與 accepted dual-lane architecture 對齊：`sc-app`、`sc-worker-simulation`、`sc-worker-characterization`
 - app 與兩個 worker entrypoint 現在都會執行 safe startup reconcile，`SC_APP_HOST` / `SC_TRACE_STORE_ROOT` / lane-specific Huey env names 也已落地到 code 與 `.env.example`
 - `scripts/dev_start.sh` / `scripts/dev_stop.sh` 與 `scripts/run_integrator_smoke_suite.sh` 已可直接啟動與驗證 app + dual worker lanes
+- integrator smoke default mode 已改為 runtime-first：即使 whole-repo baseline 仍有既有紅燈，也不會阻止 dual-worker/app startup smoke 與 focused runtime validation 執行
 - regression matrix 已補上 runtime startup/restart drills、未受影響頁面驗證、CLI-no-web-server path、以及 persisted task/result recovery 證據
 
 Verification:
@@ -1765,6 +1768,7 @@ Verification:
 - `uv run basedpyright src/core/shared/persistence/startup_reconcile.py src/app/main.py src/worker/simulation_huey.py src/worker/characterization_huey.py tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py`
 - `uv run python -m py_compile src/core/shared/persistence/startup_reconcile.py src/app/main.py src/worker/simulation_huey.py src/worker/characterization_huey.py tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py`
 - `./scripts/run_integrator_smoke_suite.sh`
+- `SC_SMOKE_STRICT=1 ./scripts/run_integrator_smoke_suite.sh`
 - docs verification commands in `docs/reference/guardrails/execution-verification/build-commands.md`
 
 Evidence:

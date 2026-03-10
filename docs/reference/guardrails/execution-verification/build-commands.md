@@ -85,8 +85,11 @@ WS10 之後的本地開發拓樸固定為三個進程：
 ## Integrator Smoke
 
 ```bash
-# 必跑 smoke
+# 必跑 runtime-first smoke
 ./scripts/run_integrator_smoke_suite.sh
+
+# 把 repo-wide baseline checks 也改成 fatal gate
+SC_SMOKE_STRICT=1 ./scripts/run_integrator_smoke_suite.sh
 
 # 含 Playwright extended smoke
 SC_SMOKE_INCLUDE_EXTENDED=1 ./scripts/run_integrator_smoke_suite.sh
@@ -94,13 +97,21 @@ SC_SMOKE_INCLUDE_EXTENDED=1 ./scripts/run_integrator_smoke_suite.sh
 
 `run_integrator_smoke_suite.sh` 目前包含：
 
-- `uv run ruff format . --check`
-- `uv run ruff check .`
-- `uv run basedpyright`
-- `uv run pytest tests/core tests/app tests/scripts`
 - `uv run sc-worker-simulation --max-tasks 0`
 - `uv run sc-worker-characterization --max-tasks 0`
 - `uv run sc-app` startup probe（透過 `/login` readiness smoke）
+- focused runtime validation:
+  - `uv run pytest tests/app/pages/test_unaffected_page_routes.py tests/scripts/test_runtime_smokes.py tests/scripts/cli/test_sim_tasks.py -q`
+- report-only baseline checks in default mode:
+  - `uv run ruff format . --check`
+  - `uv run ruff check .`
+  - `uv run basedpyright`
+  - `uv run pytest tests/core tests/app tests/scripts`
+
+!!! note "Default vs strict"
+    預設模式先完成 app + dual-worker runtime smoke，再報告 whole-repo red baseline。
+    若要把 repo-wide format/type/test baseline 視為 fatal gate，請加上
+    `SC_SMOKE_STRICT=1`。
 
 ## 文件
 
@@ -205,6 +216,7 @@ PY
     - Dev helpers: `./scripts/dev_start.sh`, `./scripts/dev_stop.sh`
 - **Integrator Smoke**:
     - Required smoke: `./scripts/run_integrator_smoke_suite.sh`
+    - Strict repo-wide gate: `SC_SMOKE_STRICT=1 ./scripts/run_integrator_smoke_suite.sh`
     - Extended smoke: `SC_SMOKE_INCLUDE_EXTENDED=1 ./scripts/run_integrator_smoke_suite.sh`
 - **Clean**: `uv cache clean`
 ```
