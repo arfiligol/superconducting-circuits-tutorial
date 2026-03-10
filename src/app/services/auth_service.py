@@ -182,6 +182,18 @@ def get_active_user(user_id: int) -> UserRecord | None:
         return _detach_user(user)
 
 
+def get_active_user_by_username(username: str) -> UserRecord | None:
+    """Load one active local user by username."""
+    normalized_username = str(username).strip()
+    if not normalized_username:
+        return None
+    with get_unit_of_work() as uow:
+        user = uow.users.get_by_username(normalized_username)
+        if user is None or not user.is_active:
+            return None
+        return _detach_user(user)
+
+
 def build_session_principal(user: UserRecord) -> SessionPrincipal:
     """Project one persisted user into the session principal contract."""
     if user.id is None:

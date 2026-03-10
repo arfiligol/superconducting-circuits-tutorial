@@ -52,6 +52,7 @@ src/app/services/schemdraw_live_preview.py
 src/app/services/simulation_batch_persistence.py
 src/app/services/simulation_runner.py
 src/app/services/simulation_setup_manager.py
+src/app/services/simulation_submission.py
 src/app/services/simulation_task_contract.py
 src/app/services/task_progress.py
 src/app/services/task_submission.py
@@ -168,6 +169,7 @@ src/scripts/sandbox/resonance_sweep_table_preview.py
 src/scripts/sandbox/sandbox_plot.py
 src/scripts/simulation/__init__.py
 src/scripts/simulation/run_lc.py
+src/scripts/simulation/task_cli.py
 src/superconducting_circuits_tutorial.egg-info/PKG-INFO
 src/superconducting_circuits_tutorial.egg-info/SOURCES.txt
 src/superconducting_circuits_tutorial.egg-info/dependency_links.txt

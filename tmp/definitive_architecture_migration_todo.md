@@ -3,7 +3,7 @@
 Status: `active`
 Owner: `Migration Agent (Codex)`
 Priority: `P0`
-Last Updated: `2026-03-09` (strengthened pass: `2026-03-09T13:26`, second pass: `2026-03-09T13:40`, decision freeze: `2026-03-09T13:52`, extended freeze: `2026-03-09T14:08`, api inventory freeze: `2026-03-09T14:24`, worker topology freeze: `2026-03-09T14:31`, ws2 execution ownership: `2026-03-09T15:04`, ws2 persistence batch 1 complete: `2026-03-09T15:28`, ws2 bootstrap-reconcile foundations: `2026-03-09T15:41`, ws2 dual-write lifecycle wired: `2026-03-09T15:55`, ws2 checkpoint commit prep: `2026-03-09T16:20`, ws3 execution ownership: `2026-03-09T18:05`, ws3 worker lanes verified: `2026-03-09T19:02`, ws3 import-boundary fixup: `2026-03-09T19:27`)
+Last Updated: `2026-03-10` (strengthened pass: `2026-03-09T13:26`, second pass: `2026-03-09T13:40`, decision freeze: `2026-03-09T13:52`, extended freeze: `2026-03-09T14:08`, api inventory freeze: `2026-03-09T14:24`, worker topology freeze: `2026-03-09T14:31`, ws2 execution ownership: `2026-03-09T15:04`, ws2 persistence batch 1 complete: `2026-03-09T15:28`, ws2 bootstrap-reconcile foundations: `2026-03-09T15:41`, ws2 dual-write lifecycle wired: `2026-03-09T15:55`, ws2 checkpoint commit prep: `2026-03-09T16:20`, ws3 execution ownership: `2026-03-09T18:05`, ws3 worker lanes verified: `2026-03-09T19:02`, ws3 import-boundary fixup: `2026-03-09T19:27`, ws9 execution ownership: `2026-03-10T12:41`, ws9 cli alignment complete: `2026-03-10T12:41`)
 Primary SoT:
 - `/Users/arfiligol/Downloads/Definitive Architecture`
 - `/Users/arfiligol/Github/superconducting-circuits-tutorial/docs/explanation/architecture/trace-platform-implementation-plan.md`
@@ -57,6 +57,23 @@ Current execution ownership:
     - `src/worker/**`
     - `src/core/shared/persistence/**`
     - `tests/worker/**`
+    - `tmp/definitive_architecture_migration_todo.md`
+- `2026-03-10T12:41` `Migration Agent`
+  - Branch / Worktree: `codex/da-migration-ws9` / `/Users/arfiligol/Github/superconducting-circuits-tutorial-da-ws9`
+  - Active batch:
+    - `DA-WS9-01`
+    - `DA-WS9-02`
+    - `DA-WS9-03`
+    - `DA-WS9-04`
+    - `DA-WS9-05`
+  - Scope:
+    - `src/scripts/cli/**`
+    - `src/scripts/simulation/**`
+    - `src/app/services/auth_service.py`
+    - `src/app/services/task_submission.py`
+    - `src/app/services/simulation_submission.py`
+    - `src/app/pages/simulation/submit_actions.py`
+    - `tests/scripts/cli/**`
     - `tmp/definitive_architecture_migration_todo.md`
 
 ---
@@ -1523,22 +1540,37 @@ Evidence:
 
 ### WS9. CLI Alignment
 
-Status: `not started`
+Status: `completed`
+Execution Owner: `Migration Agent (Codex)`
 Depends on:
 - `DA-WS4-04`
 - `DA-WS5-02`
 
 Tasks:
 
-- [ ] DA-WS9-01 決定 CLI 是直接呼叫 shared use cases 還是打本地 API
-  - 建議：
-    - CLI 直接呼叫 shared use cases
+- [x] DA-WS9-01 決定 CLI 是直接呼叫 shared use cases 還是打本地 API
+  - WS9 outcome:
+    - CLI 直接呼叫 shared task submission / lookup services
     - 不強迫依賴已啟動的 web server
-- [ ] DA-WS9-02 simulation CLI 支援建立 task / wait for completion
-- [ ] DA-WS9-03 post-processing CLI 支援從 persisted source batch rerun
-- [ ] DA-WS9-04 CLI output 對齊 task/run identifiers
+    - `sc sim ...` 與 UI / API 共用 persisted orchestration 邊界
+- [x] DA-WS9-02 simulation CLI 支援建立 task / wait for completion
+  - `sc sim run` 會建立真正的 persisted simulation `TaskRecord`
+  - default `--wait` 會輪詢 persisted task state 直到 terminal status
+  - opt-in `--detach` 只建立 task 並立刻回傳 stable summary
+  - output 會包含 `task_id` 與 `trace_batch_id`
+- [x] DA-WS9-03 post-processing CLI 支援從 persisted source batch rerun
+  - `sc sim post-process --source-batch-id <id>` 直接用 persisted raw batch rerun
+  - 不需要 live UI/runtime objects
+  - output 會包含 `task_id`、`trace_batch_id` 與 `source_batch_id`
+- [x] DA-WS9-04 CLI output 對齊 task/run identifiers
+  - stdout contract:
+    - one-line machine-readable JSON summary
+    - fields include `task_id`, `trace_batch_id`, `source_batch_id`, `status`, `dispatched_lane`, `worker_task_name`, `dedupe_hit`, `waited`, `actor_username`
+  - stderr contract:
+    - progress / status / warning lines only
+    - 適合 shell pipeline 將 stdout 當成 machine-readable summary
 
-- [ ] DA-WS9-05 CLI exit code / output contract
+- [x] DA-WS9-05 CLI exit code / output contract
   - 必答：
     - `--wait` 成功時 exit 0；failed/stale 時 exit non-zero
     - `--detach` 成功建立 task 時 exit 0 並輸出 task id
@@ -1548,10 +1580,47 @@ Tasks:
     - `--detach` 作為 opt-in
     - `--wait` 模式下要顯示 logs / progress，而不是靜默等待
   - 若不定義，後面 shell script / CI 整合會不穩定
+  - WS9 contract:
+    - `sc sim run` / `sc sim post-process` default to `--wait`
+    - `--wait`:
+      - `completed` => exit `0`
+      - `failed` / `stale` => exit `1`
+      - timeout => exit `2`
+      - progress/log/status lines emit on stderr while polling persisted task state
+    - `--detach`:
+      - successful persisted task creation => exit `0`
+      - final stdout summary includes stable identifiers without requiring a worker to finish
+    - actor resolution:
+      - require `--username` or `SC_CLI_USERNAME`
+      - no anonymous/system fallback actor
+      - resolved actor flows through the same shared task submission boundary as UI/API
 
 Acceptance:
 - CLI 與 UI 是同一架構的兩個入口，不是兩套平行實作。
 - CLI 可被 shell script / automation 穩定調用。
+
+Progress:
+- `sc sim run` now submits canonical persisted simulation tasks directly through shared task submission services, not localhost HTTP, and waits by polling persisted `TaskRecord` state
+- `sc sim post-process` now reruns from persisted raw `source_batch_id` and reuses the same post-processing worker/task architecture as the UI
+- CLI actor context now resolves from `--username` / `SC_CLI_USERNAME`, reuses local auth records, and propagates through `UseCaseContext` into persisted task creation
+- stdout/stderr contract is now explicit and automation-safe: stderr carries progress lines, stdout carries one-line JSON summaries with stable identifiers and exit codes aligned to terminal task outcomes
+
+Verification:
+- `uv run pytest tests/scripts/cli/test_sim_tasks.py`
+- `uv run pytest tests/app/api/test_api_v1.py tests/worker/test_huey_workers.py`
+- `uv run ruff check src/scripts/cli/entry.py src/scripts/simulation/task_cli.py src/app/services/auth_service.py src/app/services/task_submission.py src/app/services/simulation_submission.py src/app/pages/simulation/submit_actions.py tests/scripts/cli/test_sim_tasks.py`
+- `uv run basedpyright src/scripts/cli/entry.py src/scripts/simulation/task_cli.py src/app/services/auth_service.py src/app/services/task_submission.py src/app/services/simulation_submission.py src/app/pages/simulation/submit_actions.py`
+- `uv run python -m py_compile src/scripts/cli/entry.py src/scripts/simulation/task_cli.py src/app/services/auth_service.py src/app/services/task_submission.py src/app/services/simulation_submission.py src/app/pages/simulation/submit_actions.py`
+- `uv run python - <<'PY' ... set temp DB/env -> create design/circuit -> run 'uv run sc sim run' with worker consume -> run 'uv run sc sim post-process' from persisted source batch -> run 'uv run sc sim run --detach' ... PY`
+
+Evidence:
+- `src/scripts/cli/entry.py`
+- `src/scripts/simulation/task_cli.py`
+- `src/app/services/auth_service.py`
+- `src/app/services/task_submission.py`
+- `src/app/services/simulation_submission.py`
+- `src/app/pages/simulation/submit_actions.py`
+- `tests/scripts/cli/test_sim_tasks.py`
 
 ---
 

@@ -18,7 +18,7 @@ from scripts.preprocessing import (
     convert_hfss_admittance,
     convert_hfss_scattering,
 )
-from scripts.simulation import run_lc
+from scripts.simulation import run_lc, task_cli
 
 # Main App
 app = typer.Typer(
@@ -97,6 +97,14 @@ app.add_typer(sim_app, name="sim")  # Alias 'simulation' if needed, but 'sim' is
 
 # sc sim lc ...
 sim_app.command(name="lc", help="Simulate LC Circuit (Eigenmode).")(run_lc.main)
+sim_app.command(
+    name="run",
+    help="Create a persisted simulation task and optionally wait for completion.",
+)(task_cli.run)
+sim_app.command(
+    name="post-process",
+    help="Rerun post-processing from a persisted raw simulation batch.",
+)(task_cli.post_process)
 
 
 # ==========================================

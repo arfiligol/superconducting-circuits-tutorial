@@ -86,11 +86,12 @@ def create_api_task(
     request_payload: dict[str, Any],
     actor: ActorContext,
     force_rerun: bool,
+    source: str = "api",
 ) -> SubmittedTask:
     """Create one persisted task record and enqueue it on the frozen worker lane."""
     context = UseCaseContext(
         actor=actor,
-        source="api",
+        source=source,
         force_rerun=bool(force_rerun),
         metadata={"task_kind": task_kind, "design_id": int(design_id)},
     )
