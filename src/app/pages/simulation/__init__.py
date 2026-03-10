@@ -3884,7 +3884,10 @@ def _render_post_processing_panel(
                 ),
                 force_rerun=False,
             )
-            dispatch = await submit_post_processing_task(submission.api_request)
+            dispatch = await submit_post_processing_task(
+                submission.api_request,
+                client=owner_client,
+            )
             if on_task_submitted is not None:
                 on_task_submitted(dispatch)
             emit_result(None)
@@ -6385,6 +6388,7 @@ def simulation_page():
 
 def _render_simulation_environment():
     """Render the Simulation Execution environment."""
+    owner_client = ui.context.client
 
     @ui.refreshable
     def sim_env():
@@ -6883,10 +6887,14 @@ def _render_simulation_environment():
                 )
 
         async def _refresh_simulation_authority(*, preferred_task_id: int | None = None) -> None:
-            tasks_response = await get_design_tasks(active_record_id)
-            latest_result = await get_latest_simulation_result(active_record_id)
+            tasks_response = await get_design_tasks(active_record_id, client=owner_client)
+            latest_result = await get_latest_simulation_result(
+                active_record_id,
+                client=owner_client,
+            )
             latest_post_processing_result = await get_latest_post_processing_result(
-                active_record_id
+                active_record_id,
+                client=owner_client,
             )
             recovery_state = build_recovery_state(
                 tasks_response=tasks_response,
@@ -6899,7 +6907,7 @@ def _render_simulation_environment():
             task = recovery_state.task
             post_processing_task = post_processing_recovery_state.task
             if preferred_task_id is not None:
-                fetched_task = await get_task(preferred_task_id)
+                fetched_task = await get_task(preferred_task_id, client=owner_client)
                 if (
                     fetched_task.task_kind == "simulation"
                     and fetched_task.design_id == active_record_id
@@ -6958,7 +6966,7 @@ def _render_simulation_environment():
             if runtime_state.current_task_id is None:
                 return
             try:
-                task = await get_task(int(runtime_state.current_task_id))
+                task = await get_task(int(runtime_state.current_task_id), client=owner_client)
             except ApiClientError as exc:
                 append_status("warning", f"Task polling failed: {exc.detail}")
                 return
@@ -6977,7 +6985,10 @@ def _render_simulation_environment():
             if runtime_state.current_post_processing_task_id is None:
                 return
             try:
-                task = await get_task(int(runtime_state.current_post_processing_task_id))
+                task = await get_task(
+                    int(runtime_state.current_post_processing_task_id),
+                    client=owner_client,
+                )
             except ApiClientError as exc:
                 append_status("warning", f"Post-processing task polling failed: {exc.detail}")
                 return
@@ -9408,7 +9419,10 @@ def _render_simulation_environment():
                             ),
                             force_rerun=False,
                         )
-                        dispatch = await submit_simulation_task(submission.api_request)
+                        dispatch = await submit_simulation_task(
+                            submission.api_request,
+                            client=owner_client,
+                        )
                         runtime_state.current_task_id = int(dispatch.task.id)
                         runtime_state.current_task_status = str(dispatch.task.status)
                         runtime_state.current_trace_batch_id = dispatch.task.trace_batch_id

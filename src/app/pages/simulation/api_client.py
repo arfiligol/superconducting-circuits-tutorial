@@ -31,15 +31,18 @@ async def _fetch_json(
     path: str,
     *,
     body: dict[str, Any] | None = None,
+    client: Any | None = None,
 ) -> Any:
-    request_body = "undefined" if body is None else json.dumps(body, separators=(",", ":"))
-    result = await ui.run_javascript(
+    request_body = None if body is None else json.dumps(body, separators=(",", ":"))
+    javascript_runner = client.run_javascript if client is not None else ui.run_javascript
+    result = await javascript_runner(
         f"""
+        const requestBody = {json.dumps(request_body)};
         const response = await fetch({json.dumps(path)}, {{
           method: {json.dumps(method)},
           headers: {{ 'Content-Type': 'application/json' }},
           credentials: 'same-origin',
-          body: {request_body},
+          body: requestBody ?? undefined,
         }});
         let body = null;
         try {{
@@ -66,46 +69,63 @@ async def _fetch_json(
     return response_body
 
 
-async def submit_simulation_task(payload: SimulationTaskCreateRequest) -> TaskDispatchResponse:
+async def submit_simulation_task(
+    payload: SimulationTaskCreateRequest,
+    *,
+    client: Any | None = None,
+) -> TaskDispatchResponse:
     """Submit one real simulation task through the public v1 API."""
     response_body = await _fetch_json(
         "POST",
         "/api/v1/tasks/simulation",
         body=payload.model_dump(mode="json"),
+        client=client,
     )
     return TaskDispatchResponse.model_validate(response_body)
 
 
 async def submit_post_processing_task(
     payload: PostProcessingTaskCreateRequest,
+    *,
+    client: Any | None = None,
 ) -> TaskDispatchResponse:
     """Submit one real post-processing task through the public v1 API."""
     response_body = await _fetch_json(
         "POST",
         "/api/v1/tasks/post-processing",
         body=payload.model_dump(mode="json"),
+        client=client,
     )
     return TaskDispatchResponse.model_validate(response_body)
 
 
-async def get_task(task_id: int) -> TaskResponse:
+async def get_task(task_id: int, *, client: Any | None = None) -> TaskResponse:
     """Fetch one persisted task through the public v1 API."""
-    response_body = await _fetch_json("GET", f"/api/v1/tasks/{int(task_id)}")
+    response_body = await _fetch_json("GET", f"/api/v1/tasks/{int(task_id)}", client=client)
     return TaskResponse.model_validate(response_body)
 
 
-async def get_design_tasks(design_id: int) -> DesignTasksResponse:
+async def get_design_tasks(design_id: int, *, client: Any | None = None) -> DesignTasksResponse:
     """Fetch persisted design tasks through the public v1 API."""
-    response_body = await _fetch_json("GET", f"/api/v1/designs/{int(design_id)}/tasks")
+    response_body = await _fetch_json(
+        "GET",
+        f"/api/v1/designs/{int(design_id)}/tasks",
+        client=client,
+    )
     return DesignTasksResponse.model_validate(response_body)
 
 
-async def get_latest_simulation_result(design_id: int) -> LatestTraceBatchResponse | None:
+async def get_latest_simulation_result(
+    design_id: int,
+    *,
+    client: Any | None = None,
+) -> LatestTraceBatchResponse | None:
     """Fetch the latest completed raw simulation batch for one design."""
     try:
         response_body = await _fetch_json(
             "GET",
             f"/api/v1/designs/{int(design_id)}/simulation/latest",
+            client=client,
         )
     except ApiClientError as exc:
         if exc.status_code == 404:
@@ -114,12 +134,17 @@ async def get_latest_simulation_result(design_id: int) -> LatestTraceBatchRespon
     return LatestTraceBatchResponse.model_validate(response_body)
 
 
-async def get_latest_post_processing_result(design_id: int) -> LatestTraceBatchResponse | None:
+async def get_latest_post_processing_result(
+    design_id: int,
+    *,
+    client: Any | None = None,
+) -> LatestTraceBatchResponse | None:
     """Fetch the latest completed post-processing batch for one design."""
     try:
         response_body = await _fetch_json(
             "GET",
             f"/api/v1/designs/{int(design_id)}/post-processing/latest",
+            client=client,
         )
     except ApiClientError as exc:
         if exc.status_code == 404:

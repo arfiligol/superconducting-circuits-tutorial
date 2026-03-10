@@ -1215,6 +1215,7 @@ def _render_result_artifact(
 def characterization_page():
     def content():
         ui.label("Characterization").classes("text-2xl font-bold text-fg mb-6")
+        owner_client = ui.context.client
 
         selected_dataset_ids = app.storage.user.get("selected_datasets", [])
         runtime_state = CharacterizationRuntimeState.create()
@@ -1341,15 +1342,18 @@ def characterization_page():
             active_id = _active_design_id()
             if active_id is None:
                 return
-            tasks_response = await get_design_tasks(active_id)
-            latest_result = await get_latest_characterization_result(active_id)
+            tasks_response = await get_design_tasks(active_id, client=owner_client)
+            latest_result = await get_latest_characterization_result(
+                active_id,
+                client=owner_client,
+            )
             recovery_state = build_recovery_state(
                 tasks_response=tasks_response,
                 latest_result=latest_result,
             )
             task = recovery_state.task
             if preferred_task_id is not None:
-                fetched_task = await get_task(preferred_task_id)
+                fetched_task = await get_task(preferred_task_id, client=owner_client)
                 if fetched_task.task_kind == "characterization":
                     task = fetched_task
             if task is not None:
@@ -1378,7 +1382,7 @@ def characterization_page():
                     poll_timer.active = False
                 return
             try:
-                task = await get_task(int(runtime_state.current_task_id))
+                task = await get_task(int(runtime_state.current_task_id), client=owner_client)
                 _apply_polled_characterization_task_status(task)
                 progress_payload = dict(task.progress_payload)
                 warning = str(progress_payload.get("warning", "")).strip()
@@ -2118,7 +2122,8 @@ def characterization_page():
                                                 force_rerun=False,
                                             )
                                             dispatch = await submit_characterization_task(
-                                                submission.api_request
+                                                submission.api_request,
+                                                client=owner_client,
                                             )
                                             _handle_characterization_dispatch(dispatch)
                                         except NotImplementedError:
