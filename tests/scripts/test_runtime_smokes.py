@@ -389,9 +389,7 @@ def test_worker_survives_while_app_restarts_and_state_recovers(
         task_response = restarted_client.get(f"/api/v1/tasks/{task_id}")
         assert task_response.status_code == 200
         assert task_response.json()["status"] == "completed"
-        latest_response = restarted_client.get(
-            f"/api/v1/designs/{design_id}/simulation/latest"
-        )
+        latest_response = restarted_client.get(f"/api/v1/designs/{design_id}/simulation/latest")
         assert latest_response.status_code == 200
         assert int(latest_response.json()["task_id"]) == task_id
 

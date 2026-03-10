@@ -819,7 +819,9 @@ def load_raw_simulation_bundle(
         return (result, None)
 
     representative_point_index = int(
-        payload.get("trace_batch_record", {}).get("summary_payload", {}).get(
+        payload.get("trace_batch_record", {})
+        .get("summary_payload", {})
+        .get(
             "representative_point_index",
             0,
         )
@@ -1369,8 +1371,7 @@ def _read_zarr_array(path: Path) -> np.ndarray:
     result = np.empty(shape, dtype=dtype)
 
     chunk_ranges = [
-        range(math.ceil(size / chunk))
-        for size, chunk in zip(shape, chunks, strict=False)
+        range(math.ceil(size / chunk)) for size, chunk in zip(shape, chunks, strict=False)
     ]
     for chunk_index in product(*chunk_ranges):
         slices = tuple(

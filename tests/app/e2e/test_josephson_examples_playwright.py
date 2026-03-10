@@ -719,9 +719,7 @@ def _save_raw_simulation_results(page: Page, *, dataset_name: str) -> None:
     )
     raw_results_card.get_by_role("button", name="Save Raw Simulation Results").click()
     dialog = page.locator('[role="dialog"]').last
-    expect(dialog.get_by_text("Save Simulation Results", exact=True)).to_be_visible(
-        timeout=30000
-    )
+    expect(dialog.get_by_text("Save Simulation Results", exact=True)).to_be_visible(timeout=30000)
     name_input = dialog.get_by_role("textbox", name="New Dataset Name")
     name_input.click()
     name_input.fill(dataset_name)
@@ -801,8 +799,7 @@ def _latest_characterization_run_bundle(dataset_name: str) -> ResultBundleRecord
     with get_unit_of_work() as uow:
         dataset = uow.datasets.get_by_name(dataset_name)
         assert dataset is not None, (
-            "Dataset not found for characterization verification: "
-            f"{dataset_name}"
+            f"Dataset not found for characterization verification: {dataset_name}"
         )
         assert dataset.id is not None, (
             f"Dataset id missing for characterization verification: {dataset_name}"
@@ -1402,7 +1399,6 @@ def test_cached_flux_pumped_jpa_sweep_can_run_post_processing(
             exact=False,
         )
     ).to_be_visible(timeout=30000)
-
 
 
 def test_simulation_reload_and_disconnect_do_not_reuse_deleted_root_client(

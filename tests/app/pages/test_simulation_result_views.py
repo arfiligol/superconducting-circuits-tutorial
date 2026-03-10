@@ -1157,10 +1157,7 @@ def test_incremental_sweep_writer_persists_points_without_full_regroup(
     assert rebuilt_run.points[6].result.y_parameter_mode_imag[
         "om=0|op=2|im=0|ip=2"
     ] == pytest.approx(
-        [
-            value + 0.006
-            for value in base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
-        ]
+        [value + 0.006 for value in base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]]
     )
     assert rebuilt_result.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"] == pytest.approx(
         base.y_parameter_mode_imag["om=0|op=2|im=0|ip=2"]
@@ -1213,12 +1210,9 @@ def test_incremental_post_processed_writer_persists_points_without_full_regroup(
     )
 
     assert writer.trace_count > 0
-    assert (
-        bundle.representative_result.y_parameter_mode_real[
-            "Y_dm_1_2_dm_1_2 [om=(0,), im=(0,)]"
-        ]
-        == pytest.approx([2.0, 2.0])
-    )
+    assert bundle.representative_result.y_parameter_mode_real[
+        "Y_dm_1_2_dm_1_2 [om=(0,), im=(0,)]"
+    ] == pytest.approx([2.0, 2.0])
     assert bundle.sweep_axes[0].target_value_ref == "L_q"
     assert bundle.sweep_axes[0].values == pytest.approx((10.0, 15.0))
 
@@ -1287,9 +1281,7 @@ def test_source_simulation_bundle_id_prefers_parent_batch_from_trace_batch_snaps
             "schema_kind": TRACE_BATCH_BUNDLE_SCHEMA_KIND,
             "trace_batch_record": {
                 "parent_batch_id": 43,
-                "provenance_payload": {
-                    "canonical_authority": {"source_simulation_bundle_id": 44}
-                },
+                "provenance_payload": {"canonical_authority": {"source_simulation_bundle_id": 44}},
             },
         },
     }
@@ -1365,8 +1357,9 @@ def test_resolve_persisted_post_processing_input_snapshot_follows_postprocess_li
     assert resolved == raw_snapshot
 
 
-def test_resolve_latest_persisted_post_processing_snapshot_prefers_completed_postprocess_batch(
-) -> None:
+def test_resolve_latest_persisted_post_processing_snapshot_prefers_completed_postprocess_batch() -> (
+    None
+):
     raw_snapshot = {
         "id": 3,
         "dataset_id": 1,
@@ -1508,8 +1501,9 @@ def test_post_processing_panel_submits_persisted_api_task_instead_of_cpu_bound_e
     assert "run.cpu_bound" not in source
 
 
-def test_simulation_environment_uses_persisted_post_processing_authority_not_runtime_fields(
-) -> None:
+def test_simulation_environment_uses_persisted_post_processing_authority_not_runtime_fields() -> (
+    None
+):
     source = inspect.getsource(simulation_page._render_simulation_environment)
     assert "_persisted_post_processing_output_bundle()" in source
     assert "latest_post_processing_runtime" not in source

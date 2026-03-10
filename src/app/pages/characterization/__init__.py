@@ -199,14 +199,10 @@ def _latest_completed_analysis_run_summaries(
         analysis_id = str(summary.get("analysis_id", "")).strip()
         if not analysis_id or str(summary.get("status", "")).strip() != "completed":
             continue
-        analysis_run_id = int(
-            summary.get("analysis_run_id", summary.get("bundle_id", 0)) or 0
-        )
+        analysis_run_id = int(summary.get("analysis_run_id", summary.get("bundle_id", 0)) or 0)
         current = latest_by_analysis.get(analysis_id)
         current_analysis_run_id = (
-            int(current.get("analysis_run_id", current.get("bundle_id", 0)) or 0)
-            if current
-            else 0
+            int(current.get("analysis_run_id", current.get("bundle_id", 0)) or 0) if current else 0
         )
         if current is None or analysis_run_id >= current_analysis_run_id:
             latest_by_analysis[analysis_id] = dict(summary)
@@ -351,8 +347,7 @@ def _build_analysis_run_ui_state(
             availability_class="text-warning",
             run_disabled=True,
             run_hint=(
-                "No compatible traces found for the selected analysis in current "
-                "design scope."
+                "No compatible traces found for the selected analysis in current design scope."
             ),
         )
     if selected_trace_count <= 0:
@@ -1470,9 +1465,7 @@ def characterization_page():
                             return
                         dataset_profile = normalize_dataset_profile(
                             ds.source_meta,
-                            record_index=_normalize_profile_trace_index_rows(
-                                dataset_profile_index
-                            ),
+                            record_index=_normalize_profile_trace_index_rows(dataset_profile_index),
                         )
 
                         analysis_scope_compatibility: dict[str, AnalysisScopeCompatibility] = {}
@@ -1680,9 +1673,7 @@ def characterization_page():
                                 mode_filter=_current_mode_filter(),
                             )
 
-                        def current_sweep_support_diagnostic() -> (
-                            SweepSupportDiagnostic | None
-                        ):
+                        def current_sweep_support_diagnostic() -> SweepSupportDiagnostic | None:
                             selected_ids = sorted(current_selected_trace_ids())
                             if not selected_ids:
                                 return None
@@ -1822,15 +1813,13 @@ def characterization_page():
                                                     f"{summary.batch_count} batch(es) "
                                                     f"[{summary.stage_summary}]"
                                                 )
-                                                ui.label(
-                                                    source_summary_text
-                                                ).classes("text-sm text-fg")
+                                                ui.label(source_summary_text).classes(
+                                                    "text-sm text-fg"
+                                                )
                                         else:
                                             ui.label(
                                                 "No saved trace provenance found yet."
-                                            ).classes(
-                                                "text-sm text-muted"
-                                            )
+                                            ).classes("text-sm text-muted")
                                     with ui.column().classes(
                                         "bg-bg rounded-lg border border-border p-3 "
                                         "min-w-[280px] flex-1"
@@ -1848,9 +1837,9 @@ def characterization_page():
                                                     f"{summary.trace_count} compatible trace(s) "
                                                     f"[{summary.stage_summary}]"
                                                 )
-                                                ui.label(
-                                                    compatible_source_text
-                                                ).classes("text-sm text-fg")
+                                                ui.label(compatible_source_text).classes(
+                                                    "text-sm text-fg"
+                                                )
                                         else:
                                             ui.label(
                                                 "No compatible traces in current design scope."
@@ -2057,9 +2046,7 @@ def characterization_page():
                                             submission = build_characterization_submission(
                                                 design_id=active_design_id,
                                                 analysis_id=analysis_id,
-                                                analysis_label=str(
-                                                    selected_run_analysis["label"]
-                                                ),
+                                                analysis_label=str(selected_run_analysis["label"]),
                                                 run_id=run_id,
                                                 trace_record_ids=run_trace_ids,
                                                 selected_batch_ids=selected_batch_ids,
@@ -2546,9 +2533,7 @@ def characterization_page():
                                 ):
                                     with ui.row().classes("items-center gap-2"):
                                         ui.icon("history", size="sm").classes("text-primary")
-                                        ui.label("Run History").classes(
-                                            "text-lg font-bold text-fg"
-                                        )
+                                        ui.label("Run History").classes("text-lg font-bold text-fg")
                                     ui.label(
                                         "Each row is one persisted analysis run with explicit "
                                         "trace-first scope and provenance."
@@ -2556,9 +2541,7 @@ def characterization_page():
                                 if not analysis_run_records:
                                     ui.label(
                                         "No analysis run recorded for this design yet."
-                                    ).classes(
-                                        "text-sm text-muted"
-                                    )
+                                    ).classes("text-sm text-muted")
                                 else:
                                     history_rows = [
                                         {
@@ -2568,8 +2551,7 @@ def characterization_page():
                                                 else str(run_record.run_id or "pending")
                                             ),
                                             "analysis": str(
-                                                run_record.analysis_label
-                                                or run_record.analysis_id
+                                                run_record.analysis_label or run_record.analysis_id
                                             ),
                                             "status": str(run_record.status).title(),
                                             "scope": _analysis_run_scope_text(run_record),
@@ -2582,9 +2564,7 @@ def characterization_page():
                                                 )
                                                 or "Unspecified"
                                             ),
-                                            "provenance": _analysis_run_provenance_text(
-                                                run_record
-                                            ),
+                                            "provenance": _analysis_run_provenance_text(run_record),
                                         }
                                         for run_record in reversed(analysis_run_records[-10:])
                                     ]
@@ -2805,13 +2785,16 @@ def characterization_page():
                                             selected_result_analysis_id
                                         )
                                         if latest_completed_run is not None:
-                                            latest_completed_analysis_run_id = int(
-                                                latest_completed_run.get(
-                                                    "analysis_run_id",
-                                                    latest_completed_run.get("bundle_id", 0),
+                                            latest_completed_analysis_run_id = (
+                                                int(
+                                                    latest_completed_run.get(
+                                                        "analysis_run_id",
+                                                        latest_completed_run.get("bundle_id", 0),
+                                                    )
+                                                    or 0
                                                 )
-                                                or 0
-                                            ) or None
+                                                or None
+                                            )
                                         ui.label(
                                             _result_view_empty_state_message(
                                                 selected_mode_label=selected_mode_label,

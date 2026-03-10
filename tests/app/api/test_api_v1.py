@@ -649,20 +649,23 @@ def test_simulation_task_submission_dispatches_real_worker_path_and_persists_res
     assert latest_payload["batch_id"] == trace_batch_id
     assert latest_payload["task_id"] == task_id
     assert latest_payload["stage_kind"] == "raw"
-    assert latest_payload["summary_payload"]["trace_batch_record"]["summary_payload"][
-        "frequency_points"
-    ] == 3
+    assert (
+        latest_payload["summary_payload"]["trace_batch_record"]["summary_payload"][
+            "frequency_points"
+        ]
+        == 3
+    )
 
     with get_unit_of_work() as uow:
         snapshot = uow.result_bundles.get_trace_batch_snapshot(trace_batch_id)
         assert isinstance(snapshot, dict)
         assert snapshot["status"] == "completed"
-        assert snapshot["summary_payload"]["trace_batch_record"]["summary_payload"][
-            "frequency_points"
-        ] == 3
         assert (
-            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"]
-            >= 1
+            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["frequency_points"]
+            == 3
+        )
+        assert (
+            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"] >= 1
         )
 
 

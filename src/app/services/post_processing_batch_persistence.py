@@ -41,8 +41,8 @@ def _resolved_source_run_kind(source_snapshot: Mapping[str, Any]) -> str:
     result_payload = source_snapshot.get("result_payload")
     if isinstance(result_payload, Mapping):
         if is_trace_batch_bundle_payload(result_payload):
-            summary_payload = (
-                result_payload.get("trace_batch_record", {}).get("summary_payload", {})
+            summary_payload = result_payload.get("trace_batch_record", {}).get(
+                "summary_payload", {}
             )
             if isinstance(summary_payload, Mapping):
                 run_kind = str(summary_payload.get("run_kind", "")).strip()

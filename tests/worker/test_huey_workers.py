@@ -393,12 +393,12 @@ def test_real_simulation_worker_task_persists_trace_batch(
         assert snapshot is not None
         assert snapshot["status"] == "completed"
         assert snapshot["stage_kind"] == "raw"
-        assert snapshot["summary_payload"]["trace_batch_record"]["summary_payload"][
-            "frequency_points"
-        ] == 3
         assert (
-            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"]
-            >= 1
+            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["frequency_points"]
+            == 3
+        )
+        assert (
+            snapshot["summary_payload"]["trace_batch_record"]["summary_payload"]["trace_count"] >= 1
         )
 
 

@@ -12,11 +12,7 @@ from core.shared.persistence import LocalZarrTraceStore, TraceStore
 
 
 def _has_sequence_values(value: object) -> bool:
-    return (
-        isinstance(value, Sequence)
-        and not isinstance(value, str | bytes)
-        and len(value) > 0
-    )
+    return isinstance(value, Sequence) and not isinstance(value, str | bytes) and len(value) > 0
 
 
 def _materialized_axes(

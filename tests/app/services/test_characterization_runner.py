@@ -555,9 +555,7 @@ def test_resonance_extract_service_persists_generic_sweep_axis_for_2d_sweeps(
     monkeypatch.setattr(
         service.param_service,
         "create_or_update_param",
-        lambda dataset_id, **kwargs: captured_calls.append(
-            {"dataset_id": dataset_id, **kwargs}
-        ),
+        lambda dataset_id, **kwargs: captured_calls.append({"dataset_id": dataset_id, **kwargs}),
     )
 
     result = service.extract_admittance("1", record_ids=[21], trace_mode_group="base")
@@ -721,9 +719,7 @@ def test_resonance_fit_service_persists_ljun_bias_params_for_2d_sweeps(
     monkeypatch.setattr(
         service.param_service,
         "create_or_update_param",
-        lambda dataset_id, **kwargs: captured_calls.append(
-            {"dataset_id": dataset_id, **kwargs}
-        ),
+        lambda dataset_id, **kwargs: captured_calls.append({"dataset_id": dataset_id, **kwargs}),
     )
     monkeypatch.setattr(
         "core.analysis.application.services.resonance_fit_service.fit_notch_s21",
@@ -816,9 +812,7 @@ def test_resonance_fit_service_accepts_trace_record_contract_for_2d_sweeps(
     monkeypatch.setattr(
         service.param_service,
         "create_or_update_param",
-        lambda dataset_id, **kwargs: captured_calls.append(
-            {"dataset_id": dataset_id, **kwargs}
-        ),
+        lambda dataset_id, **kwargs: captured_calls.append({"dataset_id": dataset_id, **kwargs}),
     )
     monkeypatch.setattr(
         "core.analysis.application.services.resonance_fit_service.fit_notch_s21",

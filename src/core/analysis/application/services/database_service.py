@@ -93,9 +93,7 @@ def _remove_replaced_traces(
         if identity not in replacements_by_identity or record.id is None:
             continue
         stale_batch_ids.update(
-            int(batch.id)
-            for batch in record.result_bundles
-            if batch.id is not None
+            int(batch.id) for batch in record.result_bundles if batch.id is not None
         )
         uow.result_bundles.detach_trace(int(record.id))
         uow.data_records.delete(record)

@@ -1606,11 +1606,7 @@ def _persist_simulation_result_bundle(
         if isinstance(result_payload, Mapping) and is_trace_batch_bundle_payload(result_payload)
         else None
     )
-    normalized_result_payload = (
-        None
-        if trace_batch_payload is not None
-        else result_payload
-    )
+    normalized_result_payload = None if trace_batch_payload is not None else result_payload
 
     design_id = int(source_meta.get("circuit_id") or dataset_id)
     design_name = str(
@@ -2530,15 +2526,9 @@ def _can_save_post_processed_results(
 ) -> bool:
     """Return whether post-processed results are ready for dataset persistence."""
     return (
-        (
-            isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun))
-            or (
-                isinstance(runtime_output, Mapping)
-                and is_trace_batch_bundle_payload(runtime_output)
-            )
-        )
-        and isinstance(flow_spec, dict)
-    )
+        isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun))
+        or (isinstance(runtime_output, Mapping) and is_trace_batch_bundle_payload(runtime_output))
+    ) and isinstance(flow_spec, dict)
 
 
 def _build_post_processed_result_payload(
@@ -4240,9 +4230,7 @@ def _build_trace_batch_data_records(
             DataRecord(
                 dataset_id=dataset_id,
                 data_type=str(
-                    raw_trace_record.get("family")
-                    or raw_trace_record.get("data_type")
-                    or ""
+                    raw_trace_record.get("family") or raw_trace_record.get("data_type") or ""
                 ),
                 parameter=str(raw_trace_record.get("parameter") or ""),
                 representation=str(raw_trace_record.get("representation") or ""),
@@ -4263,8 +4251,8 @@ def _resolved_source_run_kind(
     result_payload = source_bundle_snapshot["result_payload"] if source_bundle_snapshot else None
     if isinstance(result_payload, Mapping):
         if is_trace_batch_bundle_payload(result_payload):
-            summary_payload = (
-                result_payload.get("trace_batch_record", {}).get("summary_payload", {})
+            summary_payload = result_payload.get("trace_batch_record", {}).get(
+                "summary_payload", {}
             )
             run_kind = str(summary_payload.get("run_kind", "")).strip()
         else:
@@ -6631,16 +6619,14 @@ def _render_simulation_environment():
             "flow_spec": None,
             "source_bundle_id": None,
         }
-        resolved_post_process_source_bundle_id_ref = {
-            "value": None
-        }
+        resolved_post_process_source_bundle_id_ref = {"value": None}
 
         def _selected_design_ids() -> tuple[int, ...]:
             return _normalize_selected_design_ids(app.storage.user.get("selected_datasets", []))
 
-        def _persisted_post_processing_input_bundle() -> (
-            tuple[SimulationResult | None, dict[str, Any] | None, int | None]
-        ):
+        def _persisted_post_processing_input_bundle() -> tuple[
+            SimulationResult | None, dict[str, Any] | None, int | None
+        ]:
             selected_design_ids = _selected_design_ids()
             if (
                 persisted_post_process_input_cache["selection"] == selected_design_ids
@@ -6690,13 +6676,14 @@ def _render_simulation_environment():
             )
             return (result, sweep_payload, int(snapshot["id"]))
 
-        def _persisted_post_processing_output_bundle() -> (
-            tuple[Mapping[str, Any] | None, dict[str, Any] | None, int | None, int | None]
-        ):
+        def _persisted_post_processing_output_bundle() -> tuple[
+            Mapping[str, Any] | None, dict[str, Any] | None, int | None, int | None
+        ]:
             selected_design_ids = _selected_design_ids()
-            if (
-                persisted_post_process_output_cache["selection"] == selected_design_ids
-                and isinstance(persisted_post_process_output_cache["runtime_output"], Mapping)
+            if persisted_post_process_output_cache[
+                "selection"
+            ] == selected_design_ids and isinstance(
+                persisted_post_process_output_cache["runtime_output"], Mapping
             ):
                 return (
                     persisted_post_process_output_cache["runtime_output"],
@@ -7074,9 +7061,7 @@ def _render_simulation_environment():
             if isinstance(_persisted_result, SimulationResult):
                 persisted_result = _persisted_result
             if isinstance(persisted_sweep_payload, Mapping):
-                persisted_sweep_payload = _coerce_parameter_sweep_payload(
-                    persisted_sweep_payload
-                )
+                persisted_sweep_payload = _coerce_parameter_sweep_payload(persisted_sweep_payload)
             raw_result = persisted_result
             if not isinstance(raw_result, SimulationResult):
                 raise ValueError("Simulation result is unavailable.")
@@ -9945,9 +9930,8 @@ def _save_post_processed_results_dialog(
                     else ds_name
                 )
                 try:
-                    if (
-                        isinstance(runtime_output, Mapping)
-                        and is_trace_batch_bundle_payload(runtime_output)
+                    if isinstance(runtime_output, Mapping) and is_trace_batch_bundle_payload(
+                        runtime_output
                     ):
                         summary_payload = runtime_output.get("trace_batch_record", {}).get(
                             "summary_payload",

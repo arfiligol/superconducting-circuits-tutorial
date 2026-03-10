@@ -151,9 +151,10 @@ def execute_post_processing_pipeline(
         raise ValueError("Z0 must be positive.")
 
     mode = SimulationResult.parse_mode_token(mode_token)
-    def _execute_single_result(result: SimulationResult) -> tuple[
-        PortMatrixSweep, list[dict[str, Any]], list[dict[str, Any]]
-    ]:
+
+    def _execute_single_result(
+        result: SimulationResult,
+    ) -> tuple[PortMatrixSweep, list[dict[str, Any]], list[dict[str, Any]]]:
         sweep = build_port_y_sweep(
             result=result,
             mode=mode,

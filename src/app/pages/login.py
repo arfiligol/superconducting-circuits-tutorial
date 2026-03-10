@@ -30,8 +30,8 @@ def login_page(request: Request) -> None:
               headers: {{ 'Content-Type': 'application/json' }},
               credentials: 'same-origin',
               body: JSON.stringify({{
-                username: {json.dumps(username_input.value or '')},
-                password: {json.dumps(password_input.value or '')},
+                username: {json.dumps(username_input.value or "")},
+                password: {json.dumps(password_input.value or "")},
               }}),
             }});
             let body = {{}};

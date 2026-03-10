@@ -240,9 +240,7 @@ def _diagnose_analysis_sweep_support_from_records(
         if s21_second_axis_names and all(_is_l_jun_axis(name) for name in s21_second_axis_names):
             return SweepSupportDiagnostic(
                 status="sweep-ready",
-                reason=(
-                    "2D Freq x L_jun sweeps persist per-slice bias and render Mode vs L_jun."
-                ),
+                reason=("2D Freq x L_jun sweeps persist per-slice bias and render Mode vs L_jun."),
             )
         return SweepSupportDiagnostic(
             status="partial",
@@ -597,6 +595,7 @@ async def execute_characterization_run_async(
     if executor is None:
         task = asyncio.create_task(asyncio.to_thread(operation))
     else:
+
         async def _run_with_executor() -> CharacterizationRunResult:
             return await executor(partial(invoke_sync_operation, operation))
 
@@ -629,17 +628,13 @@ async def execute_characterization_run_async(
                     },
                 )
             )
-            if (
-                not warning_emitted
-                and elapsed_seconds >= int(long_running_warning_after_seconds)
-            ):
+            if not warning_emitted and elapsed_seconds >= int(long_running_warning_after_seconds):
                 warning_emitted = True
                 _record_progress(
                     progress_update(
                         phase="warning",
                         summary=(
-                            "Long-running analysis detected; worker heartbeat "
-                            "continues every 5s."
+                            "Long-running analysis detected; worker heartbeat continues every 5s."
                         ),
                         stage_label="characterization",
                         warning="long_running_analysis",

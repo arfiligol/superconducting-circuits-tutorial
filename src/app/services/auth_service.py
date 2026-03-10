@@ -64,10 +64,7 @@ def hash_password(password: str) -> str:
         salt.encode("utf-8"),
         _PASSWORD_ITERATIONS,
     )
-    return (
-        f"{_PASSWORD_SCHEME}${_PASSWORD_ITERATIONS}${salt}$"
-        f"{derived.hex()}"
-    )
+    return f"{_PASSWORD_SCHEME}${_PASSWORD_ITERATIONS}${salt}${derived.hex()}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:

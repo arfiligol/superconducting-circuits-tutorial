@@ -86,9 +86,7 @@ def extract_modes_from_dataframe(df: pd.DataFrame) -> pd.DataFrame | None:
                 crossings.append(x_zero)
 
         # Store results
-        entry: dict[str, float] = {
-            str(sweep_col or "L_jun").split(" [", 1)[0]: float(l_val)
-        }
+        entry: dict[str, float] = {str(sweep_col or "L_jun").split(" [", 1)[0]: float(l_val)}
         for idx, f in enumerate(crossings):
             entry[f"Mode {idx + 1}"] = f
         results.append(entry)

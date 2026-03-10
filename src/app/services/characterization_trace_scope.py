@@ -292,9 +292,7 @@ def hydrate_trace_index_rows_with_provenance(
 ) -> list[dict[str, str | int]]:
     """Attach source/provenance labels to trace-index rows using batch membership only."""
     normalized_rows = [dict(row) for row in rows]
-    trace_ids = [
-        int(row["id"]) for row in normalized_rows if isinstance(row.get("id"), int)
-    ]
+    trace_ids = [int(row["id"]) for row in normalized_rows if isinstance(row.get("id"), int)]
     provenance_by_trace_id = _trace_provenance_index(
         uow=uow,
         dataset_id=dataset_id,
