@@ -6463,6 +6463,8 @@ def _render_simulation_environment():
         post_processing_container: Any = None
         post_processing_results_container: Any = None
         post_processing_sweep_results_container: Any = None
+        restored_simulation_batch_id_ref: dict[str, int | None] = {"value": None}
+        restored_post_processing_batch_id_ref: dict[str, int | None] = {"value": None}
         poll_timer: Any | None = None
         post_processing_poll_timer: Any | None = None
         raw_view_state = default_result_view_state(
@@ -6886,7 +6888,93 @@ def _render_simulation_environment():
                     ),
                 )
 
-        async def _refresh_simulation_authority(*, preferred_task_id: int | None = None) -> None:
+        def _load_persisted_simulation_views() -> None:
+            restored_simulation_batch_id_ref["value"] = runtime_state.current_trace_batch_id
+            _invalidate_persisted_authority_caches()
+            _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
+            sweep_result_view_state.clear()
+            sweep_result_view_state.update(default_sweep_result_view_state())
+            render_simulation_result_view()
+            _render_simulation_sweep_result_view()
+            _render_post_processing_input_panel()
+
+        def _load_persisted_post_processing_views() -> None:
+            restored_post_processing_batch_id_ref["value"] = (
+                runtime_state.current_post_processing_trace_batch_id
+            )
+            _invalidate_persisted_authority_caches()
+            _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
+            post_processed_sweep_view_state.clear()
+            post_processed_sweep_view_state.update(default_sweep_result_view_state())
+            _render_post_processed_sweep_result_view()
+            render_post_processed_result_view()
+
+        def _render_simulation_restore_prompt(
+            latest_result: LatestTraceBatchResponse,
+        ) -> None:
+            if simulation_results_container is None:
+                return
+            simulation_results_container.clear()
+            with simulation_results_container:
+                ui.icon("restore", size="lg").classes("text-primary mb-2")
+                ui.label(
+                    "Latest persisted simulation result is available."
+                ).classes("text-sm text-fg")
+                ui.label(
+                    f"batch=#{latest_result.batch_id} | task={latest_result.task_id or 'n/a'}"
+                ).classes("text-xs text-muted")
+                ui.button(
+                    "Load Latest Persisted Result",
+                    on_click=_load_persisted_simulation_views,
+                    icon="download",
+                ).props("outline color=primary").classes("mt-3")
+            if simulation_sweep_results_container is not None:
+                simulation_sweep_results_container.clear()
+                with simulation_sweep_results_container:
+                    ui.label(
+                        "Sweep Result View is available after loading the latest persisted result."
+                    ).classes("text-sm text-muted")
+            if post_processing_container is not None:
+                post_processing_container.clear()
+                with post_processing_container:
+                    ui.label(
+                        "Load the latest persisted simulation result to enable post-processing."
+                    ).classes("text-sm text-muted")
+
+        def _render_post_processing_restore_prompt(
+            latest_result: LatestTraceBatchResponse,
+        ) -> None:
+            if post_processing_results_container is not None:
+                post_processing_results_container.clear()
+                with post_processing_results_container:
+                    ui.icon("restore", size="lg").classes("text-primary mb-2")
+                    ui.label(
+                        "Latest persisted post-processing result is available."
+                    ).classes("text-sm text-fg")
+                    ui.label(
+                        "batch="
+                        f"#{latest_result.batch_id} | source-batch="
+                        f"#{latest_result.parent_batch_id or 'n/a'} | task="
+                        f"{latest_result.task_id or 'n/a'}"
+                    ).classes("text-xs text-muted")
+                    ui.button(
+                        "Load Latest Post-Processing Result",
+                        on_click=_load_persisted_post_processing_views,
+                        icon="download",
+                    ).props("outline color=primary").classes("mt-3")
+            if post_processing_sweep_results_container is not None:
+                post_processing_sweep_results_container.clear()
+                with post_processing_sweep_results_container:
+                    ui.label(
+                        "Post-processed sweep explorer is available after loading the "
+                        "latest persisted post-processing result."
+                    ).classes("text-sm text-muted")
+
+        async def _refresh_simulation_authority(
+            *,
+            preferred_task_id: int | None = None,
+            hydrate_views: bool = False,
+        ) -> None:
             tasks_response = await get_design_tasks(active_record_id, client=owner_client)
             latest_result = await get_latest_simulation_result(
                 active_record_id,
@@ -6942,25 +7030,24 @@ def _render_simulation_environment():
             if latest_result is not None:
                 resolved_post_process_source_bundle_id_ref["value"] = latest_result.batch_id
                 runtime_state.current_trace_batch_id = int(latest_result.batch_id)
-                _invalidate_persisted_authority_caches()
-                _reset_result_view_state(raw_view_state, _RESULT_FAMILY_OPTIONS)
-                render_simulation_result_view()
-                _render_simulation_sweep_result_view()
-                _render_post_processing_input_panel()
-                _render_post_processed_sweep_result_view()
-                render_post_processed_result_view()
+                if hydrate_views:
+                    _load_persisted_simulation_views()
+                elif restored_simulation_batch_id_ref["value"] != int(latest_result.batch_id):
+                    _render_simulation_restore_prompt(latest_result)
             if latest_post_processing_result is not None:
                 resolved_post_process_source_bundle_id_ref["value"] = (
                     latest_post_processing_result.parent_batch_id
                     or resolved_post_process_source_bundle_id_ref["value"]
                 )
-                _invalidate_persisted_authority_caches()
-                _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
-                post_processed_sweep_view_state.clear()
-                post_processed_sweep_view_state.update(default_sweep_result_view_state())
-                _render_post_processing_input_panel()
-                _render_post_processed_sweep_result_view()
-                render_post_processed_result_view()
+                runtime_state.current_post_processing_trace_batch_id = int(
+                    latest_post_processing_result.batch_id
+                )
+                if hydrate_views:
+                    _load_persisted_post_processing_views()
+                elif restored_post_processing_batch_id_ref["value"] != int(
+                    latest_post_processing_result.batch_id
+                ):
+                    _render_post_processing_restore_prompt(latest_post_processing_result)
 
         async def _poll_current_simulation_task() -> None:
             if runtime_state.current_task_id is None:
@@ -6979,7 +7066,10 @@ def _render_simulation_environment():
             if task.status in {"completed", "failed"}:
                 if poll_timer is not None:
                     poll_timer.active = False
-                await _refresh_simulation_authority(preferred_task_id=int(task.id))
+                await _refresh_simulation_authority(
+                    preferred_task_id=int(task.id),
+                    hydrate_views=task.status == "completed",
+                )
 
         async def _poll_current_post_processing_task() -> None:
             if runtime_state.current_post_processing_task_id is None:
@@ -7001,7 +7091,10 @@ def _render_simulation_environment():
             if task.status in {"completed", "failed"}:
                 if post_processing_poll_timer is not None:
                     post_processing_poll_timer.active = False
-                await _refresh_simulation_authority(preferred_task_id=int(task.id))
+                await _refresh_simulation_authority(
+                    preferred_task_id=int(task.id),
+                    hydrate_views=task.status == "completed",
+                )
 
         def _raw_simulation_result() -> SimulationResult | None:
             persisted_result, _persisted_sweep_payload, persisted_bundle_id = (
@@ -9566,10 +9659,6 @@ def _render_simulation_environment():
                         "text-sm text-muted mt-2"
                     )
 
-            render_simulation_result_view()
-            _render_post_processing_input_panel()
-            _render_post_processed_sweep_result_view()
-            render_post_processed_result_view()
             poll_timer = ui.timer(
                 2.0,
                 callback=lambda: asyncio.create_task(_poll_current_simulation_task()),
