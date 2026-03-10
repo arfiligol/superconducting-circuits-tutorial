@@ -1357,9 +1357,7 @@ def test_resolve_persisted_post_processing_input_snapshot_follows_postprocess_li
     assert resolved == raw_snapshot
 
 
-def test_resolve_latest_persisted_post_processing_snapshot_prefers_completed_postprocess_batch() -> (
-    None
-):
+def test_resolve_latest_persisted_post_processing_snapshot_prefers_completed_batch() -> None:
     raw_snapshot = {
         "id": 3,
         "dataset_id": 1,

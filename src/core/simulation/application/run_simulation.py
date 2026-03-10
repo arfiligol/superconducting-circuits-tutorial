@@ -34,9 +34,17 @@ class _JuliaSimulationAdapter(Protocol):
     ) -> SimulationResult: ...
 
 
+JuliaSimulator: type[_JuliaSimulationAdapter] | None = None
+
+
 def _build_julia_simulator() -> _JuliaSimulationAdapter:
     """Create the Julia-backed simulator only when execution is requested."""
-    from core.simulation.infrastructure.julia_adapter import JuliaSimulator
+    global JuliaSimulator
+
+    if JuliaSimulator is None:
+        from core.simulation.infrastructure.julia_adapter import JuliaSimulator as _JuliaSimulator
+
+        JuliaSimulator = _JuliaSimulator
 
     return JuliaSimulator()
 

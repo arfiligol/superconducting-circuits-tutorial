@@ -126,7 +126,7 @@ class TraceRepository:
         **kwargs: object,
     ) -> tuple[list[dict[str, str | int]], int]:
         """List one page of canonical trace metadata rows for a design."""
-        rows, total = self.list_index_page_by_dataset(design_id, query=query, **kwargs)
+        rows, total = cast(Any, self.list_index_page_by_dataset)(design_id, query=query, **kwargs)
         return ([_canonical_trace_row(row) for row in rows], total)
 
     def list_index_page_by_dataset(

@@ -6,6 +6,7 @@ into an SVG string using the Schemdraw library.
 """
 
 import re
+from typing import Any
 
 import schemdraw
 import schemdraw.elements as elm
@@ -341,12 +342,12 @@ def _add_shunt_labels(
 
 
 def _label_element(
-    element,
+    element: Any,
     component_kind: str,
     name_label: str,
     value_label: str | None,
     is_shunt: bool,
-):
+) -> Any:
     """Attach label with type-aware defaults to avoid overlaps."""
     if isinstance(element, elm.Dot):
         return element.label(name_label, loc="top", fontsize=11)
@@ -473,7 +474,7 @@ def generate_circuit_svg(circuit: CircuitDefinition) -> str:
     shunt_cluster_metadata = plan.shunt_cluster_metadata
     parallel_cluster_metadata = plan.parallel_cluster_metadata
     shunt_branch_offsets = plan.shunt_branch_offsets
-    backbone_positions = plan.backbone_positions
+    backbone_positions = plan.backbone_positions or {}
     use_backbone_layout = plan.use_backbone_layout
     parallel_node_side_preferences = _build_parallel_node_side_preferences(
         parallel_cluster_metadata,

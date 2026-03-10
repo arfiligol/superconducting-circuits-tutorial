@@ -1,5 +1,7 @@
 """Repository for Tag operations."""
 
+from typing import Any, cast
+
 from sqlmodel import Session, select
 
 from core.shared.persistence.models import Tag
@@ -22,7 +24,7 @@ class TagRepository:
 
     def list_all(self) -> list[Tag]:
         """List all tags."""
-        statement = select(Tag).order_by(Tag.id)
+        statement = select(Tag).order_by(cast(Any, Tag.id))
         return list(self._session.exec(statement).all())
 
     def get(self, id: int) -> Tag | None:
@@ -31,7 +33,7 @@ class TagRepository:
 
     def get_by_name(self, name: str) -> Tag | None:
         """Get tag by name."""
-        statement = select(Tag).where(Tag.name == name)
+        statement = select(Tag).where(cast(Any, Tag.name) == name)
         return self._session.exec(statement).first()
 
     def update(self, tag: Tag) -> Tag:
@@ -66,7 +68,9 @@ class TagRepository:
         from core.shared.persistence.models import DatasetTagLink
 
         self._session.exec(
-            update(DatasetTagLink).where(DatasetTagLink.tag_id == old_id).values(tag_id=new_id)
+            update(DatasetTagLink)
+            .where(cast(Any, DatasetTagLink.tag_id) == old_id)
+            .values(tag_id=new_id)
         )
 
         original_name = tag.name

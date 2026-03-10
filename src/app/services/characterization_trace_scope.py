@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from core.analysis.domain import ModeGroup, ParameterKey, TraceKind
 from core.shared.persistence.repositories import (
@@ -13,14 +13,18 @@ from core.shared.persistence.repositories import (
     ResultBundleCharacterizationContract,
     TraceIndexPageQuery,
 )
+from core.shared.persistence.repositories.query_objects import TraceModeFilter
 
 
 @runtime_checkable
 class CharacterizationTraceScopeUnitOfWork(Protocol):
     """Typed UoW interface consumed by design-facing trace scope queries."""
 
-    data_records: DataRecordCharacterizationContract
-    result_bundles: ResultBundleCharacterizationContract
+    @property
+    def data_records(self) -> DataRecordCharacterizationContract: ...
+
+    @property
+    def result_bundles(self) -> ResultBundleCharacterizationContract: ...
 
 
 @dataclass(frozen=True)
@@ -127,7 +131,8 @@ def _source_sort_key(source_kind: str) -> tuple[int, str]:
 def _provenance_sort_key(candidate: dict[str, object]) -> tuple[int, int, int]:
     stage_kind = str(candidate.get("stage_kind", "")).strip()
     source_kind = str(candidate.get("source_kind", "")).strip()
-    batch_id = int(candidate.get("source_batch_id", 0) or 0)
+    raw_batch_id = candidate.get("source_batch_id", 0)
+    batch_id = int(raw_batch_id) if isinstance(raw_batch_id, int | str) else 0
     return (
         _STAGE_PRIORITY.get(stage_kind, 0),
         _SOURCE_PRIORITY.get(source_kind, 0),
@@ -159,7 +164,8 @@ def _trace_provenance_index(
 
     provenance_candidates: dict[int, list[dict[str, object]]] = defaultdict(list)
     for bundle in _list_dataset_bundles(uow=uow, dataset_id=dataset_id):
-        batch_id = int(_bundle_field(bundle, "id") or 0)
+        raw_batch_id = _bundle_field(bundle, "id")
+        batch_id = int(raw_batch_id) if isinstance(raw_batch_id, int | str) else 0
         if batch_id <= 0:
             continue
         source_kind = _bundle_source_kind(bundle)
@@ -191,7 +197,8 @@ def _trace_provenance_index(
         best = max(candidates, key=_provenance_sort_key)
         source_label = str(best["source_label"])
         stage_label = str(best["stage_label"])
-        batch_id = int(best["source_batch_id"])
+        raw_batch_id = best["source_batch_id"]
+        batch_id = int(raw_batch_id) if isinstance(raw_batch_id, int | str) else 0
         resolved[trace_id] = {
             "source_kind": str(best["source_kind"]),
             "stage_kind": str(best["stage_kind"]),
@@ -329,7 +336,8 @@ def list_design_scope_source_summaries(
     grouped_stage_labels: dict[str, set[str]] = defaultdict(set)
 
     for bundle in _list_dataset_bundles(uow=uow, dataset_id=dataset_id):
-        batch_id = int(_bundle_field(bundle, "id") or 0)
+        raw_batch_id = _bundle_field(bundle, "id")
+        batch_id = int(raw_batch_id) if isinstance(raw_batch_id, int | str) else 0
         if batch_id <= 0:
             continue
         trace_count = int(uow.result_bundles.count_data_records(batch_id))
@@ -456,7 +464,7 @@ def list_scope_compatible_trace_index_page(
         data_types=tuple(str(item) for item in data_types),
         parameters=tuple(str(item) for item in parameters),
         representation=str(filters["representation"]),
-        mode_filter=normalized_mode.value,
+        mode_filter=cast("TraceModeFilter", normalized_mode.value),
         ids=tuple(int(record_id) for record_id in ids) if ids is not None else None,
         limit=limit,
         offset=offset,

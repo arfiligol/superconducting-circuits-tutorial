@@ -1,7 +1,8 @@
 """Dashboard page to view vital tagged metrics across datasets."""
 
 import asyncio
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, cast
 
 from nicegui import app, run, ui
 
@@ -45,7 +46,10 @@ def dashboard_page():
 
         metadata_edit_state: dict[int, dict[str, Any]] = {}
 
-        def _persist_dataset_profile(dataset_id: int, profile_payload: dict[str, Any]) -> None:
+        def _persist_dataset_profile(
+            dataset_id: int,
+            profile_payload: Mapping[str, object],
+        ) -> None:
             with get_unit_of_work() as write_uow:
                 dataset = write_uow.datasets.get(dataset_id)
                 if dataset is None:
@@ -134,7 +138,7 @@ def dashboard_page():
                                     .filter(
                                         DerivedParameter.dataset_id == active_id,
                                         DerivedParameter.method == desig.source_analysis_type,
-                                        DerivedParameter.name.like(
+                                        cast(Any, DerivedParameter.name).like(
                                             f"{desig.source_parameter_name}%"
                                         ),
                                     )

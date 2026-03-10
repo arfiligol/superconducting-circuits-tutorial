@@ -1,5 +1,7 @@
 """Mathematical models for S-parameter analysis and resonance fitting."""
 
+from typing import Any, cast
+
 import numpy as np
 
 
@@ -137,12 +139,12 @@ def estimate_notch_initial_guess(f: np.ndarray, s21_complex: np.ndarray) -> dict
         Qc_real_guess = Ql_guess * 10.0
 
     return {
-        "fr": fr_guess,
-        "Ql": Ql_guess,
-        "Qc_real": Qc_real_guess,
+        "fr": float(fr_guess),
+        "Ql": float(Ql_guess),
+        "Qc_real": float(Qc_real_guess),
         "Qc_imag": 0.0,
-        "a": a_guess,
-        "alpha": alpha_guess,
+        "a": float(a_guess),
+        "alpha": float(alpha_guess),
         "tau": float(tau_guess),
     }
 
@@ -302,10 +304,10 @@ def estimate_transmission_initial_guess(f: np.ndarray, s21_complex: np.ndarray) 
         Ql_guess = 100.0
 
     return {
-        "fr": fr_guess,
-        "Ql": Ql_guess,
-        "a": a_guess,
-        "alpha": alpha_guess,
+        "fr": float(fr_guess),
+        "Ql": float(Ql_guess),
+        "a": float(a_guess),
+        "alpha": float(alpha_guess),
         "tau": float(tau_guess),
     }
 
@@ -382,12 +384,12 @@ class MultiResonanceVectorFitter:
         self.s21_complex = s21_complex
         self.vf_engine = None
 
-    def _create_skrf_network(self) -> object:
+    def _create_skrf_network(self) -> Any:
         """Construct an skrf Network from numpy arrays."""
         import skrf
 
         # skrf Network expects frequencies in Hz
-        freq = skrf.Frequency.from_f(self.f, unit="hz")
+        freq = skrf.Frequency.from_f(self.f, unit="Hz")
 
         # S-parameter matrix for a 2-port network: shape (N_freq, 2, 2)
         # We only have S21, so we'll mock a 2-port network where S21 is populated
@@ -418,7 +420,7 @@ class MultiResonanceVectorFitter:
 
         ntwk = self._create_skrf_network()
 
-        self.vf_engine = skrf.VectorFitting(ntwk)
+        self.vf_engine = skrf.VectorFitting(cast(Any, ntwk))
 
         # Fit the entire Network using Sanathanan-Koerner iterations
         # We target response (1, 0) which corresponds to S21
@@ -450,7 +452,9 @@ class MultiResonanceVectorFitter:
         physical = []
         artifacts = []
 
-        poles = self.vf_engine.poles
+        if self.vf_engine is None:
+            raise RuntimeError("Vector fitting has not been executed.")
+        poles = self.vf_engine.poles or []
 
         for p in poles:
             # Physical resonances are complex conjugate pairs. Analyze only the

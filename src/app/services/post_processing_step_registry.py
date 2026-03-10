@@ -262,10 +262,14 @@ def _preview_step_labels(labels: tuple[str, ...], step: dict[str, Any]) -> tuple
 
 def _coerce_int_value(value: object, fallback: int) -> int:
     """Convert one raw form value to int with fallback."""
-    try:
-        return int(value)
-    except Exception:
-        return int(fallback)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return int(fallback)
+    return int(fallback)
 
 
 __all__ = [

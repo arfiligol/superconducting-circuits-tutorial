@@ -61,7 +61,8 @@ def test_large_trace_scope_query_returns_paged_rows_under_baseline_time() -> Non
         rows, total = repo.list_index_page_by_design(design.id, query=query)
         elapsed = perf_counter() - started
 
-        assert total == 6_666
+        # Zero-mode suffixes are canonical base-mode traces and remain visible here.
+        assert total == 7_333
         assert len(rows) == 20
         assert all("family" in row for row in rows)
         assert elapsed < 1.5

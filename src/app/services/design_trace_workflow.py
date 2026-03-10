@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, Protocol, runtime_checkable
 
 from core.shared.persistence.models import TraceBatchRecord
+from core.shared.persistence.repositories.contracts import TraceBatchSnapshot
 
 CompareStatus = Literal["ready", "inspect-only", "blocked"]
 
@@ -54,7 +56,7 @@ class DesignTraceWorkflowSummary:
 class _TraceBatchSummaryRepository(Protocol):
     def list_provenance_by_design(self, design_id: int) -> list[TraceBatchRecord]: ...
 
-    def get_trace_batch_snapshot(self, id: int) -> dict[str, Any] | None: ...
+    def get_trace_batch_snapshot(self, id: int) -> TraceBatchSnapshot | None: ...
 
     def list_data_record_index(self, bundle_id: int) -> list[dict[str, str | int]]: ...
 
@@ -75,14 +77,14 @@ def _resolved_latest_timestamp(batch: TraceBatchRecord) -> datetime:
 
 
 def _batch_trace_count(
-    snapshot: dict[str, Any] | None,
+    snapshot: Mapping[str, object] | None,
     trace_rows: list[dict[str, str | int]],
 ) -> int:
     if trace_rows:
         return len({int(row["id"]) for row in trace_rows if "id" in row})
-    if isinstance(snapshot, dict):
+    if isinstance(snapshot, Mapping):
         summary_payload = snapshot.get("summary_payload")
-        if isinstance(summary_payload, dict):
+        if isinstance(summary_payload, Mapping):
             raw_trace_count = summary_payload.get("trace_count")
             if raw_trace_count is not None:
                 return int(raw_trace_count)
@@ -95,18 +97,18 @@ def _provenance_summary(
     source_kind: str,
     stage_kind: str,
     setup_kind: str | None,
-    snapshot: dict[str, Any] | None,
+    snapshot: Mapping[str, object] | None,
 ) -> str:
     tokens = [f"batch #{batch_id}", f"{source_kind}/{stage_kind}"]
     if setup_kind:
         tokens.append(setup_kind)
-    if isinstance(snapshot, dict):
-        if snapshot.get("parent_batch_id") is not None:
-            tokens.append(f"parent #{int(snapshot['parent_batch_id'])}")
-        provenance_payload = (
-            snapshot.get("provenance_payload")
-            if isinstance(snapshot.get("provenance_payload"), dict)
-            else {}
+    if isinstance(snapshot, Mapping):
+        raw_parent_batch_id = snapshot.get("parent_batch_id")
+        if isinstance(raw_parent_batch_id, int | str):
+            tokens.append(f"parent #{int(raw_parent_batch_id)}")
+        raw_provenance_payload = snapshot.get("provenance_payload")
+        provenance_payload: Mapping[str, object] = (
+            raw_provenance_payload if isinstance(raw_provenance_payload, Mapping) else {}
         )
         input_source = str(provenance_payload.get("input_source_type", "")).strip()
         if input_source:
@@ -114,13 +116,12 @@ def _provenance_summary(
         run_kind = str(provenance_payload.get("run_kind", "")).strip()
         if run_kind:
             tokens.append(run_kind)
-        summary_payload = (
-            snapshot.get("summary_payload")
-            if isinstance(snapshot.get("summary_payload"), dict)
-            else {}
+        raw_summary_payload = snapshot.get("summary_payload")
+        summary_payload: Mapping[str, object] = (
+            raw_summary_payload if isinstance(raw_summary_payload, Mapping) else {}
         )
         point_count = summary_payload.get("point_count")
-        if point_count not in (None, "", 0, 1):
+        if isinstance(point_count, int | str) and point_count not in ("", 0, 1):
             tokens.append(f"points={int(point_count)}")
     return " | ".join(tokens)
 
@@ -168,19 +169,20 @@ def summarize_design_trace_workflow(
             continue
         batch_id = int(batch.id)
         snapshot = trace_batch_repo.get_trace_batch_snapshot(batch_id)
+        snapshot_payload = snapshot or {}
         source_kind = str(
-            (snapshot or {}).get("source_kind")
+            snapshot_payload.get("source_kind")
             or getattr(batch, "source_kind", "")
             or getattr(batch, "bundle_type", "")
             or "unknown"
         ).strip()
         stage_kind = str(
-            (snapshot or {}).get("stage_kind")
+            snapshot_payload.get("stage_kind")
             or getattr(batch, "stage_kind", "")
             or getattr(batch, "role", "")
             or "unknown"
         ).strip()
-        setup_kind = (snapshot or {}).get("setup_kind")
+        setup_kind = snapshot_payload.get("setup_kind")
         resolved_setup_kind = str(setup_kind).strip() if setup_kind else None
         trace_rows = trace_batch_repo.list_data_record_index(batch_id)
         trace_count = _batch_trace_count(snapshot, trace_rows)

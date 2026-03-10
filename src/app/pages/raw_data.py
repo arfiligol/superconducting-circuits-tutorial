@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, cast
 
 from nicegui import app, ui
 
@@ -238,9 +238,9 @@ def raw_data_page() -> None:
                     len(materialized_record.axes) == 2
                     and materialized_record.data_type == "s_params"
                 ):
-                    fig = build_heatmap(materialized_record, dark=_safe_dark_mode())
+                    fig = build_heatmap(cast(Any, materialized_record), dark=_safe_dark_mode())
                 else:
-                    fig = build_line_chart(materialized_record, dark=_safe_dark_mode())
+                    fig = build_line_chart(cast(Any, materialized_record), dark=_safe_dark_mode())
 
             memberships = (
                 active_workflow_summary.trace_membership_by_id.get(selected_record_id, ())
@@ -420,7 +420,7 @@ def raw_data_page() -> None:
                     design_id=int(dataset.id),
                     design_name=str(dataset.name),
                     trace_repo=uow.data_records,
-                    trace_batch_repo=uow.result_bundles,
+                    trace_batch_repo=cast(Any, uow.result_bundles),
                 )
                 if dataset is not None and dataset.id is not None
                 else None

@@ -7,7 +7,7 @@ import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pandas as pd
@@ -37,6 +37,7 @@ from app.services.characterization_runner import (
 )
 from app.services.characterization_task_contract import build_characterization_submission
 from app.services.characterization_trace_scope import (
+    CharacterizationTraceScopeUnitOfWork,
     TraceSourceSummary,
     count_scope_trace_records,
     hydrate_trace_index_rows_with_provenance,
@@ -199,11 +200,16 @@ def _latest_completed_analysis_run_summaries(
         analysis_id = str(summary.get("analysis_id", "")).strip()
         if not analysis_id or str(summary.get("status", "")).strip() != "completed":
             continue
-        analysis_run_id = int(summary.get("analysis_run_id", summary.get("bundle_id", 0)) or 0)
-        current = latest_by_analysis.get(analysis_id)
-        current_analysis_run_id = (
-            int(current.get("analysis_run_id", current.get("bundle_id", 0)) or 0) if current else 0
+        raw_analysis_run_id = summary.get("analysis_run_id", summary.get("bundle_id", 0))
+        analysis_run_id = (
+            int(raw_analysis_run_id) if isinstance(raw_analysis_run_id, int | str) else 0
         )
+        current = latest_by_analysis.get(analysis_id)
+        current_analysis_run_id = 0
+        if current is not None:
+            raw_current_run_id = current.get("analysis_run_id", current.get("bundle_id", 0))
+            if isinstance(raw_current_run_id, int | str):
+                current_analysis_run_id = int(raw_current_run_id)
         if current is None or analysis_run_id >= current_analysis_run_id:
             latest_by_analysis[analysis_id] = dict(summary)
     return latest_by_analysis
@@ -272,7 +278,13 @@ def _sync_result_view_selection_after_run(
 ) -> _PostRunResultViewSelection:
     """Persist Result View state so refresh lands on the completed analysis."""
     analysis_id = str(analysis.get("id", "")).strip()
-    completed_methods = set(analysis.get("completed_methods", []))
+    raw_completed_methods = analysis.get("completed_methods", [])
+    completed_methods = (
+        set(raw_completed_methods)
+        if isinstance(raw_completed_methods, Sequence)
+        and not isinstance(raw_completed_methods, str | bytes)
+        else set()
+    )
     with get_unit_of_work() as uow:
         method_params = _group_by_method(uow.derived_params.list_by_dataset(dataset_id))
     analysis_method_groups = {
@@ -495,7 +507,8 @@ def _format_trace_source_summary(
             trace_count = int(summary.trace_count)
         else:
             label = str(summary.get("source_label", "")).strip()
-            trace_count = int(summary.get("trace_count", 0) or 0)
+            raw_trace_count = summary.get("trace_count", 0)
+            trace_count = int(raw_trace_count) if isinstance(raw_trace_count, int | str) else 0
         if not label:
             continue
         chunks.append(f"{label} {trace_count}")
@@ -533,11 +546,25 @@ def _analysis_run_provenance_text(run_record: AnalysisRunRecord) -> str:
         stage_labels: list[str] = []
         batch_ids: list[int] = []
         for summary in source_summary:
-            for stage_kind in summary.get("stage_kinds", []):
+            raw_stage_kinds = summary.get("stage_kinds", [])
+            stage_kinds = (
+                raw_stage_kinds
+                if isinstance(raw_stage_kinds, Sequence)
+                and not isinstance(raw_stage_kinds, str | bytes)
+                else []
+            )
+            for stage_kind in stage_kinds:
                 stage_text = str(stage_kind).replace("_", " ").strip().title()
                 if stage_text and stage_text not in stage_labels:
                     stage_labels.append(stage_text)
-            for batch_id in summary.get("source_batch_ids", []):
+            raw_batch_ids = summary.get("source_batch_ids", [])
+            batch_id_values = (
+                raw_batch_ids
+                if isinstance(raw_batch_ids, Sequence)
+                and not isinstance(raw_batch_ids, str | bytes)
+                else []
+            )
+            for batch_id in batch_id_values:
                 if isinstance(batch_id, int) and batch_id not in batch_ids:
                     batch_ids.append(batch_id)
         stage_text = ", ".join(stage_labels) if stage_labels else "Trace-first provenance"
@@ -567,6 +594,15 @@ def _trace_mode_filter_options(method_groups: dict[str, list]) -> dict[str, str]
         if mode_key in present_modes:
             available_keys.append(mode_key)
     return {key: _TRACE_MODE_LABELS[key] for key in available_keys}
+
+
+def _numeric_ui_default(value: object) -> float | None:
+    """Normalize optional numeric defaults for NiceGUI number inputs."""
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    return None
 
 
 def _filter_method_groups_by_trace_mode(
@@ -1435,10 +1471,11 @@ def characterization_page():
                             active_id,
                             include_cache=False,
                         )
+                        typed_refresh_uow = cast(CharacterizationTraceScopeUnitOfWork, refresh_uow)
                         selected_bundle_id = None
                         selected_scope_token = "all_dataset_records"
                         scoped_trace_count = count_scope_trace_records(
-                            uow=refresh_uow,
+                            uow=typed_refresh_uow,
                             dataset_id=active_id,
                             selected_bundle_id=selected_bundle_id,
                         )
@@ -1453,7 +1490,7 @@ def characterization_page():
                             )
                         )
                         design_source_summaries = list_design_scope_source_summaries(
-                            uow=refresh_uow,
+                            uow=typed_refresh_uow,
                             dataset_id=active_id,
                         )
                         method_params = _group_by_method(ds_params)
@@ -1485,7 +1522,7 @@ def characterization_page():
                             )
                             if compatibility is None:
                                 _, compatible_trace_count = list_scope_compatible_trace_index_page(
-                                    uow=refresh_uow,
+                                    uow=typed_refresh_uow,
                                     dataset_id=active_id,
                                     selected_bundle_id=selected_bundle_id,
                                     analysis_requires=effective_requires,
@@ -1566,7 +1603,7 @@ def characterization_page():
                             offset: int = 0,
                         ) -> tuple[list[dict[str, str | int]], int]:
                             return list_scope_compatible_trace_index_page(
-                                uow=refresh_uow,
+                                uow=typed_refresh_uow,
                                 dataset_id=active_id,
                                 selected_bundle_id=selected_bundle_id,
                                 analysis_requires=selected_analysis_requires,
@@ -1656,7 +1693,7 @@ def characterization_page():
                                 offset=0,
                             )
                             return hydrate_trace_index_rows_with_provenance(
-                                uow=refresh_uow,
+                                uow=typed_refresh_uow,
                                 dataset_id=active_id,
                                 rows=rows,
                             )
@@ -1666,7 +1703,7 @@ def characterization_page():
 
                         def current_compatible_source_summaries() -> list[TraceSourceSummary]:
                             return list_scope_compatible_trace_source_summaries(
-                                uow=refresh_uow,
+                                uow=typed_refresh_uow,
                                 dataset_id=active_id,
                                 selected_bundle_id=selected_bundle_id,
                                 analysis_requires=selected_analysis_requires,
@@ -1728,7 +1765,13 @@ def characterization_page():
 
                         analysis_method_groups: dict[str, dict[str, list]] = {}
                         for analysis in analyses:
-                            completed_methods = set(analysis.get("completed_methods", []))
+                            raw_completed_methods = analysis.get("completed_methods", [])
+                            completed_methods = (
+                                set(raw_completed_methods)
+                                if isinstance(raw_completed_methods, Sequence)
+                                and not isinstance(raw_completed_methods, str | bytes)
+                                else set()
+                            )
                             analysis_method_groups[str(analysis["id"])] = {
                                 method_key: list(method_params[method_key])
                                 for method_key in sorted(completed_methods)
@@ -1851,7 +1894,7 @@ def characterization_page():
                             ):
                                 run_config_selects: dict[str, Any] = {}
                                 run_config_numbers: dict[str, Any] = {}
-                                run_button: Any | None = None
+                                run_button: Any = None
                                 availability_label: Any | None = None
                                 analysis_reason_label: Any | None = None
 
@@ -2009,7 +2052,8 @@ def characterization_page():
                                         selected_mode_group = _trace_mode_group_for_selected_rows(
                                             selected_trace_rows
                                         )
-                                        run_button.props("loading")
+                                        if run_button is not None:
+                                            run_button.props("loading")
                                         append_analysis_status(
                                             "info",
                                             (
@@ -2036,13 +2080,18 @@ def characterization_page():
                                         try:
                                             if active_design_id is None:
                                                 raise ValueError("Active design id is missing.")
-                                            selected_batch_ids = [
-                                                int(batch_id)
-                                                for summary in selected_source_summary
-                                                if isinstance(summary, Mapping)
-                                                for batch_id in summary.get("source_batch_ids", [])
-                                                if isinstance(batch_id, int)
-                                            ]
+                                            selected_batch_ids: list[int] = []
+                                            for summary in selected_source_summary:
+                                                if not isinstance(summary, Mapping):
+                                                    continue
+                                                raw_batch_ids = summary.get("source_batch_ids", [])
+                                                if not isinstance(
+                                                    raw_batch_ids, Sequence
+                                                ) or isinstance(raw_batch_ids, str | bytes):
+                                                    continue
+                                                for batch_id in raw_batch_ids:
+                                                    if isinstance(batch_id, int):
+                                                        selected_batch_ids.append(int(batch_id))
                                             submission = build_characterization_submission(
                                                 design_id=active_design_id,
                                                 analysis_id=analysis_id,
@@ -2086,7 +2135,8 @@ def characterization_page():
                                                 f"{selected_run_analysis['label']} failed: {exc}",
                                             )
                                         finally:
-                                            run_button.props(remove="loading")
+                                            if run_button is not None:
+                                                run_button.props(remove="loading")
 
                                     run_button = (
                                         ui.button(
@@ -2247,7 +2297,7 @@ def characterization_page():
                                     )
                                     hydrated_visible_trace_rows = (
                                         hydrate_trace_index_rows_with_provenance(
-                                            uow=refresh_uow,
+                                            uow=typed_refresh_uow,
                                             dataset_id=active_id,
                                             rows=visible_trace_rows,
                                         )
@@ -2494,9 +2544,14 @@ def characterization_page():
                                             if not field_name:
                                                 continue
                                             if field["type"] == "select":
+                                                options = field.get("options", {})
                                                 run_config_selects[field_name] = (
                                                     ui.select(
-                                                        options=field["options"],
+                                                        options=(
+                                                            options
+                                                            if isinstance(options, Mapping)
+                                                            else {}
+                                                        ),
                                                         value=field.get("default"),
                                                         label=field["label"],
                                                     )
@@ -2507,7 +2562,9 @@ def characterization_page():
                                                 run_config_numbers[field_name] = (
                                                     ui.number(
                                                         label=field["label"],
-                                                        value=field.get("default"),
+                                                        value=_numeric_ui_default(
+                                                            field.get("default")
+                                                        ),
                                                     )
                                                     .props("dense outlined")
                                                     .classes("w-40")
@@ -2785,15 +2842,14 @@ def characterization_page():
                                             selected_result_analysis_id
                                         )
                                         if latest_completed_run is not None:
+                                            raw_latest_run_id = latest_completed_run.get(
+                                                "analysis_run_id",
+                                                latest_completed_run.get("bundle_id", 0),
+                                            )
                                             latest_completed_analysis_run_id = (
-                                                int(
-                                                    latest_completed_run.get(
-                                                        "analysis_run_id",
-                                                        latest_completed_run.get("bundle_id", 0),
-                                                    )
-                                                    or 0
-                                                )
-                                                or None
+                                                int(raw_latest_run_id)
+                                                if isinstance(raw_latest_run_id, int | str)
+                                                else None
                                             )
                                         ui.label(
                                             _result_view_empty_state_message(

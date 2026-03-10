@@ -145,10 +145,19 @@ def _load_rows(dataset_filters: list[str]) -> tuple[list[dict[str, object]], lis
         key=lambda row: (
             str(row["dataset_name"]).casefold(),
             str(row["mode"]).casefold(),
-            float(row["l_jun_nh"]),
+            _row_float(row, "l_jun_nh"),
         )
     )
     return rows, missing_filters
+
+
+def _row_float(row: dict[str, object], key: str) -> float:
+    raw_value = row.get(key)
+    if isinstance(raw_value, int | float):
+        return float(raw_value)
+    if isinstance(raw_value, str):
+        return float(raw_value)
+    raise ValueError(f"Row field {key!r} is not numeric.")
 
 
 def _mock_rows() -> list[dict[str, object]]:
@@ -224,8 +233,8 @@ def _build_matrix(
     for row in mode_rows:
         grouped[(str(row["qubit"]), str(row["structure"]))].append(
             {
-                "l_jun_nh": float(row["l_jun_nh"]),
-                "f_resonance_ghz": float(row["f_resonance_ghz"]),
+                "l_jun_nh": _row_float(row, "l_jun_nh"),
+                "f_resonance_ghz": _row_float(row, "f_resonance_ghz"),
             }
         )
 

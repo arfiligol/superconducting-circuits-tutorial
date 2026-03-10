@@ -110,10 +110,19 @@ def _load_resonance_rows(dataset_filters: list[str]) -> tuple[list[dict[str, obj
         key=lambda row: (
             str(row["dataset_name"]).casefold(),
             str(row["mode"]).casefold(),
-            float(row["l_jun_nh"]),
+            _row_float(row, "l_jun_nh"),
         )
     )
     return rows, missing_filters
+
+
+def _row_float(row: dict[str, object], key: str) -> float:
+    raw_value = row.get(key)
+    if isinstance(raw_value, int | float):
+        return float(raw_value)
+    if isinstance(raw_value, str):
+        return float(raw_value)
+    raise ValueError(f"Row field {key!r} is not numeric.")
 
 
 def _mock_rows() -> list[dict[str, object]]:
@@ -189,8 +198,8 @@ def _build_long_table(rows: list[dict[str, object]], title: str) -> go.Figure:
         [str(row["dataset_name"]) for row in rows],
         [str(row["dataset_id"]) for row in rows],
         [str(row["mode"]) for row in rows],
-        [f"{float(row['l_jun_nh']):.6g}" for row in rows],
-        [f"{float(row['f_resonance_ghz']):.12g}" for row in rows],
+        [f"{_row_float(row, 'l_jun_nh'):.6g}" for row in rows],
+        [f"{_row_float(row, 'f_resonance_ghz'):.12g}" for row in rows],
         [str(row["qubit"]) for row in rows],
         [str(row["line"]) for row in rows],
     ]
@@ -213,12 +222,12 @@ def _build_pivot_table(
 
     cell_map: dict[tuple[str, str], float] = {}
     for key, candidates in grouped.items():
-        ordered = sorted(candidates, key=lambda row: float(row["l_jun_nh"]))
+        ordered = sorted(candidates, key=lambda row: _row_float(row, "l_jun_nh"))
         if l_jun_nh is None:
             chosen = ordered[0]
         else:
-            chosen = min(ordered, key=lambda row: abs(float(row["l_jun_nh"]) - l_jun_nh))
-        cell_map[key] = float(chosen["f_resonance_ghz"])
+            chosen = min(ordered, key=lambda row: abs(_row_float(row, "l_jun_nh") - l_jun_nh))
+        cell_map[key] = _row_float(chosen, "f_resonance_ghz")
 
     qubits = sorted({key[0] for key in cell_map})
     preferred_lines = ["Readout", "XY", "XY + Readout"]

@@ -30,6 +30,13 @@ class TraceAxisMetadata(TypedDict):
     length: int
 
 
+class _NormalizedAxis(TypedDict):
+    name: str
+    unit: str
+    length: int
+    values: NDArray[np.generic]
+
+
 class TraceStoreRef(TypedDict):
     """Location reference for one trace payload inside a TraceStore backend."""
 
@@ -67,7 +74,8 @@ class TraceWriteResult:
 class TraceStoreBackendBinding(Protocol):
     """Backend-specific locator contract kept inside persistence."""
 
-    backend: TraceStoreBackend
+    @property
+    def backend(self) -> TraceStoreBackend: ...
 
     def build_store_key(self, *, design_id: int, batch_id: int) -> str: ...
 
@@ -509,13 +517,23 @@ class LocalZarrTraceStore:
             )
         return self._backend_binding.resolve_store_path(store_key=normalized_ref["store_key"])
 
-    def _open_trace_group(self, ref: Mapping[str, object], *, mode: str = "r"):
+    def _open_trace_group(
+        self,
+        ref: Mapping[str, object],
+        *,
+        mode: Literal["r", "r+", "a", "w", "w-"] = "r",
+    ):
         zarr = _require_zarr()
         normalized_ref = coerce_trace_store_ref(ref)
         root = zarr.open_group(store=self._resolve_store_path(normalized_ref), mode=mode)
         return _get_group(root, normalized_ref["group_path"])
 
-    def _open_trace_array(self, ref: Mapping[str, object], *, mode: str = "r"):
+    def _open_trace_array(
+        self,
+        ref: Mapping[str, object],
+        *,
+        mode: Literal["r", "r+", "a", "w", "w-"] = "r",
+    ):
         trace_group = self._open_trace_group(ref, mode=mode)
         normalized_ref = coerce_trace_store_ref(ref)
         return trace_group[normalized_ref["array_path"]]
@@ -551,11 +569,11 @@ def _normalize_axes(
     axes: Sequence[Mapping[str, object]],
     *,
     expected_shape: tuple[int, ...],
-) -> list[dict[str, object]]:
+) -> list[_NormalizedAxis]:
     if len(axes) != len(expected_shape):
         raise ValueError("Axis metadata count must match trace dimensionality.")
 
-    normalized_axes: list[dict[str, object]] = []
+    normalized_axes: list[_NormalizedAxis] = []
     for axis_index, axis in enumerate(axes):
         axis_name = str(axis.get("name", "")).strip()
         axis_unit = str(axis.get("unit", "")).strip()

@@ -1,6 +1,6 @@
 """Service for managing Tags."""
 
-from typing import cast
+from typing import Any, cast
 
 from core.analysis.application.dto.tag_dtos import TagDTO
 from core.shared.persistence import get_unit_of_work
@@ -27,7 +27,6 @@ class TagManagementService:
         with get_unit_of_work() as uow:
             tag = uow.tags.get_or_create(name)
             uow.commit()
-            uow.refresh(tag)
             return self._to_dto(tag)
 
     def update_tag(self, identifier: str, new_name: str) -> TagDTO | None:
@@ -56,21 +55,23 @@ class TagManagementService:
         """Automatically reorder IDs to be sequential (1..N)."""
         count = 0
         with get_unit_of_work() as uow:
-            tags = sorted(uow.tags.list_all(), key=lambda x: x.id)
+            tags = sorted(uow.tags.list_all(), key=lambda x: x.id or 0)
             for idx, tag in enumerate(tags, start=1):
-                if tag.id != idx:
-                    try:
-                        uow.tags.reorder_id(tag.id, idx)
-                        count += 1
-                    except ValueError:
-                        pass
+                if tag.id is None or tag.id == idx:
+                    continue
+                try:
+                    uow.tags.reorder_id(tag.id, idx)
+                    count += 1
+                except ValueError:
+                    pass
             uow.commit()
             return count
 
-    def _find_tag(self, uow, identifier: str) -> Tag | None:
+    def _find_tag(self, uow: object, identifier: str) -> Tag | None:
+        typed_uow = cast(Any, uow)
         if identifier.isdigit():
-            return uow.tags.get(int(identifier))
-        return uow.tags.get_by_name(identifier)
+            return typed_uow.tags.get(int(identifier))
+        return typed_uow.tags.get_by_name(identifier)
 
     def _to_dto(self, tag: Tag) -> TagDTO:
         return TagDTO(id=cast(int, tag.id), name=tag.name)

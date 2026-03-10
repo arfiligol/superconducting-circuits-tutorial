@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 from uuid import uuid4
 
 import numpy as np
@@ -784,6 +784,8 @@ def _cached_trace_store_bundle_from_post_processed_runtime(
             runtime_output,
             reference_impedance_ohm=reference_impedance_ohm,
         )
+    if not isinstance(runtime_output, PortMatrixSweep):
+        raise TypeError("Post-processed runtime output must resolve to a PortMatrixSweep.")
     return _trace_store_bundle_from_post_processed_sweep(
         runtime_output,
         reference_impedance_ohm=reference_impedance_ohm,
@@ -1207,7 +1209,9 @@ def _load_cached_simulation_result(
             isinstance(summary_payload, Mapping)
             and str(summary_payload.get("run_kind", "")).strip() == "parameter_sweep"
         ):
-            return (int(bundle.id), int(cache_dataset.id), None, dict(bundle.result_payload))
+            if bundle.id is None:
+                return None
+            return (bundle.id, int(cache_dataset.id), None, dict(bundle.result_payload))
 
     if not is_trace_batch_bundle_payload(bundle.result_payload):
         source_meta = dict(bundle.source_meta) if isinstance(bundle.source_meta, dict) else {}
@@ -1264,7 +1268,9 @@ def _load_cached_simulation_result(
         )
         uow.commit()
         if sweep_payload is not None:
-            return (int(bundle.id), int(cache_dataset.id), None, dict(bundle.result_payload))
+            if bundle.id is None:
+                return None
+            return (bundle.id, int(cache_dataset.id), None, dict(bundle.result_payload))
 
     if bundle.id is None:
         return None
@@ -1334,9 +1340,11 @@ def _normalize_selected_design_ids(selection: object) -> tuple[int, ...]:
         return ()
     normalized: list[int] = []
     for value in selection_iterable:
+        if not isinstance(value, int | str):
+            continue
         try:
             design_id = int(value)
-        except (TypeError, ValueError):
+        except ValueError:
             continue
         if design_id not in normalized:
             normalized.append(design_id)
@@ -1499,22 +1507,6 @@ def _resolved_sweep_point_count(payload: Mapping[str, Any] | None) -> int:
             return int(summary_payload.get("point_count", 0) or 0)
         return 0
     return int(payload.get("point_count", 0) or 0)
-
-
-def _resolved_frequency_point_count_from_payload(payload: Mapping[str, Any] | None) -> int:
-    """Resolve one representative frequency-point count across payload shapes."""
-    if not isinstance(payload, Mapping):
-        return 0
-    if is_trace_batch_bundle_payload(payload):
-        summary_payload = payload.get("trace_batch_record", {}).get("summary_payload", {})
-        if isinstance(summary_payload, Mapping):
-            return int(summary_payload.get("frequency_points", 0) or 0)
-        return 0
-    try:
-        sweep_run = simulation_sweep_run_from_payload(payload)
-    except Exception:
-        return 0
-    return len(sweep_run.representative_result.frequencies_ghz)
 
 
 def _post_processed_runtime_is_sweep(
@@ -2354,6 +2346,13 @@ def _coerce_int_value(value: object, default: int) -> int:
         return default
 
 
+def _require_ui_element(element: Any | None, name: str) -> Any:
+    """Require one lazily populated UI element before mutating it."""
+    if element is None:
+        raise RuntimeError(f"{name} is unavailable.")
+    return element
+
+
 def _finite_float_or_none(value: float) -> float | None:
     """Return value only when finite, otherwise None for Plotly gaps."""
     import math
@@ -2864,7 +2863,7 @@ def _render_result_family_explorer(
             view_state["traces"] = normalized_traces
 
             with ui.row().classes("w-full items-end justify-between gap-3 flex-wrap"):
-                with ui.tabs(value=view_family).classes("mb-1") as family_switch:
+                with ui.tabs(value=cast(Any, view_family)).classes("mb-1") as family_switch:
                     for family_key, family_label in family_tabs:
                         ui.tab(family_key, label=family_label)
                 if testid_prefix:
@@ -3318,8 +3317,8 @@ def _render_post_processing_panel(
     def _make_step_config(step_type: str) -> dict[str, Any]:
         return build_default_step_config(
             step_type,
-            default_port_a=default_port_a,
-            default_port_b=default_port_b,
+            default_port_a=default_port_a or 1,
+            default_port_b=default_port_b or default_port_a or 1,
         )
 
     def invalidate_processed_state() -> None:
@@ -3375,8 +3374,8 @@ def _render_post_processing_panel(
                 normalized = normalize_saved_step_config(
                     raw_step=raw_step,
                     step_id=step_id_seed["value"],
-                    default_port_a=default_port_a,
-                    default_port_b=default_port_b,
+                    default_port_a=default_port_a or 1,
+                    default_port_b=default_port_b or default_port_a or 1,
                 )
                 step_id_seed["value"] += 1
                 step_sequence.append(normalized)
@@ -3470,7 +3469,9 @@ def _render_post_processing_panel(
                 }
                 updated = [s for s in saved_post_setups if str(s.get("id")) != setup_id]
                 updated.append(record)
-                _save_saved_post_process_setups_for_schema(schema_id, updated)
+                if schema_id is None:
+                    raise ValueError("Schema id is unavailable for post-processing setup save.")
+                _save_saved_post_process_setups_for_schema(int(schema_id), updated)
                 refresh_saved_post_setup_select(preferred_id=setup_id)
                 ui.notify(f"Saved post-processing setup: {setup_name}", type="positive")
                 dialog.close()
@@ -5277,7 +5278,7 @@ def _normalize_sweep_result_view_state_from_source(
             _default_sweep_result_trace_selection(
                 representative,
                 family,
-                port_options=port_options,
+                port_options=dict(port_options) if port_options is not None else {},
                 sweep_axis_index=representative_axis_index,
             )
         ]
@@ -5416,7 +5417,11 @@ def _sweep_metric_series_for_point(
         return ([], "", "")
 
     resolved_values: list[float | None] = []
-    for raw in list(figure.data[0].y):
+    y_values = getattr(figure.data[0], "y", [])
+    for raw in list(cast(Sequence[object], y_values)):
+        if not isinstance(raw, int | float | str):
+            resolved_values.append(None)
+            continue
         try:
             value = float(raw)
         except Exception:
@@ -6449,11 +6454,11 @@ def _render_simulation_environment():
 
         runtime_state = SimulationRuntimeState()
         status_container: Any | None = None
-        simulation_results_container: Any | None = None
-        simulation_sweep_results_container: Any | None = None
-        post_processing_container: Any | None = None
-        post_processing_results_container: Any | None = None
-        post_processing_sweep_results_container: Any | None = None
+        simulation_results_container: Any = None
+        simulation_sweep_results_container: Any = None
+        post_processing_container: Any = None
+        post_processing_results_container: Any = None
+        post_processing_sweep_results_container: Any = None
         poll_timer: Any | None = None
         post_processing_poll_timer: Any | None = None
         raw_view_state = default_result_view_state(
@@ -6619,7 +6624,7 @@ def _render_simulation_environment():
             "flow_spec": None,
             "source_bundle_id": None,
         }
-        resolved_post_process_source_bundle_id_ref = {"value": None}
+        resolved_post_process_source_bundle_id_ref: dict[str, int | None] = {"value": None}
 
         def _selected_design_ids() -> tuple[int, ...]:
             return _normalize_selected_design_ids(app.storage.user.get("selected_datasets", []))
@@ -7316,16 +7321,20 @@ def _render_simulation_environment():
                         "text-sm text-warning"
                     )
                 return
-            preview_projection = (
-                flow_spec.get("preview_projection")
-                if isinstance(flow_spec, Mapping)
-                and isinstance(flow_spec.get("preview_projection"), Mapping)
-                else {}
-            )
+            preview_projection: Mapping[str, object]
+            if isinstance(flow_spec, Mapping):
+                raw_preview_projection = flow_spec.get("preview_projection")
+                preview_projection = (
+                    cast(Mapping[str, object], raw_preview_projection)
+                    if isinstance(raw_preview_projection, Mapping)
+                    else {}
+                )
+            else:
+                preview_projection = {}
             summary_prefix = (
                 "canonical=parameter_sweep"
                 " | preview=representative point "
-                f"#{int(preview_projection.get('point_index', 0)) + 1}"
+                f"#{_coerce_int_value(preview_projection.get('point_index'), 0) + 1}"
             )
             _render_sweep_result_view_container(
                 container=post_processing_sweep_results_container,
@@ -7483,13 +7492,14 @@ def _render_simulation_environment():
                     hfss_token = f"{hfss_token} ({hfss_reason})"
                 preview_token = ""
                 if str(typed_flow_spec.get("run_kind", "single_result")) == "parameter_sweep":
-                    projection = (
-                        typed_flow_spec.get("preview_projection")
-                        if isinstance(typed_flow_spec.get("preview_projection"), Mapping)
+                    raw_projection = typed_flow_spec.get("preview_projection")
+                    projection: Mapping[str, object] = (
+                        cast(Mapping[str, object], raw_projection)
+                        if isinstance(raw_projection, Mapping)
                         else {}
                     )
-                    point_count = int(typed_flow_spec.get("point_count", 0) or 0)
-                    point_index = int(projection.get("point_index", 0)) + 1
+                    point_count = _coerce_int_value(typed_flow_spec.get("point_count"), 0)
+                    point_index = _coerce_int_value(projection.get("point_index"), 0) + 1
                     preview_token = (
                         f" | canonical=parameter_sweep({point_count} points) "
                         f"| preview=representative point #{point_index}"
@@ -9369,8 +9379,10 @@ def _render_simulation_environment():
                                     "Post-processed sweep explorer is waiting for persisted output."
                                 ).classes("text-sm text-muted")
 
+                        if latest_record.id is None:
+                            raise ValueError("Latest schema id is unavailable.")
                         submission = build_simulation_submission(
-                            design_id=int(latest_record.id),
+                            design_id=latest_record.id,
                             design_name=str(latest_record.name),
                             circuit=latest_circuit_def,
                             freq_range=freq_range,
@@ -9788,6 +9800,8 @@ def _save_post_processed_results_dialog(
             trace_batch_payload=runtime_output,
         )
     else:
+        if not isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun)):
+            raise ValueError("Post-processed runtime output is unavailable.")
         bundle_records = _build_post_processed_runtime_data_records(
             dataset_id=0,
             runtime_output=runtime_output,
@@ -9953,6 +9967,8 @@ def _save_post_processed_results_dialog(
                             ),
                         )
                     else:
+                        if not isinstance(runtime_output, (PortMatrixSweep, PortMatrixSweepRun)):
+                            raise ValueError("Post-processed runtime output is unavailable.")
                         trace_specs = build_post_processed_trace_specs(
                             runtime_output=runtime_output
                         )

@@ -5,10 +5,13 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Final
+from typing import Final, cast
 
 from core.shared.persistence.models import TraceBatchRecord
-from core.shared.persistence.trace_store import get_trace_store_backend_binding
+from core.shared.persistence.trace_store import (
+    LocalZarrTraceStoreBackend,
+    get_trace_store_backend_binding,
+)
 from core.shared.persistence.unit_of_work import SqliteUnitOfWork
 
 _STALE_TASK_RECONCILE_REASON: Final[str] = "stale_task_timeout"
@@ -54,7 +57,10 @@ def _cleanup_store_keys(store_keys: list[str]) -> list[str]:
     """Delete local trace-store directories for known store keys."""
     if not store_keys:
         return []
-    binding = get_trace_store_backend_binding(backend="local_zarr")
+    binding = cast(
+        LocalZarrTraceStoreBackend,
+        get_trace_store_backend_binding(backend="local_zarr"),
+    )
     deleted: list[str] = []
     for store_key in store_keys:
         store_path = binding.resolve_store_path(store_key=store_key)
@@ -95,14 +101,16 @@ def reconcile_stale_tasks_and_batches(
         )
         if related_batch is not None and str(related_batch.status) != "completed":
             pending_store_keys.extend(_extract_store_keys(related_batch))
-            uow.result_bundles.mark_failed(
-                int(related_batch.id),
-                summary_payload=_reconcile_summary_payload(
-                    reason=_STALE_TASK_RECONCILE_REASON,
-                    stale_before=stale_before,
-                ),
-            )
-            failed_batch_ids.append(int(related_batch.id))
+            if related_batch.id is not None:
+                related_batch_id = int(related_batch.id)
+                uow.result_bundles.mark_failed(
+                    related_batch_id,
+                    summary_payload=_reconcile_summary_payload(
+                        reason=_STALE_TASK_RECONCILE_REASON,
+                        stale_before=stale_before,
+                    ),
+                )
+                failed_batch_ids.append(related_batch_id)
 
         uow.tasks.mark_failed(
             int(task.id),

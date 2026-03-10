@@ -527,7 +527,7 @@ class TraceBatchRepository:
         **kwargs: object,
     ) -> tuple[list[dict[str, str | int]], int]:
         """List one page of canonical batch-linked trace metadata rows."""
-        rows, total = self.list_data_record_index_page(batch_id, query=query, **kwargs)
+        rows, total = cast(Any, self.list_data_record_index_page)(batch_id, query=query, **kwargs)
         return ([_canonical_trace_row(row) for row in rows], total)
 
     def list_data_record_index_page(

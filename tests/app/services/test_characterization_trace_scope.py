@@ -88,7 +88,8 @@ class _FakeResultBundlesRepo:
         total = (
             self.count_by_bundle_id.get(bundle_id, len(rows))
             if self.count_by_bundle_id
-            else len(rows) if self.bundle_rows_by_id and bundle_id in self.bundle_rows_by_id
+            else len(rows)
+            if self.bundle_rows_by_id and bundle_id in self.bundle_rows_by_id
             else self.page_total
         )
         return (rows, total)
@@ -160,7 +161,13 @@ def test_list_scope_compatible_trace_index_page_builds_normalized_query() -> Non
     assert total == 1
     query = data_records.last_query
     assert query is not None
-    assert query.data_types == ("y_parameters", "y_params")
+    assert query.data_types == (
+        "y_parameters",
+        "y_params",
+        "y_matrix",
+        "admittance",
+        "admittance_matrix",
+    )
     assert query.parameters == ("Y11",)
     assert query.representation == "imaginary"
     assert query.mode_filter == "all"

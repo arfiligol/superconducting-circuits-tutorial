@@ -1,5 +1,7 @@
 """Repository for DerivedParameter operations."""
 
+from typing import Any, cast
+
 from sqlmodel import Session, select
 
 from core.shared.persistence.models import DerivedParameter
@@ -23,7 +25,7 @@ class DerivedParameterRepository:
 
     def list_all(self) -> list[DerivedParameter]:
         """List all derived parameters."""
-        statement = select(DerivedParameter).order_by(DerivedParameter.id)
+        statement = select(DerivedParameter).order_by(cast(Any, DerivedParameter.id))
         return list(self._session.exec(statement).all())
 
     def get(self, id: int) -> DerivedParameter | None:
@@ -48,8 +50,13 @@ class DerivedParameterRepository:
         from core.shared.persistence.models import DerivedParameter
 
         self._session.exec(
-            update(DerivedParameter).where(DerivedParameter.id == old_id).values(id=new_id)
+            update(DerivedParameter)
+            .where(cast(Any, DerivedParameter.id) == old_id)
+            .values(id=new_id)
         )
 
         self._session.expire(param)
-        return self.get(new_id)
+        updated = self.get(new_id)
+        if updated is None:
+            raise ValueError(f"Target ID {new_id} was not persisted.")
+        return updated

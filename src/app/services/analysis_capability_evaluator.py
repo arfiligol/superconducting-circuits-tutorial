@@ -13,6 +13,11 @@ from app.services.dataset_profile import (
 )
 
 
+def _analysis_sequence_field(analysis: Mapping[str, object], key: str) -> list[object]:
+    raw_value = analysis.get(key, [])
+    return list(raw_value) if isinstance(raw_value, list | tuple | set) else []
+
+
 @dataclass(frozen=True)
 class AnalysisCapabilityDecision:
     """Hint-only capability decision for one analysis on one dataset profile."""
@@ -36,11 +41,15 @@ def evaluate_analysis_capability_gating(
     capabilities = set(normalize_capabilities(dataset_profile.get("capabilities", [])))
     device_type = normalize_device_type(dataset_profile.get("device_type"))
 
-    required = set(normalize_capabilities(analysis.get("required_capabilities", [])))
-    excluded = set(normalize_capabilities(analysis.get("excluded_capabilities", [])))
+    required = set(
+        normalize_capabilities(_analysis_sequence_field(analysis, "required_capabilities"))
+    )
+    excluded = set(
+        normalize_capabilities(_analysis_sequence_field(analysis, "excluded_capabilities"))
+    )
     recommended_for = {
         normalize_device_type(raw_device_type)
-        for raw_device_type in analysis.get("recommended_for", [])
+        for raw_device_type in _analysis_sequence_field(analysis, "recommended_for")
     }
 
     missing = sorted(required - capabilities)

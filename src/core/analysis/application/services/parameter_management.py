@@ -7,7 +7,24 @@ from core.analysis.application.dto.parameter_dtos import (
     DerivedParameterSummaryDTO,
 )
 from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import DerivedParameter
+from core.shared.persistence.models import DerivedParameter, DeviceType
+
+
+def _normalize_parameter_value(value: float | list[float]) -> float:
+    if isinstance(value, list):
+        if not value:
+            raise ValueError("DerivedParameter value list cannot be empty.")
+        return float(value[0])
+    return float(value)
+
+
+def _normalize_parameter_device_type(device_type: str | None) -> DeviceType:
+    if device_type is None:
+        return DeviceType.OTHER
+    try:
+        return DeviceType(device_type)
+    except ValueError:
+        return DeviceType.OTHER
 
 
 class ParameterManagementService:
@@ -23,7 +40,7 @@ class ParameterManagementService:
         self,
         dataset_id: int,
         name: str,
-        value: float | list,
+        value: float | list[float],
         unit: str = "",
         device_type: str | None = None,
         method: str | None = None,
@@ -40,10 +57,13 @@ class ParameterManagementService:
                 ),
                 None,
             )
+            normalized_value = _normalize_parameter_value(value)
+            normalized_device_type = _normalize_parameter_device_type(device_type)
             if existing:
-                existing.value = value
+                existing.value = normalized_value
                 existing.unit = unit
                 existing.method = method
+                existing.device_type = normalized_device_type
                 if extra is not None:
                     existing.extra = extra
                 param = existing
@@ -51,9 +71,9 @@ class ParameterManagementService:
                 param = DerivedParameter(
                     dataset_id=dataset_id,
                     name=name,
-                    value=value,
+                    value=normalized_value,
                     unit=unit,
-                    device_type=device_type,
+                    device_type=normalized_device_type,
                     method=method,
                     extra=extra or {},
                 )
@@ -82,14 +102,15 @@ class ParameterManagementService:
         """Automatically reorder IDs to be sequential (1..N)."""
         count = 0
         with get_unit_of_work() as uow:
-            params = sorted(uow.derived_params.list_all(), key=lambda x: x.id)
+            params = sorted(uow.derived_params.list_all(), key=lambda x: x.id or 0)
             for idx, param in enumerate(params, start=1):
-                if param.id != idx:
-                    try:
-                        uow.derived_params.reorder_id(param.id, idx)
-                        count += 1
-                    except ValueError:
-                        pass
+                if param.id is None or param.id == idx:
+                    continue
+                try:
+                    uow.derived_params.reorder_id(param.id, idx)
+                    count += 1
+                except ValueError:
+                    pass
             uow.commit()
             return count
 

@@ -461,7 +461,7 @@ class IncrementalRawSimulationSweepWriter:
                 batch_id=0,
                 trace_id=trace_index,
                 shape=shape,
-                dtype=np.float64,
+                dtype=np.dtype(np.float64),
                 axes=[
                     {
                         "name": axis.name,
@@ -642,7 +642,7 @@ class IncrementalPostProcessedSweepWriter:
                 batch_id=0,
                 trace_id=trace_index,
                 shape=shape,
-                dtype=np.float64,
+                dtype=np.dtype(np.float64),
                 axes=[
                     {
                         "name": axis.name,

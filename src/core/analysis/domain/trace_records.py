@@ -219,7 +219,7 @@ def trace_record_dataset_id(record: object) -> int | None:
     raw_value = _field(record, "dataset_id", "design_id")
     if raw_value is None:
         return None
-    return int(raw_value)
+    return int(raw_value) if isinstance(raw_value, int | str) else None
 
 
 def trace_record_axes(record: object) -> list[dict[str, Any]]:
@@ -238,7 +238,7 @@ def normalize_trace_record(record: object) -> NormalizedTraceRecord:
     raw_id = _field(record, "id")
     raw_store_ref = _field(record, "store_ref")
     return NormalizedTraceRecord(
-        id=int(raw_id) if raw_id is not None else None,
+        id=int(raw_id) if isinstance(raw_id, int | str) else None,
         dataset_id=trace_record_dataset_id(record),
         data_type=trace_record_data_type(record),
         parameter=trace_record_parameter(record),
