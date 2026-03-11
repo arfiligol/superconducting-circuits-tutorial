@@ -1,10 +1,19 @@
 ## CI Gates
 - Mandatory checks include:
-    - Python format / lint / type-check
-    - backend/core pytest
-    - frontend lint / typecheck / tests / build when the frontend workspace exists
-    - desktop lint / build when the desktop workspace exists
-    - docs build when docs are touched
+    - `npm run rewrite:install`
+    - `npm run rewrite:check`
+    - `npm run rewrite:build`
+    - backend startup smoke and `cd backend && uv run pytest`
+    - `npm run lint --prefix frontend`
+    - `npm run typecheck --prefix frontend`
+    - `npm run test --prefix frontend`
+    - `npm run build --prefix frontend`
+    - `npm run lint --prefix desktop`
+    - `npm run build --prefix desktop`
+    - `uv run python scripts/check_docs_nav_routes.py --check-source` when docs are touched
+    - `./scripts/build_docs_sites.sh` when docs are touched
+    - `uv run python scripts/check_docs_nav_routes.py --check-built` when docs are touched
 - `main` must not receive direct pushes.
 - Guardrail source changes must keep `.agent/rules` in sync.
+- Benign `404` warnings from docs preview builds do not fail CI by themselves.
 - Any failing required check blocks merge.

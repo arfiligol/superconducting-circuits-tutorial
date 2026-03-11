@@ -1,10 +1,19 @@
 ## Testing Commands
-- **Backend/core tests**: `uv run pytest`
+- **Root rewrite check**: `npm run rewrite:check`
+- **Backend/core tests**:
+    - `cd backend && uv run pytest`
+    - `uv run pytest`
 - **Frontend unit tests**: `npm run test --prefix frontend`
 - **Frontend E2E tests**: `npm run test:e2e --prefix frontend`
+- **Desktop foundation checks**:
+    - `npm run lint --prefix desktop`
+    - `npm run build --prefix desktop`
 - **Docs checks**:
+    - `uv run python scripts/check_docs_nav_routes.py --check-source`
     - `./scripts/prepare_docs_locales.sh`
     - `uv run --group dev zensical build -f zensical.toml`
     - `uv run --group dev zensical build -f zensical.en.toml`
     - `./scripts/build_docs_sites.sh`
+    - `uv run python scripts/check_docs_nav_routes.py --check-built`
 - Add tests for critical workflows instead of relying on manual verification only.
+- Use canonical directory routes for docs route checks instead of source `.md` paths.

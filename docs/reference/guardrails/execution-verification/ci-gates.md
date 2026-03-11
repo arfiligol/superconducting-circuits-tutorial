@@ -10,10 +10,10 @@ tags:
 status: stable
 owner: docs-team
 audience: contributor
-scope: rewrite branch 的 PR 合併品質門檻，含 desktop shell。
-version: v2.1.0
+scope: rewrite branch 的 PR 合併品質門檻，含 desktop shell 與 docs route validation。
+version: v2.2.0
 last_updated: 2026-03-11
-updated_by: docs-team
+updated_by: codex
 ---
 
 # CI Gates
@@ -22,12 +22,17 @@ updated_by: docs-team
 
 ## Mandatory Gates
 
-- Python format / lint / type-check
-- backend/core pytest
-- frontend lint / typecheck / tests / build（frontend 存在後）
-- desktop lint / build（desktop workspace 存在後）
-- docs build（若變更 docs）
+- rewrite root orchestration：`npm run rewrite:install`、`npm run rewrite:check`、`npm run rewrite:build`
+- backend foundation：startup smoke 與 `cd backend && uv run pytest`
+- frontend：`npm run lint --prefix frontend`、`npm run typecheck --prefix frontend`、`npm run test --prefix frontend`、`npm run build --prefix frontend`
+- desktop：`npm run lint --prefix desktop`、`npm run build --prefix desktop`
+- docs：`uv run python scripts/check_docs_nav_routes.py --check-source`、`./scripts/build_docs_sites.sh`、`uv run python scripts/check_docs_nav_routes.py --check-built`（docs touched 時）
 - 至少一位 reviewer approve
+
+## Notes
+
+- `zensical build` 預覽流程中的良性 `404` 警告不視為 CI 失敗
+- backend 專用 lint / type-check gate 之後可再提升；目前 foundation gate 先以 startup smoke + pytest 為主
 
 ## Branch Policy
 
@@ -39,12 +44,21 @@ updated_by: docs-team
 ```markdown
 ## CI Gates
 - Mandatory checks include:
-    - Python format / lint / type-check
-    - backend/core pytest
-    - frontend lint / typecheck / tests / build when the frontend workspace exists
-    - desktop lint / build when the desktop workspace exists
-    - docs build when docs are touched
+    - `npm run rewrite:install`
+    - `npm run rewrite:check`
+    - `npm run rewrite:build`
+    - backend startup smoke and `cd backend && uv run pytest`
+    - `npm run lint --prefix frontend`
+    - `npm run typecheck --prefix frontend`
+    - `npm run test --prefix frontend`
+    - `npm run build --prefix frontend`
+    - `npm run lint --prefix desktop`
+    - `npm run build --prefix desktop`
+    - `uv run python scripts/check_docs_nav_routes.py --check-source` when docs are touched
+    - `./scripts/build_docs_sites.sh` when docs are touched
+    - `uv run python scripts/check_docs_nav_routes.py --check-built` when docs are touched
 - `main` must not receive direct pushes.
 - Guardrail source changes must keep `.agent/rules` in sync.
+- Benign `404` warnings from docs preview builds do not fail CI by themselves.
 - Any failing required check blocks merge.
 ```
