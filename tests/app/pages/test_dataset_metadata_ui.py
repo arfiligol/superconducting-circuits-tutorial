@@ -6,13 +6,15 @@ import inspect
 from datetime import datetime
 from types import SimpleNamespace
 
+import app.features.dashboard.page as dashboard_feature_page
+import app.features.raw_data.page as raw_data_feature_page
 import app.features.simulation.page as simulation_feature_page
 from app.pages import dashboard, raw_data, simulation
 from app.services.design_trace_workflow import summarize_design_trace_workflow
 
 
 def test_dashboard_page_exposes_dataset_metadata_editor_controls() -> None:
-    source = inspect.getsource(dashboard)
+    source = inspect.getsource(dashboard_feature_page)
 
     assert 'ui.label("Dataset Metadata")' in source
     assert 'label="Device Type"' in source
@@ -22,7 +24,7 @@ def test_dashboard_page_exposes_dataset_metadata_editor_controls() -> None:
 
 
 def test_raw_data_page_hides_dataset_metadata_editor_controls() -> None:
-    source = inspect.getsource(raw_data)
+    source = inspect.getsource(raw_data_feature_page)
 
     assert 'ui.label("Design Summary")' in source
     assert 'f"Current Design Scope: {dataset.name}' in source
