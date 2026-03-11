@@ -2,7 +2,7 @@
 
 import typer
 
-from sc_cli.commands import circuit_definition, core
+from sc_cli.commands import circuit_definition, core, datasets, session, tasks
 
 app = typer.Typer(
     help="Rewrite CLI adapter for superconducting circuits workflows.",
@@ -12,6 +12,9 @@ app = typer.Typer(
 )
 
 app.add_typer(core.app, name="core", help="Inspect the shared core package boundary.")
+app.add_typer(session.app, name="session", help="Inspect rewrite session state.")
+app.add_typer(datasets.app, name="datasets", help="Inspect rewrite dataset state.")
+app.add_typer(tasks.app, name="tasks", help="Inspect rewrite task state.")
 app.add_typer(
     circuit_definition.app,
     name="circuit-definition",
