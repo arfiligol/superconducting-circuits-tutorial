@@ -169,7 +169,7 @@ from app.services.post_processing_step_registry import (
     preview_pipeline_labels,
     serialize_post_processing_step,
 )
-from app.services.simulation_setup_manager import (
+from app.features.simulation.setup.manager import (
     delete_setup,
     get_setup_by_id,
     is_builtin_setup,

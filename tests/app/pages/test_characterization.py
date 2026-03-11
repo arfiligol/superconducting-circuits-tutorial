@@ -29,7 +29,9 @@ from app.services.characterization_runner import (
     SweepSupportDiagnostic,
     _build_analysis_run_record,
 )
-from app.services.result_artifact_registry import build_result_artifacts_for_analysis
+from app.features.characterization.views.result_artifacts import (
+    build_result_artifacts_for_analysis,
+)
 from core.shared.persistence.models import (
     AnalysisRunRecord,
     DerivedParameter,

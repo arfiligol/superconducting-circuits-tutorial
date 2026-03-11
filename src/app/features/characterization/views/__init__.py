@@ -4,6 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.features.characterization.views.result_artifacts import (
+    RESULT_CATEGORY_LABELS,
+    artifact_categories,
+    artifacts_in_category,
+    build_result_artifacts_for_analysis,
+)
+
 
 def _with_test_id(element: Any, test_id: str) -> Any:
     """Attach one stable test id to a NiceGUI element."""
@@ -22,6 +29,10 @@ def _result_view_controls_row_classes() -> str:
 
 
 __all__ = [
+    "RESULT_CATEGORY_LABELS",
     "_result_view_controls_row_classes",
     "_with_test_id",
+    "artifact_categories",
+    "artifacts_in_category",
+    "build_result_artifacts_for_analysis",
 ]

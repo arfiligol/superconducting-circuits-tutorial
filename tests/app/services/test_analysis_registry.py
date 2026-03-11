@@ -1,13 +1,13 @@
 """Tests for capability gating in analysis registry."""
 
-from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
-from app.services.analysis_registry import (
+from app.features.characterization.query.analysis_registry import (
     ANALYSIS_REGISTRY,
     AnalysisDescriptor,
     get_analysis_descriptor,
     list_cross_dataset_analyses,
     list_dataset_analyses,
 )
+from app.features.characterization.query.capability import evaluate_analysis_capability_gating
 
 
 def _analysis_by_id(analysis_id: str) -> AnalysisDescriptor:

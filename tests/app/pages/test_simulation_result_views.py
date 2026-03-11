@@ -66,7 +66,7 @@ from app.pages.simulation import (
     _TraceStoreResultBundle,
     _ViewTraceStore,
 )
-from app.services.simulation_setup_manager import (
+from app.features.simulation.setup.manager import (
     delete_setup,
     rename_setup,
     save_setup_as,

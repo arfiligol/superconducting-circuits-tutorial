@@ -1,15 +1,10 @@
-"""Static analysis metadata registry.
-
-Runtime evaluators live in dedicated service modules:
-- `analysis_scope_evaluator.py`
-- `analysis_capability_evaluator.py`
-"""
+"""Static analysis metadata registry for Characterization."""
 
 from __future__ import annotations
 
 from typing import Literal, NotRequired, TypedDict
 
-from app.services.analysis_capability_evaluator import (
+from app.features.characterization.query.capability import (
     AnalysisCapabilityDecision,
     evaluate_analysis_capability_gating,
 )

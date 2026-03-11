@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from app.pages.characterization.state import ResultArtifact
+from app.features.characterization.state import ResultArtifact
 
 METHOD_LABELS: dict[str, str] = {
     "admittance_zero_crossing": "Admittance Zero-Crossing",

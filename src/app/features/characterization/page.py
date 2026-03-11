@@ -39,13 +39,9 @@ from app.features.characterization.views import (
     _result_view_controls_row_classes,
     _with_test_id,
 )
-from app.services.analysis_capability_evaluator import evaluate_analysis_capability_gating
-from app.services.analysis_registry import list_dataset_analyses
-from app.services.characterization_runner import (
-    SweepSupportDiagnostic,
-    diagnose_analysis_sweep_support,
-)
-from app.services.characterization_trace_scope import (
+from app.features.characterization.query.analysis_registry import list_dataset_analyses
+from app.features.characterization.query.capability import evaluate_analysis_capability_gating
+from app.features.characterization.query.trace_scope import (
     CharacterizationTraceScopeUnitOfWork,
     TraceSourceSummary,
     count_scope_trace_records,
@@ -54,12 +50,16 @@ from app.services.characterization_trace_scope import (
     list_scope_compatible_trace_index_page,
     list_scope_compatible_trace_source_summaries,
 )
+from app.services.characterization_runner import (
+    SweepSupportDiagnostic,
+    diagnose_analysis_sweep_support,
+)
 from app.services.dataset_profile import (
     design_profile_summary_text,
     normalize_dataset_profile,
 )
 from app.services.execution_context import build_ui_use_case_context
-from app.services.result_artifact_registry import (
+from app.features.characterization.views.result_artifacts import (
     RESULT_CATEGORY_LABELS,
     artifact_categories,
     artifacts_in_category,

@@ -4,6 +4,28 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from app.features.characterization.query.analysis_registry import (
+    ANALYSIS_REGISTRY,
+    AnalysisCapabilityDecision,
+    AnalysisConfigField,
+    AnalysisDescriptor,
+    evaluate_analysis_capability_gating,
+    get_analysis_descriptor,
+    get_available_analyses,
+    is_analysis_completed,
+    list_cross_dataset_analyses,
+    list_dataset_analyses,
+)
+from app.features.characterization.query.trace_scope import (
+    CharacterizationTraceScopeUnitOfWork,
+    TraceSourceSummary,
+    count_scope_trace_records,
+    hydrate_trace_index_rows_with_provenance,
+    list_design_scope_source_summaries,
+    list_scope_compatible_trace_index_page,
+    list_scope_compatible_trace_source_summaries,
+)
+
 
 def _latest_completed_analysis_run_summaries(
     summaries: Sequence[Mapping[str, object]],
@@ -47,6 +69,23 @@ def _completed_result_analysis_ids(
 
 
 __all__ = [
+    "ANALYSIS_REGISTRY",
+    "AnalysisCapabilityDecision",
+    "AnalysisConfigField",
+    "AnalysisDescriptor",
+    "CharacterizationTraceScopeUnitOfWork",
+    "TraceSourceSummary",
     "_completed_result_analysis_ids",
     "_latest_completed_analysis_run_summaries",
+    "count_scope_trace_records",
+    "evaluate_analysis_capability_gating",
+    "get_analysis_descriptor",
+    "get_available_analyses",
+    "hydrate_trace_index_rows_with_provenance",
+    "is_analysis_completed",
+    "list_cross_dataset_analyses",
+    "list_dataset_analyses",
+    "list_design_scope_source_summaries",
+    "list_scope_compatible_trace_index_page",
+    "list_scope_compatible_trace_source_summaries",
 ]

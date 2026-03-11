@@ -1,6 +1,6 @@
 """Tests for record-scope availability evaluator."""
 
-from app.services.analysis_registry import ANALYSIS_REGISTRY
+from app.features.characterization.query.analysis_registry import ANALYSIS_REGISTRY
 from app.services.analysis_scope_evaluator import get_available_analyses
 
 

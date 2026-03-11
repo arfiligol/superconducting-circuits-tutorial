@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.characterization_trace_scope import (
+from app.features.characterization.query.trace_scope import (
     CharacterizationTraceScopeUnitOfWork,
     TraceSourceSummary,
     count_scope_trace_records,
