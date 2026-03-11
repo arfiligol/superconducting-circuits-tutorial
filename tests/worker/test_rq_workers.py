@@ -1,4 +1,4 @@
-"""Worker-lane integration tests for WS3 smoke, failure, and crash semantics."""
+"""RQ worker-lane integration tests for smoke, failure, and crash semantics."""
 
 from __future__ import annotations
 
@@ -43,11 +43,6 @@ def _utcnow() -> datetime:
 def _configure_worker_env(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
     monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://worker-{tmp_path.name}")
-    monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
-    monkeypatch.setenv(
-        "SC_CHARACTERIZATION_HUEY_DB_PATH",
-        str(tmp_path / "characterization_huey.db"),
-    )
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     database.get_engine.cache_clear()
     for module_name in ("worker.config",):
@@ -58,22 +53,22 @@ def _configure_worker_env(tmp_path: Path, monkeypatch) -> None:
 def _reload_worker_modules() -> tuple[object, object, object, object]:
     for module_name in [
         "worker.characterization_tasks",
-        "worker.characterization_huey",
+        "worker.characterization_worker",
         "worker.simulation_tasks",
-        "worker.simulation_huey",
+        "worker.simulation_worker",
         "worker.runtime",
         "worker.config",
     ]:
         sys.modules.pop(module_name, None)
 
-    simulation_huey = importlib.import_module("worker.simulation_huey")
+    simulation_worker = importlib.import_module("worker.simulation_worker")
     simulation_tasks = importlib.import_module("worker.simulation_tasks")
-    characterization_huey = importlib.import_module("worker.characterization_huey")
+    characterization_worker = importlib.import_module("worker.characterization_worker")
     characterization_tasks = importlib.import_module("worker.characterization_tasks")
     return (
-        simulation_huey,
+        simulation_worker,
         simulation_tasks,
-        characterization_huey,
+        characterization_worker,
         characterization_tasks,
     )
 
@@ -169,17 +164,17 @@ def _create_completed_raw_batch(*, design_id: int) -> int:
         return batch_id
 
 
-def test_lane_huey_paths_are_separate_from_app_db(tmp_path: Path, monkeypatch) -> None:
+def test_lane_workers_use_rq_queue_defaults(tmp_path: Path, monkeypatch) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    simulation_huey, _simulation_tasks, characterization_huey, _characterization_tasks = (
+    simulation_worker, _simulation_tasks, characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
 
-    assert str(simulation_huey.BROKER_PATH).endswith("simulation_huey.db")
-    assert str(characterization_huey.BROKER_PATH).endswith("characterization_huey.db")
-    assert simulation_huey.BROKER_PATH != characterization_huey.BROKER_PATH
-    assert database.resolve_database_path() != simulation_huey.BROKER_PATH
-    assert database.resolve_database_path() != characterization_huey.BROKER_PATH
+    redis_url = f"fakeredis://worker-{tmp_path.name}"
+    assert redis_url == simulation_worker.REDIS_URL
+    assert redis_url == characterization_worker.REDIS_URL
+    assert simulation_worker.QUEUE_NAME == "simulation"
+    assert characterization_worker.QUEUE_NAME == "characterization"
 
 
 def test_simulation_lane_smoke_task_round_trips_taskrecord(
@@ -187,13 +182,13 @@ def test_simulation_lane_smoke_task_round_trips_taskrecord(
     monkeypatch,
 ) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    simulation_huey, simulation_tasks, _characterization_huey, _characterization_tasks = (
+    simulation_worker, simulation_tasks, _characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
     task_id = _create_task("simulation_smoke")
 
-    _enqueue_test_job(simulation_huey.queue, simulation_tasks.simulation_smoke_task, task_id)
-    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    _enqueue_test_job(simulation_worker.queue, simulation_tasks.simulation_smoke_task, task_id)
+    processed = simulation_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
     with get_unit_of_work() as uow:
@@ -209,17 +204,17 @@ def test_characterization_lane_smoke_task_round_trips_taskrecord(
     monkeypatch,
 ) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    _simulation_huey, _simulation_tasks, characterization_huey, characterization_tasks = (
+    _simulation_worker, _simulation_tasks, characterization_worker, characterization_tasks = (
         _reload_worker_modules()
     )
     task_id = _create_task("characterization_smoke")
 
     _enqueue_test_job(
-        characterization_huey.queue,
+        characterization_worker.queue,
         characterization_tasks.characterization_smoke_task,
         task_id,
     )
-    processed = characterization_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    processed = characterization_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
     with get_unit_of_work() as uow:
@@ -235,7 +230,7 @@ def test_real_characterization_worker_task_persists_analysis_run(
     monkeypatch,
 ) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    _simulation_huey, _simulation_tasks, characterization_huey, _characterization_tasks = (
+    _simulation_worker, _simulation_tasks, characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
 
@@ -291,7 +286,7 @@ def test_real_characterization_worker_task_persists_analysis_run(
         lambda self, dataset_id, **kwargs: None,
     )
 
-    processed = characterization_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    processed = characterization_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
     with get_unit_of_work() as uow:
@@ -310,18 +305,18 @@ def test_real_characterization_worker_task_persists_analysis_run(
 
 def test_simulation_lane_failure_task_marks_failed(tmp_path: Path, monkeypatch) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    simulation_huey, simulation_tasks, _characterization_huey, _characterization_tasks = (
+    simulation_worker, simulation_tasks, _characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
     task_id = _create_task("simulation_failure")
 
     _enqueue_test_job(
-        simulation_huey.queue,
+        simulation_worker.queue,
         simulation_tasks.simulation_failure_task,
         task_id,
         "boom",
     )
-    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    processed = simulation_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
     with get_unit_of_work() as uow:
@@ -338,7 +333,7 @@ def test_real_simulation_worker_task_persists_trace_batch(
     monkeypatch,
 ) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    simulation_huey, _simulation_tasks, _characterization_huey, _characterization_tasks = (
+    simulation_worker, _simulation_tasks, _characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
 
@@ -404,7 +399,7 @@ def test_real_simulation_worker_task_persists_trace_batch(
         _fake_execute_simulation_run,
     )
 
-    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    processed = simulation_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
     with get_unit_of_work() as uow:
@@ -432,7 +427,7 @@ def test_real_post_processing_worker_task_persists_trace_batch(
     monkeypatch,
 ) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    simulation_huey, _simulation_tasks, _characterization_huey, _characterization_tasks = (
+    simulation_worker, _simulation_tasks, _characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
 
@@ -483,7 +478,7 @@ def test_real_post_processing_worker_task_persists_trace_batch(
     task_id = int(submitted.task.id)
     trace_batch_id = int(submitted.task.trace_batch_id)
 
-    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    processed = simulation_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
 
     assert processed == 1
     with get_unit_of_work() as uow:
@@ -503,7 +498,7 @@ def test_real_post_processing_worker_task_persists_trace_batch(
 
 def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -> None:
     _configure_worker_env(tmp_path, monkeypatch)
-    simulation_huey, simulation_tasks, _characterization_huey, _characterization_tasks = (
+    simulation_worker, simulation_tasks, _characterization_worker, _characterization_tasks = (
         _reload_worker_modules()
     )
     task_id = _create_task("simulation_crash")
@@ -512,7 +507,7 @@ def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -
     if not redis_url or redis_url.startswith("fakeredis://"):
         pytest.skip("Crash-isolation enqueue requires a real Redis backend for cross-process RQ.")
 
-    _enqueue_test_job(simulation_huey.queue, simulation_tasks.simulation_crash_task, task_id, 86)
+    _enqueue_test_job(simulation_worker.queue, simulation_tasks.simulation_crash_task, task_id, 86)
     env = {
         **os.environ,
         "SC_DATABASE_PATH": str(database.resolve_database_path()),
@@ -522,7 +517,7 @@ def test_crashed_worker_task_is_detected_as_stale(tmp_path: Path, monkeypatch) -
         [
             sys.executable,
             "-m",
-            "worker.simulation_huey",
+            "worker.simulation_worker",
             "--max-tasks",
             "1",
             "--idle-timeout",
@@ -566,8 +561,8 @@ def test_app_import_does_not_import_worker_or_julia_adapter_modules() -> None:
             (
                 "import sys; import app.main; "
                 "print('APP_IMPORT_OK'); "
-                "print('worker.simulation_huey' in sys.modules); "
-                "print('worker.characterization_huey' in sys.modules); "
+                "print('worker.simulation_worker' in sys.modules); "
+                "print('worker.characterization_worker' in sys.modules); "
                 "print('core.simulation.application.run_simulation' in sys.modules); "
                 "print('core.simulation.infrastructure.julia_adapter' in sys.modules)"
             ),

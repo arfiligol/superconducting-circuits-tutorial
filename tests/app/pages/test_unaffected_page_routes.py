@@ -16,11 +16,7 @@ from core.shared.persistence.models import CircuitRecord
 
 def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
-    monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
-    monkeypatch.setenv(
-        "SC_CHARACTERIZATION_HUEY_DB_PATH",
-        str(tmp_path / "characterization_huey.db"),
-    )
+    monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://pages-{tmp_path.name}")
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     monkeypatch.setenv("SC_SESSION_SECRET", "ws10-page-routes-secret")
     database.get_engine.cache_clear()

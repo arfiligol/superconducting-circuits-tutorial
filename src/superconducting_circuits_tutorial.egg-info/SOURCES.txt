@@ -178,13 +178,14 @@ src/superconducting_circuits_tutorial.egg-info/entry_points.txt
 src/superconducting_circuits_tutorial.egg-info/requires.txt
 src/superconducting_circuits_tutorial.egg-info/top_level.txt
 src/worker/__init__.py
+src/worker/_rq_shared_state.py
 src/worker/characterization_execution.py
-src/worker/characterization_huey.py
 src/worker/characterization_tasks.py
+src/worker/characterization_worker.py
 src/worker/config.py
 src/worker/dispatch.py
 src/worker/post_processing_execution.py
 src/worker/runtime.py
 src/worker/simulation_execution.py
-src/worker/simulation_huey.py
 src/worker/simulation_tasks.py
+src/worker/simulation_worker.py

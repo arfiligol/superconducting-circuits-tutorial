@@ -70,11 +70,6 @@ def _sample_simulation_result() -> SimulationResult:
 def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
     monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://runtime-{tmp_path.name}")
-    monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
-    monkeypatch.setenv(
-        "SC_CHARACTERIZATION_HUEY_DB_PATH",
-        str(tmp_path / "characterization_huey.db"),
-    )
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     monkeypatch.setenv("SC_SESSION_SECRET", "ws10-runtime-secret")
     monkeypatch.setenv("SC_WORKER_STALE_TIMEOUT_SECONDS", "1")
@@ -82,11 +77,11 @@ def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     for module_name in (
         "app.main",
         "app.services.task_submission",
-        "worker.characterization_huey",
+        "worker.characterization_worker",
         "worker.characterization_tasks",
         "worker.config",
         "worker.dispatch",
-        "worker.simulation_huey",
+        "worker.simulation_worker",
         "worker.simulation_tasks",
         "worker.simulation_execution",
     ):
@@ -100,8 +95,6 @@ def _configure_subprocess_environment(tmp_path: Path) -> dict[str, str]:
         {
             "SC_DATABASE_PATH": str(tmp_path / "database.db"),
             "SC_RQ_REDIS_URL": f"fakeredis://runtime-{tmp_path.name}",
-            "SC_SIMULATION_HUEY_DB_PATH": str(tmp_path / "simulation_huey.db"),
-            "SC_CHARACTERIZATION_HUEY_DB_PATH": str(tmp_path / "characterization_huey.db"),
             "SC_TRACE_STORE_ROOT": str(tmp_path / "trace_store"),
             "SC_SESSION_SECRET": "ws10-runtime-secret",
             "SC_WORKER_STALE_TIMEOUT_SECONDS": "1",
@@ -208,7 +201,7 @@ def _build_simulation_request_payload(
 def _simulation_worker_thread(delay_seconds: float = 0.05) -> threading.Thread:
     def _run() -> None:
         time.sleep(delay_seconds)
-        importlib.import_module("worker.simulation_huey").consume(
+        importlib.import_module("worker.simulation_worker").consume(
             max_tasks=1,
             idle_timeout=2.0,
             poll_interval=0.01,

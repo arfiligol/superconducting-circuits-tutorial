@@ -31,8 +31,8 @@ dependencies = [
 [project.scripts]
 sc = "scripts.cli.entry:app"
 sc-app = "app.main:start"
-sc-worker-simulation = "worker.simulation_huey:main"
-sc-worker-characterization = "worker.characterization_huey:main"
+sc-worker-simulation = "worker.simulation_worker:main"
+sc-worker-characterization = "worker.characterization_worker:main"
 
 [tool.uv]
 package = true

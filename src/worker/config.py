@@ -1,10 +1,8 @@
-"""Worker-lane queue configuration helpers."""
+"""Worker-lane RQ configuration helpers."""
 
 from __future__ import annotations
 
-import hashlib
 import os
-from pathlib import Path
 from typing import Any, Final, Literal, cast
 
 from redis import Redis
@@ -20,7 +18,6 @@ except ImportError:  # pragma: no cover - optional in non-test runtime
 
 LaneName = Literal["simulation", "characterization"]
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _QUEUE_NAME_ENV_VARS: Final[dict[LaneName, str]] = {
     "simulation": "SC_SIMULATION_QUEUE_NAME",
     "characterization": "SC_CHARACTERIZATION_QUEUE_NAME",
@@ -28,14 +25,6 @@ _QUEUE_NAME_ENV_VARS: Final[dict[LaneName, str]] = {
 _QUEUE_NAME_DEFAULTS: Final[dict[LaneName, str]] = {
     "simulation": "simulation",
     "characterization": "characterization",
-}
-_LEGACY_BROKER_ENV_VARS: Final[dict[LaneName, str]] = {
-    "simulation": "SC_SIMULATION_HUEY_DB_PATH",
-    "characterization": "SC_CHARACTERIZATION_HUEY_DB_PATH",
-}
-_LEGACY_BROKER_DEFAULTS: Final[dict[LaneName, str]] = {
-    "simulation": "simulation_huey.db",
-    "characterization": "characterization_huey.db",
 }
 
 _FAKE_SERVER_BY_URL: dict[str, Any] = FAKE_SERVER_BY_URL
@@ -55,11 +44,6 @@ def resolve_queue_name(lane: LaneName) -> str:
     return _QUEUE_NAME_DEFAULTS[lane]
 
 
-def _legacy_fake_redis_url(lane: LaneName, *, legacy_value: str) -> str:
-    digest = hashlib.sha1(f"{lane}:{legacy_value}".encode()).hexdigest()[:12]
-    return f"fakeredis://legacy-{lane}-{digest}"
-
-
 def resolve_redis_url(lane: LaneName) -> str:
     """Resolve the Redis URL backing the worker queues."""
     for env_name in ("SC_RQ_REDIS_URL", "SC_REDIS_URL"):
@@ -67,20 +51,7 @@ def resolve_redis_url(lane: LaneName) -> str:
         if raw_value is not None and raw_value.strip():
             return raw_value.strip()
 
-    legacy_value = os.getenv(_LEGACY_BROKER_ENV_VARS[lane])
-    if legacy_value is not None and legacy_value.strip():
-        # Keep the existing test surface working without requiring immediate test rewrites.
-        return _legacy_fake_redis_url(lane, legacy_value=legacy_value.strip())
-
     return "redis://127.0.0.1:6379/0"
-
-
-def resolve_legacy_broker_path_hint(lane: LaneName) -> Path:
-    """Return the historical SQLite broker path used only for compatibility surfaces."""
-    legacy_value = os.getenv(_LEGACY_BROKER_ENV_VARS[lane])
-    if legacy_value is not None and legacy_value.strip():
-        return Path(legacy_value).expanduser()
-    return _REPO_ROOT / "data" / "huey" / _LEGACY_BROKER_DEFAULTS[lane]
 
 
 def _create_fake_connection(url: str) -> Redis:

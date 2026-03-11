@@ -75,8 +75,6 @@ WS10 之後的本地開發拓樸固定為三個進程：
 !!! note "RQ backend"
     worker lanes 現在使用 `RQ + Redis`。正式 runtime 應提供可達的 Redis，
     例如設定 `SC_RQ_REDIS_URL=redis://127.0.0.1:6379/0`。
-    舊的 `SC_SIMULATION_HUEY_DB_PATH` / `SC_CHARACTERIZATION_HUEY_DB_PATH`
-    只保留給測試與過渡相容層，不再是主要設定面。
 
 可選的一鍵 helper：
 

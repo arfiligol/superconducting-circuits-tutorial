@@ -34,20 +34,15 @@ from core.simulation.domain.circuit import (
 def _configure_test_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
     monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://api-{tmp_path.name}")
-    monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
-    monkeypatch.setenv(
-        "SC_CHARACTERIZATION_HUEY_DB_PATH",
-        str(tmp_path / "characterization_huey.db"),
-    )
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     monkeypatch.setenv("SC_SESSION_SECRET", "ws5-test-secret")
     database.get_engine.cache_clear()
     for module_name in (
-        "worker.characterization_huey",
+        "worker.characterization_worker",
         "worker.characterization_tasks",
         "worker.config",
         "worker.dispatch",
-        "worker.simulation_huey",
+        "worker.simulation_worker",
         "worker.simulation_tasks",
     ):
         sys.modules.pop(module_name, None)
@@ -494,8 +489,8 @@ def test_post_processing_task_submission_dispatches_real_worker_path_and_persist
     task_id = int(payload["task"]["id"])
     trace_batch_id = int(payload["task"]["trace_batch_id"])
 
-    simulation_huey = importlib.import_module("worker.simulation_huey")
-    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    simulation_worker = importlib.import_module("worker.simulation_worker")
+    processed = simulation_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
     assert processed == 1
 
     task_detail = client.get(f"/api/v1/tasks/{task_id}")
@@ -558,8 +553,8 @@ def test_characterization_task_submission_dispatches_real_worker_path_and_persis
         lambda self, dataset_id, **kwargs: None,
     )
 
-    characterization_huey = importlib.import_module("worker.characterization_huey")
-    processed = characterization_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    characterization_worker = importlib.import_module("worker.characterization_worker")
+    processed = characterization_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
     assert processed == 1
 
     task_detail = client.get(f"/api/v1/tasks/{task_id}")
@@ -621,7 +616,7 @@ def test_simulation_task_submission_dispatches_real_worker_path_and_persists_res
     task_id = int(payload["task"]["id"])
     trace_batch_id = int(payload["task"]["trace_batch_id"])
 
-    simulation_huey = importlib.import_module("worker.simulation_huey")
+    simulation_worker = importlib.import_module("worker.simulation_worker")
     simulation_execution = importlib.import_module("worker.simulation_execution")
 
     def _fake_execute_simulation_run(request, *, progress_callback=None, execute=None):
@@ -636,7 +631,7 @@ def test_simulation_task_submission_dispatches_real_worker_path_and_persists_res
         _fake_execute_simulation_run,
     )
 
-    processed = simulation_huey.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
+    processed = simulation_worker.consume(max_tasks=1, idle_timeout=0.2, poll_interval=0.01)
     assert processed == 1
 
     task_detail = client.get(f"/api/v1/tasks/{task_id}")

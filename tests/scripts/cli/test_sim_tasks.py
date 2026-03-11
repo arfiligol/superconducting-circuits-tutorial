@@ -26,11 +26,6 @@ from core.simulation.domain.circuit import SimulationResult
 def _configure_cli_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SC_DATABASE_PATH", str(tmp_path / "database.db"))
     monkeypatch.setenv("SC_RQ_REDIS_URL", f"fakeredis://cli-{tmp_path.name}")
-    monkeypatch.setenv("SC_SIMULATION_HUEY_DB_PATH", str(tmp_path / "simulation_huey.db"))
-    monkeypatch.setenv(
-        "SC_CHARACTERIZATION_HUEY_DB_PATH",
-        str(tmp_path / "characterization_huey.db"),
-    )
     monkeypatch.setenv("SC_TRACE_STORE_ROOT", str(tmp_path / "trace_store"))
     database.get_engine.cache_clear()
     for module_name in (
@@ -44,9 +39,9 @@ def _configure_cli_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         "scripts.simulation",
         "scripts.simulation.task_cli",
         "worker.dispatch",
-        "worker.simulation_huey",
+        "worker.simulation_worker",
         "worker.simulation_tasks",
-        "worker.characterization_huey",
+        "worker.characterization_worker",
         "worker.characterization_tasks",
         "worker.config",
         "worker.runtime",
@@ -136,7 +131,7 @@ def _load_cli_app():
 def _simulation_worker_thread(delay_seconds: float = 0.15) -> threading.Thread:
     def _run() -> None:
         time.sleep(delay_seconds)
-        importlib.import_module("worker.simulation_huey").consume(
+        importlib.import_module("worker.simulation_worker").consume(
             max_tasks=1,
             idle_timeout=2.0,
             poll_interval=0.01,

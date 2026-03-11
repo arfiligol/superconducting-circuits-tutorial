@@ -3,21 +3,32 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
+import math
 import os
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from rq import Queue
-from rq.job import Job
+from rq import Queue, SimpleWorker
+from rq.timeouts import TimerDeathPenalty
 
 from app.services.task_progress import progress_update
 from core.shared.persistence.reconcile import ReconcileSummary, reconcile_stale_tasks_and_batches
 from core.shared.persistence.unit_of_work import get_unit_of_work
 from worker.config import LaneName, ensure_connection_available
+
+
+class _LaneSimpleWorker(SimpleWorker):
+    """RQ SimpleWorker variant that also works in test threads."""
+
+    death_penalty_class = TimerDeathPenalty
+
+    def _install_signal_handlers(self) -> None:
+        if threading.current_thread() is threading.main_thread():
+            super()._install_signal_handlers()
 
 
 def _utcnow() -> datetime:
@@ -224,7 +235,7 @@ def consume_queued_tasks(
     poll_interval: float,
     reconcile_stale_after_seconds: int | None = None,
 ) -> int:
-    """Consume queued RQ jobs serially for one worker lane."""
+    """Consume queued RQ jobs serially for one worker lane via SimpleWorker."""
     if reconcile_stale_after_seconds is not None:
         reconcile_stale_worker_tasks(stale_after_seconds=reconcile_stale_after_seconds)
 
@@ -233,6 +244,7 @@ def consume_queued_tasks(
     if max_tasks is not None and max_tasks <= 0:
         return 0
 
+    worker = _LaneSimpleWorker([queue], connection=connection)
     processed = 0
     idle_deadline = time.monotonic() + max(0.0, idle_timeout)
     while max_tasks is None or processed < max_tasks:
@@ -242,18 +254,21 @@ def consume_queued_tasks(
             time.sleep(max(0.01, poll_interval))
             continue
 
-        idle_deadline = time.monotonic() + max(0.0, idle_timeout)
-        job_id = queue.pop_job_id()
-        if job_id is None:
+        queued_before = int(queue.count)
+        remaining_jobs = None if max_tasks is None else max_tasks - processed
+        worker.work(
+            burst=True,
+            logging_level="WARNING",
+            max_jobs=remaining_jobs,
+            max_idle_time=max(1, math.ceil(idle_timeout)),
+            with_scheduler=False,
+        )
+        processed_now = max(0, queued_before - int(queue.count))
+        if processed_now <= 0:
             time.sleep(max(0.01, poll_interval))
             continue
-        job = Job.fetch(job_id, connection=connection)
-        try:
-            job.perform()
-        finally:
-            with contextlib.suppress(Exception):
-                job.delete()
-        processed += 1
+        processed += processed_now
+        idle_deadline = time.monotonic() + max(0.0, idle_timeout)
 
     return processed
 
