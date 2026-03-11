@@ -1,142 +1,122 @@
 import { datasetRecords } from "@/features/data-browser/lib/mock-data";
-import {
-  SurfaceHeader,
-  SurfacePanel,
-  SurfaceStat,
-  SurfaceTag,
-} from "@/features/shared/components/surface-kit";
 
 const selectedRecord = datasetRecords[0];
 
 export function DataBrowserWorkspace() {
   return (
-    <div className="space-y-4">
-      <SurfaceHeader
-        eyebrow="Data Browser"
-        title="Trace catalogs and dataset inspection"
-        description="Master-detail scaffolding for browsing imported datasets, checking lineage, and previewing normalized artifacts before backend wiring lands."
-        actions={
-          <>
-            <SurfaceTag tone="primary">Catalog index ready</SurfaceTag>
-            <SurfaceTag>Mock state only</SurfaceTag>
-          </>
-        }
-      />
+    <div className="space-y-8">
+      <section className="space-y-6">
+        <h1 className="text-[2.05rem] font-semibold tracking-tight text-foreground">Dashboard</h1>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.4fr)]">
-        <SurfacePanel
-          title="Dataset Catalog"
-          description="Summary list for the imported traces and prepared analysis bundles."
-        >
-          <div className="grid gap-3 md:grid-cols-3">
-            <SurfaceStat label="Datasets" value={String(datasetRecords.length)} tone="primary" />
-            <SurfaceStat label="Ready" value="1 active selection" />
-            <SurfaceStat label="Owners" value="3 groups" />
+        <div className="flex flex-col gap-3 lg:max-w-xl">
+          <div className="flex items-center gap-4">
+            <span className="text-base font-semibold text-foreground">Dataset:</span>
+            <div className="flex min-h-11 min-w-0 flex-1 items-center justify-between rounded-md border border-border bg-surface px-4 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+              <span className="truncate">{selectedRecord.name}</span>
+              <span className="text-muted-foreground">▾</span>
+            </div>
           </div>
+        </div>
+      </section>
 
-          <div className="mt-4 overflow-hidden rounded-2xl border border-border">
-            <table className="min-w-full border-collapse text-left text-sm">
-              <thead className="bg-muted/45 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Dataset</th>
-                  <th className="px-4 py-3">Family</th>
-                  <th className="px-4 py-3">Samples</th>
-                  <th className="px-4 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {datasetRecords.map((record) => (
-                  <tr
-                    key={record.id}
-                    className={record.id === selectedRecord.id ? "bg-primary/8" : "bg-card"}
-                  >
-                    <td className="border-t border-border px-4 py-3">
-                      <p className="font-medium">{record.name}</p>
-                      <p className="mt-1 text-xs text-muted-foreground">{record.updatedAt}</p>
-                    </td>
-                    <td className="border-t border-border px-4 py-3">{record.family}</td>
-                    <td className="border-t border-border px-4 py-3">{record.samples}</td>
-                    <td className="border-t border-border px-4 py-3">
-                      <SurfaceTag
-                        tone={
-                          record.status === "Ready"
-                            ? "success"
-                            : record.status === "Review"
-                              ? "warning"
-                              : "default"
-                        }
-                      >
-                        {record.status}
-                      </SurfaceTag>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      <section className="rounded-[1rem] border border-border bg-card px-4 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)] md:px-5">
+        <div className="space-y-2">
+          <h2 className="text-[1.05rem] font-semibold uppercase tracking-[0.08em] text-foreground">
+            Dataset Metadata
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Device Type: {selectedRecord.deviceType.toLowerCase()} | Capabilities:{" "}
+            {selectedRecord.capabilities.length > 0 ? selectedRecord.capabilities.join(", ") : "None"} |
+            {" "}Source: {selectedRecord.source}
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_auto]">
+          <div className="rounded-md border border-border bg-surface px-4 py-2.5">
+            <p className="text-xs text-muted-foreground">Device Type</p>
+            <div className="mt-1 flex items-center justify-between">
+              <span>{selectedRecord.deviceType}</span>
+              <span className="text-muted-foreground">▾</span>
+            </div>
           </div>
-        </SurfacePanel>
-
-        <div className="grid gap-4">
-          <SurfacePanel
-            title="Selection Preview"
-            description="Detail region for the selected dataset, including metadata, preview rows, and tags."
+          <div className="rounded-md border border-border bg-surface px-4 py-2.5">
+            <p className="text-xs text-muted-foreground">Capabilities</p>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="truncate">
+                {selectedRecord.capabilities.length > 0
+                  ? selectedRecord.capabilities.join(", ")
+                  : "Capabilities"}
+              </span>
+              <span className="text-muted-foreground">▾</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled
+            className="rounded-md border border-primary/60 px-4 py-3 text-sm font-medium text-primary"
           >
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-border bg-muted/30 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    {selectedRecord.tags.map((tag) => (
-                      <SurfaceTag key={tag}>{tag}</SurfaceTag>
-                    ))}
-                  </div>
-                  <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Dataset ID
-                      </dt>
-                      <dd className="mt-1 font-medium">{selectedRecord.id}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Owner
-                      </dt>
-                      <dd className="mt-1 font-medium">{selectedRecord.owner}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Family
-                      </dt>
-                      <dd className="mt-1 font-medium">{selectedRecord.family}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Sample Count
-                      </dt>
-                      <dd className="mt-1 font-medium">{selectedRecord.samples}</dd>
-                    </div>
-                  </dl>
-                </div>
+            Auto Suggest
+          </button>
+          <button
+            type="button"
+            disabled
+            className="rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground"
+          >
+            Save Metadata
+          </button>
+        </div>
+      </section>
 
-                <div className="rounded-2xl border border-border bg-muted/20 p-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Preview Columns
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {selectedRecord.previewColumns.map((column) => (
-                      <SurfaceTag key={column} tone="primary">
-                        {column}
-                      </SurfaceTag>
-                    ))}
-                  </div>
-                </div>
-              </div>
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Tagged Core Metrics
+        </h2>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+          <div className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="flex min-h-[250px] flex-col items-center justify-center rounded-[0.8rem] border border-border/80 bg-background px-6 py-8 text-center">
+              <div className="text-5xl leading-none text-muted-foreground/55">🏷️</div>
+              <h3 className="mt-6 text-[2rem] font-semibold text-muted-foreground">No Metrics Tagged</h3>
+              <p className="mt-4 max-w-xl text-lg text-muted-foreground">
+                Use the Identify Mode tool in the Characterization page to tag key parameters.
+              </p>
+            </div>
+          </div>
 
-              <div className="overflow-hidden rounded-2xl border border-border">
+          <div className="space-y-4">
+            <div className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Active Dataset Summary
+              </h3>
+              <dl className="mt-4 space-y-4 text-sm">
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Dataset ID</dt>
+                  <dd className="mt-1 font-medium text-foreground">{selectedRecord.id}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Owner</dt>
+                  <dd className="mt-1 font-medium text-foreground">{selectedRecord.owner}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Updated At</dt>
+                  <dd className="mt-1 font-medium text-foreground">{selectedRecord.updatedAt}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Artifacts</dt>
+                  <dd className="mt-1 font-medium text-foreground">{selectedRecord.artifacts.length}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Preview Rows
+              </h3>
+              <div className="mt-4 overflow-hidden rounded-[0.8rem] border border-border">
                 <table className="min-w-full border-collapse text-left text-sm">
-                  <thead className="bg-muted/45 text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                  <thead className="bg-surface text-xs uppercase tracking-[0.14em] text-muted-foreground">
                     <tr>
                       {selectedRecord.previewColumns.map((column) => (
-                        <th key={column} className="px-4 py-3">
+                        <th key={column} className="px-3 py-3">
                           {column}
                         </th>
                       ))}
@@ -144,9 +124,9 @@ export function DataBrowserWorkspace() {
                   </thead>
                   <tbody>
                     {selectedRecord.previewRows.map((row, index) => (
-                      <tr key={`${selectedRecord.id}-${index}`}>
+                      <tr key={`${selectedRecord.id}-${index}`} className="bg-card">
                         {row.map((value) => (
-                          <td key={value} className="border-t border-border px-4 py-3">
+                          <td key={value} className="border-t border-border px-3 py-3">
                             {value}
                           </td>
                         ))}
@@ -156,40 +136,6 @@ export function DataBrowserWorkspace() {
                 </table>
               </div>
             </div>
-          </SurfacePanel>
-
-          <div className="grid gap-4 xl:grid-cols-2">
-            <SurfacePanel
-              title="Artifacts"
-              description="Prepared files that later backend endpoints can expose directly."
-            >
-              <ul className="space-y-3 text-sm">
-                {selectedRecord.artifacts.map((artifact) => (
-                  <li key={artifact} className="rounded-2xl border border-border bg-muted/25 px-4 py-3">
-                    {artifact}
-                  </li>
-                ))}
-              </ul>
-            </SurfacePanel>
-
-            <SurfacePanel
-              title="Lineage"
-              description="Processing chain skeleton for auditability and re-run traceability."
-            >
-              <ol className="space-y-3 text-sm">
-                {selectedRecord.lineage.map((step, index) => (
-                  <li
-                    key={step}
-                    className="flex items-center gap-3 rounded-2xl border border-border bg-muted/25 px-4 py-3"
-                  >
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-primary/12 text-xs font-semibold">
-                      {index + 1}
-                    </span>
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ol>
-            </SurfacePanel>
           </div>
         </div>
       </section>

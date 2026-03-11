@@ -30,11 +30,13 @@ export function cx(...classes: Array<string | false | null | undefined>) {
 
 export function SurfaceHeader({ eyebrow, title, description, actions }: SurfaceHeaderProps) {
   return (
-    <section className="rounded-[2rem] border border-border bg-card/90 px-6 py-5 shadow-sm backdrop-blur">
+    <section className="px-1 py-1">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">{eyebrow}</p>
-          <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {eyebrow}
+          </p>
+          <h2 className="text-[2.05rem] font-semibold tracking-tight text-foreground">{title}</h2>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{description}</p>
         </div>
         {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
@@ -48,9 +50,7 @@ export function SurfaceStat({ label, value, tone = "default" }: SurfaceStatProps
     <div
       className={cx(
         "rounded-2xl border px-4 py-3",
-        tone === "primary"
-          ? "border-primary/25 bg-primary/10"
-          : "border-border bg-muted/35",
+        tone === "primary" ? "border-primary/20 bg-primary/10" : "border-border bg-surface",
       )}
     >
       <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
@@ -69,7 +69,7 @@ export function SurfacePanel({
   return (
     <section
       className={cx(
-        "rounded-[1.75rem] border border-border bg-card/90 p-5 shadow-sm backdrop-blur",
+        "rounded-[1.1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]",
         className,
       )}
     >

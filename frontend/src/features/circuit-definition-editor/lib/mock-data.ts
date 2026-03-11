@@ -8,6 +8,13 @@ export type ValidationNotice = Readonly<{
   message: string;
 }>;
 
+export type SchemaSummary = Readonly<{
+  id: number;
+  name: string;
+  createdAt: string;
+  elementCount: number;
+}>;
+
 export const definitionSections: readonly DefinitionSection[] = [
   {
     title: "Circuit Metadata",
@@ -47,4 +54,25 @@ export const previewArtifacts = [
   "definition.normalized.json",
   "schematic-input.yaml",
   "parameter-bundle.toml",
+] as const;
+
+export const schemaSummaries: readonly SchemaSummary[] = [
+  {
+    id: 18,
+    name: "FloatingQubitWithXYLine",
+    createdAt: "2026-03-08 18:19:42",
+    elementCount: 12,
+  },
+  {
+    id: 12,
+    name: "FluxoniumReadoutChain",
+    createdAt: "2026-03-05 11:14:03",
+    elementCount: 9,
+  },
+  {
+    id: 7,
+    name: "CouplerDetuningDemo",
+    createdAt: "2026-02-25 09:43:18",
+    elementCount: 8,
+  },
 ] as const;

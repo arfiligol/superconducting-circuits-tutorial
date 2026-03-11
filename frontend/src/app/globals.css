@@ -19,38 +19,38 @@
 
 :root {
   color-scheme: light;
-  --app: oklch(0.95 0.015 233);
-  --background: oklch(0.975 0.01 240);
-  --foreground: oklch(0.2 0.025 255);
-  --card: oklch(0.995 0.005 240);
-  --card-foreground: oklch(0.2 0.025 255);
-  --header: oklch(0.99 0.004 240);
-  --sidebar: oklch(0.965 0.01 236);
-  --surface: oklch(0.985 0.006 240);
-  --surface-elevated: oklch(0.955 0.012 236);
-  --muted: oklch(0.93 0.015 230);
-  --muted-foreground: oklch(0.46 0.03 245);
-  --border: oklch(0.86 0.015 235);
-  --primary: oklch(0.55 0.14 229);
+  --app: oklch(0.96 0.01 245);
+  --background: oklch(0.94 0.018 250);
+  --foreground: oklch(0.21 0.025 256);
+  --card: oklch(0.985 0.01 247);
+  --card-foreground: oklch(0.21 0.025 256);
+  --header: oklch(0.97 0.012 248);
+  --sidebar: oklch(0.93 0.02 248);
+  --surface: oklch(0.965 0.012 248);
+  --surface-elevated: oklch(0.94 0.018 248);
+  --muted: oklch(0.9 0.012 245);
+  --muted-foreground: oklch(0.48 0.03 248);
+  --border: oklch(0.83 0.02 246);
+  --primary: oklch(0.58 0.13 244);
   --primary-foreground: oklch(0.98 0.01 240);
 }
 
 .dark {
   color-scheme: dark;
-  --app: oklch(0.14 0.03 258);
-  --background: oklch(0.15 0.034 258);
-  --foreground: oklch(0.93 0.01 240);
-  --card: oklch(0.22 0.028 256);
+  --app: oklch(0.2 0.03 257);
+  --background: oklch(0.15 0.05 258);
+  --foreground: oklch(0.93 0.01 245);
+  --card: oklch(0.22 0.03 256);
   --card-foreground: oklch(0.93 0.01 240);
-  --header: oklch(0.24 0.022 256);
-  --sidebar: oklch(0.205 0.028 256);
-  --surface: oklch(0.19 0.03 256);
-  --surface-elevated: oklch(0.25 0.025 255);
-  --muted: oklch(0.3 0.022 252);
-  --muted-foreground: oklch(0.76 0.018 244);
-  --border: oklch(0.34 0.025 251);
-  --primary: oklch(0.72 0.1 233);
-  --primary-foreground: oklch(0.17 0.03 258);
+  --header: oklch(0.29 0.02 255);
+  --sidebar: oklch(0.25 0.03 255);
+  --surface: oklch(0.24 0.03 255);
+  --surface-elevated: oklch(0.31 0.025 254);
+  --muted: oklch(0.35 0.02 252);
+  --muted-foreground: oklch(0.74 0.02 246);
+  --border: oklch(0.38 0.025 252);
+  --primary: oklch(0.75 0.11 242);
+  --primary-foreground: oklch(0.2 0.03 258);
 }
 
 * {
@@ -59,8 +59,8 @@
 
 html {
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 10%, transparent), transparent 28%),
-    linear-gradient(180deg, color-mix(in srgb, var(--header) 76%, transparent), transparent 18%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 8%, transparent), transparent 24%),
+    linear-gradient(180deg, color-mix(in srgb, var(--header) 70%, transparent), transparent 16%),
     var(--app);
   color: var(--foreground);
   font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
@@ -72,6 +72,11 @@ body {
   background: transparent;
   color: var(--foreground);
   text-rendering: optimizeLegibility;
+}
+
+.dark body {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--background) 92%, black), color-mix(in srgb, var(--background) 100%, black));
 }
 
 ::selection {

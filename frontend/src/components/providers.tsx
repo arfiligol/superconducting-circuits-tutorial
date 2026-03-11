@@ -9,7 +9,7 @@ type ProvidersProps = Readonly<{
 
 export function Providers({ children }: ProvidersProps) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
       <SWRConfig
         value={{
           revalidateOnFocus: false,

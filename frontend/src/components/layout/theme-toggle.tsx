@@ -22,15 +22,16 @@ export function ThemeToggle() {
     setTheme(nextTheme);
   }
 
-  const displayTheme = mounted ? resolvedTheme ?? currentTheme : currentTheme;
-  const Icon = currentTheme === "light" ? SunMedium : currentTheme === "dark" ? MoonStar : Laptop;
-  const nextTheme = themeOrder[(themeOrder.indexOf(currentTheme) + 1) % themeOrder.length];
+  const effectiveTheme = mounted ? currentTheme : "dark";
+  const displayTheme = mounted ? resolvedTheme ?? currentTheme : "dark";
+  const Icon = effectiveTheme === "light" ? SunMedium : effectiveTheme === "dark" ? MoonStar : Laptop;
+  const nextTheme = themeOrder[(themeOrder.indexOf(effectiveTheme) + 1) % themeOrder.length];
 
   return (
     <button
       type="button"
       onClick={cycleTheme}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface-elevated text-card-foreground transition hover:border-primary hover:text-primary"
+      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-primary transition hover:bg-surface-elevated hover:text-primary-foreground"
       aria-label={`Theme: ${displayTheme}. Switch to ${nextTheme}.`}
       title={`Theme: ${displayTheme}. Switch to ${nextTheme}.`}
     >

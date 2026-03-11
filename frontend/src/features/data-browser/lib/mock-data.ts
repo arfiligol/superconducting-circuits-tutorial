@@ -4,6 +4,9 @@ export type DatasetRecord = Readonly<{
   family: string;
   owner: string;
   updatedAt: string;
+  deviceType: string;
+  capabilities: readonly string[];
+  source: string;
   samples: number;
   status: "Ready" | "Queued" | "Review";
   tags: readonly string[];
@@ -20,6 +23,9 @@ export const datasetRecords: readonly DatasetRecord[] = [
     family: "Fluxonium",
     owner: "Device Lab",
     updatedAt: "2026-02-26 13:40",
+    deviceType: "Unspecified",
+    capabilities: [],
+    source: "inferred",
     samples: 184,
     status: "Ready",
     tags: ["sweet-spot", "multi-tone", "validated"],
@@ -38,6 +44,9 @@ export const datasetRecords: readonly DatasetRecord[] = [
     family: "Transmon",
     owner: "Modeling",
     updatedAt: "2026-02-24 09:15",
+    deviceType: "Transmon",
+    capabilities: ["cross-resonance"],
+    source: "imported",
     samples: 76,
     status: "Review",
     tags: ["coupler", "cross-resonance"],
@@ -55,6 +64,9 @@ export const datasetRecords: readonly DatasetRecord[] = [
     family: "Readout",
     owner: "QA",
     updatedAt: "2026-02-20 18:02",
+    deviceType: "Readout",
+    capabilities: ["resonator"],
+    source: "uploaded",
     samples: 42,
     status: "Queued",
     tags: ["qa", "resonator"],
