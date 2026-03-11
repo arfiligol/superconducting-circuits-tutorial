@@ -71,10 +71,16 @@ body {
   min-height: 100vh;
   background: transparent;
   color: var(--foreground);
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  background: color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+pre,
+code {
+  font-family: "SFMono-Regular", "SF Mono", "Menlo", "Consolas", monospace;
 }
 
 a {

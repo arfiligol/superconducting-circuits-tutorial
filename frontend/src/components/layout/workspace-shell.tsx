@@ -1,59 +1,22 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useState } from "react";
-import {
-  Activity,
-  CircuitBoard,
-  Database,
-  FileJson2,
-  FlaskConical,
-  LineChart,
-  Menu,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { workspaceNavigationGroups } from "@/lib/navigation";
+import { WorkspaceHeader } from "@/components/layout/workspace-header";
+import { WorkspaceNav } from "@/components/layout/workspace-nav";
 
 type WorkspaceShellProps = Readonly<{
   children: React.ReactNode;
 }>;
 
 export function WorkspaceShell({ children }: WorkspaceShellProps) {
-  const pathname = usePathname();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
 
   function closeSidebar() {
     setMobileSidebarOpen(false);
-  }
-
-  function isActiveRoute(href: string) {
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
-
-  function renderNavIcon(icon: string, active: boolean) {
-    const className = active ? "text-primary-foreground" : "text-muted-foreground";
-
-    switch (icon) {
-      case "database":
-        return <Database size={16} className={className} />;
-      case "file-json":
-        return <FileJson2 size={16} className={className} />;
-      case "circuit-board":
-        return <CircuitBoard size={16} className={className} />;
-      case "flask-conical":
-        return <FlaskConical size={16} className={className} />;
-      case "activity":
-        return <Activity size={16} className={className} />;
-      case "line-chart":
-        return <LineChart size={16} className={className} />;
-      default:
-        return null;
-    }
   }
 
   return (
@@ -122,42 +85,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
             desktopSidebarCollapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0 lg:px-0 lg:py-0" : "",
           ].join(" ")}
         >
-          <div className="space-y-6">
-            {workspaceNavigationGroups.map((group, groupIndex) => (
-              <section
-                key={group.id}
-                className={groupIndex === 0 ? "" : "border-t border-border pt-5"}
-              >
-                <p className="px-3 text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">
-                  {group.label}
-                </p>
-                <nav className="mt-2 space-y-1.5">
-                  {group.items.map((item) => {
-                    const active = isActiveRoute(item.href);
-
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={closeSidebar}
-                        className={[
-                          "block rounded-xl px-3 py-3 transition",
-                          active
-                            ? "bg-primary/14 text-primary"
-                            : "bg-transparent text-foreground hover:bg-surface-elevated",
-                        ].join(" ")}
-                      >
-                        <span className="flex items-center gap-3">
-                          <span className="shrink-0">{renderNavIcon(item.icon, active)}</span>
-                          <span className="min-w-0 text-sm font-medium">{item.label}</span>
-                        </span>
-                      </Link>
-                    );
-                  })}
-                </nav>
-              </section>
-            ))}
-          </div>
+          <WorkspaceNav onNavigate={closeSidebar} />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -172,6 +100,10 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
                 API Pending
               </span>
             </button>
+          </div>
+
+          <div className="hidden border-b border-border bg-header px-5 py-4 lg:block">
+            <WorkspaceHeader />
           </div>
 
           <main className="flex-1 px-5 py-5 md:px-6 md:py-6">

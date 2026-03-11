@@ -1,59 +1,63 @@
+import type { LucideIcon } from "lucide-react";
+import {
+  ActivitySquare,
+  Binary,
+  ChartColumnIncreasing,
+  CircuitBoard,
+  Database,
+  FilePenLine,
+} from "lucide-react";
+
 export type WorkspaceNavigationItem = Readonly<{
   href: string;
   label: string;
-  description: string;
+  summary: string;
   group: "dashboard" | "pipeline" | "circuit-workbench";
-  icon:
-    | "database"
-    | "file-json"
-    | "circuit-board"
-    | "flask-conical"
-    | "activity"
-    | "line-chart";
+  icon: LucideIcon;
 }>;
 
 export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
   {
     href: "/data-browser",
     label: "Data Browser",
-    description: "Inspect trace catalogs, metadata summaries, and lineage details.",
+    summary: "Inspect trace catalogs, metadata summaries, and lineage details.",
     group: "dashboard",
-    icon: "database",
+    icon: Database,
   },
   {
     href: "/circuit-definition-editor",
-    label: "Circuit Definition Editor",
-    description: "Edit canonical circuit definitions with validation-ready structure.",
+    label: "Schemas",
+    summary: "Edit canonical circuit definitions with validation-ready structure.",
     group: "circuit-workbench",
-    icon: "file-json",
+    icon: FilePenLine,
   },
   {
     href: "/circuit-schemdraw",
-    label: "Circuit Schemdraw",
-    description: "Preview canonical schematics generated from circuit definitions.",
+    label: "Schemdraw",
+    summary: "Preview canonical schematics generated from circuit definitions.",
     group: "circuit-workbench",
-    icon: "circuit-board",
+    icon: CircuitBoard,
   },
   {
     href: "/circuit-simulation",
-    label: "Circuit Simulation",
-    description: "Stage simulation runs, sweeps, and result inspection workflows.",
+    label: "Simulation",
+    summary: "Stage simulation runs, sweeps, and result inspection workflows.",
     group: "circuit-workbench",
-    icon: "flask-conical",
+    icon: ActivitySquare,
   },
   {
     href: "/characterization",
     label: "Characterization",
-    description: "Prepare shared analysis pipelines for simulation and measurement traces.",
+    summary: "Prepare shared analysis pipelines for simulation and measurement traces.",
     group: "pipeline",
-    icon: "activity",
+    icon: Binary,
   },
   {
     href: "/analysis",
     label: "Analysis",
-    description: "Host post-processing, fitting, comparison, and reporting surfaces.",
+    summary: "Host post-processing, fitting, comparison, and reporting surfaces.",
     group: "pipeline",
-    icon: "line-chart",
+    icon: ChartColumnIncreasing,
   },
 ] as const;
 
