@@ -33,6 +33,20 @@ npm run rewrite:stop
 DESKTOP_START_URL=http://127.0.0.1:3000 npm run dev --prefix desktop
 ```
 
+### Rewrite CLI
+
+```bash
+# Install local rewrite packages, including sc-core and sc-cli
+uv sync
+
+# Show the new Typer-based CLI package help
+uv run sc --help
+
+# Proof commands wired to sc-core
+uv run sc core preview-artifacts
+uv run sc circuit-definition inspect path/to/draft.circuit.yaml
+```
+
 ### Legacy Runtime
 
 ```bash
@@ -79,12 +93,17 @@ uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
 
 ```
 superconducting-circuits-tutorial/
+├── cli/                     # Rewrite Typer CLI adapter package
+│   ├── src/sc_cli/          # Commands, presenters, entrypoint
+│   └── tests/               # CLI-focused pytest coverage
+├── backend/                 # FastAPI rewrite service
+├── frontend/                # Next.js rewrite frontend
+├── desktop/                 # Electron rewrite wrapper
 ├── src/
-│   ├── core/                 # 核心邏輯 (Clean Architecture)
-│   │   ├── analysis/         # 數據分析 (Fitting, Extraction)
-│   │   ├── simulation/       # 電路模擬 (JuliaCall ↔ Julia)
-│   │   └── shared/           # 共用工具 (visualization, utils)
-│   └── scripts/              # CLI 入口點
+│   ├── core/                 # Installable shared scientific core
+│   │   └── sc_core/          # Framework-agnostic rewrite boundary
+│   ├── scripts/              # Legacy CLI and migration helpers
+│   └── app/                  # Legacy NiceGUI runtime
 ├── data/                     # 數據生命週期
 │   ├── raw/                  # 原始數據 (HFSS/VNA)
 │   └── processed/            # 分析結果
