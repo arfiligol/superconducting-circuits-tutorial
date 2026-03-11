@@ -2,6 +2,45 @@
 
 使用 [JosephsonCircuits.jl](https://github.com/QICKLab/JosephsonCircuits.jl) 學習超導電路模擬的教學專案。
 
+## Rewrite Foundation
+
+Rewrite branch 目前同時保留 legacy NiceGUI runtime 與新的 `frontend/`、`backend/`、`desktop/` foundation。
+請用獨立入口操作 rewrite stack，不要把 legacy runtime helper 當成 rewrite 啟動方式。
+
+### Rewrite Quick Start
+
+```bash
+# Install rewrite workspace dependencies
+npm run rewrite:install
+
+# Run rewrite checks from repo root
+npm run rewrite:check
+
+# Build rewrite workspaces
+npm run rewrite:build
+
+# Start rewrite frontend + backend dev stack
+npm run rewrite:dev
+
+# Stop rewrite stack
+npm run rewrite:stop
+```
+
+### Rewrite Desktop Wrapper
+
+```bash
+# Start the rewrite stack first, then wrap the frontend in Electron
+DESKTOP_START_URL=http://127.0.0.1:3000 npm run dev --prefix desktop
+```
+
+### Legacy Runtime
+
+```bash
+# Legacy NiceGUI runtime remains separate
+./scripts/dev_start.sh
+./scripts/dev_stop.sh
+```
+
 ## 📚 文件網站
 
 👉 **[線上教學文件](https://arfiligol.github.io/superconducting-circuits-tutorial/)**

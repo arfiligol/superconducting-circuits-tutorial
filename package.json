@@ -1,0 +1,11 @@
+{
+  "name": "superconducting-circuits-tutorial-root",
+  "private": true,
+  "scripts": {
+    "rewrite:install": "./scripts/rewrite_install.sh",
+    "rewrite:check": "./scripts/rewrite_check.sh",
+    "rewrite:build": "./scripts/rewrite_build.sh",
+    "rewrite:dev": "./scripts/rewrite_start.sh",
+    "rewrite:stop": "./scripts/rewrite_stop.sh"
+  }
+}

@@ -130,3 +130,5 @@ data/**/*.zarr/
 
 # Local Playwright runtime outputs/logs
 output/playwright/
+tmp/rewrite_logs/
+tmp/rewrite_pids/
