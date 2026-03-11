@@ -4,8 +4,9 @@ from enum import Enum
 from typing import Annotated, cast
 
 import typer
-from sc_backend import DatasetSortBy, DatasetStatus, SortOrder
+from sc_backend import BackendContractError, DatasetSortBy, DatasetStatus, SortOrder
 
+from sc_cli.errors import exit_for_backend_error
 from sc_cli.presenters import render_dataset_summaries
 from sc_cli.runtime import list_datasets
 
@@ -49,13 +50,13 @@ def list_command(
     ] = SortOrderOption.DESC,
 ) -> None:
     """List datasets from the rewrite integration scaffold."""
-    typer.echo(
-        render_dataset_summaries(
-            list_datasets(
-                family=family,
-                status=None if status is None else cast(DatasetStatus, status.value),
-                sort_by=cast(DatasetSortBy, sort_by.value),
-                sort_order=cast(SortOrder, sort_order.value),
-            )
+    try:
+        datasets = list_datasets(
+            family=family,
+            status=None if status is None else cast(DatasetStatus, status.value),
+            sort_by=cast(DatasetSortBy, sort_by.value),
+            sort_order=cast(SortOrder, sort_order.value),
         )
-    )
+    except BackendContractError as error:
+        exit_for_backend_error(error)
+    typer.echo(render_dataset_summaries(datasets))

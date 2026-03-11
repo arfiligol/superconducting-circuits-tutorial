@@ -1,10 +1,13 @@
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from sc_backend import ApiErrorBodyResponse, BackendContractError
 from typer.testing import CliRunner
 
 from sc_cli.app import app
+from sc_cli.commands import datasets, session, tasks
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -97,8 +100,9 @@ def test_tasks_list_command_reads_rewrite_task_state() -> None:
     assert "#304" not in result.stdout
 
 
-def test_tasks_show_command_reads_one_task() -> None:
+def test_tasks_show_command_reads_one_task(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = CliRunner()
+    monkeypatch.setattr(tasks, "get_task", lambda task_id: _task_detail_stub(task_id))
 
     result = runner.invoke(app, ["tasks", "show", "301"])
 
@@ -116,3 +120,95 @@ def test_tasks_show_command_uses_structured_backend_error_message() -> None:
 
     assert result.exit_code == 2
     assert "error: Task 999 was not found. [not_found/task_not_found]" in result.output
+
+
+def test_session_show_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(
+        session,
+        "get_session",
+        lambda: _raise_backend_error("Session lookup failed."),
+    )
+
+    result = runner.invoke(app, ["session", "show"])
+
+    assert result.exit_code == 2
+    assert "error: Session lookup failed. [validation/request_failed]" in result.output
+
+
+def test_datasets_list_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(
+        datasets,
+        "list_datasets",
+        lambda **_: _raise_backend_error("Dataset read failed."),
+    )
+
+    result = runner.invoke(app, ["datasets", "list"])
+
+    assert result.exit_code == 2
+    assert "error: Dataset read failed. [validation/request_failed]" in result.output
+
+
+def test_tasks_list_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(tasks, "list_tasks", lambda **_: _raise_backend_error("Task list failed."))
+
+    result = runner.invoke(app, ["tasks", "list"])
+
+    assert result.exit_code == 2
+    assert "error: Task list failed. [validation/request_failed]" in result.output
+
+
+def _backend_error(message: str) -> BackendContractError:
+    return BackendContractError(
+        ApiErrorBodyResponse(
+            code="request_failed",
+            category="validation",
+            message=message,
+            status=422,
+        )
+    )
+
+
+def _raise_backend_error(message: str) -> None:
+    raise _backend_error(message)
+
+
+def _task_detail_stub(task_id: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        task_id=task_id,
+        kind="simulation",
+        lane="simulation",
+        execution_mode="run",
+        status="running",
+        submitted_at="2026-03-12 09:15:00",
+        owner_user_id="researcher-01",
+        owner_display_name="Rewrite Local User",
+        workspace_id="ws-device-lab",
+        workspace_slug="device-lab",
+        visibility_scope="workspace",
+        dataset_id="fluxonium-2025-031",
+        definition_id=18,
+        summary="Fluxonium parameter sweep is running.",
+        queue_backend="in_memory_scaffold",
+        worker_task_name="simulation_run_task",
+        request_ready=True,
+        submitted_from_active_dataset=True,
+        progress=SimpleNamespace(
+            phase="running",
+            percent_complete=55,
+            summary="simulation_run_task started in the simulation lane.",
+            updated_at="2026-03-12 09:22:00",
+        ),
+        result_refs=SimpleNamespace(
+            trace_batch_id=None,
+            analysis_run_id=None,
+        ),
+    )

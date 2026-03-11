@@ -54,17 +54,17 @@ def list_command(
     ] = 20,
 ) -> None:
     """List tasks from the rewrite integration scaffold."""
-    typer.echo(
-        render_task_summaries(
-            list_tasks(
-                status=None if status is None else cast(TaskStatus, status.value),
-                lane=None if lane is None else cast(TaskLane, lane.value),
-                scope=cast(TaskVisibilityScope, scope.value),
-                dataset_id=dataset_id,
-                limit=limit,
-            )
+    try:
+        tasks = list_tasks(
+            status=None if status is None else cast(TaskStatus, status.value),
+            lane=None if lane is None else cast(TaskLane, lane.value),
+            scope=cast(TaskVisibilityScope, scope.value),
+            dataset_id=dataset_id,
+            limit=limit,
         )
-    )
+    except BackendContractError as error:
+        exit_for_backend_error(error)
+    typer.echo(render_task_summaries(tasks))
 
 
 @app.command("show")
