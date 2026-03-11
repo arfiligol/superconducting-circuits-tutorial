@@ -34,7 +34,7 @@ The current branch direction is a rewrite toward **Next.js + FastAPI + CLI**, wh
 | Rule | Description | Agent Rule |
 | --- | --- | --- |
 | [Project Basics](./project-basics/index.en.md) | Index for project goal, stack, and structure | [#agent-rule](./project-basics/index.en.md#agent-rule) |
-| [Project Overview](./project-basics/project-overview.en.md) | Data Browser / Editor / Simulation / Characterization / Analysis / CLI scope | [#agent-rule](./project-basics/project-overview.en.md#agent-rule) |
+| [Project Overview](./project-basics/project-overview.en.md) | Data Browser / Editor / Simulation / Characterization & Analysis / CLI scope | [#agent-rule](./project-basics/project-overview.en.md#agent-rule) |
 | [Tech Stack](./project-basics/tech-stack.en.md) | Next.js + FastAPI + CLI + Julia simulation stack | [#agent-rule](./project-basics/tech-stack.en.md#agent-rule) |
 | [Folder Structure](./project-basics/folder-structure.en.md) | frontend/backend/cli/core boundaries for the rewrite branch | [#agent-rule](./project-basics/folder-structure.en.md#agent-rule) |
 

@@ -29,8 +29,7 @@ updated_by: docs-team
 - Circuit Definition Editor
 - Circuit Schemdraw
 - Circuit Simulation
-- Characterization
-- Analysis
+- Characterization & Analysis
 - CLI Available
 
 ## Scope
@@ -43,8 +42,7 @@ updated_by: docs-team
 | Circuit Definition Editor | 編輯 circuit/netlist/schema 定義，並提供驗證與格式化 |
 | Circuit Schemdraw | 由 canonical circuit definition 產生可視化電路圖 |
 | Circuit Simulation | 以 `JosephsonCircuits.jl` 為核心進行模擬與掃描 |
-| Characterization | 對 simulation / layout / measurement traces 套用一致分析流程 |
-| Analysis | 後處理、擬合、比較、參數萃取與視覺化 |
+| Characterization & Analysis | 對 simulation / layout / measurement traces 套用一致分析流程，並提供後處理、擬合、比較、參數萃取與視覺化 |
 | CLI Available | 所有關鍵工作流必須可從 CLI 執行，不以 UI 獨占 |
 
 ### Accepted Data Sources
@@ -78,8 +76,7 @@ updated_by: docs-team
     - Circuit Definition Editor
     - Circuit Schemdraw
     - Circuit Simulation
-    - Characterization
-    - Analysis
+    - Characterization & Analysis
     - CLI Available
 - **Data sources**:
     - circuit simulation
