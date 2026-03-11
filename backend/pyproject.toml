@@ -53,6 +53,13 @@ reportMissingTypeStubs = "none"
 [tool.uv.sources]
 sc-core = { path = "../src/core", editable = true }
 
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*", "sc_backend*"]
+
 [build-system]
 requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
