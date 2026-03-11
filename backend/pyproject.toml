@@ -1,0 +1,24 @@
+[project]
+name = "superconducting-circuits-backend"
+version = "0.1.0"
+description = "FastAPI rewrite foundation for superconducting circuits services."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.133.0",
+    "pydantic-settings>=2.11.0",
+    "uvicorn[standard]>=0.41.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
