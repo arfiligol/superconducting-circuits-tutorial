@@ -1,5 +1,12 @@
 from dataclasses import replace
 
+from sc_core.circuit_definitions import (
+    DEFAULT_PREVIEW_ARTIFACTS,
+    inspect_circuit_definition_source,
+)
+from sc_core.circuit_definitions import (
+    ValidationNotice as CoreValidationNotice,
+)
 from src.app.domain.circuit_definitions import (
     CircuitDefinitionDetail,
     CircuitDefinitionDraft,
@@ -78,21 +85,11 @@ class InMemoryRewriteCatalogRepository:
         self,
         draft: CircuitDefinitionDraft,
     ) -> CircuitDefinitionDetail:
-        definition = CircuitDefinitionDetail(
+        definition = _build_circuit_definition_detail(
             definition_id=self._next_definition_id,
             name=draft.name,
             created_at="2026-03-11 23:30:00",
-            element_count=_estimate_element_count(draft.source_text),
             source_text=draft.source_text,
-            normalized_output=_normalized_output_for(draft.source_text),
-            validation_notices=(
-                ValidationNotice(level="ok", message="Canonical schema matches rewrite draft v1."),
-            ),
-            preview_artifacts=(
-                "definition.normalized.json",
-                "schematic-input.yaml",
-                "parameter-bundle.toml",
-            ),
         )
         self._circuit_definitions[definition.definition_id] = definition
         self._next_definition_id += 1
@@ -107,12 +104,15 @@ class InMemoryRewriteCatalogRepository:
         if definition is None:
             return None
 
+        inspection = inspect_circuit_definition_source(update.source_text)
+
         updated_definition = replace(
             definition,
             name=update.name,
             source_text=update.source_text,
-            element_count=_estimate_element_count(update.source_text),
-            normalized_output=_normalized_output_for(update.source_text),
+            element_count=inspection.element_count,
+            normalized_output=inspection.normalized_output,
+            validation_notices=_to_domain_validation_notices(inspection.validation_notices),
         )
         self._circuit_definitions[definition_id] = updated_definition
         return updated_definition
@@ -122,34 +122,31 @@ class InMemoryRewriteCatalogRepository:
         return existing is not None
 
 
-def _estimate_element_count(source_text: str) -> int:
-    return max(1, sum(1 for line in source_text.splitlines() if ":" in line) - 3)
-
-
-def _normalized_output_for(source_text: str) -> str:
-    circuit_name = _extract_scalar(source_text, "name") or "pending_name"
-    family = _extract_scalar(source_text, "family") or "pending_family"
-    return (
-        "{\n"
-        f'  "circuit": "{circuit_name}",\n'
-        f'  "family": "{family}",\n'
-        f'  "elements": {_estimate_element_count(source_text)},\n'
-        '  "ports": "pending migration",\n'
-        '  "schemdraw_ready": true\n'
-        "}"
+def _build_circuit_definition_detail(
+    definition_id: int,
+    name: str,
+    created_at: str,
+    source_text: str,
+    *,
+    element_count: int | None = None,
+) -> CircuitDefinitionDetail:
+    inspection = inspect_circuit_definition_source(source_text)
+    return CircuitDefinitionDetail(
+        definition_id=definition_id,
+        name=name,
+        created_at=created_at,
+        element_count=inspection.element_count if element_count is None else element_count,
+        source_text=source_text,
+        normalized_output=inspection.normalized_output,
+        validation_notices=_to_domain_validation_notices(inspection.validation_notices),
+        preview_artifacts=DEFAULT_PREVIEW_ARTIFACTS,
     )
 
 
-def _extract_scalar(source_text: str, field_name: str) -> str | None:
-    for raw_line in source_text.splitlines():
-        line = raw_line.strip()
-        if not line.startswith(f"{field_name}:"):
-            continue
-        _, _, value = line.partition(":")
-        cleaned = value.strip()
-        if cleaned:
-            return cleaned
-    return None
+def _to_domain_validation_notices(
+    notices: tuple[CoreValidationNotice, ...],
+) -> tuple[ValidationNotice, ...]:
+    return tuple(ValidationNotice(level=notice.level, message=notice.message) for notice in notices)
 
 
 def _validation_status(notices: tuple[ValidationNotice, ...]) -> ValidationLevel:
@@ -210,19 +207,6 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
 
 
 def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:
-    base_artifacts = (
-        "definition.normalized.json",
-        "schematic-input.yaml",
-        "parameter-bundle.toml",
-    )
-    base_notices = (
-        ValidationNotice(level="ok", message="Canonical schema matches rewrite draft v1."),
-        ValidationNotice(level="ok", message="All required element blocks are present."),
-        ValidationNotice(
-            level="warning",
-            message="Port mapping metadata still needs migration from legacy forms.",
-        ),
-    )
     floating_qubit_source = (
         "circuit:\n"
         "  name: fluxonium_reference_a\n"
@@ -259,34 +243,25 @@ def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:
         "      resonance_ghz: 7.05\n"
     )
     return (
-        CircuitDefinitionDetail(
+        _build_circuit_definition_detail(
             definition_id=18,
             name="FloatingQubitWithXYLine",
             created_at="2026-03-08 18:19:42",
             element_count=12,
             source_text=floating_qubit_source,
-            normalized_output=_normalized_output_for(floating_qubit_source),
-            validation_notices=base_notices,
-            preview_artifacts=base_artifacts,
         ),
-        CircuitDefinitionDetail(
+        _build_circuit_definition_detail(
             definition_id=12,
             name="FluxoniumReadoutChain",
             created_at="2026-03-05 11:14:03",
             element_count=9,
             source_text=readout_chain_source,
-            normalized_output=_normalized_output_for(readout_chain_source),
-            validation_notices=base_notices,
-            preview_artifacts=base_artifacts,
         ),
-        CircuitDefinitionDetail(
+        _build_circuit_definition_detail(
             definition_id=7,
             name="CouplerDetuningDemo",
             created_at="2026-02-25 09:43:18",
             element_count=8,
             source_text=coupler_demo_source,
-            normalized_output=_normalized_output_for(coupler_demo_source),
-            validation_notices=base_notices,
-            preview_artifacts=base_artifacts,
         ),
     )

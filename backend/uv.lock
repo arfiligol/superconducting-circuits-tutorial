@@ -415,6 +415,11 @@ wheels = [
 ]
 
 [[package]]
+name = "sc-core"
+version = "0.1.0"
+source = { editable = "../src/core" }
+
+[[package]]
 name = "starlette"
 version = "0.52.1"
 source = { registry = "https://pypi.org/simple" }
@@ -434,6 +439,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "pydantic-settings" },
+    { name = "sc-core" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -449,6 +455,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.133.0" },
     { name = "pydantic-settings", specifier = ">=2.11.0" },
+    { name = "sc-core", editable = "../src/core" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.41.0" },
 ]
 
