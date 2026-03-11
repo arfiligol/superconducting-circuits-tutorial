@@ -19,7 +19,7 @@ updated_by: docs-team
 # Guardrails
 
 本區是目前 workspace 的開發規範單一真理來源。
-這個 branch 的核心方向已改為以 **Next.js + FastAPI + CLI** 重寫既有 NiceGUI 能力，並保留科學計算核心與雙語文件系統。
+這個 branch 的核心方向已改為以 **Next.js + FastAPI + CLI** 重寫既有 NiceGUI 能力，並保留科學計算核心與單語 zh-TW 文件系統。
 
 ## 如何使用
 
@@ -79,7 +79,7 @@ updated_by: docs-team
 | --- | --- | --- |
 | [Documentation Design](./documentation-design/documentation.md) | 文件規範索引 | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
 | [Documentation Standards](./documentation-design/standards.md) | Diataxis 與 frontmatter | [#agent-rule](./documentation-design/standards.md#agent-rule) |
-| [Documentation Maintenance](./documentation-design/maintenance.md) | 雙語同步與 build 流程 | [#agent-rule](./documentation-design/maintenance.md#agent-rule) |
+| [Documentation Maintenance](./documentation-design/maintenance.md) | 單語文件來源與 build 流程 | [#agent-rule](./documentation-design/maintenance.md#agent-rule) |
 
 ## 驗證指令
 

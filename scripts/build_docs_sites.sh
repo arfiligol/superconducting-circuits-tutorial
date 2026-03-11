@@ -8,15 +8,8 @@ SITE_ROOT="docs/site"
 
 uv run python scripts/check_docs_nav_routes.py --check-source
 
-./scripts/prepare_docs_locales.sh
+bash ./scripts/prepare_docs_locales.sh
 
 uv run --group dev zensical build -c
-uv run --group dev zensical build -f zensical.en.toml
-
-mkdir -p "${SITE_ROOT}/en"
-rm -rf "${SITE_ROOT}/en/assets" "${SITE_ROOT}/en/stylesheets" "${SITE_ROOT}/en/javascripts"
-cp -a "${SITE_ROOT}/assets" "${SITE_ROOT}/en/assets"
-cp -a "${SITE_ROOT}/stylesheets" "${SITE_ROOT}/en/stylesheets"
-cp -a "${SITE_ROOT}/javascripts" "${SITE_ROOT}/en/javascripts"
 
 uv run python scripts/check_docs_nav_routes.py --check-built

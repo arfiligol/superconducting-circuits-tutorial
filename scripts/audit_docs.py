@@ -3,9 +3,8 @@ Documentation Audit Script
 
 Checks all .md files in docs/ for compliance with guardrails:
 1. Required Frontmatter fields (aliases, tags)
-2. Bilingual Sync (each .md should have a corresponding .en.md)
-3. Name Validation (owner/last_updated_by must exist in contributors.md)
-4. Tags Taxonomy (tags must follow namespace/value format)
+2. Name Validation (owner/last_updated_by must exist in contributors.md)
+3. Tags Taxonomy (tags must follow namespace/value format)
 """
 
 import os
@@ -100,12 +99,6 @@ def check_file(file_path: str, valid_contributors: set[str]):
                             f"Invalid tag namespace: '{namespace}' "
                             f"(must be one of {VALID_TAG_NAMESPACES})"
                         )
-
-    # Check Bilingual Sync
-    if file_path.endswith(".md") and not file_path.endswith(".en.md"):
-        en_path = file_path.replace(".md", ".en.md")
-        if not os.path.exists(en_path):
-            issues.append("Missing corresponding .en.md file")
 
     return issues
 

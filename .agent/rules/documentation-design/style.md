@@ -1,5 +1,5 @@
 ## Documentation Style
-- **Language**: zh-TW primary; keep `.en.md` synchronized
+- **Language**: zh-TW primary
 - **Tone**: Tutorial guiding / How-to imperative / Reference neutral / Explanation reasoning
 - **Terms**: keep technical terms in English or bilingual
 - **Admonitions**: use Zensical `!!!` / `???` (4-space indent)

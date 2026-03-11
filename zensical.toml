@@ -15,7 +15,6 @@ extra_css = [
 extra_javascript = [
   "javascripts/md-route-redirect.js",
   "javascripts/mathjax.js",
-  "javascripts/language-switcher.js",
   "https://polyfill.io/v3/polyfill.min.js?features=es6",
   "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
 ]
@@ -254,10 +253,6 @@ icon = "lucide/moon-star"
 name = "Switch to system preference"
 
 [project.extra]
-alternate = [
-  { "name" = "繁體中文", "link" = "https://arfiligol.github.io/superconducting-circuits-tutorial/", "lang" = "zh-TW" },
-  { "name" = "English", "link" = "https://arfiligol.github.io/superconducting-circuits-tutorial/en/", "lang" = "en" },
-]
 social = [
   { "icon" = "fontawesome/brands/github", "link" = "https://github.com/arfiligol" },
 ]
