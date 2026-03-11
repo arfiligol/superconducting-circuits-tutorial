@@ -1,10 +1,15 @@
 @import "tailwindcss";
 
 @theme inline {
+  --color-app: var(--app);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-header: var(--header);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
@@ -14,28 +19,38 @@
 
 :root {
   color-scheme: light;
-  --background: oklch(0.98 0.01 240);
-  --foreground: oklch(0.21 0.03 255);
+  --app: oklch(0.95 0.015 233);
+  --background: oklch(0.975 0.01 240);
+  --foreground: oklch(0.2 0.025 255);
   --card: oklch(0.995 0.005 240);
-  --card-foreground: oklch(0.21 0.03 255);
+  --card-foreground: oklch(0.2 0.025 255);
+  --header: oklch(0.99 0.004 240);
+  --sidebar: oklch(0.965 0.01 236);
+  --surface: oklch(0.985 0.006 240);
+  --surface-elevated: oklch(0.955 0.012 236);
   --muted: oklch(0.93 0.015 230);
   --muted-foreground: oklch(0.46 0.03 245);
   --border: oklch(0.86 0.015 235);
-  --primary: oklch(0.53 0.15 222);
+  --primary: oklch(0.55 0.14 229);
   --primary-foreground: oklch(0.98 0.01 240);
 }
 
 .dark {
   color-scheme: dark;
-  --background: oklch(0.17 0.02 260);
-  --foreground: oklch(0.95 0.01 240);
-  --card: oklch(0.22 0.02 258);
-  --card-foreground: oklch(0.95 0.01 240);
-  --muted: oklch(0.28 0.02 252);
-  --muted-foreground: oklch(0.74 0.02 245);
-  --border: oklch(0.34 0.02 252);
-  --primary: oklch(0.66 0.11 215);
-  --primary-foreground: oklch(0.14 0.02 260);
+  --app: oklch(0.14 0.03 258);
+  --background: oklch(0.15 0.034 258);
+  --foreground: oklch(0.93 0.01 240);
+  --card: oklch(0.22 0.028 256);
+  --card-foreground: oklch(0.93 0.01 240);
+  --header: oklch(0.24 0.022 256);
+  --sidebar: oklch(0.205 0.028 256);
+  --surface: oklch(0.19 0.03 256);
+  --surface-elevated: oklch(0.25 0.025 255);
+  --muted: oklch(0.3 0.022 252);
+  --muted-foreground: oklch(0.76 0.018 244);
+  --border: oklch(0.34 0.025 251);
+  --primary: oklch(0.72 0.1 233);
+  --primary-foreground: oklch(0.17 0.03 258);
 }
 
 * {
@@ -44,8 +59,9 @@
 
 html {
   background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--primary) 18%, transparent), transparent 42%),
-    var(--background);
+    radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 10%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--header) 76%, transparent), transparent 18%),
+    var(--app);
   color: var(--foreground);
   font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
 }
@@ -55,6 +71,10 @@ body {
   min-height: 100vh;
   background: transparent;
   color: var(--foreground);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 a {

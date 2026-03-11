@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { workspaceNavigation } from "../src/lib/navigation";
+import { workspaceNavigation, workspaceNavigationGroups } from "../src/lib/navigation";
 
 describe("workspaceNavigation", () => {
   it("covers the rewrite foundation routes", () => {
@@ -20,5 +20,14 @@ describe("workspaceNavigation", () => {
 
     expect(new Set(hrefs).size).toBe(hrefs.length);
     expect(hrefs.every((href) => href.startsWith("/"))).toBe(true);
+  });
+
+  it("keeps the NiceGUI-style drawer grouping stable", () => {
+    expect(workspaceNavigationGroups.map((group) => group.label)).toEqual([
+      "Dashboard",
+      "Pipeline",
+      "Circuit Simulation",
+    ]);
+    expect(workspaceNavigationGroups.map((group) => group.items.length)).toEqual([1, 2, 3]);
   });
 });

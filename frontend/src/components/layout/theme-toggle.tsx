@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { Laptop, MoonStar, SunMedium } from "lucide-react";
 import { useTheme } from "next-themes";
 
 const themeOrder = ["light", "dark", "system"] as const;
@@ -21,13 +22,19 @@ export function ThemeToggle() {
     setTheme(nextTheme);
   }
 
+  const displayTheme = mounted ? resolvedTheme ?? currentTheme : currentTheme;
+  const Icon = currentTheme === "light" ? SunMedium : currentTheme === "dark" ? MoonStar : Laptop;
+  const nextTheme = themeOrder[(themeOrder.indexOf(currentTheme) + 1) % themeOrder.length];
+
   return (
     <button
       type="button"
       onClick={cycleTheme}
-      className="rounded-full border border-border bg-card px-3 py-1.5 text-sm text-card-foreground transition hover:border-primary hover:text-primary"
+      className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-surface-elevated text-card-foreground transition hover:border-primary hover:text-primary"
+      aria-label={`Theme: ${displayTheme}. Switch to ${nextTheme}.`}
+      title={`Theme: ${displayTheme}. Switch to ${nextTheme}.`}
     >
-      Theme: {mounted ? resolvedTheme ?? currentTheme : "system"}
+      <Icon size={18} strokeWidth={2} />
     </button>
   );
 }
