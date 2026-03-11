@@ -1,16 +1,33 @@
 ## Run / Build Commands
+- **Rewrite root orchestration**:
+    - `npm run rewrite:install`
+    - `npm run rewrite:check`
+    - `npm run rewrite:build`
+    - `npm run rewrite:dev`
+    - `npm run rewrite:stop`
 - **Python install**: `uv sync`
 - **Julia install**: `julia --project=. -e 'using Pkg; Pkg.instantiate()'`
-- **Frontend install**: `npm install --prefix frontend`
-- **Frontend dev**: `npm run dev --prefix frontend`
-- **Frontend build**: `npm run build --prefix frontend`
-- **Desktop install**: `npm install --prefix desktop`
-- **Desktop dev**: `npm run dev --prefix desktop`
-- **Desktop build**: `npm run build --prefix desktop`
-- **Backend dev**: `uv run uvicorn backend.src.app.main:app --reload --port 8000`
+- **Frontend**:
+    - `npm install --prefix frontend`
+    - `npm run dev --prefix frontend`
+    - `npm run test --prefix frontend`
+    - `npm run lint --prefix frontend`
+    - `npm run typecheck --prefix frontend`
+    - `npm run build --prefix frontend`
+- **Backend**:
+    - `cd backend && uv sync`
+    - `cd backend && uv run pytest`
+    - `cd backend && uv run uvicorn src.app.main:app --reload --port 8000`
+- **Desktop**:
+    - `npm install --prefix desktop`
+    - `npm run dev --prefix desktop`
+    - `npm run lint --prefix desktop`
+    - `npm run build --prefix desktop`
 - **CLI**: `uv run sc --help`
-- **Docs prepare**: `./scripts/prepare_docs_locales.sh`
-- **Docs build**:
+- **Docs**:
+    - `uv run python scripts/check_docs_nav_routes.py --check-source`
+    - `./scripts/prepare_docs_locales.sh`
     - `uv run --group dev zensical build -f zensical.toml`
     - `uv run --group dev zensical build -f zensical.en.toml`
     - `./scripts/build_docs_sites.sh`
+    - `uv run python scripts/check_docs_nav_routes.py --check-built`
