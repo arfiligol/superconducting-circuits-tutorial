@@ -62,8 +62,9 @@ def test_task_service_raises_framework_agnostic_validation_error() -> None:
     assert exc_info.value.category == "validation"
 
 
-def test_circuit_definition_service_raises_framework_agnostic_error_for_missing_definition(
-) -> None:
+def test_circuit_definition_service_raises_framework_agnostic_error_for_missing_definition() -> (
+    None
+):
     service = CircuitDefinitionService(repository=InMemoryRewriteCatalogRepository())
 
     with pytest.raises(ServiceError) as exc_info:

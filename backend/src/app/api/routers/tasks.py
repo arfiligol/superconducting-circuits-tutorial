@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
+
 from src.app.api.schemas.tasks import (
     TaskDetailResponse,
     TaskMutationResponse,

@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+
 from src.app.domain.health import HealthStatus
 from src.app.infrastructure.runtime import get_health_service
 from src.app.services.health_service import HealthService

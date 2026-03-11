@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+
 from src.app.api.schemas.session import (
     ActiveDatasetResponse,
     ActiveDatasetUpdateRequest,

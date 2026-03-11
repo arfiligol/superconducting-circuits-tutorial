@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Response, status
+
 from src.app.api.schemas.circuit_definitions import (
     CircuitDefinitionCreateRequest,
     CircuitDefinitionDetailResponse,

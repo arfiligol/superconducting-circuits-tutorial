@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+
 from src.app.api.schemas.datasets import (
     DatasetDetailResponse,
     DatasetMetadataUpdateRequest,

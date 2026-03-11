@@ -2,6 +2,7 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from sc_core.tasking import resolve_worker_task_route
+
 from src.app.domain.circuit_definitions import CircuitDefinitionDetail
 from src.app.domain.datasets import DatasetDetail
 from src.app.domain.session import SessionState
@@ -98,9 +99,7 @@ class TaskService:
 
         if (
             draft.definition_id is not None
-            and self._circuit_definition_repository.get_circuit_definition(
-                draft.definition_id
-            )
+            and self._circuit_definition_repository.get_circuit_definition(draft.definition_id)
             is None
         ):
             raise service_error(

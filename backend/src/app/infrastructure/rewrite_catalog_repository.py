@@ -7,6 +7,7 @@ from sc_core.circuit_definitions import (
 from sc_core.circuit_definitions import (
     ValidationNotice as CoreValidationNotice,
 )
+
 from src.app.domain.circuit_definitions import (
     CircuitDefinitionDetail,
     CircuitDefinitionDraft,

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from src.app.api.errors import install_error_handlers
 from src.app.api.router import api_router
 from src.app.settings import AppSettings, get_settings
