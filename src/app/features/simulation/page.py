@@ -4557,7 +4557,10 @@ def _render_simulation_environment():
                 termination_view_elements.summary_label = termination_summary_label
                 termination_view_elements.details_container = termination_details_container
 
+                refreshing_termination_controls = False
+
                 def refresh_termination_controls() -> None:
+                    nonlocal refreshing_termination_controls
                     enabled_switch = termination_view_elements.enabled_switch
                     mode_select = termination_view_elements.mode_select
                     ports_select = termination_view_elements.ports_select
@@ -4574,103 +4577,116 @@ def _render_simulation_environment():
                     ):
                         return
 
-                    normalized_mode = _normalize_termination_mode(mode_select.value)
-                    mode_select.value = normalized_mode
-                    selected_ports = _normalize_termination_selected_ports(
-                        ports_select.value,
-                        available_ports=available_setup_ports,
-                    )
-                    if enabled_switch.value and not selected_ports and available_setup_ports:
-                        selected_ports = [available_setup_ports[0]]
-                    ports_select.value = selected_ports
+                    if refreshing_termination_controls:
+                        return
 
-                    normalized_manual_map = _normalize_manual_termination_resistance_map(
-                        termination_state.manual_resistance_ohm_by_port,
-                        available_ports=available_setup_ports,
-                        default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
-                    )
-                    termination_state.enabled = bool(enabled_switch.value)
-                    termination_state.mode = normalized_mode
-                    termination_state.selected_ports = list(selected_ports)
-                    termination_state.manual_resistance_ohm_by_port = normalized_manual_map
+                    refreshing_termination_controls = True
+                    try:
+                        normalized_mode = _normalize_termination_mode(mode_select.value)
+                        if mode_select.value != normalized_mode:
+                            mode_select.value = normalized_mode
+                        selected_ports = _normalize_termination_selected_ports(
+                            ports_select.value,
+                            available_ports=available_setup_ports,
+                        )
+                        if enabled_switch.value and not selected_ports and available_setup_ports:
+                            selected_ports = [available_setup_ports[0]]
+                        if list(ports_select.value or []) != selected_ports:
+                            ports_select.value = selected_ports
 
-                    resolved_plan = _resolved_termination_plan()
-                    summary_label.text = _termination_plan_summary(resolved_plan)
-                    if normalized_mode == "manual":
-                        reset_button.enable()
-                    else:
-                        reset_button.disable()
+                        normalized_manual_map = _normalize_manual_termination_resistance_map(
+                            termination_state.manual_resistance_ohm_by_port,
+                            available_ports=available_setup_ports,
+                            default_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
+                        )
+                        termination_state.enabled = bool(enabled_switch.value)
+                        termination_state.mode = normalized_mode
+                        termination_state.selected_ports = list(selected_ports)
+                        termination_state.manual_resistance_ohm_by_port = normalized_manual_map
 
-                    details_container.clear()
-                    with details_container:
-                        if not bool(resolved_plan.get("enabled", False)):
-                            ui.label("Disabled: raw solver output is used directly.").classes(
-                                "text-xs text-muted"
-                            )
-                            return
+                        resolved_plan = _resolved_termination_plan()
+                        summary_label.text = _termination_plan_summary(resolved_plan)
+                        if normalized_mode == "manual":
+                            reset_button.enable()
+                        else:
+                            reset_button.disable()
 
-                        selected = [int(port) for port in resolved_plan.get("selected_ports", [])]
-                        resolved_values = dict(resolved_plan.get("resistance_ohm_by_port", {}))
-                        source_values = dict(resolved_plan.get("source_by_port", {}))
-                        for port in selected:
-                            source = str(source_values.get(port, "manual"))
-                            resistance = float(
-                                resolved_values.get(port, _TERMINATION_DEFAULT_RESISTANCE_OHM)
-                            )
-                            if normalized_mode == "manual":
-                                row_label = f"Port {port} · Manual R (Ohm)"
-                                manual_input = (
-                                    ui.number(
-                                        row_label,
-                                        value=float(
-                                            normalized_manual_map.get(
-                                                port,
-                                                _TERMINATION_DEFAULT_RESISTANCE_OHM,
-                                            )
-                                        ),
-                                        format="%.6g",
-                                    )
-                                    .props("dense outlined")
-                                    .classes("w-56")
-                                )
-
-                                def _on_manual_change(
-                                    e: Any,
-                                    *,
-                                    target_port: int,
-                                ) -> None:
-                                    manual_map = dict(
-                                        termination_state.manual_resistance_ohm_by_port
-                                    )
-                                    try:
-                                        value = float(e.value)
-                                    except Exception:
-                                        value = _TERMINATION_DEFAULT_RESISTANCE_OHM
-                                    manual_map[target_port] = value
-                                    termination_state.manual_resistance_ohm_by_port = manual_map
-                                    if not applying_saved_setup:
-                                        on_termination_setup_change()
-                                    else:
-                                        refresh_termination_controls()
-
-                                manual_input.on_value_change(
-                                    lambda e, target_port=port: _on_manual_change(
-                                        e,
-                                        target_port=target_port,
-                                    )
-                                )
-                                ui.label(f"Resolved: {resistance:g} Ohm ({source})").classes(
+                        details_container.clear()
+                        with details_container:
+                            if not bool(resolved_plan.get("enabled", False)):
+                                ui.label("Disabled: raw solver output is used directly.").classes(
                                     "text-xs text-muted"
                                 )
-                            else:
-                                ui.label(f"Port {port}: {resistance:g} Ohm ({source})").classes(
-                                    "text-xs text-fg"
-                                )
+                                return
 
-                        for warning in list(resolved_plan.get("warnings", [])):
-                            ui.label(str(warning)).classes("text-xs text-warning")
+                            selected = [int(port) for port in resolved_plan.get("selected_ports", [])]
+                            resolved_values = dict(resolved_plan.get("resistance_ohm_by_port", {}))
+                            source_values = dict(resolved_plan.get("source_by_port", {}))
+                            for port in selected:
+                                source = str(source_values.get(port, "manual"))
+                                resistance = float(
+                                    resolved_values.get(port, _TERMINATION_DEFAULT_RESISTANCE_OHM)
+                                )
+                                if normalized_mode == "manual":
+                                    row_label = f"Port {port} · Manual R (Ohm)"
+                                    manual_input = (
+                                        ui.number(
+                                            row_label,
+                                            value=float(
+                                                normalized_manual_map.get(
+                                                    port,
+                                                    _TERMINATION_DEFAULT_RESISTANCE_OHM,
+                                                )
+                                            ),
+                                            format="%.6g",
+                                        )
+                                        .props("dense outlined")
+                                        .classes("w-56")
+                                    )
+
+                                    def _on_manual_change(
+                                        e: Any,
+                                        *,
+                                        target_port: int,
+                                    ) -> None:
+                                        if refreshing_termination_controls:
+                                            return
+                                        manual_map = dict(
+                                            termination_state.manual_resistance_ohm_by_port
+                                        )
+                                        try:
+                                            value = float(e.value)
+                                        except Exception:
+                                            value = _TERMINATION_DEFAULT_RESISTANCE_OHM
+                                        manual_map[target_port] = value
+                                        termination_state.manual_resistance_ohm_by_port = manual_map
+                                        if not applying_saved_setup:
+                                            on_termination_setup_change()
+                                        else:
+                                            refresh_termination_controls()
+
+                                    manual_input.on_value_change(
+                                        lambda e, target_port=port: _on_manual_change(
+                                            e,
+                                            target_port=target_port,
+                                        )
+                                    )
+                                    ui.label(f"Resolved: {resistance:g} Ohm ({source})").classes(
+                                        "text-xs text-muted"
+                                    )
+                                else:
+                                    ui.label(f"Port {port}: {resistance:g} Ohm ({source})").classes(
+                                        "text-xs text-fg"
+                                    )
+
+                            for warning in list(resolved_plan.get("warnings", [])):
+                                ui.label(str(warning)).classes("text-xs text-warning")
+                    finally:
+                        refreshing_termination_controls = False
 
                 def on_termination_setup_change() -> None:
+                    if refreshing_termination_controls:
+                        return
                     refresh_termination_controls()
                     if applying_saved_setup:
                         return
