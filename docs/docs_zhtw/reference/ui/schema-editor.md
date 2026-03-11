@@ -12,8 +12,8 @@ owner: docs-team
 audience: team
 scope: /schemas/{id} 頁面的 source-form 編輯、展開預覽與驗證回饋契約
 version: v0.2.0
-last_updated: 2026-03-03
-updated_by: docs-team
+last_updated: 2026-03-06
+updated_by: codex
 ---
 
 # Schema Editor
@@ -40,6 +40,23 @@ updated_by: docs-team
 
 - `Format` 只格式化 source form，不會展開 `repeat`
 - `Save Schema` 只儲存 source form，不會儲存展開結果
+
+### Formatting 行為契約
+
+- `Format` 按鈕與快捷鍵必須走同一 formatter pipeline
+- 格式化成功後，需以單一 editor state transaction 回寫
+- 格式化失敗不得覆蓋原始內容，必須顯示可讀錯誤訊息
+- 格式化動作不得隱式觸發 schema migration 或 repeat 展開
+
+!!! note "分類邊界"
+    格式化「為何存在」屬於 Explanation，
+    本頁只記錄可被測試與驗證的 UI 契約。
+
+### Formatting Failure Strategy
+
+- formatter 初始化失敗：保留 editor 內容，顯示失敗訊息，允許繼續編輯
+- 單次 format error：保留原文，不得提交部分覆寫結果
+- formatter unavailable 狀態不得改變 `Save Schema` 的 source-form 持久化語意
 
 ## Expanded Netlist Preview
 
@@ -68,3 +85,9 @@ updated_by: docs-team
 
 `/simulation` 的 `Netlist Configuration` 必須使用同一條 expansion pipeline，
 並顯示與本頁 preview 一致的 expanded netlist。
+
+## Related
+
+- [Schema Editor Formatting](../../explanation/architecture/design-decisions/schema-editor-formatting.md)
+- [Circuit Netlist Schema](../data-formats/circuit-netlist.md)
+- [Circuit Simulation](circuit-simulation.md)
