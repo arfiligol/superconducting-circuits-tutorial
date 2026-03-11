@@ -2,6 +2,7 @@
 
 import inspect
 
+import app.features.characterization.page as characterization_feature_page
 import app.pages.characterization as characterization_page
 from app.pages.characterization import (
     _analysis_run_provenance_text,
@@ -643,7 +644,7 @@ def test_analysis_run_provenance_text_prefers_persisted_source_summary() -> None
 
 
 def test_characterization_page_submits_persisted_api_task_instead_of_page_local_execution() -> None:
-    source = inspect.getsource(characterization_page)
+    source = inspect.getsource(characterization_feature_page)
 
     assert "submit_characterization_task(" in source
     assert "build_characterization_submission(" in source
