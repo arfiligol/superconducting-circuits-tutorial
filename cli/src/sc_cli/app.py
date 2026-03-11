@@ -1,0 +1,19 @@
+"""Installable Typer entrypoint for rewrite CLI commands."""
+
+import typer
+
+from sc_cli.commands import circuit_definition, core
+
+app = typer.Typer(
+    help="Rewrite CLI adapter for superconducting circuits workflows.",
+    add_completion=False,
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+
+app.add_typer(core.app, name="core", help="Inspect the shared core package boundary.")
+app.add_typer(
+    circuit_definition.app,
+    name="circuit-definition",
+    help="Inspect canonical circuit-definition inputs via sc_core.",
+)
