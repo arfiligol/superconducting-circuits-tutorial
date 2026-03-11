@@ -8,10 +8,14 @@ TaskExecutionMode = Literal["run", "smoke"]
 WorkerTaskName = Literal[
     "simulation_run_task",
     "simulation_smoke_task",
+    "simulation_failure_task",
+    "simulation_crash_task",
     "post_processing_run_task",
     "post_processing_smoke_task",
     "characterization_run_task",
     "characterization_smoke_task",
+    "characterization_failure_task",
+    "characterization_crash_task",
 ]
 
 
