@@ -13,6 +13,7 @@ from app.features.simulation.api_client import (
     get_latest_simulation_result,
     get_task,
 )
+from app.features.simulation.page_state import SimulationPageCoordinator
 from app.features.simulation.recovery.task_authority import (
     apply_post_processing_task_status,
     apply_simulation_task_status,
@@ -40,6 +41,7 @@ class SimulationRecoveryBindings:
     resolved_post_process_source_bundle_id_ref: dict[str, int | None]
     poll_timer: Any | None = None
     post_processing_poll_timer: Any | None = None
+    coordinator: SimulationPageCoordinator | None = None
 
 
 def _set_timer_active(timer: Any | None, active: bool) -> None:
@@ -72,9 +74,13 @@ async def refresh_simulation_authority(
 ) -> None:
     """Refresh persisted task/result authority for the active design."""
     if active_design_id is None:
+        if bindings.coordinator is not None:
+            bindings.coordinator.clear_authority()
         _set_timer_active(bindings.poll_timer, False)
         _set_timer_active(bindings.post_processing_poll_timer, False)
         return
+    if bindings.coordinator is not None:
+        bindings.coordinator.set_active_design(active_design_id)
     try:
         tasks_response = await get_design_tasks(
             active_design_id,
@@ -92,6 +98,8 @@ async def refresh_simulation_authority(
         if exc.status_code != 404:
             raise
         clear_runtime_recovery_state(bindings.runtime_state)
+        if bindings.coordinator is not None:
+            bindings.coordinator.clear_authority()
         _set_timer_active(bindings.poll_timer, False)
         _set_timer_active(bindings.post_processing_poll_timer, False)
         bindings.render_unavailable_authority_state()
@@ -123,6 +131,13 @@ async def refresh_simulation_authority(
             runtime_state=bindings.runtime_state,
             append_status=bindings.append_status,
         )
+        if bindings.coordinator is not None:
+            bindings.coordinator.sync_simulation_authority(
+                task_id=int(task.id) if task.id is not None else None,
+                trace_batch_id=(
+                    int(task.trace_batch_id) if task.trace_batch_id is not None else None
+                ),
+            )
         bindings.runtime_state.long_running_warning_shown = _append_task_warning(
             task,
             append_status=bindings.append_status,
@@ -136,6 +151,16 @@ async def refresh_simulation_authority(
             runtime_state=bindings.runtime_state,
             append_status=bindings.append_status,
         )
+        if bindings.coordinator is not None:
+            bindings.coordinator.sync_post_processing_authority(
+                task_id=int(post_processing_task.id) if post_processing_task.id is not None else None,
+                trace_batch_id=(
+                    int(post_processing_task.trace_batch_id)
+                    if post_processing_task.trace_batch_id is not None
+                    else None
+                ),
+                source_batch_id=bindings.resolved_post_process_source_bundle_id_ref["value"],
+            )
         bindings.runtime_state.post_processing_long_running_warning_shown = _append_task_warning(
             post_processing_task,
             append_status=bindings.append_status,
@@ -149,6 +174,8 @@ async def refresh_simulation_authority(
     if latest_result is not None:
         bindings.resolved_post_process_source_bundle_id_ref["value"] = latest_result.batch_id
         bindings.runtime_state.current_trace_batch_id = int(latest_result.batch_id)
+        if bindings.coordinator is not None:
+            bindings.coordinator.record_simulation_restore(batch_id=int(latest_result.batch_id))
         if hydrate_views:
             bindings.load_persisted_simulation_views()
         elif bindings.restored_simulation_batch_id_ref["value"] != int(latest_result.batch_id):
@@ -161,6 +188,15 @@ async def refresh_simulation_authority(
         bindings.runtime_state.current_post_processing_trace_batch_id = int(
             latest_post_processing_result.batch_id
         )
+        if bindings.coordinator is not None:
+            bindings.coordinator.record_post_processing_restore(
+                batch_id=int(latest_post_processing_result.batch_id),
+                source_batch_id=(
+                    int(latest_post_processing_result.parent_batch_id)
+                    if latest_post_processing_result.parent_batch_id is not None
+                    else bindings.resolved_post_process_source_bundle_id_ref["value"]
+                ),
+            )
         if hydrate_views:
             bindings.load_persisted_post_processing_views()
         elif bindings.restored_post_processing_batch_id_ref["value"] != int(
@@ -187,6 +223,11 @@ async def poll_current_simulation_task(
         runtime_state=bindings.runtime_state,
         append_status=bindings.append_status,
     )
+    if bindings.coordinator is not None:
+        bindings.coordinator.sync_simulation_authority(
+            task_id=int(task.id) if task.id is not None else None,
+            trace_batch_id=int(task.trace_batch_id) if task.trace_batch_id is not None else None,
+        )
     bindings.runtime_state.long_running_warning_shown = _append_task_warning(
         task,
         append_status=bindings.append_status,
@@ -223,6 +264,12 @@ async def poll_current_post_processing_task(
         runtime_state=bindings.runtime_state,
         append_status=bindings.append_status,
     )
+    if bindings.coordinator is not None:
+        bindings.coordinator.sync_post_processing_authority(
+            task_id=int(task.id) if task.id is not None else None,
+            trace_batch_id=int(task.trace_batch_id) if task.trace_batch_id is not None else None,
+            source_batch_id=bindings.resolved_post_process_source_bundle_id_ref["value"],
+        )
     bindings.runtime_state.post_processing_long_running_warning_shown = _append_task_warning(
         task,
         append_status=bindings.append_status,

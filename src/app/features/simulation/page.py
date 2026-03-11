@@ -38,6 +38,7 @@ from app.features.simulation.recovery.task_authority import (
     apply_post_processing_task_status as _apply_polled_post_processing_task_status_impl,
     apply_simulation_task_status as _apply_polled_task_status_impl,
 )
+from app.features.simulation.page_state import SimulationPageCoordinator
 from app.features.simulation.setup.frequency_sweep import (
     _build_setup_payload,
     _normalized_simulation_setup_snapshot,
@@ -3007,6 +3008,7 @@ def _render_simulation_environment():
         }
 
         runtime_state = SimulationRuntimeState()
+        page_coordinator = SimulationPageCoordinator()
         status_container: Any | None = None
         simulation_results_container: Any = None
         simulation_sweep_results_container: Any = None
@@ -3191,6 +3193,8 @@ def _render_simulation_environment():
                 return None
             return int(selected_design_ids[0])
 
+        page_coordinator.set_active_design(_active_persisted_design_id())
+
         def _persisted_post_processing_input_bundle() -> tuple[
             SimulationResult | None, dict[str, Any] | None, int | None
         ]:
@@ -3296,6 +3300,7 @@ def _render_simulation_environment():
                 resolved_post_process_source_bundle_id_ref=resolved_post_process_source_bundle_id_ref,
                 poll_timer=poll_timer,
                 post_processing_poll_timer=post_processing_poll_timer,
+                coordinator=page_coordinator,
             )
 
         async def _refresh_simulation_authority(
@@ -3490,6 +3495,15 @@ def _render_simulation_environment():
             runtime_state.current_post_processing_task_error = None
             runtime_state.last_post_processing_task_poll_signature = None
             runtime_state.post_processing_long_running_warning_shown = False
+            page_coordinator.record_post_processing_dispatch(
+                task_id=int(dispatch.task.id) if dispatch.task.id is not None else None,
+                trace_batch_id=(
+                    int(dispatch.task.trace_batch_id)
+                    if dispatch.task.trace_batch_id is not None
+                    else None
+                ),
+                source_batch_id=resolved_post_process_source_bundle_id_ref["value"],
+            )
             _invalidate_persisted_authority_caches()
             _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
             post_processed_sweep_view_state.clear()
@@ -3564,9 +3578,24 @@ def _render_simulation_environment():
             _persisted_result, persisted_sweep_payload, persisted_bundle_id = (
                 _persisted_post_processing_input_bundle()
             )
-            if isinstance(persisted_sweep_payload, Mapping):
+            resolved_sweep_payload = (
+                _coerce_parameter_sweep_payload(persisted_sweep_payload)
+                if isinstance(persisted_sweep_payload, Mapping)
+                else None
+            )
+            compensated_sweep_payload = _ptc_simulation_sweep_payload(
+                reference_impedance_ohm=float(
+                    sweep_result_view_state.get("z0", raw_view_state.get("z0", 50.0)) or 50.0
+                )
+            )
+            display_sweep_payload = (
+                compensated_sweep_payload
+                if isinstance(compensated_sweep_payload, Mapping)
+                else resolved_sweep_payload
+            )
+            if isinstance(display_sweep_payload, Mapping):
                 trace_store_bundle = _cached_trace_store_bundle_from_sweep_payload(
-                    persisted_sweep_payload,
+                    display_sweep_payload,
                 )
                 resolved_post_process_source_bundle_id_ref["value"] = persisted_bundle_id
             context_lines = _build_simulation_workflow_context_lines(
@@ -3574,11 +3603,19 @@ def _render_simulation_environment():
                 source_kind="circuit_simulation",
                 stage_kind="raw",
                 run_kind="parameter_sweep",
-                provenance_tokens=("persisted_batch", "save-path=worker_persisted"),
+                provenance_tokens=(
+                    "persisted_batch",
+                    (
+                        "view=ptc_preview"
+                        if isinstance(compensated_sweep_payload, Mapping)
+                        else "view=raw"
+                    ),
+                    "save-path=worker_persisted",
+                ),
             )
             _render_sweep_result_view_container(
                 container=simulation_sweep_results_container,
-                sweep_payload=persisted_sweep_payload,
+                sweep_payload=display_sweep_payload,
                 trace_store_bundle=trace_store_bundle,
                 view_state=sweep_result_view_state,
                 family_options=_SWEEP_RESULT_FAMILY_OPTIONS,
@@ -3594,6 +3631,16 @@ def _render_simulation_environment():
 
         def _render_post_processed_sweep_result_view() -> None:
             if post_processing_sweep_results_container is None:
+                return
+            stale_reason = page_coordinator.post_processing_result_stale_reason
+            if stale_reason:
+                post_processing_sweep_results_container.clear()
+                with post_processing_sweep_results_container:
+                    ui.icon("warning", size="md").classes("text-warning mb-2")
+                    ui.label("Post-processed sweep results are stale.").classes(
+                        "text-sm font-medium text-warning"
+                    )
+                    ui.label(str(stale_reason)).classes("text-sm text-muted")
                 return
             runtime_output, flow_spec, _bundle_id, source_bundle_id = (
                 _persisted_post_processing_output_bundle()
@@ -3770,6 +3817,16 @@ def _render_simulation_environment():
         def render_post_processed_result_view() -> None:
             if post_processing_results_container is None:
                 return
+            stale_reason = page_coordinator.post_processing_result_stale_reason
+            if stale_reason:
+                post_processing_results_container.clear()
+                with post_processing_results_container:
+                    ui.icon("warning", size="lg").classes("text-warning mb-2")
+                    ui.label("Post-processing results are stale.").classes(
+                        "text-sm font-medium text-warning"
+                    )
+                    ui.label(str(stale_reason)).classes("text-sm text-muted")
+                return
 
             runtime_output, flow_spec, _persisted_batch_id, resolved_source_bundle_id = (
                 _persisted_post_processing_output_bundle()
@@ -3907,6 +3964,7 @@ def _render_simulation_environment():
             )
 
         def handle_post_processing_result(_run_result: Any | None) -> None:
+            page_coordinator.clear_post_processing_result_stale()
             _invalidate_persisted_authority_caches()
             _reset_result_view_state(post_view_state, _POST_PROCESSED_RESULT_FAMILY_OPTIONS)
             post_processed_sweep_view_state.clear()
@@ -4690,13 +4748,54 @@ def _render_simulation_environment():
                     refresh_termination_controls()
                     if applying_saved_setup:
                         return
-                    if not isinstance(_raw_simulation_result(), SimulationResult):
-                        return
-                    handle_post_processing_result(None)
-                    render_simulation_result_view()
-                    _render_post_processing_input_panel()
-                    render_post_processed_result_view()
-                    summary_text = _termination_plan_summary(_resolved_termination_plan())
+                    resolved_plan = _resolved_termination_plan()
+                    summary_text = _termination_plan_summary(resolved_plan)
+                    warning_text = "\n".join(
+                        str(warning) for warning in resolved_plan.get("warnings", [])
+                    )
+                    page_coordinator.set_termination_summary(
+                        summary=summary_text,
+                        warning=warning_text,
+                    )
+                    current_family = str(raw_view_state.get("family", ""))
+                    family_sources = raw_view_state.get("family_sources", {})
+                    current_source_token = (
+                        str(family_sources.get(current_family, "raw"))
+                        if isinstance(family_sources, Mapping)
+                        else "raw"
+                    )
+                    _persisted_result, persisted_sweep_payload, _persisted_bundle_id = (
+                        _persisted_post_processing_input_bundle()
+                    )
+                    should_refresh_simulation_preview = bool(
+                        isinstance(_coerce_parameter_sweep_payload(persisted_sweep_payload), Mapping)
+                        or (
+                            isinstance(_persisted_result, SimulationResult)
+                            and current_family in _RAW_RESULT_MATRIX_SOURCE_OPTIONS_BY_FAMILY
+                            and current_source_token == "ptc"
+                        )
+                    )
+                    should_refresh_post_processing_input = (
+                        str(post_processing_input_state.get("input_y_source", "raw_y")).strip()
+                        == "ptc_y"
+                    )
+                    page_coordinator.mark_setup_changed(
+                        reason=(
+                            "Simulation setup changed after post-processing results were generated. "
+                            "Re-run post-processing to refresh processed results."
+                        ),
+                        refresh_simulation_preview=should_refresh_simulation_preview,
+                        refresh_post_processing_input=should_refresh_post_processing_input,
+                    )
+                    if page_coordinator.consume_simulation_preview_refresh():
+                        render_simulation_result_view()
+                    if page_coordinator.consume_post_processing_input_refresh():
+                        _render_post_processing_input_panel()
+                    if runtime_state.current_post_processing_task_id is not None or (
+                        runtime_state.current_post_processing_trace_batch_id is not None
+                    ):
+                        _render_post_processed_sweep_result_view()
+                        render_post_processed_result_view()
                     if runtime_state.termination_last_summary != summary_text:
                         runtime_state.termination_last_summary = summary_text
                         append_status(
@@ -5596,6 +5695,10 @@ def _render_simulation_environment():
                         runtime_state.current_trace_batch_id = dispatch.task.trace_batch_id
                         runtime_state.current_task_error = None
                         runtime_state.last_task_poll_signature = None
+                        page_coordinator.record_simulation_dispatch(
+                            task_id=int(dispatch.task.id) if dispatch.task.id is not None else None,
+                            trace_batch_id=dispatch.task.trace_batch_id,
+                        )
                         if poll_timer is not None:
                             poll_timer.active = True
                         _apply_polled_task_status(dispatch.task)
