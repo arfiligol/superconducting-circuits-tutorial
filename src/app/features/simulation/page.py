@@ -16,15 +16,33 @@ import numpy as np
 import plotly.graph_objects as go
 from nicegui import app, run, ui
 from app.features.simulation.api_client import (
-    ApiClientError,
-    get_design_tasks,
-    get_latest_post_processing_result,
-    get_latest_simulation_result,
-    get_task,
     submit_post_processing_task,
     submit_simulation_task,
 )
-from app.features.simulation.result_loader import build_recovery_state, build_task_recovery_state
+from app.features.simulation.recovery.latest_result import (
+    _resolve_latest_persisted_post_processing_snapshot,
+    _resolve_persisted_post_processing_input_snapshot,
+    _source_simulation_bundle_id_from_snapshot,
+    _trace_batch_payload_from_snapshot,
+    invalidate_persisted_authority_caches,
+    load_persisted_post_processing_input_bundle,
+    load_persisted_post_processing_output_bundle,
+)
+from app.features.simulation.recovery.polling import (
+    SimulationRecoveryBindings,
+    poll_current_post_processing_task,
+    poll_current_simulation_task,
+    refresh_simulation_authority,
+)
+from app.features.simulation.recovery.post_processing_restore import (
+    render_post_processing_restore_prompt,
+    render_simulation_restore_prompt,
+    render_unavailable_authority_state,
+)
+from app.features.simulation.recovery.task_authority import (
+    apply_post_processing_task_status as _apply_polled_post_processing_task_status_impl,
+    apply_simulation_task_status as _apply_polled_task_status_impl,
+)
 from app.features.simulation.setup.frequency_sweep import (
     _build_setup_payload,
     _normalized_simulation_setup_snapshot,
@@ -1268,153 +1286,6 @@ def _normalize_selected_design_ids(selection: object) -> tuple[int, ...]:
         if design_id not in normalized:
             normalized.append(design_id)
     return tuple(normalized)
-
-
-def _trace_batch_payload_from_snapshot(
-    snapshot: ResultBundleSnapshot | None,
-) -> Mapping[str, Any] | None:
-    """Return one canonical trace-batch payload from a detached snapshot."""
-    if not isinstance(snapshot, Mapping):
-        return None
-    payload = snapshot.get("result_payload")
-    if isinstance(payload, Mapping) and is_trace_batch_bundle_payload(payload):
-        return payload
-    return None
-
-
-def _resolved_batch_source_stage_from_snapshot(
-    snapshot: ResultBundleSnapshot | None,
-) -> tuple[str, str]:
-    """Resolve one canonical source/stage tuple across legacy and trace-batch snapshots."""
-    payload = _trace_batch_payload_from_snapshot(snapshot)
-    if isinstance(payload, Mapping):
-        trace_batch_record = payload.get("trace_batch_record", {})
-        if isinstance(trace_batch_record, Mapping):
-            return (
-                str(trace_batch_record.get("source_kind", "")).strip(),
-                str(trace_batch_record.get("stage_kind", "")).strip(),
-            )
-    if not isinstance(snapshot, Mapping):
-        return ("", "")
-    source_meta = snapshot.get("source_meta")
-    if not isinstance(source_meta, Mapping):
-        return ("", "")
-    return (
-        str(source_meta.get("source_kind", "")).strip(),
-        str(source_meta.get("stage_kind", "")).strip(),
-    )
-
-
-def _source_simulation_bundle_id_from_snapshot(
-    snapshot: ResultBundleSnapshot | None,
-) -> int | None:
-    """Extract one raw simulation parent bundle id from persisted provenance."""
-    if not isinstance(snapshot, Mapping):
-        return None
-    payload = _trace_batch_payload_from_snapshot(snapshot)
-    if isinstance(payload, Mapping):
-        trace_batch_record = payload.get("trace_batch_record", {})
-        if isinstance(trace_batch_record, Mapping):
-            parent_batch_id = trace_batch_record.get("parent_batch_id")
-            if parent_batch_id is not None:
-                try:
-                    return int(parent_batch_id)
-                except (TypeError, ValueError):
-                    pass
-            provenance_payload = trace_batch_record.get("provenance_payload", {})
-            if isinstance(provenance_payload, Mapping):
-                canonical_authority = provenance_payload.get("canonical_authority", {})
-                if isinstance(canonical_authority, Mapping):
-                    source_batch_id = canonical_authority.get("source_simulation_bundle_id")
-                    if source_batch_id is not None:
-                        try:
-                            return int(source_batch_id)
-                        except (TypeError, ValueError):
-                            pass
-    for container_key in ("config_snapshot", "source_meta"):
-        container = snapshot.get(container_key)
-        if not isinstance(container, Mapping):
-            continue
-        source_batch_id = container.get("source_simulation_bundle_id")
-        if source_batch_id is None:
-            continue
-        try:
-            return int(source_batch_id)
-        except (TypeError, ValueError):
-            continue
-    return None
-
-
-def _is_completed_raw_simulation_snapshot(snapshot: ResultBundleSnapshot | None) -> bool:
-    """Return whether one detached snapshot is a completed raw circuit-simulation batch."""
-    if not isinstance(snapshot, Mapping):
-        return False
-    if str(snapshot.get("status", "")).strip() != "completed":
-        return False
-    source_kind, stage_kind = _resolved_batch_source_stage_from_snapshot(snapshot)
-    return source_kind == "circuit_simulation" and stage_kind == "raw"
-
-
-def _is_completed_postprocess_snapshot(snapshot: ResultBundleSnapshot | None) -> bool:
-    """Return whether one detached snapshot is a completed post-processing batch."""
-    if not isinstance(snapshot, Mapping):
-        return False
-    if str(snapshot.get("status", "")).strip() != "completed":
-        return False
-    source_kind, stage_kind = _resolved_batch_source_stage_from_snapshot(snapshot)
-    return source_kind == "circuit_simulation" and stage_kind == "postprocess"
-
-
-def _resolve_persisted_post_processing_input_snapshot(
-    uow: SqliteUnitOfWork,
-    *,
-    design_ids: Sequence[int],
-) -> ResultBundleSnapshot | None:
-    """Resolve the best persisted raw simulation batch for post-processing input."""
-    candidate_source_ids: list[int] = []
-    for design_id in design_ids:
-        design_batches = sorted(
-            uow.result_bundles.list_provenance_by_design(int(design_id)),
-            key=lambda batch: int(batch.id or 0),
-            reverse=True,
-        )
-        for batch in design_batches:
-            if batch.id is None:
-                continue
-            snapshot = uow.result_bundles.get_snapshot(int(batch.id))
-            if _is_completed_raw_simulation_snapshot(snapshot):
-                return snapshot
-            source_batch_id = _source_simulation_bundle_id_from_snapshot(snapshot)
-            if source_batch_id is not None and source_batch_id not in candidate_source_ids:
-                candidate_source_ids.append(source_batch_id)
-
-    for batch_id in candidate_source_ids:
-        snapshot = uow.result_bundles.get_snapshot(int(batch_id))
-        if _is_completed_raw_simulation_snapshot(snapshot):
-            return snapshot
-    return None
-
-
-def _resolve_latest_persisted_post_processing_snapshot(
-    uow: SqliteUnitOfWork,
-    *,
-    design_ids: Sequence[int],
-) -> ResultBundleSnapshot | None:
-    """Resolve the latest completed persisted post-processing batch for one selected design."""
-    for design_id in design_ids:
-        design_batches = sorted(
-            uow.result_bundles.list_provenance_by_design(int(design_id)),
-            key=lambda batch: int(batch.id or 0),
-            reverse=True,
-        )
-        for batch in design_batches:
-            if batch.id is None:
-                continue
-            snapshot = uow.result_bundles.get_snapshot(int(batch.id))
-            if _is_completed_postprocess_snapshot(snapshot):
-                return snapshot
-    return None
-
 
 def _resolved_sweep_point_count(payload: Mapping[str, Any] | None) -> int:
     """Resolve one sweep point count across legacy and trace-batch payload shapes."""
@@ -3332,255 +3203,41 @@ def _render_simulation_environment():
         def _persisted_post_processing_input_bundle() -> tuple[
             SimulationResult | None, dict[str, Any] | None, int | None
         ]:
-            selected_design_ids = _selected_design_ids()
-            if (
-                persisted_post_process_input_cache["selection"] == selected_design_ids
-                and persisted_post_process_input_cache["result"] is not None
-            ):
-                return (
-                    persisted_post_process_input_cache["result"],
-                    persisted_post_process_input_cache["sweep_payload"],
-                    persisted_post_process_input_cache["bundle_id"],
-                )
-            if not selected_design_ids:
-                persisted_post_process_input_cache.update(
-                    {
-                        "selection": selected_design_ids,
-                        "bundle_id": None,
-                        "result": None,
-                        "sweep_payload": None,
-                        "snapshot": None,
-                    }
-                )
-                return (None, None, None)
-            with get_unit_of_work() as uow:
-                snapshot = _resolve_persisted_post_processing_input_snapshot(
-                    uow,
-                    design_ids=selected_design_ids,
-                )
-            if snapshot is None:
-                persisted_post_process_input_cache.update(
-                    {
-                        "selection": selected_design_ids,
-                        "bundle_id": None,
-                        "result": None,
-                        "sweep_payload": None,
-                        "snapshot": None,
-                    }
-                )
-                return (None, None, None)
-            result, sweep_payload = _decode_simulation_result_payload(snapshot["result_payload"])
-            persisted_post_process_input_cache.update(
-                {
-                    "selection": selected_design_ids,
-                    "bundle_id": int(snapshot["id"]),
-                    "result": result,
-                    "sweep_payload": sweep_payload,
-                    "snapshot": snapshot,
-                }
+            return load_persisted_post_processing_input_bundle(
+                selected_design_ids=_selected_design_ids(),
+                input_cache=persisted_post_process_input_cache,
+                get_unit_of_work=get_unit_of_work,
+                decode_simulation_result_payload=_decode_simulation_result_payload,
             )
-            return (result, sweep_payload, int(snapshot["id"]))
 
         def _persisted_post_processing_output_bundle() -> tuple[
             Mapping[str, Any] | None, dict[str, Any] | None, int | None, int | None
         ]:
-            selected_design_ids = _selected_design_ids()
-            if persisted_post_process_output_cache[
-                "selection"
-            ] == selected_design_ids and isinstance(
-                persisted_post_process_output_cache["runtime_output"], Mapping
-            ):
-                return (
-                    persisted_post_process_output_cache["runtime_output"],
-                    persisted_post_process_output_cache["flow_spec"],
-                    persisted_post_process_output_cache["bundle_id"],
-                    persisted_post_process_output_cache["source_bundle_id"],
-                )
-            if not selected_design_ids:
-                persisted_post_process_output_cache.update(
-                    {
-                        "selection": selected_design_ids,
-                        "bundle_id": None,
-                        "runtime_output": None,
-                        "flow_spec": None,
-                        "source_bundle_id": None,
-                    }
-                )
-                return (None, None, None, None)
-            with get_unit_of_work() as uow:
-                snapshot = _resolve_latest_persisted_post_processing_snapshot(
-                    uow,
-                    design_ids=selected_design_ids,
-                )
-            payload = _trace_batch_payload_from_snapshot(snapshot)
-            if payload is None:
-                persisted_post_process_output_cache.update(
-                    {
-                        "selection": selected_design_ids,
-                        "bundle_id": None,
-                        "runtime_output": None,
-                        "flow_spec": None,
-                        "source_bundle_id": None,
-                    }
-                )
-                return (None, None, None, None)
-            flow_spec = (
-                dict(snapshot.get("config_snapshot"))
-                if isinstance(snapshot, Mapping)
-                and isinstance(snapshot.get("config_snapshot"), Mapping)
-                else None
+            return load_persisted_post_processing_output_bundle(
+                selected_design_ids=_selected_design_ids(),
+                output_cache=persisted_post_process_output_cache,
+                get_unit_of_work=get_unit_of_work,
             )
-            bundle_id = int(snapshot["id"]) if isinstance(snapshot, Mapping) else None
-            source_bundle_id = _source_simulation_bundle_id_from_snapshot(snapshot)
-            persisted_post_process_output_cache.update(
-                {
-                    "selection": selected_design_ids,
-                    "bundle_id": bundle_id,
-                    "runtime_output": dict(payload),
-                    "flow_spec": flow_spec,
-                    "source_bundle_id": source_bundle_id,
-                }
-            )
-            return (dict(payload), flow_spec, bundle_id, source_bundle_id)
 
         def _invalidate_persisted_authority_caches() -> None:
-            persisted_post_process_input_cache.update(
-                {
-                    "selection": None,
-                    "bundle_id": None,
-                    "result": None,
-                    "sweep_payload": None,
-                    "snapshot": None,
-                }
-            )
-            persisted_post_process_output_cache.update(
-                {
-                    "selection": None,
-                    "bundle_id": None,
-                    "runtime_output": None,
-                    "flow_spec": None,
-                    "source_bundle_id": None,
-                }
-            )
-
-        def _task_status_signature(task: Any) -> str:
-            return "|".join(
-                [
-                    str(getattr(task, "id", "")),
-                    str(getattr(task, "status", "")),
-                    str(getattr(task, "trace_batch_id", "")),
-                    str(getattr(task, "heartbeat_at", "")),
-                    str(getattr(task, "completed_at", "")),
-                ]
+            invalidate_persisted_authority_caches(
+                input_cache=persisted_post_process_input_cache,
+                output_cache=persisted_post_process_output_cache,
             )
 
         def _apply_polled_task_status(task: Any) -> None:
-            signature = _task_status_signature(task)
-            if runtime_state.last_task_poll_signature == signature:
-                return
-            runtime_state.last_task_poll_signature = signature
-            runtime_state.current_task_id = int(task.id) if task.id is not None else None
-            runtime_state.current_task_status = str(task.status)
-            runtime_state.current_trace_batch_id = (
-                int(task.trace_batch_id) if task.trace_batch_id is not None else None
+            _apply_polled_task_status_impl(
+                task,
+                runtime_state=runtime_state,
+                append_status=append_status,
             )
-            runtime_state.current_task_error = None
-            if task.status == "queued":
-                append_status(
-                    "info",
-                    (
-                        f"Simulation task queued: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}."
-                    ),
-                )
-                return
-            if task.status == "running":
-                append_status(
-                    "info",
-                    (
-                        f"Simulation task running: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}."
-                    ),
-                )
-                return
-            if task.status == "completed":
-                append_status(
-                    "positive",
-                    (
-                        f"Simulation task completed: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}."
-                    ),
-                )
-                return
-            if task.status == "failed":
-                error_summary = str(
-                    getattr(task, "error_payload", {}).get("summary")
-                    or getattr(task, "error_payload", {}).get("details", {}).get("message")
-                    or "Simulation task failed."
-                )
-                runtime_state.current_task_error = error_summary
-                append_status(
-                    "negative",
-                    (
-                        f"Simulation task failed: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}. {error_summary}"
-                    ),
-                )
 
         def _apply_polled_post_processing_task_status(task: Any) -> None:
-            signature = _task_status_signature(task)
-            if runtime_state.last_post_processing_task_poll_signature == signature:
-                return
-            runtime_state.last_post_processing_task_poll_signature = signature
-            runtime_state.current_post_processing_task_id = (
-                int(task.id) if task.id is not None else None
+            _apply_polled_post_processing_task_status_impl(
+                task,
+                runtime_state=runtime_state,
+                append_status=append_status,
             )
-            runtime_state.current_post_processing_task_status = str(task.status)
-            runtime_state.current_post_processing_trace_batch_id = (
-                int(task.trace_batch_id) if task.trace_batch_id is not None else None
-            )
-            runtime_state.current_post_processing_task_error = None
-            if task.status == "queued":
-                append_status(
-                    "info",
-                    (
-                        f"Post-processing task queued: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}."
-                    ),
-                )
-                return
-            if task.status == "running":
-                append_status(
-                    "info",
-                    (
-                        f"Post-processing task running: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}."
-                    ),
-                )
-                return
-            if task.status == "completed":
-                append_status(
-                    "positive",
-                    (
-                        f"Post-processing task completed: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}."
-                    ),
-                )
-                return
-            if task.status == "failed":
-                error_summary = str(
-                    getattr(task, "error_payload", {}).get("summary")
-                    or getattr(task, "error_payload", {}).get("details", {}).get("message")
-                    or "Post-processing task failed."
-                )
-                runtime_state.current_post_processing_task_error = error_summary
-                append_status(
-                    "negative",
-                    (
-                        f"Post-processing task failed: task=#{int(task.id)}, "
-                        f"batch=#{task.trace_batch_id}. {error_summary}"
-                    ),
-                )
 
         def _load_persisted_simulation_views() -> None:
             restored_simulation_batch_id_ref["value"] = runtime_state.current_trace_batch_id
@@ -3606,245 +3263,73 @@ def _render_simulation_environment():
         def _render_simulation_restore_prompt(
             latest_result: LatestTraceBatchResponse,
         ) -> None:
-            if simulation_results_container is None:
-                return
-            simulation_results_container.clear()
-            with simulation_results_container:
-                ui.icon("restore", size="lg").classes("text-primary mb-2")
-                ui.label(
-                    "Latest persisted simulation result is available."
-                ).classes("text-sm text-fg")
-                ui.label(
-                    f"batch=#{latest_result.batch_id} | task={latest_result.task_id or 'n/a'}"
-                ).classes("text-xs text-muted")
-                ui.button(
-                    "Load Latest Persisted Result",
-                    on_click=_load_persisted_simulation_views,
-                    icon="download",
-                ).props("outline color=primary").classes("mt-3")
-            if simulation_sweep_results_container is not None:
-                simulation_sweep_results_container.clear()
-                with simulation_sweep_results_container:
-                    ui.label(
-                        "Sweep Result View is available after loading the latest persisted result."
-                    ).classes("text-sm text-muted")
-            if post_processing_container is not None:
-                post_processing_container.clear()
-                with post_processing_container:
-                    ui.label(
-                        "Load the latest persisted simulation result to enable post-processing."
-                    ).classes("text-sm text-muted")
+            render_simulation_restore_prompt(
+                latest_result=latest_result,
+                simulation_results_container=simulation_results_container,
+                simulation_sweep_results_container=simulation_sweep_results_container,
+                post_processing_container=post_processing_container,
+                on_load_latest=_load_persisted_simulation_views,
+            )
 
         def _render_post_processing_restore_prompt(
             latest_result: LatestTraceBatchResponse,
         ) -> None:
-            if post_processing_results_container is not None:
-                post_processing_results_container.clear()
-                with post_processing_results_container:
-                    ui.icon("restore", size="lg").classes("text-primary mb-2")
-                    ui.label(
-                        "Latest persisted post-processing result is available."
-                    ).classes("text-sm text-fg")
-                    ui.label(
-                        "batch="
-                        f"#{latest_result.batch_id} | source-batch="
-                        f"#{latest_result.parent_batch_id or 'n/a'} | task="
-                        f"{latest_result.task_id or 'n/a'}"
-                    ).classes("text-xs text-muted")
-                    ui.button(
-                        "Load Latest Post-Processing Result",
-                        on_click=_load_persisted_post_processing_views,
-                        icon="download",
-                    ).props("outline color=primary").classes("mt-3")
-            if post_processing_sweep_results_container is not None:
-                post_processing_sweep_results_container.clear()
-                with post_processing_sweep_results_container:
-                    ui.label(
-                        "Post-processed sweep explorer is available after loading the "
-                        "latest persisted post-processing result."
-                    ).classes("text-sm text-muted")
+            render_post_processing_restore_prompt(
+                latest_result=latest_result,
+                post_processing_results_container=post_processing_results_container,
+                post_processing_sweep_results_container=post_processing_sweep_results_container,
+                on_load_latest=_load_persisted_post_processing_views,
+            )
+
+        def _render_unavailable_authority_state() -> None:
+            render_unavailable_authority_state(
+                simulation_results_container=simulation_results_container,
+                simulation_sweep_results_container=simulation_sweep_results_container,
+                post_processing_container=post_processing_container,
+                post_processing_results_container=post_processing_results_container,
+                post_processing_sweep_results_container=post_processing_sweep_results_container,
+            )
+
+        def _recovery_bindings() -> SimulationRecoveryBindings:
+            return SimulationRecoveryBindings(
+                owner_client=owner_client,
+                runtime_state=runtime_state,
+                append_status=append_status,
+                load_persisted_simulation_views=_load_persisted_simulation_views,
+                load_persisted_post_processing_views=_load_persisted_post_processing_views,
+                render_simulation_restore_prompt=_render_simulation_restore_prompt,
+                render_post_processing_restore_prompt=_render_post_processing_restore_prompt,
+                render_unavailable_authority_state=_render_unavailable_authority_state,
+                restored_simulation_batch_id_ref=restored_simulation_batch_id_ref,
+                restored_post_processing_batch_id_ref=restored_post_processing_batch_id_ref,
+                resolved_post_process_source_bundle_id_ref=resolved_post_process_source_bundle_id_ref,
+                poll_timer=poll_timer,
+                post_processing_poll_timer=post_processing_poll_timer,
+            )
 
         async def _refresh_simulation_authority(
             *,
             preferred_task_id: int | None = None,
             hydrate_views: bool = False,
         ) -> None:
-            persisted_design_id = _active_persisted_design_id()
-            if persisted_design_id is None:
-                if poll_timer is not None:
-                    poll_timer.active = False
-                if post_processing_poll_timer is not None:
-                    post_processing_poll_timer.active = False
-                return
-            try:
-                tasks_response = await get_design_tasks(
-                    persisted_design_id,
-                    client=owner_client,
-                )
-                latest_result = await get_latest_simulation_result(
-                    persisted_design_id,
-                    client=owner_client,
-                )
-                latest_post_processing_result = await get_latest_post_processing_result(
-                    persisted_design_id,
-                    client=owner_client,
-                )
-            except ApiClientError as exc:
-                if exc.status_code != 404:
-                    raise
-                runtime_state.current_task_id = None
-                runtime_state.current_task_status = None
-                runtime_state.current_trace_batch_id = None
-                runtime_state.current_task_error = None
-                runtime_state.current_post_processing_task_id = None
-                runtime_state.current_post_processing_task_status = None
-                runtime_state.current_post_processing_trace_batch_id = None
-                runtime_state.current_post_processing_task_error = None
-                if poll_timer is not None:
-                    poll_timer.active = False
-                if post_processing_poll_timer is not None:
-                    post_processing_poll_timer.active = False
-                simulation_results_container.clear()
-                with simulation_results_container:
-                    ui.icon("info", size="lg").classes("text-primary mb-2")
-                    ui.label(
-                        "Select a valid active dataset to load persisted simulation tasks."
-                    ).classes("text-sm text-muted")
-                if simulation_sweep_results_container is not None:
-                    simulation_sweep_results_container.clear()
-                    with simulation_sweep_results_container:
-                        ui.label(
-                            "Sweep Result View is unavailable until an active dataset is selected."
-                        ).classes("text-sm text-muted")
-                post_processing_container.clear()
-                with post_processing_container:
-                    ui.label(
-                        "Post Processing is unavailable until an active dataset is selected."
-                    ).classes("text-sm text-muted")
-                post_processing_results_container.clear()
-                with post_processing_results_container:
-                    ui.label(
-                        "Post-processing results are unavailable until an active dataset is selected."
-                    ).classes("text-sm text-muted")
-                if post_processing_sweep_results_container is not None:
-                    post_processing_sweep_results_container.clear()
-                    with post_processing_sweep_results_container:
-                        ui.label(
-                            "Post-processed sweep explorer is unavailable until an active dataset "
-                            "is selected."
-                        ).classes("text-sm text-muted")
-                return
-            recovery_state = build_recovery_state(
-                tasks_response=tasks_response,
-                latest_result=latest_result,
+            await refresh_simulation_authority(
+                active_design_id=_active_persisted_design_id(),
+                bindings=_recovery_bindings(),
+                preferred_task_id=preferred_task_id,
+                hydrate_views=hydrate_views,
             )
-            post_processing_recovery_state = build_task_recovery_state(
-                tasks_response=tasks_response,
-                task_kind="post_processing",
-            )
-            task = recovery_state.task
-            post_processing_task = post_processing_recovery_state.task
-            if preferred_task_id is not None:
-                fetched_task = await get_task(preferred_task_id, client=owner_client)
-                if (
-                    fetched_task.task_kind == "simulation"
-                    and fetched_task.design_id == persisted_design_id
-                ):
-                    task = fetched_task
-                elif (
-                    fetched_task.task_kind == "post_processing"
-                    and fetched_task.design_id == persisted_design_id
-                ):
-                    post_processing_task = fetched_task
-            if task is not None:
-                _apply_polled_task_status(task)
-                progress_payload = dict(task.progress_payload)
-                warning = str(progress_payload.get("warning", "")).strip()
-                if warning and not runtime_state.long_running_warning_shown:
-                    runtime_state.long_running_warning_shown = True
-                    append_status("warning", warning)
-            if poll_timer is not None:
-                poll_timer.active = bool(task is not None and task.status in {"queued", "running"})
-            if post_processing_task is not None:
-                _apply_polled_post_processing_task_status(post_processing_task)
-                progress_payload = dict(post_processing_task.progress_payload)
-                warning = str(progress_payload.get("warning", "")).strip()
-                if warning and not runtime_state.post_processing_long_running_warning_shown:
-                    runtime_state.post_processing_long_running_warning_shown = True
-                    append_status("warning", warning)
-            if post_processing_poll_timer is not None:
-                post_processing_poll_timer.active = bool(
-                    post_processing_task is not None
-                    and post_processing_task.status in {"queued", "running"}
-                )
-            if latest_result is not None:
-                resolved_post_process_source_bundle_id_ref["value"] = latest_result.batch_id
-                runtime_state.current_trace_batch_id = int(latest_result.batch_id)
-                if hydrate_views:
-                    _load_persisted_simulation_views()
-                elif restored_simulation_batch_id_ref["value"] != int(latest_result.batch_id):
-                    _render_simulation_restore_prompt(latest_result)
-            if latest_post_processing_result is not None:
-                resolved_post_process_source_bundle_id_ref["value"] = (
-                    latest_post_processing_result.parent_batch_id
-                    or resolved_post_process_source_bundle_id_ref["value"]
-                )
-                runtime_state.current_post_processing_trace_batch_id = int(
-                    latest_post_processing_result.batch_id
-                )
-                if hydrate_views:
-                    _load_persisted_post_processing_views()
-                elif restored_post_processing_batch_id_ref["value"] != int(
-                    latest_post_processing_result.batch_id
-                ):
-                    _render_post_processing_restore_prompt(latest_post_processing_result)
 
         async def _poll_current_simulation_task() -> None:
-            if runtime_state.current_task_id is None:
-                return
-            try:
-                task = await get_task(int(runtime_state.current_task_id), client=owner_client)
-            except ApiClientError as exc:
-                append_status("warning", f"Task polling failed: {exc.detail}")
-                return
-            _apply_polled_task_status(task)
-            progress_payload = dict(task.progress_payload)
-            warning = str(progress_payload.get("warning", "")).strip()
-            if warning and not runtime_state.long_running_warning_shown:
-                runtime_state.long_running_warning_shown = True
-                append_status("warning", warning)
-            if task.status in {"completed", "failed"}:
-                if poll_timer is not None:
-                    poll_timer.active = False
-                await _refresh_simulation_authority(
-                    preferred_task_id=int(task.id),
-                    hydrate_views=task.status == "completed",
-                )
+            await poll_current_simulation_task(
+                active_design_id=_active_persisted_design_id(),
+                bindings=_recovery_bindings(),
+            )
 
         async def _poll_current_post_processing_task() -> None:
-            if runtime_state.current_post_processing_task_id is None:
-                return
-            try:
-                task = await get_task(
-                    int(runtime_state.current_post_processing_task_id),
-                    client=owner_client,
-                )
-            except ApiClientError as exc:
-                append_status("warning", f"Post-processing task polling failed: {exc.detail}")
-                return
-            _apply_polled_post_processing_task_status(task)
-            progress_payload = dict(task.progress_payload)
-            warning = str(progress_payload.get("warning", "")).strip()
-            if warning and not runtime_state.post_processing_long_running_warning_shown:
-                runtime_state.post_processing_long_running_warning_shown = True
-                append_status("warning", warning)
-            if task.status in {"completed", "failed"}:
-                if post_processing_poll_timer is not None:
-                    post_processing_poll_timer.active = False
-                await _refresh_simulation_authority(
-                    preferred_task_id=int(task.id),
-                    hydrate_views=task.status == "completed",
-                )
+            await poll_current_post_processing_task(
+                active_design_id=_active_persisted_design_id(),
+                bindings=_recovery_bindings(),
+            )
 
         def _raw_simulation_result() -> SimulationResult | None:
             persisted_result, _persisted_sweep_payload, persisted_bundle_id = (
