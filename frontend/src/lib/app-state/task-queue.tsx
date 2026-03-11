@@ -1,31 +1,21 @@
 "use client";
 
-import { createContext, useContext, useReducer } from "react";
+import { createContext, useContext } from "react";
+import useSWR from "swr";
 
 import {
-  createTaskQueueItem,
   summarizeTaskQueue,
-  taskQueueReducer,
   type TaskQueueItem,
-  type TaskQueueScope,
 } from "@/lib/app-state/task-queue-store";
+import { listTasks, tasksListKey } from "@/lib/api/tasks";
 
 type TaskQueueContextValue = Readonly<{
   tasks: readonly TaskQueueItem[];
   summary: ReturnType<typeof summarizeTaskQueue>;
-  enqueueTask: (input: {
-    taskId: string;
-    label: string;
-    detail: string;
-    scope: TaskQueueScope;
-  }) => void;
-  updateTask: (
-    taskId: string,
-    patch: Partial<Pick<TaskQueueItem, "label" | "detail" | "status" | "updatedAt">>,
-  ) => void;
-  removeTask: (taskId: string) => void;
-  clearTasks: () => void;
-  replaceTasks: (tasks: readonly TaskQueueItem[]) => void;
+  latestTask: TaskQueueItem | undefined;
+  isTaskQueueLoading: boolean;
+  taskQueueError: Error | undefined;
+  refreshTaskQueue: () => Promise<readonly TaskQueueItem[] | undefined>;
 }>;
 
 const TaskQueueContext = createContext<TaskQueueContextValue | null>(null);
@@ -35,30 +25,19 @@ type TaskQueueProviderProps = Readonly<{
 }>;
 
 export function TaskQueueProvider({ children }: TaskQueueProviderProps) {
-  const [tasks, dispatch] = useReducer(taskQueueReducer, [] as readonly TaskQueueItem[]);
+  const tasksQuery = useSWR(tasksListKey, listTasks);
+  const tasks = tasksQuery.data ?? [];
 
   return (
     <TaskQueueContext.Provider
       value={{
         tasks,
         summary: summarizeTaskQueue(tasks),
-        enqueueTask(input) {
-          dispatch({
-            type: "enqueue",
-            task: createTaskQueueItem(input),
-          });
-        },
-        updateTask(taskId, patch) {
-          dispatch({ type: "update", taskId, patch });
-        },
-        removeTask(taskId) {
-          dispatch({ type: "remove", taskId });
-        },
-        clearTasks() {
-          dispatch({ type: "clear" });
-        },
-        replaceTasks(nextTasks) {
-          dispatch({ type: "replace", tasks: nextTasks });
+        latestTask: tasks[0],
+        isTaskQueueLoading: tasksQuery.isLoading,
+        taskQueueError: tasksQuery.error as Error | undefined,
+        async refreshTaskQueue() {
+          return tasksQuery.mutate();
         },
       }}
     >

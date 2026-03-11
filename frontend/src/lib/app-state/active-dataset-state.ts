@@ -6,21 +6,21 @@ export function parseDatasetIdFromSearch(search: string): string | null {
 
 export function resolveActiveDatasetId(
   routeDatasetId: string | null,
-  preferredDatasetId: string | null,
+  sessionDatasetId: string | null,
 ): string | null {
-  return routeDatasetId ?? preferredDatasetId;
+  return routeDatasetId ?? sessionDatasetId;
 }
 
 export function resolveActiveDatasetSource(
   routeDatasetId: string | null,
-  preferredDatasetId: string | null,
-): "url" | "memory" | "none" {
+  sessionDatasetId: string | null,
+): "url" | "session" | "none" {
   if (routeDatasetId) {
     return "url";
   }
 
-  if (preferredDatasetId) {
-    return "memory";
+  if (sessionDatasetId) {
+    return "session";
   }
 
   return "none";

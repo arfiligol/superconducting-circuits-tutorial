@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, Shield, Workflow, X } from "lucide-react";
+import { Database, LoaderCircle, Shield, Workflow, X } from "lucide-react";
 
 import { cx } from "@/features/shared/components/surface-kit";
 import {
@@ -40,28 +40,55 @@ function StatusCard({ icon: Icon, label, value, detail, action }: StatusCardProp
 }
 
 export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripProps) {
-  const { session } = useAppSession();
-  const { activeDataset, source, clearPreferredDataset } = useActiveDataset();
-  const { tasks, summary } = useTaskQueue();
+  const { session, sessionError, isSessionLoading } = useAppSession();
+  const {
+    activeDataset,
+    source,
+    routeDatasetId,
+    sessionDatasetId,
+    isDatasetDetailLoading,
+    isUpdatingActiveDataset,
+    activeDatasetError,
+    clearActiveDataset,
+  } = useActiveDataset();
+  const { latestTask, summary, isTaskQueueLoading, taskQueueError } = useTaskQueue();
 
-  const latestTask = tasks[0];
-  const datasetLabel = activeDataset?.name ?? activeDataset?.datasetId ?? "No active dataset";
-  const datasetDetail =
-    source === "url"
-      ? "URL-driven selection"
-      : source === "memory"
-        ? "Pinned in app memory"
-        : "Select a dataset from a route-enabled workspace";
-  const sessionDetail =
-    session.status === "authenticated"
-      ? `${session.roleLabel} via ${session.authSource}`
-      : "Backend auth not wired yet";
-  const taskValue =
-    summary.total === 0
+  const datasetLabel = isUpdatingActiveDataset
+    ? "Syncing active dataset..."
+    : isSessionLoading && !activeDataset
+      ? "Loading active dataset..."
+    : activeDataset?.name ?? activeDataset?.datasetId ?? "No active dataset";
+  const datasetDetail = activeDatasetError
+    ? activeDatasetError.message
+    : isSessionLoading && !activeDataset
+      ? "Waiting for GET /session"
+    : source === "url" && routeDatasetId !== sessionDatasetId
+      ? "URL selection is being synced to the session contract"
+      : source === "url"
+        ? "URL-aware selection, backed by session state"
+        : source === "session"
+          ? "Session-backed active dataset"
+          : "Set an active dataset from a route-enabled workspace";
+  const sessionValue = isSessionLoading
+    ? "Loading session..."
+    : session?.user?.displayName ?? "Anonymous session";
+  const sessionDetail = sessionError
+    ? sessionError.message
+    : !session
+      ? "Waiting for GET /session"
+      : session.authState === "authenticated"
+        ? `${session.authMode} · ${session.scopes.length} scopes`
+        : `${session.authMode} · anonymous`;
+  const taskValue = isTaskQueueLoading
+    ? "Loading tasks..."
+    : summary.total === 0
       ? "Queue idle"
       : `${summary.runningCount} running · ${summary.queuedCount} queued`;
-  const taskDetail =
-    latestTask?.detail ?? "Task queue provider is ready for future backend status integration";
+  const taskDetail = taskQueueError
+    ? taskQueueError.message
+    : latestTask
+      ? `${latestTask.kind} · ${latestTask.summary}`
+      : "No queued or running tasks from GET /tasks";
 
   return (
     <div
@@ -76,11 +103,17 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         value={datasetLabel}
         detail={datasetDetail}
         action={
-          source === "memory" ? (
+          isUpdatingActiveDataset || isDatasetDetailLoading ? (
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground">
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            </span>
+          ) : source === "session" && activeDataset ? (
             <button
               type="button"
-              aria-label="Clear pinned dataset"
-              onClick={clearPreferredDataset}
+              aria-label="Clear active dataset"
+              onClick={() => {
+                void clearActiveDataset();
+              }}
               className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
             >
               <X className="h-4 w-4" />
@@ -99,7 +132,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
       <StatusCard
         icon={Shield}
         label="Session"
-        value={session.displayName}
+        value={sessionValue}
         detail={sessionDetail}
       />
     </div>

@@ -1,31 +1,22 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext } from "react";
+import useSWR from "swr";
 
-export type AppSessionStatus = "loading" | "anonymous" | "authenticated";
-
-export type AppSessionSnapshot = Readonly<{
-  status: AppSessionStatus;
-  displayName: string;
-  roleLabel: string;
-  authSource: "placeholder" | "backend";
-  capabilities: readonly string[];
-}>;
+import {
+  appSessionKey,
+  getSession,
+  type SessionSnapshot,
+} from "@/lib/api/session";
 
 type AppSessionContextValue = Readonly<{
-  session: AppSessionSnapshot;
+  session: SessionSnapshot | undefined;
+  sessionError: Error | undefined;
+  isSessionLoading: boolean;
   isAuthenticated: boolean;
-  setSession: (nextSession: AppSessionSnapshot) => void;
-  clearSession: () => void;
+  refreshSession: () => Promise<SessionSnapshot | undefined>;
+  replaceSession: (nextSession: SessionSnapshot) => Promise<SessionSnapshot | undefined>;
 }>;
-
-const anonymousSessionSnapshot: AppSessionSnapshot = {
-  status: "anonymous",
-  displayName: "Guest Session",
-  roleLabel: "Rewrite Placeholder",
-  authSource: "placeholder",
-  capabilities: [],
-};
 
 const AppSessionContext = createContext<AppSessionContextValue | null>(null);
 
@@ -33,21 +24,21 @@ type AppSessionProviderProps = Readonly<{
   children: React.ReactNode;
 }>;
 
-export function createAnonymousSessionSnapshot() {
-  return anonymousSessionSnapshot;
-}
-
 export function AppSessionProvider({ children }: AppSessionProviderProps) {
-  const [session, setSession] = useState<AppSessionSnapshot>(anonymousSessionSnapshot);
+  const sessionQuery = useSWR(appSessionKey, getSession);
 
   return (
     <AppSessionContext.Provider
       value={{
-        session,
-        isAuthenticated: session.status === "authenticated",
-        setSession,
-        clearSession() {
-          setSession(anonymousSessionSnapshot);
+        session: sessionQuery.data,
+        sessionError: sessionQuery.error as Error | undefined,
+        isSessionLoading: sessionQuery.isLoading,
+        isAuthenticated: sessionQuery.data?.authState === "authenticated",
+        async refreshSession() {
+          return sessionQuery.mutate();
+        },
+        async replaceSession(nextSession) {
+          return sessionQuery.mutate(nextSession, { revalidate: false });
         },
       }}
     >

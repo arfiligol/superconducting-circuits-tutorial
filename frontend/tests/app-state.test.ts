@@ -5,11 +5,10 @@ import {
   resolveActiveDatasetId,
   resolveActiveDatasetSource,
 } from "../src/lib/app-state/active-dataset-state";
-import { createAnonymousSessionSnapshot } from "../src/lib/app-state/app-session";
+import { mapSessionResponse } from "../src/lib/api/session";
+import { mapTaskSummaryResponse } from "../src/lib/api/tasks";
 import {
-  createTaskQueueItem,
   summarizeTaskQueue,
-  taskQueueReducer,
 } from "../src/lib/app-state/task-queue-store";
 
 describe("active dataset state helpers", () => {
@@ -20,87 +19,141 @@ describe("active dataset state helpers", () => {
   });
 
   it("prefers route state over preferred in-memory state", () => {
-    expect(resolveActiveDatasetId("route-dataset", "memory-dataset")).toBe("route-dataset");
-    expect(resolveActiveDatasetId(null, "memory-dataset")).toBe("memory-dataset");
-    expect(resolveActiveDatasetSource("route-dataset", "memory-dataset")).toBe("url");
-    expect(resolveActiveDatasetSource(null, "memory-dataset")).toBe("memory");
+    expect(resolveActiveDatasetId("route-dataset", "session-dataset")).toBe("route-dataset");
+    expect(resolveActiveDatasetId(null, "session-dataset")).toBe("session-dataset");
+    expect(resolveActiveDatasetSource("route-dataset", "session-dataset")).toBe("url");
+    expect(resolveActiveDatasetSource(null, "session-dataset")).toBe("session");
     expect(resolveActiveDatasetSource(null, null)).toBe("none");
   });
 });
 
-describe("app session defaults", () => {
-  it("creates an anonymous placeholder session snapshot", () => {
-    expect(createAnonymousSessionSnapshot()).toEqual({
-      status: "anonymous",
-      displayName: "Guest Session",
-      roleLabel: "Rewrite Placeholder",
-      authSource: "placeholder",
-      capabilities: [],
+describe("session contract mapping", () => {
+  it("maps backend session payloads into the frontend session snapshot", () => {
+    expect(
+      mapSessionResponse({
+        session_id: "session-dev-001",
+        auth: {
+          state: "authenticated",
+          mode: "development_stub",
+          scopes: ["tasks:submit", "datasets:manage"],
+          can_submit_tasks: true,
+          can_manage_datasets: true,
+          user: {
+            user_id: "user-dev-01",
+            display_name: "Device Lab",
+            email: "device-lab@example.com",
+          },
+        },
+        active_dataset: {
+          dataset_id: "fluxonium-2025-031",
+          name: "Fluxonium sweep 031",
+          family: "Fluxonium",
+          status: "Ready",
+        },
+      }),
+    ).toEqual({
+      sessionId: "session-dev-001",
+      authState: "authenticated",
+      authMode: "development_stub",
+      scopes: ["tasks:submit", "datasets:manage"],
+      canSubmitTasks: true,
+      canManageDatasets: true,
+      user: {
+        userId: "user-dev-01",
+        displayName: "Device Lab",
+        email: "device-lab@example.com",
+      },
+      activeDataset: {
+        datasetId: "fluxonium-2025-031",
+        name: "Fluxonium sweep 031",
+        family: "Fluxonium",
+        status: "Ready",
+      },
     });
   });
 });
 
 describe("task queue store", () => {
-  it("queues and updates tasks deterministically", () => {
-    const queuedTask = createTaskQueueItem({
-      taskId: "task-1",
-      label: "Dataset sync",
-      detail: "Waiting for worker",
-      scope: "dataset",
-      createdAt: "2026-03-12T00:00:00.000Z",
-      updatedAt: "2026-03-12T00:00:00.000Z",
-    });
-
-    const queuedState = taskQueueReducer([], { type: "enqueue", task: queuedTask });
-    const runningState = taskQueueReducer(queuedState, {
-      type: "update",
-      taskId: "task-1",
-      patch: {
+  it("maps backend task summaries into the frontend task queue shape", () => {
+    expect(
+      mapTaskSummaryResponse({
+        task_id: 14,
+        kind: "simulation",
+        lane: "simulation",
         status: "running",
-        detail: "Worker claimed task",
-        updatedAt: "2026-03-12T00:00:05.000Z",
-      },
+        submitted_at: "2026-03-12 01:30:00",
+        submitted_by: "Device Lab",
+        dataset_id: "fluxonium-2025-031",
+        definition_id: 18,
+        summary: "Fluxonium sweep queued from workspace",
+      }),
+    ).toEqual({
+      taskId: 14,
+      kind: "simulation",
+      lane: "simulation",
+      status: "running",
+      submittedAt: "2026-03-12 01:30:00",
+      submittedBy: "Device Lab",
+      datasetId: "fluxonium-2025-031",
+      definitionId: 18,
+      summary: "Fluxonium sweep queued from workspace",
     });
-
-    expect(runningState).toHaveLength(1);
-    expect(runningState[0]?.status).toBe("running");
-    expect(runningState[0]?.detail).toBe("Worker claimed task");
   });
 
-  it("summarizes task counts by status", () => {
+  it("summarizes task counts by backend status", () => {
     const tasks = [
-      createTaskQueueItem({
-        taskId: "task-1",
-        label: "Dataset sync",
-        detail: "Waiting",
-        scope: "dataset",
+      mapTaskSummaryResponse({
+        task_id: 11,
+        kind: "simulation",
+        lane: "simulation",
         status: "queued",
-        createdAt: "2026-03-12T00:00:00.000Z",
+        submitted_at: "2026-03-12 01:20:00",
+        submitted_by: "Device Lab",
+        dataset_id: "fluxonium-2025-031",
+        definition_id: 18,
+        summary: "Queued simulation",
       }),
-      createTaskQueueItem({
-        taskId: "task-2",
-        label: "Definition validate",
-        detail: "Running",
-        scope: "definition",
+      mapTaskSummaryResponse({
+        task_id: 12,
+        kind: "characterization",
+        lane: "characterization",
         status: "running",
-        createdAt: "2026-03-12T00:00:01.000Z",
+        submitted_at: "2026-03-12 01:21:00",
+        submitted_by: "Device Lab",
+        dataset_id: "fluxonium-2025-031",
+        definition_id: 18,
+        summary: "Running characterization",
       }),
-      createTaskQueueItem({
-        taskId: "task-3",
-        label: "Session bootstrap",
-        detail: "Failed",
-        scope: "system",
+      mapTaskSummaryResponse({
+        task_id: 13,
+        kind: "post_processing",
+        lane: "characterization",
         status: "failed",
-        createdAt: "2026-03-12T00:00:02.000Z",
+        submitted_at: "2026-03-12 01:22:00",
+        submitted_by: "Device Lab",
+        dataset_id: "fluxonium-2025-031",
+        definition_id: null,
+        summary: "Failed post-processing",
+      }),
+      mapTaskSummaryResponse({
+        task_id: 14,
+        kind: "simulation",
+        lane: "simulation",
+        status: "completed",
+        submitted_at: "2026-03-12 01:23:00",
+        submitted_by: "Device Lab",
+        dataset_id: "fluxonium-2025-031",
+        definition_id: 18,
+        summary: "Completed simulation",
       }),
     ];
 
     expect(summarizeTaskQueue(tasks)).toEqual({
-      total: 3,
+      total: 4,
       queuedCount: 1,
       runningCount: 1,
       failedCount: 1,
-      succeededCount: 0,
+      completedCount: 1,
     });
   });
 });

@@ -19,5 +19,5 @@ export function AppStateProviders({ children }: AppStateProvidersProps) {
 }
 
 export { useActiveDataset } from "@/lib/app-state/active-dataset";
-export { createAnonymousSessionSnapshot, useAppSession } from "@/lib/app-state/app-session";
+export { useAppSession } from "@/lib/app-state/app-session";
 export { useTaskQueue } from "@/lib/app-state/task-queue";
