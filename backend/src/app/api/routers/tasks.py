@@ -15,6 +15,7 @@ from src.app.domain.tasks import (
     TaskListQuery,
     TaskStatus,
     TaskSubmissionDraft,
+    TaskVisibilityScope,
 )
 from src.app.infrastructure.runtime import get_task_service
 from src.app.services.task_service import TaskService
@@ -27,6 +28,7 @@ def list_tasks(
     task_service: Annotated[TaskService, Depends(get_task_service)],
     status_filter: Annotated[TaskStatus | None, Query(alias="status")] = None,
     lane: Annotated[TaskLane | None, Query()] = None,
+    scope: Annotated[TaskVisibilityScope, Query()] = "workspace",
     dataset_id: Annotated[str | None, Query(min_length=1)] = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> list[TaskSummaryResponse]:
@@ -36,6 +38,7 @@ def list_tasks(
             TaskListQuery(
                 status=status_filter,
                 lane=lane,
+                scope=scope,
                 dataset_id=dataset_id,
                 limit=limit,
             )
@@ -75,9 +78,14 @@ def _build_task_summary_response(task: TaskDetail) -> TaskSummaryResponse:
         task_id=task.task_id,
         kind=task.kind,
         lane=task.lane,
+        execution_mode=task.execution_mode,
         status=task.status,
         submitted_at=task.submitted_at,
-        submitted_by=task.submitted_by,
+        owner_user_id=task.owner_user_id,
+        owner_display_name=task.owner_display_name,
+        workspace_id=task.workspace_id,
+        workspace_slug=task.workspace_slug,
+        visibility_scope=task.visibility_scope,
         dataset_id=task.dataset_id,
         definition_id=task.definition_id,
         summary=task.summary,
@@ -89,14 +97,20 @@ def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
         task_id=task.task_id,
         kind=task.kind,
         lane=task.lane,
+        execution_mode=task.execution_mode,
         status=task.status,
         submitted_at=task.submitted_at,
-        submitted_by=task.submitted_by,
+        owner_user_id=task.owner_user_id,
+        owner_display_name=task.owner_display_name,
+        workspace_id=task.workspace_id,
+        workspace_slug=task.workspace_slug,
+        visibility_scope=task.visibility_scope,
         dataset_id=task.dataset_id,
         definition_id=task.definition_id,
         summary=task.summary,
         queue_backend=task.queue_backend,
         worker_task_name=task.worker_task_name,
+        request_ready=task.request_ready,
         submitted_from_active_dataset=task.submitted_from_active_dataset,
         progress=TaskProgressResponse(
             phase=task.progress.phase,

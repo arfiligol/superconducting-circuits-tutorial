@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from fastapi import HTTPException, status
 from src.app.domain.circuit_definitions import (
     CircuitDefinitionDetail,
     CircuitDefinitionDraft,
@@ -9,6 +8,7 @@ from src.app.domain.circuit_definitions import (
     CircuitDefinitionSummary,
     CircuitDefinitionUpdate,
 )
+from src.app.services.service_errors import api_error
 
 
 class CircuitDefinitionRepository(Protocol):
@@ -48,9 +48,11 @@ class CircuitDefinitionService:
     def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail:
         detail = self._repository.get_circuit_definition(definition_id)
         if detail is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Circuit definition {definition_id} was not found.",
+            raise api_error(
+                404,
+                code="circuit_definition_not_found",
+                category="not_found",
+                message=f"Circuit definition {definition_id} was not found.",
             )
         return detail
 
@@ -64,18 +66,22 @@ class CircuitDefinitionService:
     ) -> CircuitDefinitionDetail:
         detail = self._repository.update_circuit_definition(definition_id, update)
         if detail is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Circuit definition {definition_id} was not found.",
+            raise api_error(
+                404,
+                code="circuit_definition_not_found",
+                category="not_found",
+                message=f"Circuit definition {definition_id} was not found.",
             )
         return detail
 
     def delete_circuit_definition(self, definition_id: int) -> None:
         deleted = self._repository.delete_circuit_definition(definition_id)
         if not deleted:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Circuit definition {definition_id} was not found.",
+            raise api_error(
+                404,
+                code="circuit_definition_not_found",
+                category="not_found",
+                message=f"Circuit definition {definition_id} was not found.",
             )
 
     def _matches_query(

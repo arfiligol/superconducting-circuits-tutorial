@@ -1,8 +1,13 @@
 from typing import Protocol
 
-from fastapi import HTTPException, status
 from src.app.domain.datasets import DatasetDetail
-from src.app.domain.session import ActiveDatasetContext, AppSession, SessionState
+from src.app.domain.session import (
+    ActiveDatasetContext,
+    AppSession,
+    SessionState,
+    WorkspaceContext,
+)
+from src.app.services.service_errors import api_error
 
 
 class SessionRepository(Protocol):
@@ -29,9 +34,11 @@ class SessionService:
 
     def set_active_dataset(self, dataset_id: str | None) -> AppSession:
         if dataset_id is not None and self._dataset_repository.get_dataset(dataset_id) is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Dataset {dataset_id} was not found.",
+            raise api_error(
+                404,
+                code="dataset_not_found",
+                category="not_found",
+                message=f"Dataset {dataset_id} was not found.",
             )
         state = self._repository.set_active_dataset_id(dataset_id)
         return self._build_session(state)
@@ -46,6 +53,8 @@ class SessionService:
                     name=dataset.name,
                     family=dataset.family,
                     status=dataset.status,
+                    owner=dataset.owner,
+                    access_scope="workspace",
                 )
         return AppSession(
             session_id=state.session_id,
@@ -54,6 +63,13 @@ class SessionService:
             scopes=state.scopes,
             can_submit_tasks="tasks:submit" in state.scopes,
             can_manage_datasets="datasets:write" in state.scopes,
-            user=state.user,
-            active_dataset=active_dataset,
+            identity=state.user,
+            workspace=WorkspaceContext(
+                workspace_id=state.workspace_id,
+                slug=state.workspace_slug,
+                display_name=state.workspace_display_name,
+                role=state.workspace_role,
+                default_task_scope=state.default_task_scope,
+                active_dataset=active_dataset,
+            ),
         )

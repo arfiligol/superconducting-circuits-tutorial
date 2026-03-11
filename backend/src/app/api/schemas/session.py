@@ -15,7 +15,6 @@ class SessionAuthResponse(BaseModel):
     scopes: list[str]
     can_submit_tasks: bool
     can_manage_datasets: bool
-    user: SessionUserResponse | None
 
 
 class ActiveDatasetResponse(BaseModel):
@@ -23,12 +22,24 @@ class ActiveDatasetResponse(BaseModel):
     name: str
     family: str
     status: Literal["Ready", "Queued", "Review"]
+    owner: str
+    access_scope: Literal["workspace", "shared"]
+
+
+class WorkspaceContextResponse(BaseModel):
+    workspace_id: str
+    slug: str
+    display_name: str
+    role: Literal["owner", "member", "viewer"]
+    default_task_scope: Literal["workspace", "owned"]
+    active_dataset: ActiveDatasetResponse | None
 
 
 class SessionResponse(BaseModel):
     session_id: str
     auth: SessionAuthResponse
-    active_dataset: ActiveDatasetResponse | None
+    identity: SessionUserResponse | None
+    workspace: WorkspaceContextResponse
 
 
 class ActiveDatasetUpdateRequest(BaseModel):

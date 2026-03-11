@@ -1,6 +1,7 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from sc_core.tasking import TaskExecutionMode, WorkerTaskName
 
 
 class TaskProgressResponse(BaseModel):
@@ -19,9 +20,14 @@ class TaskSummaryResponse(BaseModel):
     task_id: int
     kind: Literal["simulation", "post_processing", "characterization"]
     lane: Literal["simulation", "characterization"]
+    execution_mode: TaskExecutionMode
     status: Literal["queued", "running", "completed", "failed"]
     submitted_at: str
-    submitted_by: str
+    owner_user_id: str
+    owner_display_name: str
+    workspace_id: str
+    workspace_slug: str
+    visibility_scope: Literal["workspace", "owned"]
     dataset_id: str | None
     definition_id: int | None
     summary: str
@@ -29,7 +35,8 @@ class TaskSummaryResponse(BaseModel):
 
 class TaskDetailResponse(TaskSummaryResponse):
     queue_backend: Literal["in_memory_scaffold"]
-    worker_task_name: str | None
+    worker_task_name: WorkerTaskName
+    request_ready: bool
     submitted_from_active_dataset: bool
     progress: TaskProgressResponse
     result_refs: TaskResultRefsResponse

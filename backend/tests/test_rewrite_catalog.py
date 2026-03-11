@@ -82,12 +82,15 @@ def test_patch_dataset_metadata_rejects_duplicate_capabilities() -> None:
     )
 
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_validation_failed"
+    assert response.json()["error"]["category"] == "validation"
 
 
 def test_get_dataset_returns_not_found_for_missing_id() -> None:
     response = client.get("/datasets/missing-dataset")
 
     assert response.status_code == 404
+    assert response.json()["error"]["code"] == "dataset_not_found"
 
 
 def test_list_circuit_definitions_returns_seeded_summaries() -> None:
@@ -161,6 +164,7 @@ def test_create_update_and_delete_circuit_definition_flow() -> None:
 
     missing = client.get(f"/circuit-definitions/{definition_id}")
     assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "circuit_definition_not_found"
 
 
 def test_create_circuit_definition_rejects_blank_name() -> None:
@@ -173,3 +177,4 @@ def test_create_circuit_definition_rejects_blank_name() -> None:
     )
 
     assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_validation_failed"

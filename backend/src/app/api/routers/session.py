@@ -7,6 +7,7 @@ from src.app.api.schemas.session import (
     SessionAuthResponse,
     SessionResponse,
     SessionUserResponse,
+    WorkspaceContextResponse,
 )
 from src.app.domain.session import AppSession
 from src.app.infrastructure.runtime import get_session_service
@@ -39,24 +40,33 @@ def _build_session_response(session: AppSession) -> SessionResponse:
             scopes=list(session.scopes),
             can_submit_tasks=session.can_submit_tasks,
             can_manage_datasets=session.can_manage_datasets,
-            user=(
-                SessionUserResponse(
-                    user_id=session.user.user_id,
-                    display_name=session.user.display_name,
-                    email=session.user.email,
+        ),
+        identity=(
+            SessionUserResponse(
+                user_id=session.identity.user_id,
+                display_name=session.identity.display_name,
+                email=session.identity.email,
+            )
+            if session.identity is not None
+            else None
+        ),
+        workspace=WorkspaceContextResponse(
+            workspace_id=session.workspace.workspace_id,
+            slug=session.workspace.slug,
+            display_name=session.workspace.display_name,
+            role=session.workspace.role,
+            default_task_scope=session.workspace.default_task_scope,
+            active_dataset=(
+                ActiveDatasetResponse(
+                    dataset_id=session.workspace.active_dataset.dataset_id,
+                    name=session.workspace.active_dataset.name,
+                    family=session.workspace.active_dataset.family,
+                    status=session.workspace.active_dataset.status,
+                    owner=session.workspace.active_dataset.owner,
+                    access_scope=session.workspace.active_dataset.access_scope,
                 )
-                if session.user is not None
+                if session.workspace.active_dataset is not None
                 else None
             ),
-        ),
-        active_dataset=(
-            ActiveDatasetResponse(
-                dataset_id=session.active_dataset.dataset_id,
-                name=session.active_dataset.name,
-                family=session.active_dataset.family,
-                status=session.active_dataset.status,
-            )
-            if session.active_dataset is not None
-            else None
         ),
     )

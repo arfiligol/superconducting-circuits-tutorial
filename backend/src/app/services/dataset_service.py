@@ -1,7 +1,6 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from fastapi import HTTPException, status
 from src.app.domain.datasets import (
     DatasetDetail,
     DatasetListQuery,
@@ -10,6 +9,7 @@ from src.app.domain.datasets import (
     DatasetMetadataUpdateResult,
     DatasetSummary,
 )
+from src.app.services.service_errors import api_error
 
 
 class DatasetRepository(Protocol):
@@ -39,9 +39,11 @@ class DatasetService:
     def get_dataset(self, dataset_id: str) -> DatasetDetail:
         detail = self._repository.get_dataset(dataset_id)
         if detail is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Dataset {dataset_id} was not found.",
+            raise api_error(
+                404,
+                code="dataset_not_found",
+                category="not_found",
+                message=f"Dataset {dataset_id} was not found.",
             )
         return detail
 
@@ -53,9 +55,11 @@ class DatasetService:
         current = self.get_dataset(dataset_id)
         detail = self._repository.update_dataset_metadata(dataset_id, update)
         if detail is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Dataset {dataset_id} was not found.",
+            raise api_error(
+                404,
+                code="dataset_not_found",
+                category="not_found",
+                message=f"Dataset {dataset_id} was not found.",
             )
         return DatasetMetadataUpdateResult(
             dataset=detail,

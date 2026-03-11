@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from fastapi import HTTPException, status
+from sc_core.tasking import resolve_worker_task_route
 from src.app.domain.circuit_definitions import CircuitDefinitionDetail
 from src.app.domain.datasets import DatasetDetail
 from src.app.domain.session import SessionState
@@ -9,10 +9,10 @@ from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
     TaskKind,
-    TaskLane,
     TaskListQuery,
     TaskSubmissionDraft,
 )
+from src.app.services.service_errors import api_error
 
 
 class TaskRepository(Protocol):
@@ -54,10 +54,13 @@ class TaskService:
 
     def get_task(self, task_id: int) -> TaskDetail:
         detail = self._repository.get_task(task_id)
-        if detail is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Task {task_id} was not found.",
+        session = self._session_repository.get_session_state()
+        if detail is None or not self._is_visible(detail, session, scope="workspace"):
+            raise api_error(
+                404,
+                code="task_not_found",
+                category="not_found",
+                message=f"Task {task_id} was not found.",
             )
         return detail
 
@@ -67,24 +70,30 @@ class TaskService:
         submitted_from_active_dataset = draft.dataset_id is None and resolved_dataset_id is not None
 
         if draft.kind == "simulation" and draft.definition_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Simulation tasks require definition_id.",
+            raise api_error(
+                422,
+                code="simulation_definition_required",
+                category="validation",
+                message="Simulation tasks require definition_id.",
             )
 
         if draft.kind in {"post_processing", "characterization"} and resolved_dataset_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"{draft.kind} tasks require dataset_id or an active dataset.",
+            raise api_error(
+                422,
+                code="dataset_context_required",
+                category="validation",
+                message=f"{draft.kind} tasks require dataset_id or an active dataset.",
             )
 
         if (
             resolved_dataset_id is not None
             and self._dataset_repository.get_dataset(resolved_dataset_id) is None
         ):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Dataset {resolved_dataset_id} was not found.",
+            raise api_error(
+                404,
+                code="dataset_not_found",
+                category="not_found",
+                message=f"Dataset {resolved_dataset_id} was not found.",
             )
 
         if (
@@ -94,48 +103,72 @@ class TaskService:
             )
             is None
         ):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Circuit definition {draft.definition_id} was not found.",
+            raise api_error(
+                404,
+                code="circuit_definition_not_found",
+                category="not_found",
+                message=f"Circuit definition {draft.definition_id} was not found.",
             )
 
-        submitted_by = session.user.display_name if session.user is not None else "anonymous"
+        owner_user_id = session.user.user_id if session.user is not None else "anonymous"
+        owner_display_name = session.user.display_name if session.user is not None else "anonymous"
+        worker_route = resolve_worker_task_route(
+            draft.kind,
+            request_is_valid=True,
+            has_trace_batch_id=False,
+        )
         return self._repository.create_task(
             TaskCreateDraft(
                 kind=draft.kind,
-                lane=_lane_for_task_kind(draft.kind),
-                submitted_by=submitted_by,
+                lane=worker_route.lane,
+                execution_mode=worker_route.execution_mode,
+                owner_user_id=owner_user_id,
+                owner_display_name=owner_display_name,
+                workspace_id=session.workspace_id,
+                workspace_slug=session.workspace_slug,
+                visibility_scope="workspace",
                 dataset_id=resolved_dataset_id,
                 definition_id=draft.definition_id,
                 summary=draft.summary or _default_task_summary(draft.kind, resolved_dataset_id),
-                worker_task_name=_worker_task_name_for(draft.kind),
+                worker_task_name=worker_route.worker_task_name,
+                request_ready=worker_route.request_ready,
                 submitted_from_active_dataset=submitted_from_active_dataset,
             )
         )
 
     def _matches_query(self, task: TaskDetail, query: TaskListQuery) -> bool:
+        session = self._session_repository.get_session_state()
+        if not self._is_visible(task, session, scope=query.scope):
+            return False
         if query.status is not None and task.status != query.status:
             return False
         if query.lane is not None and task.lane != query.lane:
             return False
         return query.dataset_id is None or task.dataset_id == query.dataset_id
 
-
-def _lane_for_task_kind(task_kind: TaskKind) -> TaskLane:
-    if task_kind == "characterization":
-        return "characterization"
-    return "simulation"
-
-
-def _worker_task_name_for(task_kind: TaskKind) -> str:
-    if task_kind == "simulation":
-        return "simulation_smoke_task"
-    if task_kind == "post_processing":
-        return "post_processing_smoke_task"
-    return "characterization_smoke_task"
+    def _is_visible(
+        self,
+        task: TaskDetail,
+        session: SessionState,
+        *,
+        scope: str,
+    ) -> bool:
+        if task.workspace_id != session.workspace_id:
+            return False
+        if task.visibility_scope == "owned" and task.owner_user_id != _session_user_id(session):
+            return False
+        if scope == "owned":
+            return task.owner_user_id == _session_user_id(session)
+        return True
 
 
 def _default_task_summary(task_kind: TaskKind, dataset_id: str | None) -> str:
     if dataset_id is None:
         return f"{task_kind.replace('_', ' ')} task accepted by rewrite scaffold."
     return f"{task_kind.replace('_', ' ')} task accepted for dataset {dataset_id}."
+
+
+def _session_user_id(session: SessionState) -> str:
+    if session.user is None:
+        return "anonymous"
+    return session.user.user_id

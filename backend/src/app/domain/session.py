@@ -5,6 +5,9 @@ from src.app.domain.datasets import DatasetStatus
 
 AuthState = Literal["authenticated", "anonymous"]
 AuthMode = Literal["development_stub"]
+WorkspaceRole = Literal["owner", "member", "viewer"]
+TaskScope = Literal["workspace", "owned"]
+DatasetAccessScope = Literal["workspace", "shared"]
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,11 @@ class SessionState:
     auth_mode: AuthMode
     scopes: tuple[str, ...]
     user: SessionUser | None
+    workspace_id: str
+    workspace_slug: str
+    workspace_display_name: str
+    workspace_role: WorkspaceRole
+    default_task_scope: TaskScope
     active_dataset_id: str | None
 
 
@@ -30,6 +38,18 @@ class ActiveDatasetContext:
     name: str
     family: str
     status: DatasetStatus
+    owner: str
+    access_scope: DatasetAccessScope
+
+
+@dataclass(frozen=True)
+class WorkspaceContext:
+    workspace_id: str
+    slug: str
+    display_name: str
+    role: WorkspaceRole
+    default_task_scope: TaskScope
+    active_dataset: ActiveDatasetContext | None
 
 
 @dataclass(frozen=True)
@@ -40,5 +60,5 @@ class AppSession:
     scopes: tuple[str, ...]
     can_submit_tasks: bool
     can_manage_datasets: bool
-    user: SessionUser | None
-    active_dataset: ActiveDatasetContext | None
+    identity: SessionUser | None
+    workspace: WorkspaceContext

@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from sc_core.tasking import TaskExecutionMode, WorkerTaskName
+
 TaskKind = Literal["simulation", "post_processing", "characterization"]
 TaskLane = Literal["simulation", "characterization"]
 TaskStatus = Literal["queued", "running", "completed", "failed"]
 TaskQueueBackend = Literal["in_memory_scaffold"]
+TaskVisibilityScope = Literal["workspace", "owned"]
 
 
 @dataclass(frozen=True)
@@ -26,9 +29,14 @@ class TaskSummary:
     task_id: int
     kind: TaskKind
     lane: TaskLane
+    execution_mode: TaskExecutionMode
     status: TaskStatus
     submitted_at: str
-    submitted_by: str
+    owner_user_id: str
+    owner_display_name: str
+    workspace_id: str
+    workspace_slug: str
+    visibility_scope: TaskVisibilityScope
     dataset_id: str | None
     definition_id: int | None
     summary: str
@@ -37,7 +45,8 @@ class TaskSummary:
 @dataclass(frozen=True)
 class TaskDetail(TaskSummary):
     queue_backend: TaskQueueBackend
-    worker_task_name: str | None
+    worker_task_name: WorkerTaskName
+    request_ready: bool
     submitted_from_active_dataset: bool
     progress: TaskProgress
     result_refs: TaskResultRefs
@@ -47,6 +56,7 @@ class TaskDetail(TaskSummary):
 class TaskListQuery:
     status: TaskStatus | None = None
     lane: TaskLane | None = None
+    scope: TaskVisibilityScope = "workspace"
     dataset_id: str | None = None
     limit: int = 20
 
@@ -63,9 +73,15 @@ class TaskSubmissionDraft:
 class TaskCreateDraft:
     kind: TaskKind
     lane: TaskLane
-    submitted_by: str
+    execution_mode: TaskExecutionMode
+    owner_user_id: str
+    owner_display_name: str
+    workspace_id: str
+    workspace_slug: str
+    visibility_scope: TaskVisibilityScope
     dataset_id: str | None
     definition_id: int | None
     summary: str
-    worker_task_name: str
+    worker_task_name: WorkerTaskName
+    request_ready: bool
     submitted_from_active_dataset: bool
