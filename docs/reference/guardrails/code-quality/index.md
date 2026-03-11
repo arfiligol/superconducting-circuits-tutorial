@@ -10,10 +10,10 @@ tags:
 status: stable
 owner: docs-team
 audience: contributor
-scope: Code quality、型別、架構邊界與 CLI 規範索引。
-version: v1.0.0
-last_updated: 2026-03-11
-updated_by: docs-team
+scope: Code quality、型別、架構邊界、契約版本與錯誤模型索引。
+version: v1.1.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Code Quality
@@ -27,6 +27,8 @@ updated_by: docs-team
 - [Script Authoring](./script-authoring.md)
 - [Data Handling](./data-handling.md)
 - [Logging](./logging.md)
+- [Contract Versioning](./contract-versioning.md)
+- [Error Handling](./error-handling.md)
 
 ## Agent Rule { #agent-rule }
 
@@ -35,5 +37,5 @@ updated_by: docs-team
 - 遵循 Clean Code：命名清晰、函式短小、責任單一。
 - UI、API、CLI 不得各自複製業務流程；共享規則應集中在 backend services 或 `src/core/`。
 - 優先修正程式碼而不是增加例外或忽略規則。
-- 需要時查閱子文件：Code Style / Type Checking / Design Patterns / Script Authoring / Data Handling / Logging。
+- 需要時查閱子文件：Code Style / Type Checking / Design Patterns / Script Authoring / Data Handling / Logging / Contract Versioning / Error Handling。
 ```

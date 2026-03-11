@@ -109,6 +109,10 @@ nav = [
     { "Architecture" = [
       { "Overview" = "reference/architecture/index.md" },
       { "Circuit Netlist Core" = "reference/architecture/schematic-netlist-core.md" },
+      { "Identity / Workspace Minimal Model" = "reference/architecture/identity-workspace-model.md" },
+      { "Task Semantics" = "reference/architecture/task-semantics.md" },
+      { "Parity Matrix" = "reference/architecture/parity-matrix.md" },
+      { "Canonical Contract Registry" = "reference/architecture/canonical-contract-registry.md" },
     ] },
     { "CLI Options" = [
       { "Overview" = "reference/cli/index.md" },
@@ -160,6 +164,7 @@ nav = [
         { "Project Overview" = "reference/guardrails/project-basics/project-overview.md" },
         { "Tech Stack" = "reference/guardrails/project-basics/tech-stack.md" },
         { "Folder Structure" = "reference/guardrails/project-basics/folder-structure.md" },
+        { "Source of Truth Order" = "reference/guardrails/project-basics/source-of-truth-order.md" },
       ] },
       { "Execution & Verification" = [
         { "Build Commands" = "reference/guardrails/execution-verification/build-commands.md" },
@@ -167,6 +172,7 @@ nav = [
         { "Testing" = "reference/guardrails/execution-verification/testing.md" },
         { "Commit Standards" = "reference/guardrails/execution-verification/commit-standards.md" },
         { "CI Gates" = "reference/guardrails/execution-verification/ci-gates.md" },
+        { "Phase Gates" = "reference/guardrails/execution-verification/phase-gates.md" },
         { "Multiple Agent Collaboration" = "reference/guardrails/execution-verification/multi-agent-collaboration.md" },
         { "Contributor Reporting Format" = "reference/guardrails/execution-verification/contributor-reporting.md" },
       ] },
@@ -176,6 +182,8 @@ nav = [
         { "Logging" = "reference/guardrails/code-quality/logging.md" },
         { "Script Authoring" = "reference/guardrails/code-quality/script-authoring.md" },
         { "Data Handling" = "reference/guardrails/code-quality/data-handling.md" },
+        { "Contract Versioning" = "reference/guardrails/code-quality/contract-versioning.md" },
+        { "Error Handling" = "reference/guardrails/code-quality/error-handling.md" },
       ] },
       { "Documentation Design" = [
         { "Overview" = "reference/guardrails/documentation-design/documentation.md" },

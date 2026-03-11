@@ -7,10 +7,10 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: 技術規格索引，涵蓋 CLI、Schema、開發規範
-version: v0.2.0
-last_updated: 2026-03-01
-updated_by: docs-team
+scope: 技術規格索引，涵蓋 architecture、CLI、UI、data formats 與開發規範
+version: v0.3.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Reference
@@ -19,6 +19,7 @@ updated_by: docs-team
 
 ## Categories
 
+- [Architecture Reference](architecture/index.md) - migration 契約、身份/工作空間、task semantics、parity matrix
 - [CLI Reference](cli/index.md) - 命令列工具
 - [UI Reference](ui/index.md) - 使用者介面規格與控制項
 - [Data Formats](data-formats/index.md) - 數據格式與 Schema

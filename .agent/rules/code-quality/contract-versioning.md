@@ -1,0 +1,11 @@
+## Contract Versioning
+- Treat circuit definitions, dataset/trace/result contracts, task contracts, session/workspace payloads, and machine-readable CLI outputs as version-aware surfaces.
+- Prefer additive evolution over breaking changes.
+- Any breaking contract change MUST update:
+    - reference docs
+    - parity matrix
+    - contract registry
+    - fallback/migration notes
+- During migration, assume frontend/backend/cli/`sc_core` evolve in lockstep on the same branch unless an explicit compatibility promise is documented.
+- Persisted DB/TraceStore/exported data MUST have fallback, migration, or read-compat semantics before breaking a contract.
+- Do not hide compatibility patches only inside adapters; document them.

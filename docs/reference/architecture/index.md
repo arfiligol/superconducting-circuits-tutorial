@@ -10,9 +10,9 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: 核心架構模組與資料邊界的 Reference 索引
-version: v0.1.0
-last_updated: 2026-03-05
+scope: 核心架構模組、migration 契約與資料邊界的 Reference 索引
+version: v0.2.0
+last_updated: 2026-03-12
 updated_by: codex
 ---
 
@@ -23,6 +23,10 @@ updated_by: codex
 ## Topics
 
 - [Circuit Netlist Core](schematic-netlist-core.md)
+- [Identity / Workspace Minimal Model](identity-workspace-model.md)
+- [Task Semantics](task-semantics.md)
+- [Parity Matrix](parity-matrix.md)
+- [Canonical Contract Registry](canonical-contract-registry.md)
 
 ## Related
 
