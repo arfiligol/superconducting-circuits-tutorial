@@ -1,0 +1,111 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, status
+from src.app.api.schemas.tasks import (
+    TaskDetailResponse,
+    TaskMutationResponse,
+    TaskProgressResponse,
+    TaskResultRefsResponse,
+    TaskSubmissionRequest,
+    TaskSummaryResponse,
+)
+from src.app.domain.tasks import (
+    TaskDetail,
+    TaskLane,
+    TaskListQuery,
+    TaskStatus,
+    TaskSubmissionDraft,
+)
+from src.app.infrastructure.runtime import get_task_service
+from src.app.services.task_service import TaskService
+
+router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+
+@router.get("", response_model=list[TaskSummaryResponse])
+def list_tasks(
+    task_service: Annotated[TaskService, Depends(get_task_service)],
+    status_filter: Annotated[TaskStatus | None, Query(alias="status")] = None,
+    lane: Annotated[TaskLane | None, Query()] = None,
+    dataset_id: Annotated[str | None, Query(min_length=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> list[TaskSummaryResponse]:
+    return [
+        _build_task_summary_response(task)
+        for task in task_service.list_tasks(
+            TaskListQuery(
+                status=status_filter,
+                lane=lane,
+                dataset_id=dataset_id,
+                limit=limit,
+            )
+        )
+    ]
+
+
+@router.get("/{task_id}", response_model=TaskDetailResponse)
+def get_task(
+    task_id: int,
+    task_service: Annotated[TaskService, Depends(get_task_service)],
+) -> TaskDetailResponse:
+    return _build_task_detail_response(task_service.get_task(task_id))
+
+
+@router.post("", response_model=TaskMutationResponse, status_code=status.HTTP_201_CREATED)
+def submit_task(
+    payload: TaskSubmissionRequest,
+    task_service: Annotated[TaskService, Depends(get_task_service)],
+) -> TaskMutationResponse:
+    detail = task_service.submit_task(
+        TaskSubmissionDraft(
+            kind=payload.kind,
+            dataset_id=payload.dataset_id,
+            definition_id=payload.definition_id,
+            summary=payload.summary,
+        )
+    )
+    return TaskMutationResponse(
+        operation="submitted",
+        task=_build_task_detail_response(detail),
+    )
+
+
+def _build_task_summary_response(task: TaskDetail) -> TaskSummaryResponse:
+    return TaskSummaryResponse(
+        task_id=task.task_id,
+        kind=task.kind,
+        lane=task.lane,
+        status=task.status,
+        submitted_at=task.submitted_at,
+        submitted_by=task.submitted_by,
+        dataset_id=task.dataset_id,
+        definition_id=task.definition_id,
+        summary=task.summary,
+    )
+
+
+def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
+    return TaskDetailResponse(
+        task_id=task.task_id,
+        kind=task.kind,
+        lane=task.lane,
+        status=task.status,
+        submitted_at=task.submitted_at,
+        submitted_by=task.submitted_by,
+        dataset_id=task.dataset_id,
+        definition_id=task.definition_id,
+        summary=task.summary,
+        queue_backend=task.queue_backend,
+        worker_task_name=task.worker_task_name,
+        submitted_from_active_dataset=task.submitted_from_active_dataset,
+        progress=TaskProgressResponse(
+            phase=task.progress.phase,
+            percent_complete=task.progress.percent_complete,
+            summary=task.progress.summary,
+            updated_at=task.progress.updated_at,
+        ),
+        result_refs=TaskResultRefsResponse(
+            trace_batch_id=task.result_refs.trace_batch_id,
+            analysis_run_id=task.result_refs.analysis_run_id,
+        ),
+    )
