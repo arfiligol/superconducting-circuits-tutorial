@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { WorkspaceHeader } from "@/components/layout/workspace-header";
 import { WorkspaceNav } from "@/components/layout/workspace-nav";
+import { WorkspaceStatusStrip } from "@/components/layout/workspace-status-strip";
 
 type WorkspaceShellProps = Readonly<{
   children: React.ReactNode;
@@ -43,28 +45,10 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
             <Menu size={18} strokeWidth={2} />
           </button>
 
-          <div className="min-w-0 shrink-0">
-            <p className="truncate text-base font-semibold text-foreground md:text-lg">
-              🔬 SC Tutorial App
-            </p>
-          </div>
+          <WorkspaceHeader />
 
-          <div className="hidden min-w-0 flex-1 lg:flex">
-            <div className="flex min-h-[48px] w-full items-center justify-between rounded-lg border border-border bg-surface px-3 py-2">
-              <div className="min-w-0">
-                <p className="text-[11px] font-medium text-muted-foreground">Active Datasets</p>
-                <div className="mt-1 inline-flex max-w-full items-center gap-2 rounded-full bg-surface-elevated px-3 py-1.5 text-sm text-foreground">
-                  <span className="truncate">FloatingQubitWithXYLine Post 0308_1819</span>
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <X size={12} />
-                  </span>
-                </div>
-              </div>
-              <div className="ml-3 flex items-center gap-3 text-muted-foreground">
-                <X size={18} />
-                <span className="text-xs">▾</span>
-              </div>
-            </div>
+          <div className="hidden min-w-0 flex-1 lg:block">
+            <WorkspaceStatusStrip compact />
           </div>
 
           <ThemeToggle />
@@ -84,15 +68,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
 
         <div className="flex min-w-0 flex-1 flex-col bg-background">
           <div className="border-b border-border bg-header px-4 py-3 lg:hidden">
-            <div className="rounded-lg border border-border bg-surface px-3 py-2">
-              <p className="text-[11px] font-medium text-muted-foreground">Active Datasets</p>
-              <div className="mt-1 inline-flex max-w-full items-center gap-2 rounded-full bg-surface-elevated px-3 py-1.5 text-sm text-foreground">
-                <span className="truncate">FloatingQubitWithXYLine Post 0308_1819</span>
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                  <X size={12} />
-                </span>
-              </div>
-            </div>
+            <WorkspaceStatusStrip />
           </div>
 
           <main className="flex-1 px-4 py-5 md:px-6 md:py-5">
