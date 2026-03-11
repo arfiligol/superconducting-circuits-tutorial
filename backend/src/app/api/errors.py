@@ -5,8 +5,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from src.app.services.service_errors import ServiceError
 
-from src.app.api.schemas.errors import ApiErrorBodyResponse
-
 
 def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ServiceError, _service_error_handler)
@@ -35,10 +33,12 @@ async def _service_error_handler(_: Request, exc: Exception) -> JSONResponse:
 
 async def _http_exception_handler(_: Request, exc: Exception) -> JSONResponse:
     http_exc = (
-        exc if isinstance(exc, HTTPException) else HTTPException(status_code=500, detail=str(exc))
+        exc
+        if isinstance(exc, HTTPException)
+        else HTTPException(status_code=500, detail=str(exc))
     )
-    payload = normalize_http_exception_payload(http_exc)
-    return JSONResponse(status_code=http_exc.status_code, content={"error": payload.model_dump()})
+    payload = _normalize_http_exception_payload(http_exc)
+    return JSONResponse(status_code=http_exc.status_code, content={"error": payload})
 
 
 async def _request_validation_handler(_: Request, exc: Exception) -> JSONResponse:
@@ -64,7 +64,7 @@ async def _request_validation_handler(_: Request, exc: Exception) -> JSONRespons
     )
 
 
-def normalize_http_exception_payload(exc: HTTPException) -> ApiErrorBodyResponse:
+def _normalize_http_exception_payload(exc: HTTPException) -> dict[str, Any]:
     detail = exc.detail
     if isinstance(detail, dict):
         raw_payload = dict(detail)
@@ -75,15 +75,15 @@ def normalize_http_exception_payload(exc: HTTPException) -> ApiErrorBodyResponse
             "status": exc.status_code,
             "field_errors": raw_payload.get("field_errors", []),
         }
-        return ApiErrorBodyResponse.model_validate(payload)
+        return payload
 
-    return ApiErrorBodyResponse(
-        code=_default_error_code(exc.status_code),
-        category=_default_error_category(exc.status_code),
-        message=str(detail),
-        status=exc.status_code,
-        field_errors=[],
-    )
+    return {
+        "code": _default_error_code(exc.status_code),
+        "category": _default_error_category(exc.status_code),
+        "message": str(detail),
+        "status": exc.status_code,
+        "field_errors": [],
+    }
 
 
 def _default_error_code(status_code: int) -> str:
