@@ -3,18 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Any
 
 from nicegui import ui
 
-from app.features.simulation.api_client import submit_post_processing_task
 from app.features.simulation.views.common import (
     _Z0_CONTROL_CLASSES,
     _Z0_CONTROL_PROPS,
-    _user_storage_get,
-    _user_storage_set,
     _with_test_id,
 )
 from app.features.simulation.views.plots import (
@@ -23,7 +20,6 @@ from app.features.simulation.views.plots import (
     _resolve_option_key,
     _result_port_options,
 )
-from app.services.execution_context import build_ui_use_case_context
 from app.services.post_processing_step_registry import (
     POST_PROCESS_STEP_OPTIONS,
     build_default_step_config,
@@ -31,12 +27,8 @@ from app.services.post_processing_step_registry import (
     preview_pipeline_labels,
     serialize_post_processing_step,
 )
-from app.services.post_processing_task_contract import build_post_processing_submission
 from core.simulation.application.post_processing import filtered_modes
 from core.simulation.domain.circuit import CircuitDefinition, SimulationResult
-
-_POST_PROCESS_SETUP_STORAGE_KEY = "simulation_post_process_saved_setups_by_schema"
-_POST_PROCESS_SELECTED_KEY = "simulation_post_process_selected_setup_id_by_schema"
 _POST_PROCESS_MODE_FILTER_OPTIONS = {
     "base": "Base",
     "sideband": "Sideband",
@@ -46,45 +38,6 @@ _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS = {
     "raw_y": "Raw Y",
     "ptc_y": "PTC Y",
 }
-
-
-def _load_saved_post_process_setups_for_schema(schema_id: int) -> list[dict[str, Any]]:
-    """Load saved post-processing setups for one schema from user storage."""
-    raw_store = _user_storage_get(_POST_PROCESS_SETUP_STORAGE_KEY, {})
-    if not isinstance(raw_store, dict):
-        return []
-    setups = raw_store.get(str(schema_id), [])
-    if not isinstance(setups, list):
-        return []
-    return [s for s in setups if isinstance(s, dict)]
-
-
-def _save_saved_post_process_setups_for_schema(
-    schema_id: int,
-    setups: list[dict[str, Any]],
-) -> None:
-    """Persist saved post-processing setups for one schema into user storage."""
-    raw_store = _user_storage_get(_POST_PROCESS_SETUP_STORAGE_KEY, {})
-    store_dict = dict(raw_store) if isinstance(raw_store, dict) else {}
-    store_dict[str(schema_id)] = setups
-    _user_storage_set(_POST_PROCESS_SETUP_STORAGE_KEY, store_dict)
-
-
-def _load_selected_post_process_setup_id(schema_id: int) -> str:
-    """Load currently selected post-processing setup id for one schema."""
-    raw_map = _user_storage_get(_POST_PROCESS_SELECTED_KEY, {})
-    if not isinstance(raw_map, dict):
-        return ""
-    selected = raw_map.get(str(schema_id), "")
-    return selected if isinstance(selected, str) else ""
-
-
-def _save_selected_post_process_setup_id(schema_id: int, setup_id: str) -> None:
-    """Persist selected post-processing setup id for one schema into user storage."""
-    raw_map = _user_storage_get(_POST_PROCESS_SELECTED_KEY, {})
-    selected_map = dict(raw_map) if isinstance(raw_map, dict) else {}
-    selected_map[str(schema_id)] = setup_id
-    _user_storage_set(_POST_PROCESS_SELECTED_KEY, selected_map)
 
 
 def _post_process_mode_options(
@@ -127,9 +80,11 @@ def _render_post_processing_panel(
     on_source_bundle_resolved: Callable[[int | None], None] | None = None,
     resolve_termination_plan: Callable[[], dict[str, Any]] | None = None,
     on_task_submitted: Callable[[Any], None] | None = None,
-    owner_client: Any | None = None,
-    coerce_parameter_sweep_payload: Callable[[Mapping[str, Any] | None], Mapping[str, Any] | None]
-    | None = None,
+    load_saved_setups_for_schema: Callable[[int], list[dict[str, Any]]] | None = None,
+    save_saved_setups_for_schema: Callable[[int, list[dict[str, Any]]], None] | None = None,
+    load_selected_setup_id: Callable[[int], str] | None = None,
+    save_selected_setup_id: Callable[[int, str], None] | None = None,
+    on_submit: Callable[[dict[str, Any]], Awaitable[Any]] | None = None,
 ) -> None:
     """Render one dynamic card-list style Port-Level post-processing pipeline."""
 
@@ -178,8 +133,8 @@ def _render_post_processing_panel(
     default_port_a = default_ports[0] if default_ports else None
     default_port_b = default_ports[1] if len(default_ports) > 1 else default_port_a
     saved_post_setups = (
-        _load_saved_post_process_setups_for_schema(schema_id)
-        if isinstance(schema_id, int) and schema_id > 0
+        load_saved_setups_for_schema(schema_id)
+        if callable(load_saved_setups_for_schema) and isinstance(schema_id, int) and schema_id > 0
         else []
     )
     saved_post_setup_by_id: dict[str, dict[str, Any]] = {
@@ -188,8 +143,8 @@ def _render_post_processing_panel(
         if setup.get("id") and setup.get("name")
     }
     selected_post_setup_id = (
-        _load_selected_post_process_setup_id(schema_id)
-        if isinstance(schema_id, int) and schema_id > 0
+        load_selected_setup_id(schema_id)
+        if callable(load_selected_setup_id) and isinstance(schema_id, int) and schema_id > 0
         else ""
     )
     if selected_post_setup_id not in saved_post_setup_by_id:
@@ -359,9 +314,14 @@ def _render_post_processing_panel(
 
     def refresh_saved_post_setup_select(preferred_id: str | None = None) -> None:
         nonlocal saved_post_setups, saved_post_setup_by_id, selected_post_setup_id
-        if not isinstance(schema_id, int) or schema_id <= 0:
+        if (
+            not callable(load_saved_setups_for_schema)
+            or not callable(save_selected_setup_id)
+            or not isinstance(schema_id, int)
+            or schema_id <= 0
+        ):
             return
-        saved_post_setups = _load_saved_post_process_setups_for_schema(schema_id)
+        saved_post_setups = load_saved_setups_for_schema(schema_id)
         saved_post_setup_by_id = {
             str(setup.get("id")): setup for setup in saved_post_setups if setup.get("id") and setup.get("name")
         }
@@ -373,7 +333,7 @@ def _render_post_processing_panel(
             selected_value = ""
         selected_post_setup_id = selected_value
         post_setup_select.value = selected_value
-        _save_selected_post_process_setup_id(schema_id, selected_value)
+        save_selected_setup_id(schema_id, selected_value)
         if selected_value:
             delete_post_setup_button.enable()
         else:
@@ -385,8 +345,8 @@ def _render_post_processing_panel(
             return
         selected_value = str(e.value or "")
         selected_post_setup_id = selected_value
-        if isinstance(schema_id, int) and schema_id > 0:
-            _save_selected_post_process_setup_id(schema_id, selected_value)
+        if callable(save_selected_setup_id) and isinstance(schema_id, int) and schema_id > 0:
+            save_selected_setup_id(schema_id, selected_value)
         if selected_value:
             delete_post_setup_button.enable()
         else:
@@ -398,7 +358,11 @@ def _render_post_processing_panel(
         ui.notify(f"Loaded post-processing setup: {setup_record.get('name')}", type="positive")
 
     def on_save_post_setup_click() -> None:
-        if not isinstance(schema_id, int) or schema_id <= 0:
+        if (
+            not callable(save_saved_setups_for_schema)
+            or not isinstance(schema_id, int)
+            or schema_id <= 0
+        ):
             ui.notify("Save setup requires a selected schema.", type="warning")
             return
         with ui.dialog() as dialog, ui.card().classes("w-full max-w-md bg-surface p-4"):
@@ -428,7 +392,7 @@ def _render_post_processing_panel(
                 updated.append(record)
                 if schema_id is None:
                     raise ValueError("Schema id is unavailable for post-processing setup save.")
-                _save_saved_post_process_setups_for_schema(int(schema_id), updated)
+                save_saved_setups_for_schema(int(schema_id), updated)
                 refresh_saved_post_setup_select(preferred_id=setup_id)
                 ui.notify(f"Saved post-processing setup: {setup_name}", type="positive")
                 dialog.close()
@@ -440,13 +404,17 @@ def _render_post_processing_panel(
         dialog.open()
 
     def on_delete_post_setup_click() -> None:
-        if not isinstance(schema_id, int) or schema_id <= 0:
+        if (
+            not callable(save_saved_setups_for_schema)
+            or not isinstance(schema_id, int)
+            or schema_id <= 0
+        ):
             return
         setup_id = str(post_setup_select.value or "")
         if not setup_id:
             return
         updated = [s for s in saved_post_setups if str(s.get("id")) != setup_id]
-        _save_saved_post_process_setups_for_schema(schema_id, updated)
+        save_saved_setups_for_schema(schema_id, updated)
         refresh_saved_post_setup_select(preferred_id="")
         ui.notify("Deleted post-processing setup.", type="positive")
 
@@ -654,8 +622,10 @@ def _render_post_processing_panel(
                 raise ValueError("Post-processing requires one persisted raw simulation batch.")
             if design_id is None:
                 raise ValueError("Select at least one active dataset before running post-processing.")
+            if on_submit is None:
+                raise ValueError("Post-processing submit action is unavailable.")
             resolved_run_kind = "single_result"
-            if coerce_parameter_sweep_payload is not None and isinstance(coerce_parameter_sweep_payload(active_sweep_payload), Mapping):
+            if isinstance(active_sweep_payload, Mapping):
                 resolved_run_kind = "parameter_sweep"
             resolved_mode = str(mode_select.value or "") or "auto"
             log_info(
@@ -664,27 +634,27 @@ def _render_post_processing_panel(
                 f"mode_filter={mode_filter_select.value or 'base'!s}, "
                 f"mode={resolved_mode}."
             )
-            submission = build_post_processing_submission(
-                design_id=int(design_id or 0),
-                source_batch_id=int(resolved_source_bundle_id),
-                input_source=input_source,
-                mode_filter=str(mode_filter_select.value or "base"),
-                mode_token=str(mode_select.value or ""),
-                reference_impedance_ohm=reference_impedance_ohm,
-                step_sequence=[dict(step) for step in step_sequence],
-                termination_plan_payload=(dict(resolve_termination_plan()) if resolve_termination_plan is not None else None),
-                circuit_definition=circuit_definition,
-                context=build_ui_use_case_context(
-                    metadata={
-                        "flow": "post_processing",
-                        "design_id": int(design_id or 0),
-                        "schema_id": int(schema_id or 0),
-                        "source_batch_id": int(resolved_source_bundle_id),
-                    }
-                ),
-                force_rerun=False,
+            dispatch = await on_submit(
+                {
+                    "design_id": int(design_id or 0),
+                    "source_batch_id": int(resolved_source_bundle_id),
+                    "input_source": input_source,
+                    "mode_filter": str(mode_filter_select.value or "base"),
+                    "mode_token": str(mode_select.value or ""),
+                    "reference_impedance_ohm": reference_impedance_ohm,
+                    "step_sequence": [dict(step) for step in step_sequence],
+                    "termination_plan_payload": (
+                        dict(resolve_termination_plan())
+                        if resolve_termination_plan is not None
+                        else None
+                    ),
+                    "circuit_definition": circuit_definition,
+                    "schema_id": (
+                        int(schema_id) if isinstance(schema_id, int) and schema_id > 0 else None
+                    ),
+                    "run_kind": resolved_run_kind,
+                }
             )
-            dispatch = await submit_post_processing_task(submission.api_request, client=owner_client)
             if on_task_submitted is not None:
                 on_task_submitted(dispatch)
             emit_result(None)

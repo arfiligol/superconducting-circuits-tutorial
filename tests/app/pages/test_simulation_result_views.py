@@ -8,7 +8,6 @@ import numpy as np
 import pytest
 
 import app.features.simulation.page as simulation_feature_page
-import app.features.simulation.views.post_processing as simulation_post_processing
 import app.pages.simulation as simulation_page
 from app.pages.simulation import (
     _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS,
@@ -1495,10 +1494,14 @@ def test_post_processing_panel_exposes_input_source_and_hfss_fields() -> None:
 
 
 def test_post_processing_panel_submits_persisted_api_task_instead_of_cpu_bound_execution() -> None:
-    source = inspect.getsource(simulation_page._render_post_processing_panel)
-    assert "submit_post_processing_task" in source
-    assert "build_post_processing_submission" in source
-    assert "run.cpu_bound" not in source
+    panel_source = inspect.getsource(simulation_page._render_post_processing_panel)
+    assert "submit_post_processing_task" not in panel_source
+    assert "build_post_processing_submission" not in panel_source
+    assert "on_submit" in panel_source
+    result_source = inspect.getsource(simulation_page._render_simulation_environment)
+    assert "submit_post_processing_task" in result_source
+    assert "build_post_processing_submission" in result_source
+    assert "run.cpu_bound" not in panel_source
 
 
 def test_simulation_environment_uses_persisted_post_processing_authority_not_runtime_fields() -> (
@@ -1955,8 +1958,8 @@ def test_post_process_setup_storage_roundtrip_per_schema(monkeypatch) -> None:
     def fake_set(key: str, value: object) -> None:
         storage[key] = value
 
-    monkeypatch.setattr(simulation_post_processing, "_user_storage_get", fake_get)
-    monkeypatch.setattr(simulation_post_processing, "_user_storage_set", fake_set)
+    monkeypatch.setattr(simulation_feature_page, "_user_storage_get", fake_get)
+    monkeypatch.setattr(simulation_feature_page, "_user_storage_set", fake_set)
 
     schema_a = 183
     schema_b = 999
@@ -1991,8 +1994,8 @@ def test_post_process_selected_setup_id_roundtrip(monkeypatch) -> None:
     def fake_set(key: str, value: object) -> None:
         storage[key] = value
 
-    monkeypatch.setattr(simulation_post_processing, "_user_storage_get", fake_get)
-    monkeypatch.setattr(simulation_post_processing, "_user_storage_set", fake_set)
+    monkeypatch.setattr(simulation_feature_page, "_user_storage_get", fake_get)
+    monkeypatch.setattr(simulation_feature_page, "_user_storage_set", fake_set)
 
     assert _load_selected_post_process_setup_id(183) == ""
     _save_selected_post_process_setup_id(183, "post-a")

@@ -39,6 +39,12 @@ from app.features.simulation.setup.parameter_sweep import (
     _extract_sweep_target_units,
     _normalize_sweep_setup_payload,
 )
+from app.features.simulation.setup.post_processing_setups import (
+    _load_saved_post_process_setups_for_schema as _load_saved_post_process_setups_for_schema_impl,
+    _load_selected_post_process_setup_id as _load_selected_post_process_setup_id_impl,
+    _save_saved_post_process_setups_for_schema as _save_saved_post_process_setups_for_schema_impl,
+    _save_selected_post_process_setup_id as _save_selected_post_process_setup_id_impl,
+)
 from app.features.simulation.setup.saved_setups import (
     _JOSEPHSON_BUILTIN_SETUP_PAYLOADS,
     _builtin_saved_setups_for_schema,
@@ -108,12 +114,8 @@ from app.features.simulation.views.plots import (
 from app.features.simulation.views.post_processing import (
     _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS,
     _coordinate_weight_fields_editable,
-    _load_saved_post_process_setups_for_schema,
-    _load_selected_post_process_setup_id,
     _post_process_mode_options,
     _render_post_processing_panel,
-    _save_saved_post_process_setups_for_schema,
-    _save_selected_post_process_setup_id,
 )
 from app.features.simulation.views.raw_results import (
     _RAW_RESULT_MATRIX_SOURCE_LABEL_BY_FAMILY,
@@ -3006,6 +3008,45 @@ def _save_selected_setup_id(schema_id: int, setup_id: str) -> None:
     )
 
 
+def _load_saved_post_process_setups_for_schema(schema_id: int) -> list[dict[str, Any]]:
+    """Compatibility wrapper around feature-local post-processing setup storage."""
+    return _load_saved_post_process_setups_for_schema_impl(
+        schema_id,
+        storage_get=_user_storage_get,
+    )
+
+
+def _save_saved_post_process_setups_for_schema(
+    schema_id: int,
+    setups: list[dict[str, Any]],
+) -> None:
+    """Compatibility wrapper around feature-local post-processing setup persistence."""
+    _save_saved_post_process_setups_for_schema_impl(
+        schema_id,
+        setups,
+        storage_get=_user_storage_get,
+        storage_set=_user_storage_set,
+    )
+
+
+def _load_selected_post_process_setup_id(schema_id: int) -> str:
+    """Compatibility wrapper around feature-local post-processing selected-id storage."""
+    return _load_selected_post_process_setup_id_impl(
+        schema_id,
+        storage_get=_user_storage_get,
+    )
+
+
+def _save_selected_post_process_setup_id(schema_id: int, setup_id: str) -> None:
+    """Compatibility wrapper around feature-local post-processing selected-id persistence."""
+    _save_selected_post_process_setup_id_impl(
+        schema_id,
+        setup_id,
+        storage_get=_user_storage_get,
+        storage_set=_user_storage_set,
+    )
+
+
 def _ensure_builtin_saved_setups(schema_id: int, schema_name: str) -> list[dict[str, Any]]:
     """Compatibility wrapper around feature-local built-in setup seeding."""
     return _ensure_builtin_saved_setups_impl(
@@ -3924,6 +3965,39 @@ def _render_simulation_environment():
                 reference_impedance_ohm=_TERMINATION_DEFAULT_RESISTANCE_OHM,
             )
 
+            async def _submit_post_processing_intent(intent: dict[str, Any]) -> Any:
+                submission = build_post_processing_submission(
+                    design_id=int(intent["design_id"]),
+                    source_batch_id=int(intent["source_batch_id"]),
+                    input_source=str(intent["input_source"]),
+                    mode_filter=str(intent["mode_filter"]),
+                    mode_token=str(intent["mode_token"]),
+                    reference_impedance_ohm=float(intent["reference_impedance_ohm"]),
+                    step_sequence=[dict(step) for step in list(intent["step_sequence"])],
+                    termination_plan_payload=(
+                        dict(intent["termination_plan_payload"])
+                        if isinstance(intent.get("termination_plan_payload"), Mapping)
+                        else None
+                    ),
+                    circuit_definition=cast(
+                        CircuitDefinition | None,
+                        intent.get("circuit_definition"),
+                    ),
+                    context=build_ui_use_case_context(
+                        metadata={
+                            "flow": "post_processing",
+                            "design_id": int(intent["design_id"]),
+                            "schema_id": _coerce_int_value(intent.get("schema_id"), 0),
+                            "source_batch_id": int(intent["source_batch_id"]),
+                        }
+                    ),
+                    force_rerun=False,
+                )
+                return await submit_post_processing_task(
+                    submission.api_request,
+                    client=owner_client,
+                )
+
             def _record_post_processing_source_bundle(bundle_id: int | None) -> None:
                 resolved_post_process_source_bundle_id_ref["value"] = bundle_id
 
@@ -3951,8 +4025,11 @@ def _render_simulation_environment():
                     on_source_bundle_resolved=_record_post_processing_source_bundle,
                     resolve_termination_plan=_resolved_termination_plan,
                     on_task_submitted=_handle_post_processing_dispatch,
-                    owner_client=owner_client,
-                    coerce_parameter_sweep_payload=_coerce_parameter_sweep_payload,
+                    load_saved_setups_for_schema=_load_saved_post_process_setups_for_schema,
+                    save_saved_setups_for_schema=_save_saved_post_process_setups_for_schema,
+                    load_selected_setup_id=_load_selected_post_process_setup_id,
+                    save_selected_setup_id=_save_selected_post_process_setup_id,
+                    on_submit=_submit_post_processing_intent,
                 )
 
         def _handle_post_processing_dispatch(dispatch: Any) -> None:
