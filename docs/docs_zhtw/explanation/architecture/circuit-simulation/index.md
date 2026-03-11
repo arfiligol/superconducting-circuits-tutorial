@@ -28,11 +28,11 @@ Circuit Simulation 區塊聚焦三件事：Schema 如何被編輯、如何被理
 - [Circuit Schema Live Preview](../design-decisions/circuit-schema-live-preview.md)
   Netlist 到 SVG 的佈局契約、標註策略、Panzoom 狀態同步與非回歸準則。
 - [Schema Editor Formatting](../design-decisions/schema-editor-formatting.md)
-  CodeMirror 編輯體驗、Ruff WebAssembly 格式化路徑與觸發模型。
+  為何格式化能力屬於架構決策，以及它與 source-form SoT / expansion pipeline 的邊界。
 - [Live Preview Domain Semantics Profiles](../design-decisions/live-preview-domain-semantics.md)
   Qubit / JPA / JTWPA / Quantum Memory 的語意規則與視覺映射。
 - [Simulation Result Views](simulation-result-views.md)
-  Result Card 的多視圖契約、S/Gain/Z/Y/Complex family 與 selector 設計。
+  為什麼 Raw / Post-Processed / Sweep 要分成三個結果節點，以及它們共享哪些互動心智模型。
 
 ## Related
 
