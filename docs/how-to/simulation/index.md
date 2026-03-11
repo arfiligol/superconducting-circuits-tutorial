@@ -44,7 +44,7 @@ updated_by: docs-team
 
 ## 相關資源
 
-- [CLI Reference: sc-simulate-lc](../../reference/cli/sc-simulate-lc.md) - 指令參數
+- [CLI Reference](../../reference/cli/index.md) - 目前 CLI 指令總覽
 - [Tutorial: LC 共振器](../../tutorials/lc-resonator.md) - 完整入門案例
 - [Physics（重建中）](../../explanation/physics/index.md) - Physics 章節重建狀態
 - [擴充 Julia 函數](../extend/extend-julia-functions.md) - 貢獻者指南

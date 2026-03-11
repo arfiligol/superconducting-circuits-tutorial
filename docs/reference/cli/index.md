@@ -7,39 +7,50 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: 命令列工具參考，所有 CLI 指令與參數
-version: v0.1.0
-last_updated: 2026-02-11
-updated_by: docs-team
+scope: 目前正式支援的 `sc` 命令列介面，涵蓋 shared core、session、datasets、tasks 與 circuit definition 檢查。
+version: v0.2.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # CLI Reference
 
-命令列工具參考。
+本區只記錄目前正式支援的 `sc` 命令列介面。
 
-## Preprocessing (Data Ingestion)
+## Command Groups
 
-- [sc preprocess hfss admittance](sc-preprocess-hfss-admittance.md) - 轉換 HFSS 虛阻納數據
-- [sc preprocess hfss scattering](sc-preprocess-hfss-scattering.md) - 轉換 HFSS S-parameter 及相角數據
-- [sc preprocess vna flux-dependence](sc-preprocess-vna-flux-dependence.md) - 轉換 VNA 磁通依賴數據
+- [sc core](sc-core.md)
+  共享 `sc_core` 邊界的最小 proof command，目前提供 `preview-artifacts`。
+- [sc session](sc-session.md)
+  顯示目前 rewrite session、identity 與 workspace context。
+- [sc datasets](sc-datasets.md)
+  查詢 rewrite dataset catalog，支援 family/status/sort 條件。
+- [sc tasks](sc-tasks.md)
+  查詢 rewrite task list 與單筆 task detail。
+- [sc circuit-definition](sc-circuit-definition.md)
+  以 `sc_core` 檢查 netlist draft，或讀取已持久化的 circuit definition。
 
-## Analysis (Data Fitting)
+## Root Command
 
-- [sc analysis fit](sc-fit-squid.md) - SQUID 模型擬合
+```bash
+uv run sc --help
+```
 
-## Plotting
+目前 root command 會公開以下群組：
 
-- [sc plot admittance](plot-admittance.md) - 觀察 Im(Y) 線圖，檢查共振點品質
-- [sc plot flux-dependence](flux-dependence-plot.md) - 磁通掃描熱圖與切片視覺化
-- [sc plot different-qubit-structure-frequency-comparison-table](sc-plot-resonance-map.md) - Qubit Structure Resonance Frequency 二維圖/表
+- `core`
+- `session`
+- `datasets`
+- `tasks`
+- `circuit-definition`
 
-## Database
+## Notes
 
-- [sc db](sc-db.md) - Dataset 管理
-- [sc db dataset-record](sc-db-dataset-record.md) - DatasetRecord CRUD
-- [sc db data-record](sc-db-data-record.md) - DataRecord CRUD
-- [sc db derived-parameter](sc-db-derived-parameter.md) - DerivedParameter CRUD
-- [sc db tag](sc-db-tag.md) - Tag CRUD
+!!! note "目前範圍"
+    目前 CLI 處於 minimal operational stage，重點是 session、dataset、task 與 circuit definition 的檢查能力。
+
+!!! warning "舊指令已移除"
+    本頁不再維護舊的 `sc preprocess`、`sc analysis`、`sc plot`、`sc db`、`sc sim` 指令文件。
 
 ## Related
 

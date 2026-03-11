@@ -59,4 +59,4 @@ uv run sc db tag delete "RenamedTag"
 
 ## CLI Help（自動生成）
 
-請參考 [CLI Reference: sc-db tag](../../reference/cli/sc-db-tag.md) 的 `CLI Help` 區塊。
+請參考 [CLI Reference](../../reference/cli/index.md)。

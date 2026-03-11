@@ -113,31 +113,11 @@ nav = [
     ] },
     { "CLI Options" = [
       { "Overview" = "reference/cli/index.md" },
-      { "Simulation" = [
-        { "LC Resonator" = "reference/cli/sc-simulate-lc.md" },
-      ] },
-      { "Data Conversion" = [
-        { "Convert HFSS Admittance" = "reference/cli/sc-preprocess-hfss-admittance.md" },
-        { "Convert HFSS Scattering" = "reference/cli/sc-preprocess-hfss-scattering.md" },
-        { "Convert VNA Flux Dependence" = "reference/cli/sc-preprocess-vna-flux-dependence.md" },
-      ] },
-      { "Data Analysis" = [
-        { "Resonance Extract" = "reference/cli/sc-analysis-resonance-extract.md" },
-        { "Resonance Fitting" = "reference/cli/sc-analysis-resonance-fit.md" },
-        { "SQUID Model Fit" = "reference/cli/sc-fit-squid.md" },
-      ] },
-      { "Data Plotting" = [
-        { "Plot Admittance" = "reference/cli/plot-admittance.md" },
-        { "Flux Dependence Plot" = "reference/cli/flux-dependence-plot.md" },
-        { "Different Qubit Structure Frequency Comparison Table" = "reference/cli/sc-plot-resonance-map.md" },
-      ] },
-      { "Database" = [
-        { "sc-db" = "reference/cli/sc-db.md" },
-        { "sc-db dataset-record" = "reference/cli/sc-db-dataset-record.md" },
-        { "sc-db data-record" = "reference/cli/sc-db-data-record.md" },
-        { "sc-db derived-parameter" = "reference/cli/sc-db-derived-parameter.md" },
-        { "sc-db tag" = "reference/cli/sc-db-tag.md" },
-      ] },
+      { "sc core" = "reference/cli/sc-core.md" },
+      { "sc session" = "reference/cli/sc-session.md" },
+      { "sc datasets" = "reference/cli/sc-datasets.md" },
+      { "sc tasks" = "reference/cli/sc-tasks.md" },
+      { "sc circuit-definition" = "reference/cli/sc-circuit-definition.md" },
     ] },
     { "App" = [
       { "Overview" = "reference/ui/index.md" },

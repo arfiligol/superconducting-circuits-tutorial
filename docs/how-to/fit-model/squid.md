@@ -101,4 +101,4 @@ updated_by: team
 ## 相關參考
 
 - [Tutorial: End-to-End Fitting](../../tutorials/end-to-end-fitting.md)
-- [CLI Reference: analysis fit](../../reference/cli/sc-fit-squid.md)
+- [CLI Reference](../../reference/cli/index.md)

@@ -32,7 +32,7 @@ updated_by: docs-team
 |------|---------------------|------------------------|---------------|
 | **0** | **Full Workflow** | (Manual HFSS + CLI) | [Tutorial: Simulation Workflow](simulation-workflow.md) |
 | **1** | **Standardize Data** | `src/scripts/preprocessing/convert_hfss_admittance.py` | [HFSS Admittance Import](../how-to/ingest-data/hfss-admittance.md) |
-| **2** | **Visualize Raw** | `src/scripts/plot/admittance.py` | [CLI: sc plot admittance](../reference/cli/plot-admittance.md) |
+| **2** | **Visualize Raw** | `src/scripts/plot/admittance.py` | [CLI Reference](../reference/cli/index.md) |
 | **3** | **Extract Resonance** | `src/core/analysis/application/analysis/extraction/admittance.py` | [Physics（重建中）](../explanation/physics/index.md) |
 | **4** | **Fit LC Model** | `src/scripts/analysis/squid_fit.py` | [Tutorial: Resonance Fitting](resonance-fitting.md)<br/>[How-to: SQUID Fitting](../how-to/fit-model/squid.md) |
 
@@ -42,8 +42,8 @@ updated_by: docs-team
 
 | Feature | Description | Implementations (Code) | Documentation |
 |---------|-------------|------------------------|---------------|
-| **Visualization** | 繪製 Amplitude/Phase 熱圖 | `src/scripts/plot/flux_dependence.py` | [CLI: sc plot flux-dependence](../reference/cli/flux-dependence-plot.md) |
-| **Phase Tuning** | 相位解包裹與單位轉換 | `src/scripts/plot/flux_dependence.py` | [CLI: sc plot flux-dependence](../reference/cli/flux-dependence-plot.md) |
+| **Visualization** | 繪製 Amplitude/Phase 熱圖 | `src/scripts/plot/flux_dependence.py` | [CLI Reference](../reference/cli/index.md) |
+| **Phase Tuning** | 相位解包裹與單位轉換 | `src/scripts/plot/flux_dependence.py` | [CLI Reference](../reference/cli/index.md) |
 
 ## 3. Advanced / Experimental
 
