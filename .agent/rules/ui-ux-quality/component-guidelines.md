@@ -4,5 +4,6 @@
 - Do not use `alert()`, `confirm()`, or `prompt()` for product interactions.
 - Destructive actions require an explicit confirmation flow.
 - Forms need labels, validation, and visible error states.
+- Clickable icons must provide a clear hover state, including pointer feedback and visible hover styling.
 - Data-dense tables must support sorting, filtering, and pagination or a clear virtualization strategy.
 - Load summary rows first; fetch heavy detail payload only on explicit detail interaction.

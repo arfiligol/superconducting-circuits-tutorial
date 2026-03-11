@@ -34,6 +34,7 @@ updated_by: docs-team
 - 禁止使用 `alert()`、`confirm()`、`prompt()`
 - 表單要搭配 Label、validation、error state
 - destructive action 必須有確認流程
+- 所有可點擊 icon 必須提供明確 hover state；至少要有 cursor feedback 與可見的 hover 樣式變化
 - data-dense table 必須支援 sorting、filtering、pagination 或明確的 virtualization 策略
 
 ## Data Browser Contract
@@ -51,6 +52,7 @@ updated_by: docs-team
 - Do not use `alert()`, `confirm()`, or `prompt()` for product interactions.
 - Destructive actions require an explicit confirmation flow.
 - Forms need labels, validation, and visible error states.
+- Clickable icons must provide a clear hover state, including pointer feedback and visible hover styling.
 - Data-dense tables must support sorting, filtering, and pagination or a clear virtualization strategy.
 - Load summary rows first; fetch heavy detail payload only on explicit detail interaction.
 ```
