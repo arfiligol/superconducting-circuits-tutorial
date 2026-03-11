@@ -5,20 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from nicegui import app
+from app.ui.testing import with_test_id as _with_test_id
 
 _Z0_CONTROL_PROPS = "dense outlined"
 _Z0_CONTROL_CLASSES = "w-32"
-
-
-def _with_test_id(element: Any, test_id: str) -> Any:
-    """Attach one stable test id to a NiceGUI element."""
-    try:
-        element.props(f"data-testid={test_id}")
-    except Exception:
-        props = getattr(element, "_props", None)
-        if isinstance(props, dict):
-            props["data-testid"] = test_id
-    return element
 
 
 def _user_storage_get(key: str, default: Any = None) -> Any:

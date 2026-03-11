@@ -2,25 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from app.features.characterization.views.result_artifacts import (
     RESULT_CATEGORY_LABELS,
     artifact_categories,
     artifacts_in_category,
     build_result_artifacts_for_analysis,
 )
-
-
-def _with_test_id(element: Any, test_id: str) -> Any:
-    """Attach one stable test id to a NiceGUI element."""
-    try:
-        element.props(f"data-testid={test_id}")
-    except Exception:
-        props = getattr(element, "_props", None)
-        if isinstance(props, dict):
-            props["data-testid"] = test_id
-    return element
+from app.ui.testing import with_test_id as _with_test_id
 
 
 def _result_view_controls_row_classes() -> str:

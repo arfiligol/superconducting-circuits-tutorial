@@ -6,6 +6,7 @@ import inspect
 from datetime import datetime
 from types import SimpleNamespace
 
+import app.features.simulation.page as simulation_feature_page
 from app.pages import dashboard, raw_data, simulation
 from app.services.design_trace_workflow import summarize_design_trace_workflow
 
@@ -34,7 +35,7 @@ def test_raw_data_page_hides_dataset_metadata_editor_controls() -> None:
 
 
 def test_simulation_page_hides_dataset_metadata_editor_controls() -> None:
-    source = inspect.getsource(simulation)
+    source = inspect.getsource(simulation_feature_page)
 
     assert 'ui.label("Dataset Metadata Summary")' in source
     assert 'label="Target Dataset"' in source

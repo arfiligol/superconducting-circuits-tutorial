@@ -117,6 +117,8 @@ from app.features.simulation.views.common import (
     _user_storage_set,
     _with_test_id,
 )
+from app.ui.sections import section_card
+from app.ui.states import render_empty_state
 from app.features.simulation.views.plots import (
     _POST_PROCESSED_RESULT_FAMILY_OPTIONS,
     _POST_PROCESSED_SWEEP_COMPARE_FAMILY_OPTIONS,
@@ -345,17 +347,6 @@ class _SweepResultSource:
     point_count: int
     port_options: dict[int, str]
     read_point: Callable[[tuple[int, ...]], _SweepSourcePoint | None]
-
-
-def _with_test_id(element: Any, test_id: str) -> Any:
-    """Attach one stable test id to a NiceGUI element."""
-    try:
-        element.props(f"data-testid={test_id}")
-    except Exception:
-        props = getattr(element, "_props", None)
-        if isinstance(props, dict):
-            props["data-testid"] = test_id
-    return element
 
 
 def _trace_store_axis(
@@ -2962,18 +2953,14 @@ def _render_simulation_environment():
             circuits = []
 
         if not circuits:
-            with ui.column().classes(
-                "w-full p-12 items-center justify-center "
-                "border-2 border-dashed border-border rounded-xl"
-            ):
-                ui.icon("warning", size="xl").classes("text-warning mb-4")
-                ui.label("No Schemas Available").classes("text-xl text-fg font-bold")
-                ui.label("Please create a circuit schema in the Schema Manager first.").classes(
-                    "text-sm text-muted mt-2"
-                )
-                ui.button("Go to Schemas", on_click=lambda: ui.navigate.to("/schemas")).props(
-                    "outline color=primary mt-4"
-                )
+            render_empty_state(
+                icon="warning",
+                title="No Schemas Available",
+                message="Please create a circuit schema in the Schema Manager first.",
+                action_label="Go to Schemas",
+                on_action=lambda: ui.navigate.to("/schemas"),
+                icon_classes="text-warning mb-4",
+            )
             return
 
         circuit_options = {c.id: c.name for c in circuits}
@@ -3000,18 +2987,18 @@ def _render_simulation_environment():
         active_record = next((c for c in circuits if c.id == active_circuit_id), circuits[0])
         active_record_id = active_record.id
         if active_record_id is None:
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with section_card():
                 ui.label("Selected schema is missing a persistent id.").classes("text-danger")
             return
         try:
             active_record, active_circuit_def = _load_latest_circuit_definition(active_record_id)
         except Exception as e:
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with section_card():
                 ui.label(f"Error parsing selected schema: {e}").classes("text-danger")
             return
         active_record_id = active_record.id
         if active_record_id is None:
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with section_card():
                 ui.label("Selected schema is missing a persistent id.").classes("text-danger")
             return
         displayed_netlist = format_expanded_circuit_definition(active_circuit_def)
@@ -3929,7 +3916,7 @@ def _render_simulation_environment():
 
         # --- Single-column full-width flow ---
         with ui.column().classes("w-full gap-6"):
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with section_card():
                 with ui.row().classes("items-center gap-2 mb-4"):
                     ui.icon("description", size="sm").classes("text-primary")
                     ui.label("Netlist Configuration").classes("text-lg font-bold text-fg")
@@ -3942,7 +3929,7 @@ def _render_simulation_environment():
                 ):
                     ui.markdown(f"```python\n{displayed_netlist}\n```").classes("w-full")
 
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with section_card():
                 had_selected_setup_entry = _has_selected_setup_entry(active_record_id)
                 saved_setups = _ensure_builtin_saved_setups(active_record_id, active_record.name)
                 saved_setup_by_id = {
@@ -5679,7 +5666,7 @@ def _render_simulation_environment():
                 )
                 _with_test_id(sim_button, "simulation-run-button")
 
-            with ui.card().classes("w-full bg-surface rounded-xl p-6"):
+            with section_card():
                 with ui.row().classes("items-center gap-2 mb-3"):
                     ui.icon("terminal", size="sm").classes("text-primary")
                     ui.label("Simulation Log").classes("text-lg font-bold text-fg")

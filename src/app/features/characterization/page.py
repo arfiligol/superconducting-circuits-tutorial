@@ -39,6 +39,8 @@ from app.features.characterization.views import (
     _result_view_controls_row_classes,
     _with_test_id,
 )
+from app.ui.sections import section_card
+from app.ui.states import render_empty_state
 from app.features.characterization.query.analysis_registry import list_dataset_analyses
 from app.features.characterization.query.capability import evaluate_analysis_capability_gating
 from app.features.characterization.query.trace_scope import (
@@ -1388,15 +1390,11 @@ def build_page() -> None:
                 poll_timer.active = True
 
         if not selected_dataset_ids:
-            with ui.column().classes(
-                "w-full p-12 items-center justify-center "
-                "border-2 border-dashed border-border rounded-xl"
-            ):
-                ui.icon("science", size="xl").classes("text-muted mb-4 opacity-50")
-                ui.label("No Designs Selected").classes("text-xl text-fg font-bold")
-                ui.label("Select active designs from the header or the Raw Data page.").classes(
-                    "text-sm text-muted mt-2"
-                )
+            render_empty_state(
+                icon="science",
+                title="No Designs Selected",
+                message="Select active designs from the header or the Raw Data page.",
+            )
             return
 
         try:
@@ -1764,7 +1762,7 @@ def build_page() -> None:
 
                         with ui.column().classes("w-full gap-4"):
                             with _with_test_id(
-                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                section_card(),
                                 "characterization-source-scope-card",
                             ):
                                 with ui.row().classes(
@@ -1855,7 +1853,7 @@ def build_page() -> None:
                                             ).classes("text-sm text-muted")
 
                             with _with_test_id(
-                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                section_card(),
                                 "characterization-run-analysis-card",
                             ):
                                 run_config_selects: dict[str, Any] = {}
@@ -2645,7 +2643,7 @@ def build_page() -> None:
                                     )
 
                             with _with_test_id(
-                                ui.card().classes("w-full bg-surface rounded-xl p-6"),
+                                section_card(),
                                 "characterization-result-view-card",
                             ):
                                 with ui.row().classes(

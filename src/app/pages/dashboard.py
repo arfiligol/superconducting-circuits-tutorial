@@ -18,6 +18,7 @@ from app.services.dataset_profile import (
     profile_summary_text,
     suggested_capabilities_for_device_type,
 )
+from app.ui.states import render_empty_state
 from core.shared.persistence import get_unit_of_work
 from core.shared.persistence.models import DerivedParameter, ParameterDesignation
 
@@ -33,15 +34,11 @@ def dashboard_page():
         selected_dataset_ids = app.storage.user.get("selected_datasets", [])
 
         if not selected_dataset_ids:
-            with ui.column().classes(
-                "w-full p-12 items-center justify-center border-2 "
-                "border-dashed border-border rounded-xl"
-            ):
-                ui.icon("dashboard", size="xl").classes("text-muted mb-4 opacity-50")
-                ui.label("No Datasets Selected").classes("text-xl text-fg font-bold")
-                ui.label("Select active datasets from the Raw Data page.").classes(
-                    "text-sm text-muted mt-2"
-                )
+            render_empty_state(
+                icon="dashboard",
+                title="No Datasets Selected",
+                message="Select active datasets from the Raw Data page.",
+            )
             return
 
         metadata_edit_state: dict[int, dict[str, Any]] = {}
@@ -274,16 +271,21 @@ def dashboard_page():
                         "text-xs font-bold text-muted tracking-widest uppercase mb-4 mt-6"
                     )
                     if not metric_cards:
-                        with ui.column().classes(
-                            "w-full p-8 mt-4 items-center justify-center bg-bg "
-                            "rounded-xl border border-border"
-                        ):
-                            ui.icon("sell", size="lg").classes("text-muted opacity-40 mb-2")
-                            ui.label("No Metrics Tagged").classes("text-lg font-bold text-muted")
-                            ui.label(
+                        render_empty_state(
+                            icon="sell",
+                            title="No Metrics Tagged",
+                            message=(
                                 "Use the Identify Mode tool in the Characterization page "
                                 "to tag key parameters."
-                            ).classes("text-sm text-muted")
+                            ),
+                            container_classes=(
+                                "w-full p-8 mt-4 items-center justify-center bg-bg "
+                                "rounded-xl border border-border"
+                            ),
+                            icon_classes="text-muted opacity-40 mb-2",
+                            title_classes="text-lg font-bold text-muted",
+                            message_classes="text-sm text-muted",
+                        )
                         return
 
                     with ui.row().classes("w-full gap-4 flex-wrap"):

@@ -9,6 +9,7 @@ from typing import Any
 from nicegui import ui
 
 from app.layout import app_shell
+from app.ui.states import render_empty_state
 from core.shared.persistence import get_unit_of_work
 
 
@@ -70,15 +71,11 @@ def schemas_page() -> None:
     def render_list() -> None:
         rows = _load_page()
         if not rows and int(state["total"]) == 0:
-            with ui.column().classes(
-                "w-full p-12 items-center justify-center "
-                "border-2 border-dashed border-border rounded-xl"
-            ):
-                ui.icon("account_tree", size="xl").classes("text-muted mb-4 opacity-50")
-                ui.label("No Circuit Schemas Found").classes("text-xl text-fg font-bold")
-                ui.label("Create a new circuit schema to get started.").classes(
-                    "text-sm text-muted mt-2"
-                )
+            render_empty_state(
+                icon="account_tree",
+                title="No Circuit Schemas Found",
+                message="Create a new circuit schema to get started.",
+            )
             return
 
         with ui.column().classes("w-full gap-4"):
