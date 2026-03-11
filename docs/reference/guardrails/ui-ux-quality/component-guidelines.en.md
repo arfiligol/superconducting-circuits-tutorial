@@ -1,137 +1,56 @@
 ---
 aliases:
-  - "Guardrails: Component Guidelines"
+  - Component Guidelines
+  - Component Rules
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/ui-ux
+status: stable
+owner: docs-team
+audience: contributor
+scope: Component choices, forms, dialogs, and data-table rules for the frontend.
+version: v2.0.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# Guardrails: Component Guidelines
+# Component Guidelines
 
-This document defines NiceGUI component usage rules and forbidden patterns.
+The goal of component rules is to keep the frontend consistent under data-dense and interaction-heavy workflows.
 
-## Core Principle
+## Component Sources
 
-All UI interactive elements must use **NiceGUI built-in components**. Native HTML elements and browser-native dialogs are forbidden.
+| Type | Source |
+| --- | --- |
+| base UI primitives | `@/components/ui/*` (shadcn/ui) |
+| feature-specific UI | `frontend/src/features/<feature>/components/*` |
+| app-wide layout | `frontend/src/components/layout/*` |
 
-## Allowed Components
+## Rules
 
-### Data Display
+- prefer `@/components/ui` wrappers for Button, Input, Select, Dialog, Tabs, Table, and related primitives
+- do not use `alert()`, `confirm()`, or `prompt()`
+- forms must include labels, validation, and visible error states
+- destructive actions require an explicit confirmation flow
+- data-dense tables need sorting, filtering, pagination, or a clear virtualization strategy
 
-| Component | Purpose | Example |
-|---|---|---|
-| `ui.table` | Data tables (sortable, selectable) | Record listings |
-| `ui.plotly` | Interactive charts | Frequency response, heatmaps |
-| `ui.label` | Text display | Titles, descriptions |
-| `ui.html` | **Static content only** | Formatted text, icons |
+## Data Browser Contract
 
-### Interactive Controls
-
-| Component | Purpose | Example |
-|---|---|---|
-| `ui.button` | Action buttons | Navigation, triggers |
-| `ui.select` | Dropdowns | Dataset filtering |
-| `ui.input` | Text input | Search bar |
-| `ui.switch` | Toggles | Dark mode switch |
-| `ui.slider` | Sliders | Numeric range selection |
-
-### Layout
-
-| Component | Purpose |
-|---|---|
-| `ui.column` | Vertical arrangement |
-| `ui.row` | Horizontal arrangement |
-| `ui.card` | Card container (prefer `.app-card` class) |
-| `ui.separator` | Divider |
-| `ui.space` | Flexible spacer |
-
-### Feedback & Dialogs
-
-| Component | Purpose |
-|---|---|
-| `ui.notify` | Toast notifications |
-| `ui.dialog` | Modal dialogs |
-| `ui.spinner` | Loading indicators |
-
-## Forbidden Patterns
-
-### ❌ `ui.aggrid`
-
-NiceGUI's internal AG Grid JavaScript wrapper has known compatibility issues (`TypeError: Cannot read properties of undefined (reading 'withPart')`).
-
-**Alternative**: Use `ui.table` with `rowClick` event handling.
-
-```python
-# ✅ Correct
-grid = ui.table(columns=cols, rows=data, row_key="id")
-grid.on("rowClick", handle_click)
-
-# ❌ Forbidden
-grid = ui.aggrid(options, theme="balham-dark")
-```
-
-### ❌ Browser Native Dialogs
-
-Forbidden: `alert()`, `confirm()`, `prompt()`.
-
-```python
-# ✅ Correct
-ui.notify("Operation successful", type="positive")
-
-with ui.dialog() as dialog, ui.card():
-    ui.label("Confirm deletion?")
-    ui.button("Confirm", on_click=lambda: dialog.close())
-
-# ❌ Forbidden
-ui.run_javascript("alert('Operation successful')")
-```
-
-### ❌ Native HTML Interactive Elements
-
-Forbidden: creating interactive controls via `ui.html()`.
-
-```python
-# ✅ Correct
-ui.button("Submit").classes("app-btn-primary")
-
-# ❌ Forbidden
-ui.html('<button class="app-btn-primary">Submit</button>')
-```
-
-### ❌ Inline Hardcoded Colors
-
-Forbidden: using hardcoded color values in `.style()`.
-
-```python
-# ✅ Correct
-ui.label("Title").classes("text-fg")
-
-# ❌ Forbidden
-ui.label("Title").style("color: white;")
-```
-
-## Styling Methods
-
-Use `.classes()` and `.props()` to apply styles. Do not use `.style()` for colors.
-
-```python
-# ✅ Recommended pattern
-ui.button("Action", icon="add") \
-    .classes("app-btn-primary") \
-    .props("flat no-caps")
-```
-
----
+- load summary rows first
+- fetch full payload only for row selection or detail panels
+- do not reload heavy payloads just because the user changed pages
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Component Guidelines
-- Use NiceGUI components: `ui.table`, `ui.button`, `ui.label`, `ui.select`, `ui.plotly`.
-- Forbidden: `ui.aggrid` (known JS compatibility errors); use `ui.table` instead.
-- Forbidden: raw HTML for interactive controls (`ui.html('<button>')` etc.).
-- Forbidden: `alert()`, `confirm()`, `prompt()` — use `ui.notify()` or `ui.dialog()`.
-- Plotly: always render via `ui.plotly(fig)`, never via iframe or raw HTML.
-- Style with `.classes()` and `.props()` — never `.style()` with literal colors.
+- Prefer components from `@/components/ui/` for interactive primitives.
+- Put feature-specific UI in `frontend/src/features/<feature>/components/`.
+- Do not use `alert()`, `confirm()`, or `prompt()` for product interactions.
+- Destructive actions require an explicit confirmation flow.
+- Forms need labels, validation, and visible error states.
+- Data-dense tables must support sorting, filtering, and pagination or a clear virtualization strategy.
+- Load summary rows first; fetch heavy detail payload only on explicit detail interaction.
 ```

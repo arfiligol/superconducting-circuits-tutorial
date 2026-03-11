@@ -1,102 +1,52 @@
 ---
 aliases:
-  - "Script Authoring Rules"
-  - "腳本撰寫規範"
+  - Script Authoring
+  - CLI 規範
 tags:
-  - audience/team
+  - diataxis/reference
+  - audience/contributor
   - sot/true
+  - topic/code-quality
 status: stable
 owner: docs-team
-audience: team
-scope: "CLI 腳本撰寫規範：位置、入口、文件"
-version: v0.2.0
-last_updated: 2026-01-24
+audience: contributor
+scope: CLI 指令的放置位置、責任邊界與文件規範。
+version: v1.0.0
+last_updated: 2026-03-11
 updated_by: docs-team
 ---
 
 # Script Authoring
 
-CLI 腳本撰寫規範。
+CLI 在本專案中不是附屬工具，而是正式產品介面之一。
 
-## Location
+## Placement
 
-將工具腳本放在 `src/scripts/`，並依功能分類：
+- 新的 CLI 指令應優先落在 `cli/`
+- migration 期間若仍需接舊入口，可保留 bridge，但不要把新 workflow 持續寫進 legacy `src/scripts/`
 
-```
-src/scripts/
-├── analysis/              # 分析相關腳本
-│   └── squid_fit.py
-├── plot/                  # 繪圖相關腳本
-│   ├── admittance.py
-│   ├── flux_dependence.py
-│   └── resonance_map.py
-└── simulation/            # 模擬相關腳本
-    └── run_lc.py
-```
+## Structure
 
-## Entry Points
+- 使用 `typer`
+- 每個 command 只處理參數、輸入/輸出、錯誤顯示
+- 真正的 workflow 呼叫共享 service 或 `src/core/`
+- command 名稱使用 `kebab-case`
 
-在 `pyproject.toml` 註冊入口：
+## Rules
 
-```toml
-[project.scripts]
-sc = "scripts.cli.entry:app"
-```
-
-## Execution
-
-腳本必須可透過模組方式執行：
-
-```bash
-uv run python -m scripts.analysis.squid_fit
-uv run python -m scripts.plot.admittance
-uv run python -m scripts.simulation.run_lc
-```
-
-## Help Message
-
-實作 `--help` 描述（Typer 會自動產生）：
-
-```python
-import typer
-
-app = typer.Typer()
-
-@app.command()
-def main() -> None:
-    \"\"\"Fit SQUID LC model to admittance data.\"\"\"
-    ...
-```
-
-## Documentation
-
-新增腳本時：
-1. 在 [CLI Reference](../../cli/index.md) 新增對應頁面
-2. 在對應的 [How-to](../../../how-to/index.md) 新增使用指南
-3. 更新 README.md（如有必要）
-
-## Related
-
-- [Data Handling](data-handling.md) - 輸出路徑規範
-- [CLI Reference](../../cli/index.md) - 指令參考
-- [Folder Structure](../project-basics/folder-structure.md) - 目錄結構
-
----
+- 必須提供 `--help`
+- 必須有明確的 exit behavior
+- 不可把 API handler 的內部邏輯整段複製到 CLI
+- 若某功能只在 UI 可用、CLI 無法觸發，視為功能缺口
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Script Authoring
-- **Location**:
-    - Analysis scripts: `src/scripts/analysis/`
-    - Simulation scripts: `src/scripts/simulation/`
-- **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
-- **Structure**:
-    - MUST have `def main():`.
-    - MUST use `typer` for arguments.
-    - MUST use `if __name__ == "__main__": app()`.
-- **Logic**:
-    - Analysis CLI: minimal wrappers around `core/analysis` logic.
-    - Simulation CLI: minimal wrappers around `core/simulation` logic.
-- **I/O**: Print to stdout is allowed here (and only here).
+- CLI is a first-class interface, not a leftover utility layer.
+- New CLI work should go to `cli/`; avoid growing new workflows inside legacy `src/scripts/`.
+- Use Typer for commands.
+- Commands handle argument parsing, user I/O, and error presentation only.
+- Real workflow logic must live in shared services or `src/core/`.
+- Command names use `kebab-case`, and every command must have usable `--help`.
 ```

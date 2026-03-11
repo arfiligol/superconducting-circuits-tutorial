@@ -1,69 +1,50 @@
 ---
 aliases:
-  - "CI 品質關卡 (CI Gates)"
+  - CI Gates
+  - CI 品質關卡
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/execution
+status: stable
+owner: docs-team
+audience: contributor
+scope: rewrite branch 的 PR 合併品質門檻，含 desktop shell。
+version: v2.1.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# CI 品質關卡 (CI Gates)
+# CI Gates
 
-本文件說明程式碼合併前必須通過的品質檢查。
+所有 PR 在 merge 前必須通過與 touched area 對應的必要檢查。
 
-## 品質關卡
+## Mandatory Gates
 
-所有 Pull Request 必須通過以下檢查才能合併：
+- Python format / lint / type-check
+- backend/core pytest
+- frontend lint / typecheck / tests / build（frontend 存在後）
+- desktop lint / build（desktop workspace 存在後）
+- docs build（若變更 docs）
+- 至少一位 reviewer approve
 
-### 1. Pre-commit Hooks
+## Branch Policy
 
-在本地執行 `git commit` 時，Pre-commit 會自動執行：
-
-- **Ruff Check**: Linting (程式碼品質)
-- **Ruff Format**: Formatting (程式碼格式)
-- **BasedPyright**: Type Checking (類型檢查)
-
-```bash
-# 手動執行所有 Pre-commit 檢查
-uv run pre-commit run --all-files
-```
-
-### 2. 文檔建置與路由檢查
-
-```bash
-uv run python scripts/check_docs_nav_routes.py --check-source
-./scripts/prepare_docs_locales.sh
-uv run --group dev zensical build
-uv run --group dev zensical build -f zensical.en.toml
-
-# 正式 CI 入口（產出 `docs/site/`）
-./scripts/build_docs_sites.sh
-uv run python scripts/check_docs_nav_routes.py --check-built
-```
-
-!!! note "允許的警告"
-    開發伺服器中的 `sitemap.xml 404` 警告是無害的，可以忽略。
-
-### 3. 測試通過
-
-```bash
-uv run pytest
-```
-
----
+- `main` 禁止直接 push
+- rewrite branch 的規則變更需同步更新 `.agent/rules`
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## CI Gates
-- **Mandatory Checks**:
-    1. **Pre-commit**: `ruff format` + `ruff check` + `basedpyright`.
-    2. **Docs Route Source Check**: `uv run python scripts/check_docs_nav_routes.py --check-source` must pass.
-    3. **Build**: `./scripts/build_docs_sites.sh` must pass.
-    4. **Docs Route Built Check**: `uv run python scripts/check_docs_nav_routes.py --check-built` must pass.
-    5. **Test**: `pytest` must pass.
-- **Tolerance**:
-    - `zensical build` during docs preview: allow benign `404` warnings logic.
-    - Code Coverage: Not strictly enforced yet.
-- **Fast Fail**: Any lint error fails the pipeline immediately.
+- Mandatory checks include:
+    - Python format / lint / type-check
+    - backend/core pytest
+    - frontend lint / typecheck / tests / build when the frontend workspace exists
+    - desktop lint / build when the desktop workspace exists
+    - docs build when docs are touched
+- `main` must not receive direct pushes.
+- Guardrail source changes must keep `.agent/rules` in sync.
+- Any failing required check blocks merge.
 ```

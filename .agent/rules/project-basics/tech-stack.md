@@ -1,14 +1,32 @@
 ## Tech Stack
-- **Python** (Managed by `uv`):
-    - **Data**: `pandas`, `numpy` (Core).
-    - **Vis**: `plotly` (Interactive), `matplotlib` (Static).
-    - **WebUI**: `nicegui` (UI framework), `ui.codemirror` / CodeMirror (Code Editor), `Ruff WebAssembly` (browser formatter), `Panzoom` (SVG zoom/pan interaction).
-    - **CLI**: `typer` (Framework).
-    - **Logging**: `rich` (Colored output).
-    - **GUI**: `nicegui` (Native App).
-- **Julia** (Managed by `juliaup`):
-    - **Sim**: `JosephsonCircuits.jl` (Core Engine).
-- **Docs**: `zensical` (Static Site).
-- **Config Files**:
-    - Python: `pyproject.toml`
-    - Julia: `Project.toml`
+- **Frontend**:
+    - Next.js App Router
+    - React 19
+    - TypeScript
+    - Tailwind CSS v4
+    - Radix UI + shadcn/ui
+    - next-themes
+    - SWR
+    - react-hook-form + zod
+    - Electron is allowed as the desktop shell around the frontend
+- **Backend**:
+    - FastAPI
+    - Pydantic
+    - SQLModel / SQLAlchemy
+    - Rich-compatible logging
+- **CLI**:
+    - Typer
+    - must remain first-class, not a second-tier wrapper
+- **Scientific core**:
+    - JosephsonCircuits.jl via juliacall
+    - plotly + schemdraw for visualization output
+- **Quality tools**:
+    - Ruff
+    - BasedPyright
+    - pytest
+    - Vitest / Playwright when frontend exists
+- **Storage direction**:
+    - metadata DB: SQLite now, PostgreSQL target
+    - numeric trace store: Zarr
+- New UI work should target Next.js, not NiceGUI.
+- Desktop packaging should use Electron around the frontend instead of reviving NiceGUI-native desktop assumptions.

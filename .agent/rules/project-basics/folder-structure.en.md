@@ -1,25 +1,14 @@
 ## Folder Structure
-- **Source Code (`src/`)**:
-    - `core/analysis/`: **Data Analysis** (Pydantic models, Fitting, Extraction). NO Print here, use `logging`.
-    - `core/simulation/`: **Circuit Simulation** (JuliaCall adapter to JosephsonCircuits.jl).
-    - `core/shared/`: **Shared Utilities** (logging, visualization, persistence, units).
-    - `app/`: **NiceGUI Native App**.
-    - `scripts/analysis/`: **Analysis CLI Entry Points**. Use `argparse`. ONLY layer allowed to `print()`.
-    - `scripts/simulation/`: **Simulation CLI Entry Points**.
-    - `scripts/database/`: **Database CLI Entry Points**.
-- **Data (`data/`)**:
-    - `raw/`: **READ-ONLY**. HFSS/VNA files.
-    - `processed/`: Final Reports/Plots.
-    - `database.db`: SQLite database.
-- **Config** (Root):
-    - `pyproject.toml`: Python Dependencies (uv).
-    - `juliapkg.json`: Julia Dependencies (JosephsonCircuits.jl).
-    - `Project.toml`: Julia Project Settings.
-- **Decision Tree**:
-    - IF "simulation CLI" -> `src/scripts/simulation/`
-    - IF "analysis CLI" -> `src/scripts/analysis/`
-    - IF "database CLI" -> `src/scripts/database/`
-    - IF "reusable analysis logic" -> `src/core/analysis/`
-    - IF "simulation interop" -> `src/core/simulation/`
-    - IF "shared plotting/utils/logging/persistence" -> `src/core/shared/`
-    - IF "UI" -> `src/app/`
+- **Frontend** work goes to `frontend/`.
+- **Desktop shell** work goes to `desktop/`.
+- **Backend** work goes to `backend/`.
+- **CLI** work goes to `cli/`.
+- **Shared scientific logic** goes to `src/core/`.
+- **Docs and guardrails** go to `docs/`.
+- Existing `src/app/` NiceGUI code is legacy and should only receive migration-support fixes.
+- Dependency direction:
+    - frontend depends on API contracts, not backend internals
+    - desktop depends on frontend outputs and secure IPC, not business logic ownership
+    - backend API layer depends inward on services/domain
+    - CLI reuses shared services/core instead of duplicating workflow logic
+    - `src/core/` must stay framework-agnostic

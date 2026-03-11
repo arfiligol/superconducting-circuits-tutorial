@@ -1,89 +1,68 @@
 ---
 aliases:
-  - "Guardrails: Code Style & Quality"
+  - Code Style
+  - Implementation Style
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/code-quality
+status: stable
+owner: docs-team
+audience: contributor
+scope: Shared Python and TypeScript style rules for the rewrite branch.
+version: v2.0.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# Guardrails: Code Style & Quality
+# Code Style
 
-This document outlines the coding standards and best practices for the project.
+The style rules in this project optimize for code that is readable, changeable, and testable.
+If an implementation looks convenient in one layer but scatters shared rules across UI, API, and CLI, it is not acceptable.
 
-## General Principles
+## Cross-Language Principles
 
-We follow **[PEP 8](https://peps.python.org/pep-0008/)** for Python code style.
+- prefer small diffs over broad refactors
+- one function, one responsibility
+- use explicit names; avoid vague abbreviations
+- do not bury business logic inside route handlers, React components, or CLI commands
+- when logic repeats, extract it into a shared layer before adding more call sites
 
-> **PEP 8** is Python's official style guide (the **standard**), while **Ruff** is the **tool** we use to automatically check and enforce these rules. See the [Toolchain section](#toolchain) for details.
+## Python Rules
 
-## Clean Code Principles
+- use modern syntax: `list[str]`, `str | None`
+- keep imports and formatting aligned with Ruff
+- in scientific code, include units in names when that removes ambiguity, such as `frequency_hz`
+- no `print()` in `core/` or service layers
 
-We adopt principles from Robert C. Martin's *Clean Code*.
+## TypeScript Rules
 
-### 1. Naming
-- **Functions**: Use **verbs** or **verb phrases** that clearly describe what the function does (e.g., `calculate_frequency`, `build_record`, `process_data`).
-    - *Bad*: `squid_lc_frequency`, `y11_imaginary`, `process`
-    - *Good*: `calculate_squid_lc_frequency`, `calculate_y11_imaginary`, `process_hfss_file`
-- **Variables**: Use meaningful **nouns**.
-- **Classes**: Use **nouns** or **noun phrases**.
+- use TypeScript strict mode
+- no unjustified `any`
+- component props, service return types, and schema parse results must be typed
+- React components should stay presentation-focused; data loading and mutation logic belongs in hooks / services
 
-### 2. Functions
-- **Single Responsibility Principle (SRP)**: A function should do one thing, do it well, and do it only.
-- **Small**: Functions should be small and focused.
-- **Arguments**: Limit the number of arguments (aim for 3 or fewer). Use data classes/objects for larger groups of parameters.
+## Refactoring Rule
 
-## Clean Architecture Principles
-
-We adopt **Clean Architecture** to ensure separation of concerns and maintainability.
-
-### 1. Separation of Layers
-- **Domain Layer** (`domain/`): Contains enterprise logic and entities (e.g., Pydantic schemas). No dependencies on outer layers.
-- **Application Layer** (`application/`): Contains application specific business rules and use cases. Depends only on Domain.
-- **Infrastructure Layer** (`infrastructure/`): Contains frameworks, drivers, and external interfaces (e.g., Visualization, File I/O). Depends on Application/Domain.
-
-### 2. The Dependency Rule
-Source code dependencies must point only **inward**, toward higher-level policies.
-- Nothing in an inner circle (e.g., Domain) can know anything at all about something in an outer circle (e.g., Infrastructure).
-
-## Type Hinting
-- Use **Python 3.10+** syntax.
-- Use `|` for Unions (e.g., `int | None` instead of `Optional[int]`).
-- Use standard collections (`list`, `dict`, `tuple`) instead of `typing` module equivalents.
-
-## Toolchain
-
-The project uses automated tools to ensure code consistency and quality. For detailed information, see:
-
-👉 **[Linting & Formatting Guardrails](../execution-verification/linting.en.md)**
-
-### Quick Reference
-- **Ruff**: Unified Linting & Formatting
-- **Pre-commit**: Auto-check before Git commits
-- **BasedPyright**: Type checking (Basic mode)
-
-### Daily Usage
-```bash
-# Run all checks
-uv run pre-commit run --all-files
-
-# Manual Ruff execution
-uv run ruff check .
-uv run ruff format .
-```
-
----
+- make small, verifiable changes first
+- solve structure before adding abstraction
+- if an abstraction only serves one call site and does not reduce complexity, do not introduce it yet
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Code Style
-- **Standard**: PEP 8 (enforced by Ruff).
-- **Naming Conventions**:
-    - **Physics**: `frequency_hz`, `inductance_ph`, `admittance_s` (Include units).
-    - **Variables**: Noun (e.g., `dataset_record`).
-    - **Functions**: Verb-Noun (e.g., `calculate_impedance`).
-- **Clean Architecture**: `domain` <- `application` <- `infrastructure`.
-- **Refactoring**: Prefer small, atomic changes.
-- **Complexity**: Keep functions under 20 lines where possible.
+- **Standard**:
+    - Python uses Ruff + modern Python syntax
+    - TypeScript uses strict typing and consistent formatting
+- **Naming**:
+    - variables use clear nouns
+    - functions use clear verb phrases
+    - scientific names may include units when that removes ambiguity
+- **Boundaries**:
+    - do not put business workflow logic inside route handlers, React components, or CLI commands
+    - shared logic belongs in services or `src/core/`
+- **Refactoring**: prefer small, atomic changes
+- **Complexity**: keep functions focused; split code when one function starts handling multiple responsibilities
 ```

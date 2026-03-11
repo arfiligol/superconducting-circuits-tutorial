@@ -1,70 +1,57 @@
 ---
 aliases:
-  - "Linting & Formatting Guardrails"
+  - Linting & Formatting
+  - Code Checks
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/execution
+status: stable
+owner: docs-team
+audience: contributor
+scope: Python and frontend lint / format / type-check rules for the rewrite branch.
+version: v2.0.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# Linting & Formatting Guardrails
+# Linting & Formatting
 
-We use industry-standard tools to enforce code quality and style.
+## Tooling
 
-## Toolchain
+- Python: Ruff + BasedPyright
+- Frontend: project-local lint / format / typecheck commands
+- Repo gate: pre-commit when hooks are configured
 
-### 1. Ruff (Linting & Formatting)
-[Ruff](https://docs.astral.sh/ruff/) is an extremely fast Python Linter and Formatter written in Rust.
-- **Why?**:
-    - **Speed**: 10-100x faster than traditional tools (Flake8, Black).
-    - **All-in-one**: Replaces Flake8 (lint), Black (format), isort (import sorting), pyupgrade (syntax modernization).
-    - **Standard**: Widely adopted by the Python community (Pandas, FastAPI, SciPy).
+## Commands
 
-### 2. Pre-commit (Automation)
-[Pre-commit](https://pre-commit.com/) is a framework for managing multi-language pre-commit hooks.
-- **Why?**:
-    - **Enforcement**: Runs checks automatically at `git commit`, preventing non-compliant code from entering version control.
-    - **Consistency**: Ensures all developers use the same version of checks.
-
-### 3. BasedPyright (Type Checking)
-[BasedPyright](https://github.com/DetachHead/basedpyright) creates a stationary snapshot of the Microsoft Pyright type checker.
-- **Why?**:
-    - **Compatibility**: The standard Pyright (and Pylance) often relies on proprietary VS Code extensions. BasedPyright ensures consistent CLI behavior across different IDEs and Agentic environments (like Antigravity).
-    - **Strictness**: Provides stricter defaults than standard Pyright.
-
-## Usage
-
-### Setup
-After cloning the repository, install the git hooks:
 ```bash
-uv run pre-commit install
-```
-
-### Daily Workflow
-Checks run automatically on `git commit`. If they fail, the tool may auto-fix issues (like formatting) or report errors.
-To run manually:
-```bash
-# Run all hooks
-uv run pre-commit run --all-files
-
-# Run only Ruff
-uv run ruff check .
 uv run ruff format .
+uv run ruff check .
+uv run basedpyright src
+uv run pre-commit run --all-files
+npm run lint --prefix frontend
+npm run format --prefix frontend
+npm run typecheck --prefix frontend
 ```
 
-## Configuration
-See `pyproject.toml` sections `[tool.ruff]` and `[tool.basedpyright]`.
+## Policy
 
----
+- touched files must not introduce new lint errors
+- prefer repairing type issues over suppressing them
+- if the frontend workspace is not present yet, keep enforcing the Python/docs baseline; once it exists, it joins the standard gate
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Lint / Format Commands
-- **Format (Python)**: `uv run ruff format .` (Run first)
-- **Lint (Python)**: `uv run ruff check . --fix` (Run second)
-- **Type Check**: `uv run basedpyright`
-- **Pre-commit**: `uv run pre-commit run --all-files` (Master check)
-- **Config Loc**: `pyproject.toml` (`[tool.ruff]`, `[tool.basedpyright]`).
-- **Policy**: No lint errors allowed in `src/`.
+- **Python format**: `uv run ruff format .`
+- **Python lint**: `uv run ruff check .`
+- **Python type check**: `uv run basedpyright src`
+- **Pre-commit**: `uv run pre-commit run --all-files`
+- **Frontend lint**: `npm run lint --prefix frontend`
+- **Frontend format**: `npm run format --prefix frontend`
+- **Frontend typecheck**: `npm run typecheck --prefix frontend`
+- **Policy**: no new lint or type errors in touched areas.
 ```

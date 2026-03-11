@@ -1,0 +1,212 @@
+version: 1
+root: docs/reference/guardrails
+
+baseline:
+  - project-basics/index.md
+  - execution-verification/index.md
+
+rules:
+  - id: guardrails-index
+    file: index.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when the task mentions guardrails, policies, or workspace standards.
+    triggers: ["guardrails", "rules", "policy", "standards"]
+    touched_paths: ["docs/reference/guardrails/**", ".agent/rules/**"]
+
+  - id: project-basics-index
+    file: project-basics/index.md
+    tier: baseline
+    load: always
+    activation_mode: always_on
+    triggers: ["project basics", "project goal", "scope", "workspace"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "desktop/**", "src/**", "docs/**"]
+
+  - id: project-overview
+    file: project-basics/project-overview.md
+    tier: critical
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when the task affects product scope or rewrite direction.
+    triggers: ["mission", "scope", "rewrite", "migration", "product"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "desktop/**", "src/**", "docs/**"]
+
+  - id: tech-stack
+    file: project-basics/tech-stack.md
+    tier: critical
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when changing frameworks, dependencies, or tooling.
+    triggers: ["tech stack", "dependency", "dependencies", "framework", "tooling", "next.js", "fastapi", "cli", "electron", "desktop"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "desktop/**", "src/**", "pyproject.toml", "package.json", "package-lock.json", "pnpm-lock.yaml", "uv.lock"]
+
+  - id: folder-structure
+    file: project-basics/folder-structure.md
+    tier: critical
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when changing repo layout or module boundaries.
+    triggers: ["folder structure", "directory", "layout", "path", "rename", "move"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "desktop/**", "src/**", "tests/**", "docs/**"]
+
+  - id: code-quality-index
+    file: code-quality/index.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks discuss architecture or maintainability.
+    triggers: ["code quality", "quality", "architecture", "maintainability"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "src/**"]
+
+  - id: code-style
+    file: code-quality/code-style.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks discuss style, naming, or implementation patterns.
+    triggers: ["style", "naming", "refactor", "clean code"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "src/**"]
+
+  - id: type-checking
+    file: code-quality/type-checking.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when touching Python or TypeScript types.
+    triggers: ["type", "typecheck", "basedpyright", "typescript", "strict mode"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "src/**"]
+
+  - id: design-patterns
+    file: code-quality/design-patterns.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when changing service boundaries or DI patterns.
+    triggers: ["design pattern", "dependency injection", "service layer", "repository", "use case"]
+    touched_paths: ["backend/**", "cli/**", "src/core/**"]
+
+  - id: script-authoring
+    file: code-quality/script-authoring.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when adding or changing CLI commands.
+    triggers: ["cli", "command", "typer", "script"]
+    touched_paths: ["cli/**", "src/scripts/**"]
+
+  - id: execution-index
+    file: execution-verification/index.md
+    tier: baseline
+    load: always
+    activation_mode: always_on
+    triggers: ["build", "run", "test", "ci", "lint", "format"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "src/**", "docs/**", ".github/**"]
+
+  - id: build-commands
+    file: execution-verification/build-commands.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve install, run, or build workflows.
+    triggers: ["build", "run", "serve", "install", "dev server"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "desktop/**", "docs/**", "pyproject.toml", "package.json"]
+
+  - id: linting
+    file: execution-verification/linting.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve linting, formatting, or type-check tooling.
+    triggers: ["lint", "format", "ruff", "biome", "eslint", "prettier", "typecheck", "pre-commit"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "src/**", ".pre-commit-config.yaml", "pyproject.toml"]
+
+  - id: testing
+    file: execution-verification/testing.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve unit, integration, E2E, or docs verification.
+    triggers: ["test", "pytest", "vitest", "playwright", "e2e"]
+    touched_paths: ["frontend/**", "backend/**", "cli/**", "src/**", "tests/**", "docs/**"]
+
+  - id: ci-gates
+    file: execution-verification/ci-gates.md
+    tier: critical
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks affect CI workflows or merge gates.
+    triggers: ["ci", "github actions", "workflow", "pipeline", "gate"]
+    touched_paths: [".github/**", ".github/workflows/**", "frontend/**", "backend/**", "cli/**", "desktop/**", "docs/**"]
+
+  - id: ui-ux-index
+    file: ui-ux-quality/index.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks involve frontend UI/UX or design-system decisions.
+    triggers: ["ui", "ux", "design system", "frontend", "electron", "desktop"]
+    touched_paths: ["frontend/**", "desktop/**"]
+
+  - id: ui-ux-theming
+    file: ui-ux-quality/theming.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve theming, semantic tokens, or dark mode.
+    triggers: ["theme", "css", "tailwind", "color", "dark mode"]
+    touched_paths: ["frontend/**", "docs/stylesheets/**"]
+
+  - id: ui-ux-components
+    file: ui-ux-quality/component-guidelines.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve component selection, dialogs, forms, or tables.
+    triggers: ["component", "table", "dialog", "form", "radix", "shadcn"]
+    touched_paths: ["frontend/**"]
+
+  - id: ui-ux-layouts
+    file: ui-ux-quality/layout-patterns.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve App Router layouts or responsive structure.
+    triggers: ["layout", "shell", "responsive", "master detail"]
+    touched_paths: ["frontend/**"]
+
+  - id: ui-ux-state
+    file: ui-ux-quality/state-management.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks involve server/client state, forms, or mutations.
+    triggers: ["state", "swr", "react hook form", "mutation", "context"]
+    touched_paths: ["frontend/**"]
+
+  - id: ui-ux-accessibility
+    file: ui-ux-quality/accessibility.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks involve accessibility, keyboard flow, or ARIA.
+    triggers: ["a11y", "accessibility", "aria", "keyboard", "contrast"]
+    touched_paths: ["frontend/**"]
+
+  - id: ui-ux-routing
+    file: ui-ux-quality/routing.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when tasks affect Next.js routes or layout boundaries.
+    triggers: ["route", "routing", "app router", "dynamic route"]
+    touched_paths: ["frontend/**"]
+
+  - id: documentation-standards
+    file: documentation-design/standards.md
+    tier: standard
+    load: when_touched
+    activation_mode: model_decision
+    description: Apply when editing docs, frontmatter, or documentation structure.
+    triggers: ["docs", "documentation", "frontmatter", "diataxis"]
+    touched_paths: ["docs/**", "zensical.toml", "zensical.en.toml"]

@@ -1,13 +1,7 @@
 ## Script Authoring
-- **Location**:
-    - Analysis scripts: `src/scripts/analysis/`
-    - Simulation scripts: `src/scripts/simulation/`
-- **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
-- **Structure**:
-    - MUST have `def main():`.
-    - MUST use `typer` for arguments.
-    - MUST use `if __name__ == "__main__": app()`.
-- **Logic**:
-    - Analysis CLI: minimal wrappers around `core/analysis` logic.
-    - Simulation CLI: minimal wrappers around `core/simulation` logic.
-- **I/O**: Print to stdout is allowed here (and only here).
+- CLI is a first-class interface, not a leftover utility layer.
+- New CLI work should go to `cli/`; avoid growing new workflows inside legacy `src/scripts/`.
+- Use Typer for commands.
+- Commands handle argument parsing, user I/O, and error presentation only.
+- Real workflow logic must live in shared services or `src/core/`.
+- Command names use `kebab-case`, and every command must have usable `--help`.

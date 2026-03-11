@@ -1,84 +1,65 @@
 ---
 aliases:
-  - "Type Checking Rules"
-  - "類型檢查規範"
+  - Type Checking
+  - 類型檢查
 tags:
-  - audience/team
+  - diataxis/reference
+  - audience/contributor
   - sot/true
+  - topic/code-quality
 status: stable
 owner: docs-team
-audience: team
-scope: "BasedPyright 類型檢查規範"
-version: v0.1.0
-last_updated: 2026-01-12
+audience: contributor
+scope: Python 與 TypeScript 的型別檢查規範。
+version: v2.0.0
+last_updated: 2026-03-11
 updated_by: docs-team
 ---
 
 # Type Checking
 
-BasedPyright 類型檢查規範。
+型別規範的目的不是追求表面上的零警告，而是讓 UI、API、CLI 與科學核心的資料契約保持穩定。
 
-## Requirements
+## Python
 
-1. **Basic Check Only**：`uv run basedpyright src` 需通過 `basic` 模式檢查。專注於變數是否定義與基本語法。
+- 工具：`basedpyright`
+- 基線：`basic`，但視為 mandatory
+- 所有函式都要標註參數與回傳值
+- 使用 `list[str]`、`dict[str, float]`、`str | None`
+- 非必要不使用 `Any`
 
-2. **類型標註**：所有函數必須標註參數與回傳值類型。
+### Allowed Exceptions
 
-3. **現代語法**：使用 Python 3.12+ 語法。
-   ```python
-   # ✅ 正確
-   def process(items: list[str]) -> dict[str, int]: ...
-   def get_value() -> str | None: ...
+- 第三方科學套件無型別時，可使用最小範圍 `# type: ignore`
+- 需要附上原因，不可整檔大面積忽略
 
-   # ❌ 錯誤
-   from typing import List, Dict, Optional
-   def process(items: List[str]) -> Dict[str, int]: ...
-   ```
+## TypeScript
 
-## Exceptions
+- 使用 `strict: true`
+- service、schema、component props、hook 回傳值需有清楚型別
+- 禁止把未驗證的 API payload 直接當成可信任資料
+- `zod` 或等效 schema 驗證後的型別，才可進入 UI 業務流程
 
-- **Matplotlib**：Matplotlib 相關呼叫可使用 `# type: ignore`。
-- **lmfit**：第三方庫無類型存根時標記 `# type: ignore`。
+## Fix Policy
 
-## Argparse Typing
-
-使用 `NamedTuple` 確保 `parse_args()` 回傳有類型的物件：
-
-```python
-from typing import NamedTuple
-
-class Args(NamedTuple):
-    input_file: str
-    output_dir: str
-    verbose: bool
-
-def parse_args() -> Args:
-    parser = argparse.ArgumentParser()
-    # ... setup ...
-    ns = parser.parse_args()
-    return Args(
-        input_file=ns.input_file,
-        output_dir=ns.output_dir,
-        verbose=ns.verbose,
-    )
-```
-
-## Related
-
-- [Code Style](code-style.md) - 程式風格規範
-- [Guardrails](../index.md) - 規範總覽
-
----
+- 有型別錯誤時先修正程式碼
+- 只有在第三方型別缺失且修復成本不合理時，才接受局部忽略
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Type Checking
-- **Tool**: `basedpyright`
-- **Strictness**: `basic` (but treated as mandatory).
-- **Rules**:
-    - **No `Any`**: Avoid explicit `Any` unless interfacing with untyped libs.
-    - **Return Types**: MUST explicitly type return values of all functions.
-    - **Collections**: Use `list[str]`, `dict[str, int]` (Standard Collections).
-- **Fixes**: If type check fails, Fix the Code, DO NOT suppress unless absolutely necessary (`# type: ignore`).
+- **Python**:
+    - use BasedPyright
+    - treat `basic` mode as mandatory
+    - type all function parameters and return values
+    - use modern syntax like `list[str]` and `str | None`
+    - avoid `Any` unless dealing with untyped third-party code
+- **TypeScript**:
+    - use strict mode
+    - do not trust raw API payloads without schema validation
+    - keep service, schema, hook, and component contracts typed
+- **Fix policy**:
+    - fix the code first
+    - use `# type: ignore` only in the smallest justified scope
 ```

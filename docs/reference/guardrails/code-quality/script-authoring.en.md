@@ -1,101 +1,52 @@
 ---
 aliases:
-  - "Script Authoring Rules"
+  - Script Authoring
+  - CLI Authoring
 tags:
-  - audience/team
+  - diataxis/reference
+  - audience/contributor
   - sot/true
+  - topic/code-quality
 status: stable
 owner: docs-team
-audience: team
-scope: "CLI Script Authoring Rules: Location, Entry Points, Documentation"
-version: v0.2.0
-last_updated: 2026-01-24
+audience: contributor
+scope: Placement, responsibility, and documentation rules for CLI commands.
+version: v1.0.0
+last_updated: 2026-03-11
 updated_by: docs-team
 ---
 
 # Script Authoring
 
-CLI script authoring standards.
+In this project, the CLI is not a secondary utility layer. It is a formal product interface.
 
-## Location
+## Placement
 
-Place tool scripts in `src/scripts/`, organized by function:
+- new CLI commands should go to `cli/`
+- during migration, legacy entry bridges may remain, but new workflows should not keep accumulating in legacy `src/scripts/`
 
-```
-src/scripts/
-├── analysis/              # Analysis scripts
-│   └── squid_fit.py
-├── plot/                  # Plotting scripts
-│   ├── admittance.py
-│   ├── flux_dependence.py
-│   └── resonance_map.py
-└── simulation/            # Simulation scripts
-    └── run_lc.py
-```
+## Structure
 
-## Entry Points
+- use `typer`
+- each command handles arguments, user input/output, and error presentation
+- real workflows call shared services or `src/core/`
+- command names use `kebab-case`
 
-Register entry points in `pyproject.toml`:
+## Rules
 
-```toml
-[project.scripts]
-sc = "scripts.cli.entry:app"
-```
-
-## Execution
-
-Scripts must be executable as modules:
-
-```bash
-uv run python -m scripts.analysis.squid_fit
-uv run python -m scripts.plot.admittance
-uv run python -m scripts.simulation.run_lc
-```
-
-## Help Message
-
-Implement `--help` description (Typer auto-generates it):
-
-```python
-import typer
-
-app = typer.Typer()
-
-@app.command()
-def main() -> None:
-    """Fit SQUID LC model to admittance data."""
-    ...
-```
-
-## Documentation
-
-When adding a new script:
-1. Add a page in [CLI Reference](../../cli/index.md)
-2. Add a guide in [How-to](../../../how-to/index.md) section
-3. Update README.md (if necessary)
-
-## Related
-
-- [Data Handling](data-handling.md) - Output path rules
-- [CLI Reference](../../cli/index.md) - Command reference
-- [Folder Structure](../project-basics/folder-structure.md) - Directory structure
-
----
+- every command must provide `--help`
+- exit behavior must be explicit
+- do not copy internal API-handler logic into CLI code
+- if a feature exists only in UI and cannot be triggered from CLI, treat that as a product gap
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Script Authoring
-- **Location**:
-    - Analysis scripts: `src/scripts/analysis/`
-    - Simulation scripts: `src/scripts/simulation/`
-- **Naming**: `kebab-case` (e.g. `sc-simulate-lc`, `sc-fit-squid`).
-- **Structure**:
-    - MUST have `def main():`.
-    - MUST use `typer` for arguments.
-    - MUST use `if __name__ == "__main__": app()`.
-- **Logic**:
-    - Analysis CLI: minimal wrappers around `core/analysis` logic.
-    - Simulation CLI: minimal wrappers around `core/simulation` logic.
-- **I/O**: Print to stdout is allowed here (and only here).
+- CLI is a first-class interface, not a leftover utility layer.
+- New CLI work should go to `cli/`; avoid growing new workflows inside legacy `src/scripts/`.
+- Use Typer for commands.
+- Commands handle argument parsing, user I/O, and error presentation only.
+- Real workflow logic must live in shared services or `src/core/`.
+- Command names use `kebab-case`, and every command must have usable `--help`.
 ```

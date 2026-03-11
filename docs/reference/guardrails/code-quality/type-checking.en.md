@@ -1,84 +1,65 @@
 ---
 aliases:
-  - "Type Checking Rules"
+  - Type Checking
+  - Typing Rules
 tags:
-  - audience/team
+  - diataxis/reference
+  - audience/contributor
   - sot/true
+  - topic/code-quality
 status: stable
 owner: docs-team
-audience: team
-scope: "BasedPyright Type Checking Rules"
-version: v0.1.0
-last_updated: 2026-01-12
+audience: contributor
+scope: Type-checking rules for Python and TypeScript.
+version: v2.0.0
+last_updated: 2026-03-11
 updated_by: docs-team
 ---
 
 # Type Checking
 
-BasedPyright type checking rules and standards.
+The purpose of typing rules is not cosmetic zero-warning output. It is to keep data contracts stable across UI, API, CLI, and the scientific core.
 
-## Requirements
+## Python
 
-1. **Basic Check Only**: `uv run basedpyright src` must pass in `basic` mode. Focus on definitions and syntax.
+- tool: `basedpyright`
+- baseline: `basic`, treated as mandatory
+- all functions need typed parameters and return values
+- use `list[str]`, `dict[str, float]`, `str | None`
+- avoid `Any` unless necessary
 
-2. **Type Annotations**: All functions must have type annotations for arguments and return values.
+### Allowed Exceptions
 
-3. **Modern Syntax**: Use Python 3.12+ syntax.
-   ```python
-   # ✅ Correct
-   def process(items: list[str]) -> dict[str, int]: ...
-   def get_value() -> str | None: ...
+- if a third-party scientific library is untyped, use the smallest possible `# type: ignore`
+- every ignore needs a reason
 
-   # ❌ Incorrect
-   from typing import List, Dict, Optional
-   def process(items: List[str]) -> Dict[str, int]: ...
-   ```
+## TypeScript
 
-## Exceptions
+- use `strict: true`
+- services, schemas, component props, and hook return values must be typed
+- never treat unvalidated API payloads as trusted data
+- only data parsed by `zod` or an equivalent schema should enter UI business flow
 
-- **Matplotlib**: Matplotlib related calls can use `# type: ignore`.
-- **lmfit**: Third-party libraries without type stubs can be marked with `# type: ignore`.
+## Fix Policy
 
-## Argparse Typing
-
-Use `NamedTuple` to ensure `parse_args()` returns a typed object:
-
-```python
-from typing import NamedTuple
-import argparse
-
-class Args(NamedTuple):
-    input_file: str
-    output_dir: str
-    verbose: bool
-
-def parse_args() -> Args:
-    parser = argparse.ArgumentParser()
-    # ... setup ...
-    args = parser.parse_args()
-    return Args(
-        input_file=args.input_file,
-        output_dir=args.output_dir,
-        verbose=args.verbose,
-    )
-```
-
-## Related
-
-- [Code Style](code-style.md) - Coding style guidelines
-- [Guardrails](../index.en.md) - Overview
-
----
+- fix the code first when type errors appear
+- only accept local suppressions when the problem is truly third-party and not cost-effective to repair
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Type Checking
-- **Tool**: `basedpyright`
-- **Strictness**: `basic` (but treated as mandatory).
-- **Rules**:
-    - **No `Any`**: Avoid explicit `Any` unless interfacing with untyped libs.
-    - **Return Types**: MUST explicitly type return values of all functions.
-    - **Collections**: Use `list[str]`, `dict[str, int]` (Standard Collections).
-- **Fixes**: If type check fails, Fix the Code, DO NOT suppress unless absolutely necessary (`# type: ignore`).
+- **Python**:
+    - use BasedPyright
+    - treat `basic` mode as mandatory
+    - type all function parameters and return values
+    - use modern syntax like `list[str]` and `str | None`
+    - avoid `Any` unless dealing with untyped third-party code
+- **TypeScript**:
+    - use strict mode
+    - do not trust raw API payloads without schema validation
+    - keep service, schema, hook, and component contracts typed
+- **Fix policy**:
+    - fix the code first
+    - use `# type: ignore` only in the smallest justified scope
 ```

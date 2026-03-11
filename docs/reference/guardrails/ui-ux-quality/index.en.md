@@ -1,48 +1,57 @@
 ---
 aliases:
-  - "Guardrails: UI/UX Quality"
+  - UI/UX Quality
+  - Frontend UX Rules
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/ui-ux
+status: stable
+owner: docs-team
+audience: contributor
+scope: UI/UX quality rules for the Next.js frontend and Electron desktop shell.
+version: v2.1.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# Guardrails: UI/UX Quality
+# UI/UX Quality
 
-The project's NiceGUI application (`src/app/`) follows unified UI quality standards to ensure visual consistency and maintainability.
+This section describes the frontend UI/UX rules for the rewrite branch.
+The goal is to keep data-dense surfaces like the Data Browser, Editor, Simulation, and Characterization views consistent and maintainable.
+If the app is packaged with Electron, the same frontend UI/UX rules still apply; do not invent a separate desktop-only visual language.
 
-!!! important "Source of Truth"
-    All UI components, colors, and layouts must comply with the sub-rules below.
-
-## Tech Stack
+## Frontend Stack
 
 | Layer | Tool | Notes |
-|---|---|---|
-| Framework | **NiceGUI** | Python-native UI framework (Quasar/Vue under the hood) |
-| Styling | **CSS Variables** (Design Tokens) | `theme.css` — `--bg`, `--surface`, `--fg`, etc. |
-| Layout | **Tailwind CSS** | Layout only (`flex`, `p-4`, `gap-2`) — **never** for colors |
-| Components | **NiceGUI built-ins** | `ui.table`, `ui.plotly`, `ui.label`, `ui.button` |
-| Visualization | **Plotly** | Theme-synced via `plotly_theme.py` |
-| Dark Mode | **`ui.dark_mode()`** | `.dark` class on root toggles CSS variables |
+| --- | --- | --- |
+| Framework | Next.js App Router | route groups, nested layouts, server/client composition |
+| Components | Radix UI + shadcn/ui | composable primitives with accessibility foundations |
+| Theme | next-themes | light / dark / system |
+| Styling | Tailwind CSS v4 + semantic tokens | layout and semantic styling |
+| Server State | SWR | cache, revalidation, loading states |
+| Form State | React Hook Form + Zod | validation and submission |
 
 ## Sub-rules
 
-| Rule | Description | Agent Rule |
-|---|---|---|
-| [Theming](./theming.en.md) | Design tokens, dark mode, Plotly theme sync | [#agent-rule](./theming.en.md#agent-rule) |
-| [Component Guidelines](./component-guidelines.en.md) | NiceGUI component usage, forbidden patterns | [#agent-rule](./component-guidelines.en.md#agent-rule) |
-| [Layout Patterns](./layout-patterns.en.md) | Shell architecture, card layout, responsive rules | [#agent-rule](./layout-patterns.en.md#agent-rule) |
-
----
+- [Theming](./theming.en.md)
+- [Component Guidelines](./component-guidelines.en.md)
+- [Layout Patterns](./layout-patterns.en.md)
+- [State Management](./state-management.en.md)
+- [Accessibility](./accessibility.en.md)
+- [Routing](./routing.en.md)
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## UI/UX Quality
-- **Framework**: NiceGUI (`src/app/`). All pages inside `app_shell()`.
-- **Styling**: CSS Variables (design tokens) for colors. Tailwind for layout only.
-- **Dark Mode**: Default ON. `.dark` class toggles CSS variables.
-- **Vis**: Plotly via `ui.plotly(fig)`, theme-synced via `get_plotly_layout(dark)`.
-- **Forbidden**: hardcoded colors, `ui.aggrid`, `alert()`/`confirm()`, raw HTML controls.
-- Sub-rules: Theming, Component Guidelines, Layout Patterns.
+- Use Next.js App Router for the frontend.
+- Electron desktop packaging must preserve the same frontend UI/UX rules instead of inventing a separate desktop-only UI system.
+- Use Radix UI + shadcn/ui for interactive components.
+- Use next-themes for theme switching.
+- Use semantic design tokens; avoid hardcoded colors.
+- Use SWR for server state and React Hook Form + Zod for forms.
+- Every UI surface must work in both light and dark themes.
+- Load sub-rules as needed: Theming / Component Guidelines / Layout Patterns / State Management / Accessibility / Routing.
 ```

@@ -1,10 +1,26 @@
 ## Project Goal
-- **Mission**: Create a high-quality, bilingual (Traditional Chinese/English) tutorial for superconducting circuits simulation.
-- **Scope**:
-    - **Data Sources**: HFSS (Admittance/Phase), VNA (S-param).
-    - **Simulation**: `JosephsonCircuits.jl` (Julia).
-    - **Analysis**: Python CLI scripts (SQUID fitting, Plotting).
-- **Core Values**:
-    - **Scientific Accuracy**: All equations and physics explanations must be rigorous.
-    - **Bilingual**: Primary content in **Traditional Chinese (zh-TW)**.
-- **Target Audience**: Researchers/Students (PhD/Master level).
+- **Mission**: Build a superconducting-circuit workbench with a separated frontend/backend architecture and first-class CLI support.
+- **Core product surfaces**:
+    - Data Browser
+    - Circuit Definition Editor
+    - Circuit Schemdraw
+    - Circuit Simulation
+    - Characterization
+    - Analysis
+    - CLI Available
+- **Data sources**:
+    - circuit simulation
+    - layout simulation
+    - measurement
+    - compatible S/Y/Z traces
+- **Architecture direction**:
+    - UI uses Next.js App Router
+    - API uses FastAPI
+    - CLI stays supported and must share business rules with the core/backend
+    - Electron is an allowed desktop wrapper for local-first desktop runtime
+    - existing NiceGUI code is legacy, not the default place for new work
+- **Core values**:
+    - scientific accuracy
+    - reproducible workflows
+    - one canonical definition feeding UI, API, CLI, simulation, and schemdraw
+- **Audience**: researchers, students, and developers working on superconducting-circuit simulation and analysis workflows.

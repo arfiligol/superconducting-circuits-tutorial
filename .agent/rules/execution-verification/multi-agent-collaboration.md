@@ -1,0 +1,27 @@
+## Multiple Agent Collaboration
+- **Single Integrator (Mandatory)**:
+    - One delivery line/PR MUST have exactly one Integrator Agent at a time.
+    - Only Integrator may perform final integration (cherry-pick/conflict resolution/merge prep).
+    - Integrator MUST carry accepted contributor changes back to the delivery branch used by the user.
+    - The default delivery branch is `main`; if the user is actively working on another explicit branch, integrate back to that branch instead.
+    - Integrator MUST define the task split, prompt structure, `Allowed Files`, and acceptance criteria for each round.
+    - Integrator MUST treat prompt design as part of the integration job, not as an optional extra.
+- **Recommended Default Contributor Setup**:
+    - Prefer 3 long-lived contributors by default: Platform, Simulation, Characterization.
+    - Treat these as working defaults, not permanent hard boundaries.
+    - Exact file boundaries are defined per task by the Integrator.
+- **Contributor Boundaries**:
+    - Contributors MUST edit only assigned files (`Allowed Files`).
+    - If required changes exceed scope, stop and hand off to Integrator.
+- **Preflight**:
+    - Before editing, run `git status --porcelain`.
+    - If unrelated dirty changes exist, do not proceed blindly; report and wait.
+- **Isolation**:
+    - MUST use one `git worktree` + one branch per agent/task.
+    - Do not let multiple agents co-edit the same dirty worktree.
+- **Handoff Required**:
+    - Provide commit hashes, changed files, test results, and known risks.
+    - Dirty worktree changes without a committed handoff are not a complete contributor deliverable.
+- **Never**:
+    - Never revert/overwrite others' unintegrated work.
+    - Never use destructive git cleanup on shared work.

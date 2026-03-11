@@ -1,7 +1,9 @@
 ## Lint / Format Commands
-- **Format (Python)**: `uv run ruff format .` (Run first)
-- **Lint (Python)**: `uv run ruff check . --fix` (Run second)
-- **Type Check**: `uv run basedpyright`
-- **Pre-commit**: `uv run pre-commit run --all-files` (Master check)
-- **Config Loc**: `pyproject.toml` (`[tool.ruff]`, `[tool.basedpyright]`).
-- **Policy**: No lint errors allowed in `src/`.
+- **Python format**: `uv run ruff format .`
+- **Python lint**: `uv run ruff check .`
+- **Python type check**: `uv run basedpyright src`
+- **Pre-commit**: `uv run pre-commit run --all-files`
+- **Frontend lint**: `npm run lint --prefix frontend`
+- **Frontend format**: `npm run format --prefix frontend`
+- **Frontend typecheck**: `npm run typecheck --prefix frontend`
+- **Policy**: no new lint or type errors in touched areas.
