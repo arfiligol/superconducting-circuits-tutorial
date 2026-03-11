@@ -7,7 +7,7 @@ from src.app.domain.session import (
     SessionState,
     WorkspaceContext,
 )
-from src.app.services.service_errors import api_error
+from src.app.services.service_errors import service_error
 
 
 class SessionRepository(Protocol):
@@ -34,7 +34,7 @@ class SessionService:
 
     def set_active_dataset(self, dataset_id: str | None) -> AppSession:
         if dataset_id is not None and self._dataset_repository.get_dataset(dataset_id) is None:
-            raise api_error(
+            raise service_error(
                 404,
                 code="dataset_not_found",
                 category="not_found",

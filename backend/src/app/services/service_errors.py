@@ -1,35 +1,39 @@
-from typing import Literal, TypedDict
-
-from fastapi import HTTPException
+from dataclasses import dataclass, field
+from typing import Literal
 
 ApiErrorCategory = Literal["not_found", "validation", "forbidden", "conflict"]
 
 
-class ApiFieldErrorDetail(TypedDict):
+@dataclass(frozen=True)
+class ServiceFieldError:
     field: str
     message: str
 
 
-class ApiErrorDetail(TypedDict, total=False):
+@dataclass(frozen=True)
+class ServiceError(Exception):
+    status_code: int
     code: str
     category: ApiErrorCategory
     message: str
-    field_errors: list[ApiFieldErrorDetail]
+    field_errors: tuple[ServiceFieldError, ...] = field(default_factory=tuple)
+
+    def __str__(self) -> str:
+        return self.message
 
 
-def api_error(
+def service_error(
     status_code: int,
     *,
     code: str,
     category: ApiErrorCategory,
     message: str,
-    field_errors: list[ApiFieldErrorDetail] | None = None,
-) -> HTTPException:
-    detail: ApiErrorDetail = {
-        "code": code,
-        "category": category,
-        "message": message,
-    }
-    if field_errors is not None:
-        detail["field_errors"] = field_errors
-    return HTTPException(status_code=status_code, detail=detail)
+    field_errors: tuple[ServiceFieldError, ...] = (),
+) -> ServiceError:
+    return ServiceError(
+        status_code=status_code,
+        code=code,
+        category=category,
+        message=message,
+        field_errors=field_errors,
+    )

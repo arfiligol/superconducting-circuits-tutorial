@@ -12,7 +12,7 @@ from src.app.domain.tasks import (
     TaskListQuery,
     TaskSubmissionDraft,
 )
-from src.app.services.service_errors import api_error
+from src.app.services.service_errors import service_error
 
 
 class TaskRepository(Protocol):
@@ -56,7 +56,7 @@ class TaskService:
         detail = self._repository.get_task(task_id)
         session = self._session_repository.get_session_state()
         if detail is None or not self._is_visible(detail, session, scope="workspace"):
-            raise api_error(
+            raise service_error(
                 404,
                 code="task_not_found",
                 category="not_found",
@@ -70,7 +70,7 @@ class TaskService:
         submitted_from_active_dataset = draft.dataset_id is None and resolved_dataset_id is not None
 
         if draft.kind == "simulation" and draft.definition_id is None:
-            raise api_error(
+            raise service_error(
                 422,
                 code="simulation_definition_required",
                 category="validation",
@@ -78,7 +78,7 @@ class TaskService:
             )
 
         if draft.kind in {"post_processing", "characterization"} and resolved_dataset_id is None:
-            raise api_error(
+            raise service_error(
                 422,
                 code="dataset_context_required",
                 category="validation",
@@ -89,7 +89,7 @@ class TaskService:
             resolved_dataset_id is not None
             and self._dataset_repository.get_dataset(resolved_dataset_id) is None
         ):
-            raise api_error(
+            raise service_error(
                 404,
                 code="dataset_not_found",
                 category="not_found",
@@ -103,7 +103,7 @@ class TaskService:
             )
             is None
         ):
-            raise api_error(
+            raise service_error(
                 404,
                 code="circuit_definition_not_found",
                 category="not_found",

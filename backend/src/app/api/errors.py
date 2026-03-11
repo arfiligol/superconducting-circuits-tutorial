@@ -3,11 +3,32 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from src.app.services.service_errors import ServiceError
 
 
 def install_error_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(ServiceError, _service_error_handler)
     app.add_exception_handler(HTTPException, _http_exception_handler)
     app.add_exception_handler(RequestValidationError, _request_validation_handler)
+
+
+async def _service_error_handler(_: Request, exc: Exception) -> JSONResponse:
+    service_exc = exc if isinstance(exc, ServiceError) else _unexpected_service_error(exc)
+    return JSONResponse(
+        status_code=service_exc.status_code,
+        content={
+            "error": {
+                "code": service_exc.code,
+                "category": service_exc.category,
+                "message": service_exc.message,
+                "status": service_exc.status_code,
+                "field_errors": [
+                    {"field": field_error.field, "message": field_error.message}
+                    for field_error in service_exc.field_errors
+                ],
+            }
+        },
+    )
 
 
 async def _http_exception_handler(_: Request, exc: Exception) -> JSONResponse:
@@ -85,3 +106,12 @@ def _default_error_category(status_code: int) -> str:
     if status_code == status.HTTP_409_CONFLICT:
         return "conflict"
     return "validation"
+
+
+def _unexpected_service_error(exc: Exception) -> ServiceError:
+    return ServiceError(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        code="request_failed",
+        category="validation",
+        message=str(exc),
+    )

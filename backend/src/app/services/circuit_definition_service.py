@@ -8,7 +8,7 @@ from src.app.domain.circuit_definitions import (
     CircuitDefinitionSummary,
     CircuitDefinitionUpdate,
 )
-from src.app.services.service_errors import api_error
+from src.app.services.service_errors import service_error
 
 
 class CircuitDefinitionRepository(Protocol):
@@ -48,7 +48,7 @@ class CircuitDefinitionService:
     def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail:
         detail = self._repository.get_circuit_definition(definition_id)
         if detail is None:
-            raise api_error(
+            raise service_error(
                 404,
                 code="circuit_definition_not_found",
                 category="not_found",
@@ -66,7 +66,7 @@ class CircuitDefinitionService:
     ) -> CircuitDefinitionDetail:
         detail = self._repository.update_circuit_definition(definition_id, update)
         if detail is None:
-            raise api_error(
+            raise service_error(
                 404,
                 code="circuit_definition_not_found",
                 category="not_found",
@@ -77,7 +77,7 @@ class CircuitDefinitionService:
     def delete_circuit_definition(self, definition_id: int) -> None:
         deleted = self._repository.delete_circuit_definition(definition_id)
         if not deleted:
-            raise api_error(
+            raise service_error(
                 404,
                 code="circuit_definition_not_found",
                 category="not_found",
