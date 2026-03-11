@@ -50,6 +50,24 @@ def test_get_dataset_returns_detail_payload() -> None:
         "artifact_count": 4,
         "lineage_depth": 4,
     }
+    assert payload["storage"]["metadata_record"] == {
+        "backend": "sqlite_metadata",
+        "record_type": "dataset",
+        "record_id": "dataset:fluxonium-2025-031",
+        "version": 3,
+    }
+    assert payload["storage"]["primary_trace"] == {
+        "backend": "local_zarr",
+        "store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr",
+        "store_uri": "trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
+        "group_path": "trace_batches/88",
+        "array_path": "signals/iq_real",
+        "schema_version": "1.0",
+    }
+    assert payload["storage"]["result_handles"][0]["kind"] == "fit_summary"
+    assert payload["storage"]["result_handles"][0]["payload_locator"] == (
+        "artifacts/fit-summary.json"
+    )
 
 
 def test_patch_dataset_metadata_updates_seeded_dataset() -> None:
@@ -69,6 +87,9 @@ def test_patch_dataset_metadata_updates_seeded_dataset() -> None:
     assert payload["dataset"]["capabilities"] == ["t1", "spectroscopy"]
     assert payload["dataset"]["source"] == "reviewed"
     assert payload["dataset"]["metrics"]["capability_count"] == 2
+    assert payload["dataset"]["storage"]["metadata_record"]["record_id"] == (
+        "dataset:fluxonium-2025-031"
+    )
 
 
 def test_patch_dataset_metadata_rejects_duplicate_capabilities() -> None:

@@ -1,6 +1,12 @@
 from dataclasses import replace
 
 from src.app.domain.session import SessionState, SessionUser
+from src.app.domain.storage import (
+    MetadataRecordRef,
+    ResultHandleKind,
+    ResultHandleRef,
+    TracePayloadRef,
+)
 from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
@@ -29,8 +35,9 @@ class InMemoryRewriteAppStateRepository:
         return self._tasks.get(task_id)
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
+        task_id = self._next_task_id
         task = TaskDetail(
-            task_id=self._next_task_id,
+            task_id=task_id,
             kind=draft.kind,
             lane=draft.lane,
             execution_mode=draft.execution_mode,
@@ -54,7 +61,7 @@ class InMemoryRewriteAppStateRepository:
                 summary="Task accepted by rewrite in-memory scaffold.",
                 updated_at="2026-03-12 10:30:00",
             ),
-            result_refs=TaskResultRefs(trace_batch_id=None, analysis_run_id=None),
+            result_refs=_build_pending_result_refs(task_id=task_id, draft=draft),
         )
         self._tasks[task.task_id] = task
         self._next_task_id += 1
@@ -108,7 +115,13 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 summary="simulation_run_task started in the simulation lane.",
                 updated_at="2026-03-12 09:22:00",
             ),
-            result_refs=TaskResultRefs(trace_batch_id=None, analysis_run_id=None),
+            result_refs=TaskResultRefs(
+                trace_batch_id=None,
+                analysis_run_id=None,
+                metadata_records=(),
+                trace_payload=None,
+                result_handles=(),
+            ),
         ),
         TaskDetail(
             task_id=302,
@@ -135,7 +148,13 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 summary="Task accepted by rewrite in-memory scaffold.",
                 updated_at="2026-03-12 08:40:00",
             ),
-            result_refs=TaskResultRefs(trace_batch_id=None, analysis_run_id=None),
+            result_refs=TaskResultRefs(
+                trace_batch_id=None,
+                analysis_run_id=None,
+                metadata_records=(),
+                trace_payload=None,
+                result_handles=(),
+            ),
         ),
         TaskDetail(
             task_id=303,
@@ -162,7 +181,66 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 summary="post_processing_run_task completed in the simulation lane.",
                 updated_at="2026-03-11 19:18:00",
             ),
-            result_refs=TaskResultRefs(trace_batch_id=88, analysis_run_id=None),
+            result_refs=TaskResultRefs(
+                trace_batch_id=88,
+                analysis_run_id=None,
+                metadata_records=(
+                    MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="trace_batch",
+                        record_id="trace_batch:88",
+                        version=1,
+                    ),
+                    MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="result_handle",
+                        record_id="result_handle:501",
+                        version=2,
+                    ),
+                ),
+                trace_payload=TracePayloadRef(
+                    backend="local_zarr",
+                    store_key="datasets/fluxonium-2025-031/trace-batches/88.zarr",
+                    store_uri="trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
+                    group_path="trace_batches/88",
+                    array_path="signals/iq_real",
+                    schema_version="1.0",
+                ),
+                result_handles=(
+                    ResultHandleRef(
+                        handle_id="result:fluxonium-2025-031:fit-summary",
+                        kind="fit_summary",
+                        status="materialized",
+                        label="Fluxonium fit summary",
+                        metadata_record=MetadataRecordRef(
+                            backend="sqlite_metadata",
+                            record_type="result_handle",
+                            record_id="result_handle:501",
+                            version=2,
+                        ),
+                        payload_backend="json_artifact",
+                        payload_format="json",
+                        payload_locator="artifacts/fit-summary.json",
+                        provenance_task_id=303,
+                    ),
+                    ResultHandleRef(
+                        handle_id="result:fluxonium-2025-031:plot-bundle",
+                        kind="plot_bundle",
+                        status="materialized",
+                        label="Fluxonium plot bundle",
+                        metadata_record=MetadataRecordRef(
+                            backend="sqlite_metadata",
+                            record_type="result_handle",
+                            record_id="result_handle:502",
+                            version=1,
+                        ),
+                        payload_backend="bundle_archive",
+                        payload_format="zip",
+                        payload_locator="artifacts/plot-bundle.zip",
+                        provenance_task_id=303,
+                    ),
+                ),
+            ),
         ),
         TaskDetail(
             task_id=304,
@@ -189,7 +267,13 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 summary="Task accepted by rewrite in-memory scaffold.",
                 updated_at="2026-03-11 17:40:00",
             ),
-            result_refs=TaskResultRefs(trace_batch_id=None, analysis_run_id=None),
+            result_refs=TaskResultRefs(
+                trace_batch_id=None,
+                analysis_run_id=None,
+                metadata_records=(),
+                trace_payload=None,
+                result_handles=(),
+            ),
         ),
         TaskDetail(
             task_id=305,
@@ -216,6 +300,103 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 summary="characterization_run_task started in the characterization lane.",
                 updated_at="2026-03-11 17:00:00",
             ),
-            result_refs=TaskResultRefs(trace_batch_id=None, analysis_run_id=12),
+            result_refs=TaskResultRefs(
+                trace_batch_id=None,
+                analysis_run_id=12,
+                metadata_records=(
+                    MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="analysis_run",
+                        record_id="analysis_run:12",
+                        version=4,
+                    ),
+                    MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="result_handle",
+                        record_id="result_handle:612",
+                        version=3,
+                    ),
+                ),
+                trace_payload=TracePayloadRef(
+                    backend="local_zarr",
+                    store_key="datasets/transmon-coupler-014/analysis-runs/12.zarr",
+                    store_uri="trace_store/datasets/transmon-coupler-014/analysis-runs/12.zarr",
+                    group_path="analysis_runs/12",
+                    array_path="derived/chi_fit",
+                    schema_version="1.0",
+                ),
+                result_handles=(
+                    ResultHandleRef(
+                        handle_id="result:transmon-coupler-014:characterization-report",
+                        kind="characterization_report",
+                        status="materialized",
+                        label="Coupler characterization report",
+                        metadata_record=MetadataRecordRef(
+                            backend="sqlite_metadata",
+                            record_type="result_handle",
+                            record_id="result_handle:612",
+                            version=3,
+                        ),
+                        payload_backend="markdown_artifact",
+                        payload_format="markdown",
+                        payload_locator="artifacts/fit-report.md",
+                        provenance_task_id=305,
+                    ),
+                ),
+            ),
         ),
     )
+
+
+def _build_pending_result_refs(
+    *,
+    task_id: int,
+    draft: TaskCreateDraft,
+) -> TaskResultRefs:
+    return TaskResultRefs(
+        trace_batch_id=None,
+        analysis_run_id=None,
+        metadata_records=(
+            MetadataRecordRef(
+                backend="sqlite_metadata",
+                record_type="result_handle",
+                record_id=f"result_handle:pending:{task_id}",
+                version=1,
+            ),
+        ),
+        trace_payload=None,
+        result_handles=(
+            ResultHandleRef(
+                handle_id=f"task-result:{task_id}:primary",
+                kind=_default_result_handle_kind(draft.kind),
+                status="pending",
+                label=_default_result_handle_label(draft.kind),
+                metadata_record=MetadataRecordRef(
+                    backend="sqlite_metadata",
+                    record_type="result_handle",
+                    record_id=f"result_handle:pending:{task_id}",
+                    version=1,
+                ),
+                payload_backend=None,
+                payload_format=None,
+                payload_locator=None,
+                provenance_task_id=task_id,
+            ),
+        ),
+    )
+
+
+def _default_result_handle_kind(task_kind: str) -> ResultHandleKind:
+    if task_kind == "characterization":
+        return "characterization_report"
+    if task_kind == "post_processing":
+        return "fit_summary"
+    return "simulation_trace"
+
+
+def _default_result_handle_label(task_kind: str) -> str:
+    if task_kind == "characterization":
+        return "Pending characterization report"
+    if task_kind == "post_processing":
+        return "Pending fit summary"
+    return "Pending simulation trace"

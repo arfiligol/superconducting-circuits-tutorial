@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from sc_core.tasking import TaskExecutionMode, WorkerTaskName
+from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 
 TaskKind = Literal["simulation", "post_processing", "characterization"]
 TaskLane = Literal["simulation", "characterization"]
@@ -22,6 +23,9 @@ class TaskProgress:
 class TaskResultRefs:
     trace_batch_id: int | None
     analysis_run_id: int | None
+    metadata_records: tuple[MetadataRecordRef, ...]
+    trace_payload: TracePayloadRef | None
+    result_handles: tuple[ResultHandleRef, ...]
 
 
 @dataclass(frozen=True)

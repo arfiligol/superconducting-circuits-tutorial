@@ -17,6 +17,7 @@ from src.app.domain.circuit_definitions import (
     ValidationNotice,
 )
 from src.app.domain.datasets import DatasetDetail, DatasetMetadataUpdate, DatasetSummary
+from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 
 
 class InMemoryRewriteCatalogRepository:
@@ -183,6 +184,54 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
                 "fit/transmon-loss",
                 "review/device-lab",
             ),
+            metadata_record=MetadataRecordRef(
+                backend="sqlite_metadata",
+                record_type="dataset",
+                record_id="dataset:fluxonium-2025-031",
+                version=3,
+            ),
+            primary_trace=TracePayloadRef(
+                backend="local_zarr",
+                store_key="datasets/fluxonium-2025-031/trace-batches/88.zarr",
+                store_uri="trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
+                group_path="trace_batches/88",
+                array_path="signals/iq_real",
+                schema_version="1.0",
+            ),
+            result_handles=(
+                ResultHandleRef(
+                    handle_id="result:fluxonium-2025-031:fit-summary",
+                    kind="fit_summary",
+                    status="materialized",
+                    label="Fluxonium fit summary",
+                    metadata_record=MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="result_handle",
+                        record_id="result_handle:501",
+                        version=2,
+                    ),
+                    payload_backend="json_artifact",
+                    payload_format="json",
+                    payload_locator="artifacts/fit-summary.json",
+                    provenance_task_id=303,
+                ),
+                ResultHandleRef(
+                    handle_id="result:fluxonium-2025-031:plot-bundle",
+                    kind="plot_bundle",
+                    status="materialized",
+                    label="Fluxonium plot bundle",
+                    metadata_record=MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="result_handle",
+                        record_id="result_handle:502",
+                        version=1,
+                    ),
+                    payload_backend="bundle_archive",
+                    payload_format="zip",
+                    payload_locator="artifacts/plot-bundle.zip",
+                    provenance_task_id=303,
+                ),
+            ),
         ),
         DatasetDetail(
             dataset_id="transmon-coupler-014",
@@ -203,6 +252,38 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
             ),
             artifacts=("detuning.csv", "fit-report.md"),
             lineage=("import/legacy", "regrid/v1", "fit/manual"),
+            metadata_record=MetadataRecordRef(
+                backend="sqlite_metadata",
+                record_type="dataset",
+                record_id="dataset:transmon-coupler-014",
+                version=5,
+            ),
+            primary_trace=TracePayloadRef(
+                backend="local_zarr",
+                store_key="datasets/transmon-coupler-014/analysis-runs/12.zarr",
+                store_uri="trace_store/datasets/transmon-coupler-014/analysis-runs/12.zarr",
+                group_path="analysis_runs/12",
+                array_path="derived/chi_fit",
+                schema_version="1.0",
+            ),
+            result_handles=(
+                ResultHandleRef(
+                    handle_id="result:transmon-coupler-014:characterization-report",
+                    kind="characterization_report",
+                    status="materialized",
+                    label="Coupler characterization report",
+                    metadata_record=MetadataRecordRef(
+                        backend="sqlite_metadata",
+                        record_type="result_handle",
+                        record_id="result_handle:612",
+                        version=3,
+                    ),
+                    payload_backend="markdown_artifact",
+                    payload_format="markdown",
+                    payload_locator="artifacts/fit-report.md",
+                    provenance_task_id=305,
+                ),
+            ),
         ),
     )
 

@@ -7,7 +7,13 @@ from src.app.api.schemas.datasets import (
     DatasetMetadataUpdateRequest,
     DatasetMetadataUpdateResponse,
     DatasetMetricsResponse,
+    DatasetStorageResponse,
     DatasetSummaryResponse,
+)
+from src.app.api.schemas.storage import (
+    MetadataRecordRefResponse,
+    ResultHandleRefResponse,
+    TracePayloadRefResponse,
 )
 from src.app.domain.datasets import (
     DatasetDetail,
@@ -18,6 +24,7 @@ from src.app.domain.datasets import (
     DatasetSummary,
     SortOrder,
 )
+from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 from src.app.infrastructure.runtime import get_dataset_service
 from src.app.services.dataset_service import DatasetService
 
@@ -104,4 +111,53 @@ def _build_dataset_detail_response(detail: DatasetDetail) -> DatasetDetailRespon
             artifact_count=len(detail.artifacts),
             lineage_depth=len(detail.lineage),
         ),
+        storage=DatasetStorageResponse(
+            metadata_record=_build_metadata_record_ref_response(detail.metadata_record),
+            primary_trace=_build_trace_payload_ref_response(detail.primary_trace),
+            result_handles=[
+                _build_result_handle_ref_response(handle) for handle in detail.result_handles
+            ],
+        ),
+    )
+
+
+def _build_metadata_record_ref_response(
+    record: MetadataRecordRef,
+) -> MetadataRecordRefResponse:
+    return MetadataRecordRefResponse(
+        backend=record.backend,
+        record_type=record.record_type,
+        record_id=record.record_id,
+        version=record.version,
+    )
+
+
+def _build_trace_payload_ref_response(
+    trace_payload: TracePayloadRef | None,
+) -> TracePayloadRefResponse | None:
+    if trace_payload is None:
+        return None
+    return TracePayloadRefResponse(
+        backend=trace_payload.backend,
+        store_key=trace_payload.store_key,
+        store_uri=trace_payload.store_uri,
+        group_path=trace_payload.group_path,
+        array_path=trace_payload.array_path,
+        schema_version=trace_payload.schema_version,
+    )
+
+
+def _build_result_handle_ref_response(
+    handle: ResultHandleRef,
+) -> ResultHandleRefResponse:
+    return ResultHandleRefResponse(
+        handle_id=handle.handle_id,
+        kind=handle.kind,
+        status=handle.status,
+        label=handle.label,
+        metadata_record=_build_metadata_record_ref_response(handle.metadata_record),
+        payload_backend=handle.payload_backend,
+        payload_format=handle.payload_format,
+        payload_locator=handle.payload_locator,
+        provenance_task_id=handle.provenance_task_id,
     )

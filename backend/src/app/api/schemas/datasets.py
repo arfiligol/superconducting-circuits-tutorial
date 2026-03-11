@@ -1,6 +1,11 @@
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from src.app.api.schemas.storage import (
+    MetadataRecordRefResponse,
+    ResultHandleRefResponse,
+    TracePayloadRefResponse,
+)
 
 
 class DatasetSummaryResponse(BaseModel):
@@ -25,6 +30,12 @@ class DatasetMetricsResponse(BaseModel):
     lineage_depth: int
 
 
+class DatasetStorageResponse(BaseModel):
+    metadata_record: MetadataRecordRefResponse
+    primary_trace: TracePayloadRefResponse | None
+    result_handles: list[ResultHandleRefResponse]
+
+
 class DatasetDetailResponse(DatasetSummaryResponse):
     capabilities: list[str]
     tags: list[str]
@@ -33,6 +44,7 @@ class DatasetDetailResponse(DatasetSummaryResponse):
     artifacts: list[str]
     lineage: list[str]
     metrics: DatasetMetricsResponse
+    storage: DatasetStorageResponse
 
 
 class DatasetMetadataUpdateRequest(BaseModel):

@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
+
 DatasetStatus = Literal["Ready", "Queued", "Review"]
 DatasetSortBy = Literal["updated_at", "name", "samples"]
 SortOrder = Literal["asc", "desc"]
@@ -39,6 +41,9 @@ class DatasetDetail:
     preview_rows: tuple[tuple[str, ...], ...]
     artifacts: tuple[str, ...]
     lineage: tuple[str, ...]
+    metadata_record: MetadataRecordRef
+    primary_trace: TracePayloadRef | None
+    result_handles: tuple[ResultHandleRef, ...]
 
 
 @dataclass(frozen=True)

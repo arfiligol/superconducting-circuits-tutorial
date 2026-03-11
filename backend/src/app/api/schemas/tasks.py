@@ -2,6 +2,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sc_core.tasking import TaskExecutionMode, WorkerTaskName
+from src.app.api.schemas.storage import (
+    MetadataRecordRefResponse,
+    ResultHandleRefResponse,
+    TracePayloadRefResponse,
+)
 
 
 class TaskProgressResponse(BaseModel):
@@ -14,6 +19,9 @@ class TaskProgressResponse(BaseModel):
 class TaskResultRefsResponse(BaseModel):
     trace_batch_id: int | None
     analysis_run_id: int | None
+    metadata_records: list[MetadataRecordRefResponse]
+    trace_payload: TracePayloadRefResponse | None
+    result_handles: list[ResultHandleRefResponse]
 
 
 class TaskSummaryResponse(BaseModel):

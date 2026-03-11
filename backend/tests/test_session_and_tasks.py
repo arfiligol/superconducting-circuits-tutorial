@@ -1,7 +1,14 @@
+import pytest
 from fastapi.testclient import TestClient
+from src.app.infrastructure.runtime import reset_runtime_state
 from src.app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_app_state() -> None:
+    reset_runtime_state()
 
 
 def test_get_session_returns_dev_stub_and_active_dataset() -> None:
@@ -92,6 +99,32 @@ def test_get_task_returns_detail_payload() -> None:
     assert payload["visibility_scope"] == "owned"
     assert payload["request_ready"] is True
     assert payload["result_refs"]["trace_batch_id"] == 88
+    assert payload["result_refs"]["metadata_records"] == [
+        {
+            "backend": "sqlite_metadata",
+            "record_type": "trace_batch",
+            "record_id": "trace_batch:88",
+            "version": 1,
+        },
+        {
+            "backend": "sqlite_metadata",
+            "record_type": "result_handle",
+            "record_id": "result_handle:501",
+            "version": 2,
+        },
+    ]
+    assert payload["result_refs"]["trace_payload"] == {
+        "backend": "local_zarr",
+        "store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr",
+        "store_uri": "trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
+        "group_path": "trace_batches/88",
+        "array_path": "signals/iq_real",
+        "schema_version": "1.0",
+    }
+    assert payload["result_refs"]["result_handles"][0]["handle_id"] == (
+        "result:fluxonium-2025-031:fit-summary"
+    )
+    assert payload["result_refs"]["result_handles"][0]["provenance_task_id"] == 303
 
 
 def test_get_task_returns_not_found_for_missing_task() -> None:
@@ -122,6 +155,25 @@ def test_submit_characterization_task_uses_active_dataset() -> None:
     assert payload["task"]["worker_task_name"] == "characterization_run_task"
     assert payload["task"]["execution_mode"] == "run"
     assert payload["task"]["request_ready"] is True
+    assert payload["task"]["result_refs"]["trace_payload"] is None
+    assert payload["task"]["result_refs"]["result_handles"] == [
+        {
+            "handle_id": "task-result:306:primary",
+            "kind": "characterization_report",
+            "status": "pending",
+            "label": "Pending characterization report",
+            "metadata_record": {
+                "backend": "sqlite_metadata",
+                "record_type": "result_handle",
+                "record_id": "result_handle:pending:306",
+                "version": 1,
+            },
+            "payload_backend": None,
+            "payload_format": None,
+            "payload_locator": None,
+            "provenance_task_id": 306,
+        }
+    ]
 
 
 def test_submit_simulation_task_returns_queued_task_detail() -> None:
@@ -143,6 +195,15 @@ def test_submit_simulation_task_returns_queued_task_detail() -> None:
     assert payload["task"]["worker_task_name"] == "simulation_smoke_task"
     assert payload["task"]["execution_mode"] == "smoke"
     assert payload["task"]["request_ready"] is False
+    assert payload["task"]["result_refs"]["metadata_records"] == [
+        {
+            "backend": "sqlite_metadata",
+            "record_type": "result_handle",
+            "record_id": "result_handle:pending:306",
+            "version": 1,
+        }
+    ]
+    assert payload["task"]["result_refs"]["result_handles"][0]["kind"] == "simulation_trace"
 
 
 def test_submit_simulation_task_requires_definition_id() -> None:
