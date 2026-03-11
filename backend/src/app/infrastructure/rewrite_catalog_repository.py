@@ -5,6 +5,7 @@ from src.app.domain.circuit_definitions import (
     CircuitDefinitionDraft,
     CircuitDefinitionSummary,
     CircuitDefinitionUpdate,
+    ValidationLevel,
     ValidationNotice,
 )
 from src.app.domain.datasets import DatasetDetail, DatasetMetadataUpdate, DatasetSummary
@@ -26,8 +27,12 @@ class InMemoryRewriteCatalogRepository:
                 family=dataset.family,
                 owner=dataset.owner,
                 updated_at=dataset.updated_at,
+                device_type=dataset.device_type,
+                source=dataset.source,
                 samples=dataset.samples,
                 status=dataset.status,
+                capability_count=len(dataset.capabilities),
+                tag_count=len(dataset.tags),
             )
             for dataset in self._datasets.values()
         ]
@@ -60,6 +65,8 @@ class InMemoryRewriteCatalogRepository:
                 name=definition.name,
                 created_at=definition.created_at,
                 element_count=definition.element_count,
+                validation_status=_validation_status(definition.validation_notices),
+                preview_artifact_count=len(definition.preview_artifacts),
             )
             for definition in self._circuit_definitions.values()
         ]
@@ -77,7 +84,7 @@ class InMemoryRewriteCatalogRepository:
             created_at="2026-03-11 23:30:00",
             element_count=_estimate_element_count(draft.source_text),
             source_text=draft.source_text,
-            normalized_output=_normalized_output_for(draft.name),
+            normalized_output=_normalized_output_for(draft.source_text),
             validation_notices=(
                 ValidationNotice(level="ok", message="Canonical schema matches rewrite draft v1."),
             ),
@@ -105,7 +112,7 @@ class InMemoryRewriteCatalogRepository:
             name=update.name,
             source_text=update.source_text,
             element_count=_estimate_element_count(update.source_text),
-            normalized_output=_normalized_output_for(update.name),
+            normalized_output=_normalized_output_for(update.source_text),
         )
         self._circuit_definitions[definition_id] = updated_definition
         return updated_definition
@@ -119,15 +126,36 @@ def _estimate_element_count(source_text: str) -> int:
     return max(1, sum(1 for line in source_text.splitlines() if ":" in line) - 3)
 
 
-def _normalized_output_for(name: str) -> str:
+def _normalized_output_for(source_text: str) -> str:
+    circuit_name = _extract_scalar(source_text, "name") or "pending_name"
+    family = _extract_scalar(source_text, "family") or "pending_family"
     return (
         "{\n"
-        f'  "circuit": "{name}",\n'
-        '  "elements": 3,\n'
+        f'  "circuit": "{circuit_name}",\n'
+        f'  "family": "{family}",\n'
+        f'  "elements": {_estimate_element_count(source_text)},\n'
         '  "ports": "pending migration",\n'
         '  "schemdraw_ready": true\n'
         "}"
     )
+
+
+def _extract_scalar(source_text: str, field_name: str) -> str | None:
+    for raw_line in source_text.splitlines():
+        line = raw_line.strip()
+        if not line.startswith(f"{field_name}:"):
+            continue
+        _, _, value = line.partition(":")
+        cleaned = value.strip()
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _validation_status(notices: tuple[ValidationNotice, ...]) -> ValidationLevel:
+    if any(notice.level == "warning" for notice in notices):
+        return "warning"
+    return "ok"
 
 
 def _seed_datasets() -> tuple[DatasetDetail, ...]:
@@ -195,28 +223,49 @@ def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:
             message="Port mapping metadata still needs migration from legacy forms.",
         ),
     )
+    floating_qubit_source = (
+        "circuit:\n"
+        "  name: fluxonium_reference_a\n"
+        "  family: fluxonium\n"
+        "  elements:\n"
+        "    junction:\n"
+        "      ej_ghz: 8.45\n"
+        "    shunt_inductor:\n"
+        "      el_ghz: 0.42\n"
+        "    capacitance:\n"
+        "      ec_ghz: 1.22\n"
+        "  sweep:\n"
+        "    flux_bias: [0.0, 0.5]\n"
+        "    temperature_mk: 15\n"
+    )
+    readout_chain_source = (
+        "circuit:\n"
+        "  name: fluxonium_readout_chain\n"
+        "  family: fluxonium\n"
+        "  elements:\n"
+        "    readout:\n"
+        "      resonator_ghz: 6.81\n"
+        "    coupling:\n"
+        "      chi_mhz: 2.4\n"
+    )
+    coupler_demo_source = (
+        "circuit:\n"
+        "  name: coupler_detuning_demo\n"
+        "  family: transmon\n"
+        "  elements:\n"
+        "    coupler:\n"
+        "      g_mhz: 11.2\n"
+        "    bus:\n"
+        "      resonance_ghz: 7.05\n"
+    )
     return (
         CircuitDefinitionDetail(
             definition_id=18,
             name="FloatingQubitWithXYLine",
             created_at="2026-03-08 18:19:42",
             element_count=12,
-            source_text=(
-                "circuit:\n"
-                "  name: fluxonium_reference_a\n"
-                "  family: fluxonium\n"
-                "  elements:\n"
-                "    junction:\n"
-                "      ej_ghz: 8.45\n"
-                "    shunt_inductor:\n"
-                "      el_ghz: 0.42\n"
-                "    capacitance:\n"
-                "      ec_ghz: 1.22\n"
-                "  sweep:\n"
-                "    flux_bias: [0.0, 0.5]\n"
-                "    temperature_mk: 15\n"
-            ),
-            normalized_output=_normalized_output_for("fluxonium_reference_a"),
+            source_text=floating_qubit_source,
+            normalized_output=_normalized_output_for(floating_qubit_source),
             validation_notices=base_notices,
             preview_artifacts=base_artifacts,
         ),
@@ -225,17 +274,8 @@ def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:
             name="FluxoniumReadoutChain",
             created_at="2026-03-05 11:14:03",
             element_count=9,
-            source_text=(
-                "circuit:\n"
-                "  name: fluxonium_readout_chain\n"
-                "  family: fluxonium\n"
-                "  elements:\n"
-                "    readout:\n"
-                "      resonator_ghz: 6.81\n"
-                "    coupling:\n"
-                "      chi_mhz: 2.4\n"
-            ),
-            normalized_output=_normalized_output_for("fluxonium_readout_chain"),
+            source_text=readout_chain_source,
+            normalized_output=_normalized_output_for(readout_chain_source),
             validation_notices=base_notices,
             preview_artifacts=base_artifacts,
         ),
@@ -244,17 +284,8 @@ def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:
             name="CouplerDetuningDemo",
             created_at="2026-02-25 09:43:18",
             element_count=8,
-            source_text=(
-                "circuit:\n"
-                "  name: coupler_detuning_demo\n"
-                "  family: transmon\n"
-                "  elements:\n"
-                "    coupler:\n"
-                "      g_mhz: 11.2\n"
-                "    bus:\n"
-                "      resonance_ghz: 7.05\n"
-            ),
-            normalized_output=_normalized_output_for("coupler_detuning_demo"),
+            source_text=coupler_demo_source,
+            normalized_output=_normalized_output_for(coupler_demo_source),
             validation_notices=base_notices,
             preview_artifacts=base_artifacts,
         ),

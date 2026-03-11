@@ -1,10 +1,14 @@
 from dataclasses import dataclass
 from typing import Literal
 
+ValidationLevel = Literal["ok", "warning"]
+CircuitDefinitionSortBy = Literal["created_at", "name", "element_count"]
+SortOrder = Literal["asc", "desc"]
+
 
 @dataclass(frozen=True)
 class ValidationNotice:
-    level: Literal["ok", "warning"]
+    level: ValidationLevel
     message: str
 
 
@@ -14,6 +18,8 @@ class CircuitDefinitionSummary:
     name: str
     created_at: str
     element_count: int
+    validation_status: ValidationLevel
+    preview_artifact_count: int
 
 
 @dataclass(frozen=True)
@@ -38,3 +44,10 @@ class CircuitDefinitionDraft:
 class CircuitDefinitionUpdate:
     name: str
     source_text: str
+
+
+@dataclass(frozen=True)
+class CircuitDefinitionListQuery:
+    search: str | None = None
+    sort_by: CircuitDefinitionSortBy = "created_at"
+    sort_order: SortOrder = "desc"
