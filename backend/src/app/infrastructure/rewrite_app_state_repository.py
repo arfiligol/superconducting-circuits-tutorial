@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+from sc_core.execution import TaskResultHandle
+
 from src.app.domain.session import SessionState, SessionUser
 from src.app.domain.storage import (
     MetadataRecordRef,
@@ -116,8 +118,7 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 updated_at="2026-03-12 09:22:00",
             ),
             result_refs=TaskResultRefs(
-                trace_batch_id=None,
-                analysis_run_id=None,
+                result_handle=TaskResultHandle(),
                 metadata_records=(),
                 trace_payload=None,
                 result_handles=(),
@@ -149,8 +150,7 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 updated_at="2026-03-12 08:40:00",
             ),
             result_refs=TaskResultRefs(
-                trace_batch_id=None,
-                analysis_run_id=None,
+                result_handle=TaskResultHandle(),
                 metadata_records=(),
                 trace_payload=None,
                 result_handles=(),
@@ -182,8 +182,7 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 updated_at="2026-03-11 19:18:00",
             ),
             result_refs=TaskResultRefs(
-                trace_batch_id=88,
-                analysis_run_id=None,
+                result_handle=TaskResultHandle(trace_batch_id=88),
                 metadata_records=(
                     MetadataRecordRef(
                         backend="sqlite_metadata",
@@ -268,8 +267,7 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 updated_at="2026-03-11 17:40:00",
             ),
             result_refs=TaskResultRefs(
-                trace_batch_id=None,
-                analysis_run_id=None,
+                result_handle=TaskResultHandle(),
                 metadata_records=(),
                 trace_payload=None,
                 result_handles=(),
@@ -301,8 +299,7 @@ def _seed_tasks() -> tuple[TaskDetail, ...]:
                 updated_at="2026-03-11 17:00:00",
             ),
             result_refs=TaskResultRefs(
-                trace_batch_id=None,
-                analysis_run_id=12,
+                result_handle=TaskResultHandle(analysis_run_id=12),
                 metadata_records=(
                     MetadataRecordRef(
                         backend="sqlite_metadata",
@@ -354,8 +351,7 @@ def _build_pending_result_refs(
     draft: TaskCreateDraft,
 ) -> TaskResultRefs:
     return TaskResultRefs(
-        trace_batch_id=None,
-        analysis_run_id=None,
+        result_handle=TaskResultHandle(),
         metadata_records=(
             MetadataRecordRef(
                 backend="sqlite_metadata",

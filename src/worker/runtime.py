@@ -23,6 +23,7 @@ from sc_core.execution import (
     build_task_success_payload,
     build_worker_audit_summary,
 )
+from sc_core.storage import TraceResultLinkage
 from sc_core.tasking import WorkerTaskName
 
 from core.shared.persistence.reconcile import ReconcileSummary, reconcile_stale_tasks_and_batches
@@ -43,6 +44,7 @@ class _LaneSimpleWorker(SimpleWorker):
 def _utcnow() -> datetime:
     """Return one naive UTC timestamp without using deprecated utcnow()."""
     return datetime.now(UTC).replace(tzinfo=None)
+
 
 def _task_start_payload(
     *,
@@ -161,14 +163,23 @@ def execute_managed_task(
         worker_task_name=worker_task_name,
         result=result,
     )
+    result_linkage = TraceResultLinkage.from_result_handle(result.result_handle())
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         actor_id = task.actor_id if task is not None else None
         uow.tasks.mark_completed(
             task_id,
-            result.trace_batch_id,
+            (
+                result_linkage.trace_batch.record_id
+                if result_linkage.trace_batch is not None
+                else None
+            ),
             completed_payload,
-            analysis_run_id=result.analysis_run_id,
+            analysis_run_id=(
+                result_linkage.analysis_run.record_id
+                if result_linkage.analysis_run is not None
+                else None
+            ),
         )
         uow.audit_logs.append_log(
             actor_id=actor_id,

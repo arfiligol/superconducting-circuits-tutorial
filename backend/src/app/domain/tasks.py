@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from sc_core.execution import TaskResultHandle
+from sc_core.storage import TraceResultLinkage
 from sc_core.tasking import TaskExecutionMode, WorkerTaskName
 
 from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
@@ -22,11 +24,21 @@ class TaskProgress:
 
 @dataclass(frozen=True)
 class TaskResultRefs:
-    trace_batch_id: int | None
-    analysis_run_id: int | None
+    result_handle: TaskResultHandle
     metadata_records: tuple[MetadataRecordRef, ...]
     trace_payload: TracePayloadRef | None
     result_handles: tuple[ResultHandleRef, ...]
+
+    @property
+    def trace_batch_id(self) -> int | None:
+        return self.result_handle.trace_batch_id
+
+    @property
+    def analysis_run_id(self) -> int | None:
+        return self.result_handle.analysis_run_id
+
+    def storage_linkage(self) -> TraceResultLinkage:
+        return TraceResultLinkage.from_result_handle(self.result_handle)
 
 
 @dataclass(frozen=True)

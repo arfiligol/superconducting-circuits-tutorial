@@ -1,5 +1,7 @@
 from sc_core.circuit_definitions import DEFAULT_PREVIEW_ARTIFACTS, inspect_circuit_definition_source
+from sc_core.execution import TaskResultHandle
 from src.app.domain.circuit_definitions import CircuitDefinitionDraft
+from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 
 
@@ -28,3 +30,13 @@ def test_repository_creation_uses_sc_core_inspection_contract() -> None:
     assert tuple((notice.level, notice.message) for notice in created.validation_notices) == tuple(
         (notice.level, notice.message) for notice in inspection.validation_notices
     )
+
+
+def test_backend_task_result_refs_use_shared_execution_and_storage_contracts() -> None:
+    repository = InMemoryRewriteAppStateRepository()
+
+    task = repository.get_task(303)
+
+    assert task is not None
+    assert task.result_refs.result_handle == TaskResultHandle(trace_batch_id=88)
+    assert task.result_refs.storage_linkage().to_payload() == {"trace_batch_id": 88}
