@@ -22,7 +22,6 @@ dependencies = [
     "rq>=2.6.0",
     "sc-cli",
     "sc-core",
-    "superconducting-circuits-backend",
     "sqlmodel>=0.0.31",
     "typer>=0.12.0",
     "zarr>=3.1.3",
@@ -42,7 +41,6 @@ package = true
 [tool.uv.sources]
 sc-cli = { path = "cli", editable = true }
 sc-core = { path = "src/core", editable = true }
-superconducting-circuits-backend = { path = "backend", editable = true }
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -53,7 +51,7 @@ typeCheckingMode = "basic"
 pythonVersion = "3.12"
 include = ["src", "cli/src", "cli/tests"]
 exclude = ["**/__pycache__", ".venv", "data"]
-extraPaths = ["src", "src/core", "cli/src", "backend"]
+extraPaths = ["src", "src/core", "cli/src"]
 # Basic presence checks only, as requested
 reportMissingParameterType = "warning"
 reportUnknownParameterType = "none" # Allow unknown types from 3rd party libs
