@@ -6,10 +6,15 @@
     - The default delivery branch is `main`; if the user is actively working on another explicit branch, integrate back to that branch instead.
     - Integrator MUST define the task split, prompt structure, `Allowed Files`, and acceptance criteria for each round.
     - Integrator MUST treat prompt design as part of the integration job, not as an optional extra.
-- **Recommended Default Contributor Setup**:
-    - Prefer 3 long-lived contributors by default: Platform, Simulation, Characterization.
-    - Treat these as working defaults, not permanent hard boundaries.
-    - Exact file boundaries are defined per task by the Integrator.
+- **Fixed Agent Pool**:
+    - The contributor pool is restricted to exactly four contributor identities:
+        - Frontend Contributor Agent
+        - Backend Contributor Agent
+        - Core Contributor Agent
+        - CLI Contributor Agent
+    - Integration Agent is the only integrator identity.
+    - Do not invent temporary contributor role names without updating this source-of-truth first.
+    - Exact file boundaries are still defined per task by the Integrator.
 - **Contributor Boundaries**:
     - Contributors MUST edit only assigned files (`Allowed Files`).
     - If required changes exceed scope, stop and hand off to Integrator.

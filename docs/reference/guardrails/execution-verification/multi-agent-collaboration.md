@@ -9,8 +9,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "本地多 Agent 並行開發的隔離、整合與衝突避免規範"
-version: v1.3.0
-last_updated: 2026-03-08
+version: v1.4.0
+last_updated: 2026-03-12
 updated_by: codex
 ---
 
@@ -35,6 +35,28 @@ updated_by: codex
 - **Contributor Agent**：
   - 只在被分派範圍內修改
   - 只能產出可被整合的原子 commits 與交接說明
+
+## Fixed Agent Pool
+
+本專案當前固定使用下列 Agent 身份：
+
+1. **Integration Agent**
+   - 唯一的整合者
+   - 只負責 task split、prompt 發派、contributor 回收、cherry-pick、conflict resolution、驗證與最終整合
+   - 不負責日常 feature 開發，除非使用者明確要求例外
+2. **Frontend Contributor Agent**
+   - 負責 `frontend/` 與前端 UI/API integration 任務
+3. **Backend Contributor Agent**
+   - 負責 `backend/` 與 API/service/infrastructure 任務
+4. **Core Contributor Agent**
+   - 負責 `src/core/` 與共享科學邏輯、shared workflow 任務
+5. **CLI Contributor Agent**
+   - 負責 `cli/` 與正式 CLI adapter / command surface 任務
+
+!!! important "Contributor identities are fixed"
+    除了 `Frontend Contributor Agent`、`Backend Contributor Agent`、`Core Contributor Agent`、`CLI Contributor Agent` 之外，
+    不應再建立其他 Contributor 身份。
+    若某項工作跨越多個領域，應由 Integration Agent 重新切分任務，或分派給上述既有角色之一，而不是臨時發明新的 Contributor 類型。
 
 ## Integrator First Workflow
 
@@ -75,37 +97,15 @@ updated_by: codex
    - 若 contributor report 不完整、越界、或只有 dirty worktree 沒有 commit，Integrator 不應直接視為合格交付。
    - 最後一定要把 accepted changes 整回使用者的 delivery branch。
 
-## Recommended Default Contributor Setup
+## Role Policy
 
-為了降低長期協作的 token 成本，建議預設維持 **3 位固定 Contributor Agents**：
-
-1. `Platform Agent`
-   - 偏 persistence / repositories / TraceStore / metadata contracts / ingest write paths
-2. `Simulation Agent`
-   - 偏 simulation page / post-processing page / result views / Josephson examples E2E
-3. `Characterization Agent`
-   - 偏 characterization page / analysis services / trace scope / characterization regressions
-
-!!! note "這是 recommended default，不是硬性邊界"
-    文件不永久釘死 Contributor Agent 的檔案邊界。
-    每一輪任務的 `Allowed Files`、橋接責任、與 cross-cutting scope，仍由 Integrator 在 prompt 中明確指定。
-
-### Why use 3 fixed contributors by default
-
-- 可減少每輪重新建立大量 thread context 的成本
-- 可讓 contributor 長期累積各自子領域的上下文
-- 可讓 Integrator 更聚焦於切任務、整合、驗收，而不是每輪重新發明協作架構
-
-### When to add temporary specialist agents
-
-只有在固定 3 位 Contributor Agents 不足時，才建議臨時增派專項 Agent，例如：
-
-- docs-only refactor
-- validation matrix expansion
-- deployment / infra / CI
-- 一次性大型 Playwright stabilization
-
-臨時 Agent 應視為補充，不應取代 Integrator 的任務切分責任。
+- Contributor 角色集合固定為：
+  - `Frontend Contributor Agent`
+  - `Backend Contributor Agent`
+  - `Core Contributor Agent`
+  - `CLI Contributor Agent`
+- Integrator 若遇到額外需求，應重新切分 `Allowed Files` 與 task scope，而不是新增新角色名稱。
+- 若未來真的需要新增或替換 Contributor 類型，必須先更新本 SoT，再開始使用新身份。
 
 ## 必須遵守的協作流程
 
@@ -150,10 +150,15 @@ updated_by: codex
     - The default delivery branch is `main`; if the user is actively working on another explicit branch, integrate back to that branch instead.
     - Integrator MUST define the task split, prompt structure, `Allowed Files`, and acceptance criteria for each round.
     - Integrator MUST treat prompt design as part of the integration job, not as an optional extra.
-- **Recommended Default Contributor Setup**:
-    - Prefer 3 long-lived contributors by default: Platform, Simulation, Characterization.
-    - Treat these as working defaults, not permanent hard boundaries.
-    - Exact file boundaries are defined per task by the Integrator.
+- **Fixed Agent Pool**:
+    - The contributor pool is restricted to exactly four contributor identities:
+        - Frontend Contributor Agent
+        - Backend Contributor Agent
+        - Core Contributor Agent
+        - CLI Contributor Agent
+    - Integration Agent is the only integrator identity.
+    - Do not invent temporary contributor role names without updating this source-of-truth first.
+    - Exact file boundaries are still defined per task by the Integrator.
 - **Contributor Boundaries**:
     - Contributors MUST edit only assigned files (`Allowed Files`).
     - If required changes exceed scope, stop and hand off to Integrator.
