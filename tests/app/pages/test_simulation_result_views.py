@@ -1499,8 +1499,9 @@ def test_post_processing_panel_submits_persisted_api_task_instead_of_cpu_bound_e
     assert "build_post_processing_submission" not in panel_source
     assert "on_submit" in panel_source
     result_source = inspect.getsource(simulation_page._render_simulation_environment)
-    assert "submit_post_processing_task" in result_source
-    assert "build_post_processing_submission" in result_source
+    assert "_submit_post_processing_intent_impl" in result_source
+    assert "prepare_simulation_run" in result_source
+    assert "submit_simulation_run" in result_source
     assert "run.cpu_bound" not in panel_source
 
 

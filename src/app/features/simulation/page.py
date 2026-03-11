@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -15,10 +14,6 @@ from uuid import uuid4
 import numpy as np
 import plotly.graph_objects as go
 from nicegui import app, run, ui
-from app.features.simulation.api_client import (
-    submit_post_processing_task,
-    submit_simulation_task,
-)
 from app.features.simulation.recovery.latest_result import (
     _resolve_latest_persisted_post_processing_snapshot,
     _resolve_persisted_post_processing_input_snapshot,
@@ -102,7 +97,19 @@ from app.features.simulation.state import (
     default_result_view_state,
     default_sweep_result_view_state,
 )
-from app.features.simulation.submit_actions import build_simulation_submission
+from app.features.simulation.submit.post_processing_submit import (
+    submit_post_processing_intent as _submit_post_processing_intent_impl,
+)
+from app.features.simulation.submit.request_builders import (
+    hash_schema_source as _hash_schema_source_impl,
+    hash_stable_json as _hash_stable_json_impl,
+)
+from app.features.simulation.submit.simulation_submit import submit_simulation_run
+from app.features.simulation.submit.validation import (
+    PreparedSimulationRun,
+    SourceFormPayload,
+    prepare_simulation_run,
+)
 from app.features.simulation.views.common import (
     _Z0_CONTROL_CLASSES,
     _Z0_CONTROL_PROPS,
@@ -155,16 +162,12 @@ from app.features.simulation.views.sweep_results import (
     _build_sweep_metric_rows as _build_sweep_metric_rows_impl,
     _normalize_sweep_result_view_state as _normalize_sweep_result_view_state_impl,
 )
-from app.services.execution_context import build_ui_use_case_context
 from app.services.post_processing_step_registry import (
     POST_PROCESS_STEP_OPTIONS,
     build_default_step_config,
     normalize_saved_step_config,
     preview_pipeline_labels,
     serialize_post_processing_step,
-)
-from app.services.post_processing_task_contract import (
-    build_post_processing_submission,
 )
 from app.services.simulation_setup_manager import (
     delete_setup,
@@ -1073,19 +1076,13 @@ def _user_storage_set(key: str, value: Any) -> None:
 
 
 def _hash_stable_json(payload: dict[str, Any]) -> str:
-    """Return a stable hash for one JSON-compatible payload."""
-    normalized = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=True,
-    )
-    return f"sha256:{hashlib.sha256(normalized.encode('utf-8')).hexdigest()}"
+    """Compatibility wrapper around feature-local submit hash helpers."""
+    return _hash_stable_json_impl(payload)
 
 
 def _hash_schema_source(source_text: str) -> str:
-    """Return a stable hash for the stored source-form schema text."""
-    return f"sha256:{hashlib.sha256(source_text.encode('utf-8')).hexdigest()}"
+    """Compatibility wrapper around feature-local submit hash helpers."""
+    return _hash_schema_source_impl(source_text)
 
 
 def _ensure_simulation_cache_dataset(uow: SqliteUnitOfWork) -> DatasetRecord:
@@ -2824,6 +2821,13 @@ def _summarize_simulation_error(error: Exception | str) -> tuple[str, str]:
     return (first_line[:220], detail)
 
 
+def _simulation_validation_notify_message(message: str) -> str:
+    """Map validation errors to concise UI notify text."""
+    if message == "At least one source is required.":
+        return "Please add at least one source"
+    return message
+
+
 def _load_latest_circuit_definition(schema_id: int) -> tuple[CircuitRecord, CircuitDefinition]:
     """Load the latest schema record from DB and parse CircuitDefinition."""
     with get_unit_of_work() as uow:
@@ -3451,36 +3455,9 @@ def _render_simulation_environment():
             )
 
             async def _submit_post_processing_intent(intent: dict[str, Any]) -> Any:
-                submission = build_post_processing_submission(
-                    design_id=int(intent["design_id"]),
-                    source_batch_id=int(intent["source_batch_id"]),
-                    input_source=str(intent["input_source"]),
-                    mode_filter=str(intent["mode_filter"]),
-                    mode_token=str(intent["mode_token"]),
-                    reference_impedance_ohm=float(intent["reference_impedance_ohm"]),
-                    step_sequence=[dict(step) for step in list(intent["step_sequence"])],
-                    termination_plan_payload=(
-                        dict(intent["termination_plan_payload"])
-                        if isinstance(intent.get("termination_plan_payload"), Mapping)
-                        else None
-                    ),
-                    circuit_definition=cast(
-                        CircuitDefinition | None,
-                        intent.get("circuit_definition"),
-                    ),
-                    context=build_ui_use_case_context(
-                        metadata={
-                            "flow": "post_processing",
-                            "design_id": int(intent["design_id"]),
-                            "schema_id": _coerce_int_value(intent.get("schema_id"), 0),
-                            "source_batch_id": int(intent["source_batch_id"]),
-                        }
-                    ),
-                    force_rerun=False,
-                )
-                return await submit_post_processing_task(
-                    submission.api_request,
-                    client=owner_client,
+                return await _submit_post_processing_intent_impl(
+                    intent,
+                    owner_client=owner_client,
                 )
 
             def _record_post_processing_source_bundle(bundle_id: int | None) -> None:
@@ -5365,254 +5342,92 @@ def _render_simulation_environment():
                         )
                         latest_circuit_definition_ref["definition"] = latest_circuit_def
 
-                        # Basic validation
-                        required_values = [
-                            start_input.value,
-                            stop_input.value,
-                            points_input.value,
-                            n_mod_input.value,
-                            n_pump_input.value,
-                            max_intermod_input.value,
-                            max_iterations_input.value,
-                            ftol_input.value,
-                            linesearch_tol_input.value,
-                            alpha_min_input.value,
+                        harmonic_grid_hits: list[Any] = []
+                        source_rows = [
+                            SourceFormPayload(
+                                pump_freq_ghz=(
+                                    float(source_form["source_pump_freq_input"].value)
+                                    if source_form["source_pump_freq_input"].value is not None
+                                    else None
+                                ),
+                                port=(
+                                    int(source_form["port_input"].value)
+                                    if source_form["port_input"].value is not None
+                                    else None
+                                ),
+                                current_amp=(
+                                    float(source_form["current_input"].value)
+                                    if source_form["current_input"].value is not None
+                                    else None
+                                ),
+                                mode_text=str(source_form["mode_input"].value or ""),
+                            )
+                            for source_form in source_forms
                         ]
-                        if any(value is None for value in required_values):
-                            reset_status()
-                            append_status("warning", "Please fill all simulation parameters.")
-                            ui.notify("Please fill all simulation parameters", type="warning")
-                            return
-
-                        freq_range = FrequencyRange(
-                            start_ghz=start_input.value,
-                            stop_ghz=stop_input.value,
-                            points=int(points_input.value),
-                        )
-                        if freq_range.points < 2:
-                            reset_status()
-                            append_status("warning", "Points must be >= 2.")
-                            ui.notify("Points must be >= 2", type="warning")
-                            return
-
-                        if not source_forms:
-                            reset_status()
-                            append_status("warning", "At least one source is required.")
-                            ui.notify("Please add at least one source", type="warning")
-                            return
-
-                        sources: list[DriveSourceConfig] = []
-                        for idx, source_form in enumerate(source_forms, start=1):
-                            source_pump_freq_input = source_form["source_pump_freq_input"]
-                            port_input = source_form["port_input"]
-                            current_input = source_form["current_input"]
-                            mode_input = source_form["mode_input"]
-
-                            if (
-                                source_pump_freq_input.value is None
-                                or port_input.value is None
-                                or current_input.value is None
-                            ):
-                                reset_status()
-                                append_status(
-                                    "warning",
-                                    f"Source {idx} has missing parameters.",
-                                )
-                                ui.notify(f"Source {idx} has missing parameters", type="warning")
-                                return
-
-                            try:
-                                parsed_mode = _parse_source_mode_text(mode_input.value)
-                            except ValueError:
-                                reset_status()
-                                append_status(
-                                    "warning",
-                                    (
-                                        f"Source {idx} has an invalid mode tuple. "
-                                        "Use comma-separated integers."
-                                    ),
-                                )
-                                ui.notify(
-                                    (f"Source {idx} has an invalid mode tuple (e.g. 0 or 1, 0)."),
-                                    type="warning",
-                                )
-                                return
-
-                            normalized_mode = _normalize_source_mode_components(
-                                parsed_mode,
-                                source_index=idx - 1,
-                                source_count=len(source_forms),
+                        raw_sweep_setup_payload = _collect_sweep_setup_payload(notify_errors=False)
+                        try:
+                            prepared_run: PreparedSimulationRun = prepare_simulation_run(
+                                latest_record=latest_record,
+                                latest_circuit_def=latest_circuit_def,
+                                start_ghz=(
+                                    float(start_input.value)
+                                    if start_input.value is not None
+                                    else None
+                                ),
+                                stop_ghz=(
+                                    float(stop_input.value)
+                                    if stop_input.value is not None
+                                    else None
+                                ),
+                                points=(
+                                    int(points_input.value)
+                                    if points_input.value is not None
+                                    else None
+                                ),
+                                n_modulation_harmonics=(
+                                    int(n_mod_input.value) if n_mod_input.value is not None else None
+                                ),
+                                n_pump_harmonics=(
+                                    int(n_pump_input.value)
+                                    if n_pump_input.value is not None
+                                    else None
+                                ),
+                                include_dc=bool(include_dc_switch.value),
+                                enable_three_wave_mixing=bool(three_wave_switch.value),
+                                enable_four_wave_mixing=bool(four_wave_switch.value),
+                                max_intermod_order_raw=(
+                                    int(max_intermod_input.value)
+                                    if max_intermod_input.value is not None
+                                    else None
+                                ),
+                                max_iterations=(
+                                    int(max_iterations_input.value)
+                                    if max_iterations_input.value is not None
+                                    else None
+                                ),
+                                f_tol=(
+                                    float(ftol_input.value) if ftol_input.value is not None else None
+                                ),
+                                line_search_switch_tol=(
+                                    float(linesearch_tol_input.value)
+                                    if linesearch_tol_input.value is not None
+                                    else None
+                                ),
+                                alpha_min=(
+                                    float(alpha_min_input.value)
+                                    if alpha_min_input.value is not None
+                                    else None
+                                ),
+                                source_rows=source_rows,
+                                raw_sweep_setup_payload=raw_sweep_setup_payload,
                             )
-
-                            sources.append(
-                                DriveSourceConfig(
-                                    pump_freq_ghz=float(source_pump_freq_input.value),
-                                    port=int(port_input.value),
-                                    current_amp=float(current_input.value),
-                                    mode_components=normalized_mode,
-                                )
-                            )
-
-                        available_ports = _extract_available_port_indices(latest_circuit_def)
-                        if available_ports:
-                            invalid_sources = [
-                                source for source in sources if source.port not in available_ports
-                            ]
-                            if invalid_sources:
-                                valid_ports = ", ".join(str(p) for p in sorted(available_ports))
-                                reset_status()
-                                append_status(
-                                    "warning",
-                                    (f"Source port mismatch. Schema ports: {valid_ports}."),
-                                )
-                                ui.notify(
-                                    (
-                                        "Source port mismatch with schema "
-                                        f"(valid ports: {valid_ports})"
-                                    ),
-                                    type="warning",
-                                )
-                                return
-
-                        max_intermod_order = (
-                            None
-                            if int(max_intermod_input.value) < 0
-                            else int(max_intermod_input.value)
-                        )
-                        config = SimulationConfig(
-                            pump_freq_ghz=float(sources[0].pump_freq_ghz),
-                            sources=sources,
-                            pump_current_amp=float(sources[0].current_amp),
-                            pump_port=int(sources[0].port),
-                            pump_mode_index=1,
-                            n_modulation_harmonics=int(n_mod_input.value),
-                            n_pump_harmonics=int(n_pump_input.value),
-                            include_dc=bool(include_dc_switch.value),
-                            enable_three_wave_mixing=bool(three_wave_switch.value),
-                            enable_four_wave_mixing=bool(four_wave_switch.value),
-                            max_intermod_order=max_intermod_order,
-                            max_iterations=int(max_iterations_input.value),
-                            f_tol=float(ftol_input.value),
-                            line_search_switch_tol=float(linesearch_tol_input.value),
-                            alpha_min=float(alpha_min_input.value),
-                        )
-                        sweep_target_units_latest = _extract_sweep_target_units(
-                            latest_circuit_def,
-                            config=config,
-                        )
-                        sweep_setup_payload = _collect_sweep_setup_payload(notify_errors=False)
-                        if sweep_setup_payload is None:
+                        except ValueError as exc:
+                            message = str(exc)
                             reset_status()
-                            append_status(
-                                "warning",
-                                "Sweep setup is invalid. Please check axis inputs.",
-                            )
-                            ui.notify("Sweep setup is invalid.", type="warning")
+                            append_status("warning", message)
+                            ui.notify(_simulation_validation_notify_message(message), type="warning")
                             return
-                        sweep_setup_payload = _normalize_sweep_setup_payload(
-                            sweep_setup_payload,
-                            available_target_units=sweep_target_units_latest,
-                        )
-                        sweep_enabled = bool(sweep_setup_payload.get("enabled", False))
-                        sweep_plan: SimulationSweepPlan | None = None
-                        sweep_snapshot: dict[str, Any] | None = None
-                        sweep_setup_hash: str | None = None
-                        sweep_mode = str(sweep_setup_payload.get("mode", "cartesian"))
-                        if sweep_enabled:
-                            if sweep_mode != "cartesian":
-                                append_status(
-                                    "warning",
-                                    (
-                                        "Sweep mode 'paired' is reserved. "
-                                        "Current run falls back to cartesian expansion."
-                                    ),
-                                )
-                                sweep_mode = "cartesian"
-                            axes_payload = [
-                                axis
-                                for axis in list(sweep_setup_payload.get("axes", []))
-                                if isinstance(axis, Mapping)
-                            ]
-                            if not axes_payload:
-                                reset_status()
-                                append_status(
-                                    "warning",
-                                    "Sweep setup has no axis definitions.",
-                                )
-                                ui.notify("Sweep setup has no axis definitions.", type="warning")
-                                return
-                            total_sweep_points = _estimate_sweep_cartesian_point_count(axes_payload)
-                            if (
-                                sweep_mode == "cartesian"
-                                and total_sweep_points > _SWEEP_MAX_CARTESIAN_POINTS
-                            ):
-                                message = (
-                                    "Cartesian sweep point count exceeds limit "
-                                    f"({_SWEEP_MAX_CARTESIAN_POINTS}). "
-                                    f"Current total: {total_sweep_points}."
-                                )
-                                reset_status()
-                                append_status("warning", message)
-                                ui.notify(message, type="warning")
-                                return
-                            sweep_axes: list[SimulationSweepAxis] = []
-                            for axis_payload in axes_payload:
-                                target_value_ref = str(
-                                    axis_payload.get("target_value_ref", "")
-                                ).strip()
-                                if target_value_ref not in sweep_target_units_latest:
-                                    reset_status()
-                                    append_status(
-                                        "warning",
-                                        (
-                                            "Sweep target is invalid for the latest schema/setup: "
-                                            f"{target_value_ref}."
-                                        ),
-                                    )
-                                    ui.notify(
-                                        (
-                                            "Sweep target is invalid for the latest schema/setup: "
-                                            f"{target_value_ref}."
-                                        ),
-                                        type="warning",
-                                    )
-                                    return
-                                sweep_axes.append(
-                                    SimulationSweepAxis(
-                                        target_value_ref=target_value_ref,
-                                        values=build_linear_sweep_values(
-                                            start=float(axis_payload.get("start", 0.0)),
-                                            stop=float(axis_payload.get("stop", 0.0)),
-                                            points=max(1, int(axis_payload.get("points", 1))),
-                                        ),
-                                        unit=str(
-                                            sweep_target_units_latest.get(target_value_ref, "")
-                                        ),
-                                    )
-                                )
-                            try:
-                                sweep_plan = build_simulation_sweep_plan(
-                                    circuit=latest_circuit_def,
-                                    axes=sweep_axes,
-                                    config=config,
-                                )
-                            except ValueError as exc:
-                                reset_status()
-                                append_status("warning", str(exc))
-                                ui.notify(str(exc), type="warning")
-                                return
-                            sweep_snapshot = simulation_sweep_setup_snapshot(sweep_plan)
-                            sweep_snapshot["mode"] = sweep_mode
-                            sweep_setup_hash = _hash_stable_json(sweep_snapshot)
-                        harmonic_grid_hits = _detect_harmonic_grid_coincidences(
-                            freq_range=freq_range,
-                            sources=sources,
-                            max_pump_harmonic=config.n_pump_harmonics,
-                        )
-                        estimated_mode_lattice = _estimate_mode_lattice_size(
-                            sources,
-                            config.n_modulation_harmonics,
-                        )
+                        harmonic_grid_hits = list(prepared_run.harmonic_grid_hits)
 
                         simulation_run_id = f"sim-{uuid4().hex[:10]}"
                         runtime_state.set_log_context(
@@ -5623,25 +5438,28 @@ def _render_simulation_environment():
                         append_status(
                             "info",
                             (
-                                f"Sweep: {freq_range.start_ghz:.3f} to "
-                                f"{freq_range.stop_ghz:.3f} GHz, {freq_range.points} points."
+                                f"Sweep: {prepared_run.freq_range.start_ghz:.3f} to "
+                                f"{prepared_run.freq_range.stop_ghz:.3f} GHz, "
+                                f"{prepared_run.freq_range.points} points."
                             ),
                         )
-                        if sweep_plan is not None:
+                        for warning in prepared_run.warnings:
+                            append_status("warning", warning)
+                        if prepared_run.sweep_plan is not None:
                             axis_tokens = "; ".join(
                                 (
                                     f"{axis.target_value_ref}[{len(axis.values)}]"
                                     f"{(' ' + axis.unit) if str(axis.unit).strip() else ''}"
                                 )
-                                for axis in sweep_plan.axes
+                                for axis in prepared_run.sweep_plan.axes
                             )
                             append_status(
                                 "info",
                                 (
                                     "Parameter sweep enabled: "
-                                    f"mode={sweep_mode}, "
-                                    f"dim={sweep_plan.dimension}, "
-                                    f"points={sweep_plan.point_count}, "
+                                    f"mode={prepared_run.sweep_mode}, "
+                                    f"dim={prepared_run.sweep_plan.dimension}, "
+                                    f"points={prepared_run.sweep_plan.point_count}, "
                                     f"axes={axis_tokens}."
                                 ),
                             )
@@ -5655,11 +5473,11 @@ def _render_simulation_environment():
                         append_status(
                             "info",
                             (
-                                f"Configured {len(sources)} source(s). "
+                                f"Configured {len(prepared_run.sources)} source(s). "
                                 "Each source has independent pump frequency."
                             ),
                         )
-                        for source_idx, source in enumerate(sources, start=1):
+                        for source_idx, source in enumerate(prepared_run.sources, start=1):
                             mode_label = (
                                 str(source.mode_components)
                                 if source.mode_components is not None
@@ -5676,13 +5494,16 @@ def _render_simulation_environment():
                         append_status(
                             "info",
                             (
-                                f"Harmonics: Nmod={config.n_modulation_harmonics}, "
-                                f"Npump={config.n_pump_harmonics}, DC={config.include_dc}, "
-                                f"3WM={config.enable_three_wave_mixing}, "
-                                f"4WM={config.enable_four_wave_mixing}."
+                                f"Harmonics: Nmod={prepared_run.config.n_modulation_harmonics}, "
+                                f"Npump={prepared_run.config.n_pump_harmonics}, "
+                                f"DC={prepared_run.config.include_dc}, "
+                                f"3WM={prepared_run.config.enable_three_wave_mixing}, "
+                                f"4WM={prepared_run.config.enable_four_wave_mixing}."
                             ),
                         )
-                        if all(abs(source.current_amp) < 1e-18 for source in sources):
+                        if all(
+                            abs(source.current_amp) < 1e-18 for source in prepared_run.sources
+                        ):
                             append_status(
                                 "info",
                                 "All source currents are zero (Ip=0, linear drive case).",
@@ -5692,31 +5513,26 @@ def _render_simulation_environment():
                                 "warning",
                                 _format_harmonic_grid_hint(harmonic_grid_hits),
                             )
-                        if estimated_mode_lattice >= 128:
+                        if prepared_run.estimated_mode_lattice >= 128:
                             append_status(
                                 "warning",
                                 _format_mode_lattice_hint(
-                                    sources,
-                                    config.n_modulation_harmonics,
+                                    prepared_run.sources,
+                                    prepared_run.config.n_modulation_harmonics,
                                 ),
                             )
                         termination_plan = _resolved_termination_plan()
                         append_status("info", _termination_plan_summary(termination_plan))
                         for warning in list(termination_plan.get("warnings", [])):
                             append_status("warning", str(warning))
-                        setup_snapshot = _normalized_simulation_setup_snapshot(freq_range, config)
-                        if sweep_plan is not None and sweep_snapshot is not None:
-                            setup_snapshot["sweep"] = {
-                                **sweep_snapshot,
-                                "setup_hash": sweep_setup_hash,
-                            }
-                        schema_source_hash = _hash_schema_source(latest_record.definition_json)
-                        simulation_setup_hash = _hash_stable_json(setup_snapshot)
                         append_status("info", "Normalized simulation setup snapshot prepared.")
-                        if sweep_plan is not None and sweep_setup_hash is not None:
+                        if (
+                            prepared_run.sweep_plan is not None
+                            and prepared_run.sweep_setup_hash is not None
+                        ):
                             append_status(
                                 "info",
-                                f"Sweep setup hash: {sweep_setup_hash}",
+                                f"Sweep setup hash: {prepared_run.sweep_setup_hash}",
                             )
                         append_status("info", "Submitting persisted simulation task...")
                         simulation_results_container.clear()
@@ -5764,36 +5580,13 @@ def _render_simulation_environment():
                             )
                         if latest_record.id is None:
                             raise ValueError("Latest schema id is unavailable.")
-                        submission = build_simulation_submission(
+                        dispatch = await submit_simulation_run(
+                            prepared_run=prepared_run,
                             design_id=persisted_design_id,
-                            design_name=str(latest_record.name),
-                            circuit=latest_circuit_def,
-                            freq_range=freq_range,
-                            config=config,
-                            config_snapshot=setup_snapshot,
-                            source_meta={
-                                "origin": "simulation_page",
-                                "storage": "design_trace_store",
-                                "run_id": simulation_run_id,
-                                "circuit_id": latest_record.id,
-                                "circuit_name": latest_record.name,
-                            },
-                            schema_source_hash=schema_source_hash,
-                            simulation_setup_hash=simulation_setup_hash,
-                            sweep_setup_payload=sweep_setup_payload,
-                            sweep_setup_hash=sweep_setup_hash,
-                            context=build_ui_use_case_context(
-                                metadata={
-                                    "flow": "simulation",
-                                    "run_id": simulation_run_id,
-                                    "schema_id": int(latest_record.id or 0),
-                                }
-                            ),
-                            force_rerun=False,
-                        )
-                        dispatch = await submit_simulation_task(
-                            submission.api_request,
-                            client=owner_client,
+                            latest_record=latest_record,
+                            latest_circuit_def=latest_circuit_def,
+                            simulation_run_id=simulation_run_id,
+                            owner_client=owner_client,
                         )
                         runtime_state.current_task_id = int(dispatch.task.id)
                         runtime_state.current_task_status = str(dispatch.task.status)
