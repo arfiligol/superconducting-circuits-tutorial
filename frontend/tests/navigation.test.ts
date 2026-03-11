@@ -4,14 +4,13 @@ import { workspaceNavigation, workspaceNavigationGroups } from "../src/lib/navig
 
 describe("workspaceNavigation", () => {
   it("covers the rewrite foundation routes", () => {
-    expect(workspaceNavigation).toHaveLength(6);
+    expect(workspaceNavigation).toHaveLength(5);
     expect(workspaceNavigation.map((item) => item.label)).toEqual([
       "Data Browser",
       "Schemas",
       "Schemdraw",
       "Simulation",
       "Characterization",
-      "Analysis",
     ]);
   });
 
@@ -28,7 +27,7 @@ describe("workspaceNavigation", () => {
       "Pipeline",
       "Circuit Simulation",
     ]);
-    expect(workspaceNavigationGroups.map((group) => group.items.length)).toEqual([1, 2, 3]);
+    expect(workspaceNavigationGroups.map((group) => group.items.length)).toEqual([1, 1, 3]);
   });
 
   it("includes concise summaries and icons for the shell", () => {

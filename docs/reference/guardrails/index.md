@@ -34,7 +34,7 @@ updated_by: docs-team
 | 規範 | 說明 | Agent Rule |
 | --- | --- | --- |
 | [Project Basics](./project-basics/index.md) | 專案目標、技術方向、目錄結構索引 | [#agent-rule](./project-basics/index.md#agent-rule) |
-| [Project Overview](./project-basics/project-overview.md) | Data Browser / Editor / Simulation / Characterization / Analysis / CLI 範疇 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
+| [Project Overview](./project-basics/project-overview.md) | Data Browser / Editor / Simulation / Characterization & Analysis / CLI 範疇 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
 | [Tech Stack](./project-basics/tech-stack.md) | Next.js + FastAPI + CLI + Julia simulation stack | [#agent-rule](./project-basics/tech-stack.md#agent-rule) |
 | [Folder Structure](./project-basics/folder-structure.md) | rewrite branch 的 frontend/backend/cli/core 分工 | [#agent-rule](./project-basics/folder-structure.md#agent-rule) |
 

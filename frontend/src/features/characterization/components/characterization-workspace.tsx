@@ -13,7 +13,7 @@ export function CharacterizationWorkspace() {
           Characterization
         </h1>
         <p className="max-w-4xl text-sm leading-6 text-muted-foreground">
-          Analysis families, filters, and result history.
+          Shared characterization, fitting, comparison, and result history.
         </p>
       </section>
 
@@ -21,7 +21,7 @@ export function CharacterizationWorkspace() {
         <div className="space-y-4">
           <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
             <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Analysis Selection
+              Workflow Selection
             </h2>
             <div className="mt-4 space-y-3">
               {characterizationFamilies.map((family) => (

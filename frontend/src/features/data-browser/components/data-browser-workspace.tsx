@@ -423,7 +423,7 @@ export function DataBrowserWorkspace() {
                   No Metrics Tagged
                 </h3>
                 <p className="mt-4 max-w-xl text-lg text-muted-foreground">
-                  Use the Identify Mode tool in the Characterization page to tag key parameters.
+                  Use the characterization workflow to tag key parameters and review fitted results.
                 </p>
               </div>
             )}

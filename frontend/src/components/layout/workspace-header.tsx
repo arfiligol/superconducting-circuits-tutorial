@@ -7,7 +7,10 @@ import { workspaceNavigation } from "@/lib/navigation";
 export function WorkspaceHeader() {
   const pathname = usePathname();
   const activeSurface = workspaceNavigation.find(
-    (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
+    (item) =>
+      [item.href, ...(item.aliases ?? [])].some(
+        (path) => pathname === path || pathname.startsWith(`${path}/`),
+      ),
   );
 
   return (

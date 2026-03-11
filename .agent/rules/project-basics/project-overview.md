@@ -5,8 +5,7 @@
     - Circuit Definition Editor
     - Circuit Schemdraw
     - Circuit Simulation
-    - Characterization
-    - Analysis
+    - Characterization & Analysis
     - CLI Available
 - **Data sources**:
     - circuit simulation

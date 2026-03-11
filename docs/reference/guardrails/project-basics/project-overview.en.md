@@ -29,8 +29,7 @@ Build a platform where researchers can perform the following within one system:
 - Circuit Definition Editor
 - Circuit Schemdraw
 - Circuit Simulation
-- Characterization
-- Analysis
+- Characterization & Analysis
 - CLI Available
 
 ## Scope
@@ -43,8 +42,7 @@ Build a platform where researchers can perform the following within one system:
 | Circuit Definition Editor | Edit canonical circuit/netlist/schema definitions with validation and formatting |
 | Circuit Schemdraw | Generate circuit diagrams from the canonical circuit definition |
 | Circuit Simulation | Run simulations and sweeps powered by `JosephsonCircuits.jl` |
-| Characterization | Apply one analysis workflow to simulation / layout / measurement traces |
-| Analysis | Post-processing, fitting, comparison, extraction, and visualization |
+| Characterization & Analysis | Apply one shared workflow to simulation / layout / measurement traces, including post-processing, fitting, comparison, extraction, and visualization |
 | CLI Available | Every critical workflow must remain executable from CLI, not UI-only |
 
 ### Accepted Data Sources
@@ -78,8 +76,7 @@ Build a platform where researchers can perform the following within one system:
     - Circuit Definition Editor
     - Circuit Schemdraw
     - Circuit Simulation
-    - Characterization
-    - Analysis
+    - Characterization & Analysis
     - CLI Available
 - **Data sources**:
     - circuit simulation

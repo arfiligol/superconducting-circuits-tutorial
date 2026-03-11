@@ -25,7 +25,10 @@ export function WorkspaceNav({ onNavigate }: WorkspaceNavProps) {
           </p>
           <nav className="mt-4 space-y-2">
             {group.items.map((item) => {
-              const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              const activePaths = [item.href, ...(item.aliases ?? [])];
+              const active = activePaths.some(
+                (path) => pathname === path || pathname.startsWith(`${path}/`),
+              );
               const Icon = item.icon;
 
               return (

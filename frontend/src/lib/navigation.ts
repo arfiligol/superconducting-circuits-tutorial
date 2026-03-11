@@ -2,7 +2,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   ActivitySquare,
   Binary,
-  ChartColumnIncreasing,
   CircuitBoard,
   Database,
   FilePenLine,
@@ -14,6 +13,7 @@ export type WorkspaceNavigationItem = Readonly<{
   summary: string;
   group: "dashboard" | "pipeline" | "circuit-workbench";
   icon: LucideIcon;
+  aliases?: readonly string[];
 }>;
 
 export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
@@ -48,16 +48,11 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
   {
     href: "/characterization",
     label: "Characterization",
-    summary: "Prepare shared analysis pipelines for simulation and measurement traces.",
+    summary:
+      "Run shared characterization, post-processing, fitting, and comparison workflows.",
     group: "pipeline",
     icon: Binary,
-  },
-  {
-    href: "/analysis",
-    label: "Analysis",
-    summary: "Host post-processing, fitting, comparison, and reporting surfaces.",
-    group: "pipeline",
-    icon: ChartColumnIncreasing,
+    aliases: ["/analysis"],
   },
 ] as const;
 
