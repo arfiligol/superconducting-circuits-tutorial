@@ -1,11 +1,23 @@
 ## Data Handling
 - **Immutable**: `data/raw/` is READ-ONLY.
-- **Paths**: NEVER hardcode paths.
-    - **MUST** import from `core.shared.persistence.database`.
-- **Database**: Use Unit of Work pattern.
-    - **MUST** use `with get_unit_of_work() as uow:` for all DB operations.
-    - **NEVER** access Session directly in CLI/UI code.
-    - **MUST** call `uow.commit()` explicitly.
-- **Flow**: Raw -> Import CLI -> SQLite DB -> Analysis CLI -> Reports.
-- **Format**: Prefer **SQLite** for structured data, **JSON** for config, **CSV** for export.
-- **Legacy**: JSON-based intermediate storage is removed. Do not create new JSON pipelines.
+- **Storage split**:
+    - metadata goes to the metadata DB
+    - numeric trace payload goes to the TraceStore (`Zarr`)
+- **Paths**: NEVER hardcode metadata DB or TraceStore paths/backends.
+- **Database**:
+    - MUST use Unit of Work for metadata DB operations.
+    - NEVER access Session directly in CLI/UI code.
+    - MUST call `uow.commit()` explicitly.
+- **TraceStore**:
+    - MUST go through a TraceStore abstraction.
+    - MUST support local `Zarr` as the baseline direction.
+    - MUST keep S3-compatible `Zarr` as an extension-safe target.
+- **Canonical trace contract**:
+    - `TraceRecord` is one logical observable over axes.
+    - ND traces are allowed and preferred over point-fragmented canonical storage.
+    - point/slice materialization is projection/cache/export, not the only SoT.
+- **Flow**:
+    - Raw -> Import/Simulation/Post-Processing -> metadata DB + TraceStore -> Characterization / Reports
+- **Legacy**:
+    - Do not create new JSON-only numeric pipelines.
+    - Do not treat SQLite/PostgreSQL JSON/BLOB as the long-term primary numeric trace store.

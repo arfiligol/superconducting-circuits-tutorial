@@ -1,11 +1,9 @@
 ## Layout Patterns
-- Shell Principle: all pages MUST render inside `app_shell(content_builder)`.
-- 8pt Grid: all spacing in multiples of 4px. Use compact density for data-dense views.
-- Card data: `p-3` (12px). Dashboard overview: `p-4` (16px). Section title: `mb-2`.
-- Content area: `w-full px-4 py-3`, `gap-4`. Forbidden: `max-w-*` on app_shell, allow full width.
-- Nav drawer: width=220, buttons with `dense` prop.
-- Master/Detail proportions: tables should be `w-[60%]`, visualizations `w-[40%]`.
-- Tables: use `dense` prop for compact row height (~36px).
-- Responsive: use `lg:` Tailwind prefix for desktop; stack on mobile.
-- Navigation: add new pages to the left drawer in `layout.py`.
-- Forbidden: standalone pages outside `app_shell()`.
+- Use App Router layouts intentionally:
+    - root layout for providers/theme/fonts
+    - workspace layout for shared shell
+    - feature layout for sub-navigation
+- Use route groups to separate workspace surfaces from other sections.
+- Data-dense pages should prefer a master-detail structure with mobile-safe stacking.
+- Keep spacing consistent and compact enough for dense data workflows.
+- Do not collapse the entire product into one flat page tree without layout boundaries.

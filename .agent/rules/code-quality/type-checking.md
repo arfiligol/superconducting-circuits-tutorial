@@ -1,8 +1,14 @@
 ## Type Checking
-- **Tool**: `basedpyright`
-- **Strictness**: `basic` (but treated as mandatory).
-- **Rules**:
-    - **No `Any`**: Avoid explicit `Any` unless interfacing with untyped libs.
-    - **Return Types**: MUST explicitly type return values of all functions.
-    - **Collections**: Use `list[str]`, `dict[str, int]` (Standard Collections).
-- **Fixes**: If type check fails, Fix the Code, DO NOT suppress unless absolutely necessary (`# type: ignore`).
+- **Python**:
+    - use BasedPyright
+    - treat `basic` mode as mandatory
+    - type all function parameters and return values
+    - use modern syntax like `list[str]` and `str | None`
+    - avoid `Any` unless dealing with untyped third-party code
+- **TypeScript**:
+    - use strict mode
+    - do not trust raw API payloads without schema validation
+    - keep service, schema, hook, and component contracts typed
+- **Fix policy**:
+    - fix the code first
+    - use `# type: ignore` only in the smallest justified scope

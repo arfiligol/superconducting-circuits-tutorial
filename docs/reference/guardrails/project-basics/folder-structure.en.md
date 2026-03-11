@@ -1,87 +1,94 @@
 ---
 aliases:
-  - "Folder Structure"
+  - Folder Structure
+  - Repository Layout
 tags:
-  - audience/team
+  - diataxis/reference
+  - audience/contributor
   - sot/true
+  - topic/project-basics
 status: stable
 owner: docs-team
-audience: team
-scope: "Project directory structure and layering"
-version: v1.0.0
-last_updated: 2026-02-08
+audience: contributor
+scope: Defines placement boundaries for frontend, backend, CLI, desktop shell, and shared core code in the rewrite branch.
+version: v2.1.0
+last_updated: 2026-03-11
 updated_by: docs-team
 ---
 
 # Folder Structure
 
-This project follows **Clean Architecture** principles.
+The target structure of this branch supports a separated frontend/backend stack while preserving the existing scientific core and documentation system.
+The old NiceGUI app remains as migration legacy only.
 
-## Core Directory
+## Target Layout
 
-```
+```text
 superconducting-circuits-tutorial/
-├── src/
-│   ├── core/                 # Domain & Application Logic
-│   │   ├── analysis/         # Analysis Logic (Clean Architecture)
-│   │   ├── simulation/       # Circuit Simulation (JuliaCall ↔ Julia)
-│   │   └── shared/           # Shared Utilities (visualization, utils)
-│   ├── app/                  # [Planned] NiceGUI App
-│   └── scripts/              # CLI Entry Points
-│       ├── analysis/         # Analysis Scripts (admittance_fit.py etc)
-│       └── simulation/       # Simulation Scripts (run_lc.py etc)
-├── data/                     # Data Lifecycle
-│   ├── raw/                  # Read-Only Input (HFSS/VNA)
-│   └── processed/            # Analysis Results & Reports
-│   └── database.db           # SQLite Database
-├── docs/                     # Documentation (Zensical)
-├── examples/                 # Usage Examples
-├── tests/                    # Tests
-├── sandbox/                  # Experimental / Legacy Code
-├── pyproject.toml            # Python Dependencies (uv)
-├── uv.lock                   # Python Lock File
-├── juliapkg.json             # Julia Dependencies (JosephsonCircuits.jl)
-├── Project.toml              # Julia Project Settings
-├── Manifest.toml             # Julia Lock File
-└── .gitignore                # Git Ignore Rules
+├── frontend/                  # Next.js App Router frontend
+│   ├── src/app/               # routes, layouts, pages
+│   ├── src/components/        # shared UI components
+│   ├── src/features/          # feature-local UI modules
+│   ├── src/lib/               # API clients, schemas, utilities
+│   └── tests/                 # Vitest / Playwright
+├── desktop/                   # Electron shell
+│   ├── src/main/              # Electron main process
+│   ├── src/preload/           # secure preload bridge
+│   └── resources/             # desktop packaging assets
+├── backend/                   # FastAPI service
+│   ├── src/app/api/           # routers, request/response mapping
+│   ├── src/app/services/      # use cases / orchestration
+│   ├── src/app/domain/        # domain models and rules
+│   ├── src/app/infrastructure/# DB and external integrations
+│   └── tests/                 # pytest unit / integration tests
+├── cli/                       # Typer commands
+│   ├── src/cli/commands/
+│   └── tests/
+├── src/core/                  # shared scientific kernels during migration
+│   ├── simulation/
+│   ├── analysis/
+│   └── shared/
+├── docs/                      # bilingual docs and guardrails
+├── data/                      # raw / processed / trace-store / local DB
+├── scripts/                   # repo helpers only
+└── src/app/                   # legacy NiceGUI code during migration only
 ```
 
-## Layering Principles
+## Placement Rules
 
-1.  **Domain** (Inner): Pure business logic, Pydantic schemas. No external dependencies.
-2.  **Application**: Use Case orchestration. Depends only on Domain.
-3.  **Infrastructure** (Outer): Framework integration (CLI, Web App), I/O. Depends on Application and Domain.
+| If you are changing | Put it in |
+| --- | --- |
+| Next.js page, layout, or component | `frontend/` |
+| Electron main / preload / packaging work | `desktop/` |
+| API router, service, or persistence logic | `backend/` |
+| CLI command or batch workflow | `cli/` |
+| Shared scientific logic reusable by API / CLI / simulation | `src/core/` |
+| Repo automation, docs helper, or migration helper | `scripts/` |
+| Old NiceGUI patches | `src/app/`, clearly marked as migration-only |
 
-Dependency direction is always **Inward**.
+## Dependency Direction
 
----
+1. frontend depends on API contracts, not backend internals
+2. desktop depends on frontend outputs and controlled IPC, not business logic ownership
+3. backend API depends inward on services/domain
+4. CLI reuses shared services/core rather than duplicating business logic
+5. `src/core/` must remain framework-agnostic from Next.js, FastAPI, Electron, and CLI frameworks
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Folder Structure
-- **Source Code (`src/`)**:
-    - `core/analysis/`: **Data Analysis** (Pydantic models, Fitting, Extraction). NO Print here, use `logging`.
-    - `core/simulation/`: **Circuit Simulation** (JuliaCall adapter to JosephsonCircuits.jl).
-    - `core/shared/`: **Shared Utilities** (logging, visualization, persistence, units).
-    - `app/`: **NiceGUI Native App**.
-    - `scripts/analysis/`: **Analysis CLI Entry Points**. Use `argparse`. ONLY layer allowed to `print()`.
-    - `scripts/simulation/`: **Simulation CLI Entry Points**.
-    - `scripts/database/`: **Database CLI Entry Points**.
-- **Data (`data/`)**:
-    - `raw/`: **READ-ONLY**. HFSS/VNA files.
-    - `processed/`: Final Reports/Plots.
-    - `database.db`: SQLite database.
-- **Config** (Root):
-    - `pyproject.toml`: Python Dependencies (uv).
-    - `juliapkg.json`: Julia Dependencies (JosephsonCircuits.jl).
-    - `Project.toml`: Julia Project Settings.
-- **Decision Tree**:
-    - IF "simulation CLI" -> `src/scripts/simulation/`
-    - IF "analysis CLI" -> `src/scripts/analysis/`
-    - IF "database CLI" -> `src/scripts/database/`
-    - IF "reusable analysis logic" -> `src/core/analysis/`
-    - IF "simulation interop" -> `src/core/simulation/`
-    - IF "shared plotting/utils/logging/persistence" -> `src/core/shared/`
-    - IF "UI" -> `src/app/`
+- **Frontend** work goes to `frontend/`.
+- **Desktop shell** work goes to `desktop/`.
+- **Backend** work goes to `backend/`.
+- **CLI** work goes to `cli/`.
+- **Shared scientific logic** goes to `src/core/`.
+- **Docs and guardrails** go to `docs/`.
+- Existing `src/app/` NiceGUI code is legacy and should only receive migration-support fixes.
+- Dependency direction:
+    - frontend depends on API contracts, not backend internals
+    - desktop depends on frontend outputs and secure IPC, not business logic ownership
+    - backend API layer depends inward on services/domain
+    - CLI reuses shared services/core instead of duplicating workflow logic
+    - `src/core/` must stay framework-agnostic
 ```

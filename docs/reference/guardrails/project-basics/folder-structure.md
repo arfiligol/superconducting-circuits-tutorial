@@ -1,81 +1,94 @@
 ---
 aliases:
-  - "目錄結構 (Folder Structure)"
+  - Folder Structure
+  - 目錄結構
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/project-basics
+status: stable
+owner: docs-team
+audience: contributor
+scope: 定義 rewrite branch 中 frontend/backend/cli/desktop/core 的放置邊界。
+version: v2.1.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# 目錄結構 (Folder Structure)
+# Folder Structure
 
-本專案採用 **Clean Architecture** 原則進行目錄規劃。
+本 branch 的目標結構是為了支援前後端分離，同時保留現有科學計算核心與文件系統。
+舊的 NiceGUI 程式碼暫時保留在 legacy 區，但不應再作為新功能落點。
 
-## 核心目錄
+## Target Layout
 
-```
+```text
 superconducting-circuits-tutorial/
-├── src/
-│   ├── core/                 # Domain & Application Logic
-│   │   ├── analysis/         # 數據分析 (Clean Architecture)
-│   │   ├── simulation/       # 電路模擬 (JuliaCall ↔ Julia)
-│   │   └── shared/           # 共用工具 (visualization, utils)
-│   ├── app/                  # [Planned] NiceGUI App
-│   └── scripts/              # CLI Entry Points
-│       ├── analysis/         # 分析腳本 (admittance_fit.py 等)
-│       └── simulation/       # 模擬腳本 (run_lc.py 等)
-├── data/                     # Data Lifecycle
-│   ├── raw/                  # Read-Only Input (HFSS/VNA)
-│   └── processed/            # Analysis Results & Reports
-│   └── database.db           # SQLite Database
-├── docs/                     # Documentation (Zensical)
-├── examples/                 # Usage Examples
-├── tests/                    # Tests
-├── sandbox/                  # Experimental / Legacy Code
-├── pyproject.toml            # Python Dependencies (uv)
-├── uv.lock                   # Python Lock File
-├── juliapkg.json             # Julia Dependencies (JosephsonCircuits.jl)
-├── Project.toml              # Julia Project Settings
-├── Manifest.toml             # Julia Lock File
-└── .gitignore                # Git Ignore Rules
+├── frontend/                  # Next.js App Router frontend
+│   ├── src/app/               # routes, layouts, pages
+│   ├── src/components/        # shared UI components
+│   ├── src/features/          # feature-local UI modules
+│   ├── src/lib/               # API clients, schemas, utilities
+│   └── tests/                 # Vitest / Playwright
+├── desktop/                   # Electron shell
+│   ├── src/main/              # Electron main process
+│   ├── src/preload/           # secure preload bridge
+│   └── resources/             # desktop packaging assets
+├── backend/                   # FastAPI service
+│   ├── src/app/api/           # routers, request/response mapping
+│   ├── src/app/services/      # use cases / orchestration
+│   ├── src/app/domain/        # domain models and rules
+│   ├── src/app/infrastructure/# DB, external integrations
+│   └── tests/                 # pytest unit / integration tests
+├── cli/                       # Typer commands
+│   ├── src/cli/commands/
+│   └── tests/
+├── src/core/                  # shared scientific kernels during migration
+│   ├── simulation/
+│   ├── analysis/
+│   └── shared/
+├── docs/                      # bilingual docs and guardrails
+├── data/                      # raw / processed / trace-store / local DB
+├── scripts/                   # repo helpers only
+└── src/app/                   # legacy NiceGUI code during migration only
 ```
 
-## 分層原則
+## Placement Rules
 
-1.  **Domain** (最內層): 純粹的業務邏輯、Pydantic schemas。不依賴任何外部層。
-2.  **Application**: Use Cases 編排，只依賴 Domain。
-3.  **Infrastructure** (最外層): 框架整合 (CLI, Web App)、File I/O。依賴 Application 和 Domain。
+| 如果要改 | 應放位置 |
+| --- | --- |
+| Next.js page, layout, component | `frontend/` |
+| Electron main / preload / packaging | `desktop/` |
+| API router, service, persistence | `backend/` |
+| CLI command or batch workflow | `cli/` |
+| 可被 API / CLI / simulation 共用的科學邏輯 | `src/core/` |
+| repo automation, docs helper, migration helper | `scripts/` |
+| 舊 NiceGUI 修補 | `src/app/`，且需明確標註為 migration-only |
 
-依賴方向永遠是**由外向內**。
+## Dependency Direction
 
----
+1. frontend 依賴 API contract，不直接依賴 backend internals
+2. desktop 依賴 frontend build 與受控 IPC，不承載業務規則
+3. backend API 層依賴 services/domain，不反向耦合到 web framework 以外的層
+4. CLI 直接依賴共享 services/core，不複製業務邏輯
+5. `src/core/` 不得依賴 Next.js、FastAPI、Electron 或 CLI framework
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Folder Structure
-- **Source Code (`src/`)**:
-    - `core/analysis/`: **Data Analysis** (Pydantic models, Fitting, Extraction). NO Print here, use `logging`.
-    - `core/simulation/`: **Circuit Simulation** (JuliaCall adapter to JosephsonCircuits.jl).
-    - `core/shared/`: **Shared Utilities** (logging, visualization, persistence, units).
-    - `app/`: **NiceGUI Native App**.
-    - `scripts/analysis/`: **Analysis CLI Entry Points**. Use `argparse`. ONLY layer allowed to `print()`.
-    - `scripts/simulation/`: **Simulation CLI Entry Points**.
-    - `scripts/database/`: **Database CLI Entry Points**.
-- **Data (`data/`)**:
-    - `raw/`: **READ-ONLY**. HFSS/VNA files.
-    - `processed/`: Final Reports/Plots.
-    - `database.db`: SQLite database.
-- **Config** (Root):
-    - `pyproject.toml`: Python Dependencies (uv).
-    - `juliapkg.json`: Julia Dependencies (JosephsonCircuits.jl).
-    - `Project.toml`: Julia Project Settings.
-- **Decision Tree**:
-    - IF "simulation CLI" -> `src/scripts/simulation/`
-    - IF "analysis CLI" -> `src/scripts/analysis/`
-    - IF "database CLI" -> `src/scripts/database/`
-    - IF "reusable analysis logic" -> `src/core/analysis/`
-    - IF "simulation interop" -> `src/core/simulation/`
-    - IF "shared plotting/utils/logging/persistence" -> `src/core/shared/`
-    - IF "UI" -> `src/app/`
+- **Frontend** work goes to `frontend/`.
+- **Desktop shell** work goes to `desktop/`.
+- **Backend** work goes to `backend/`.
+- **CLI** work goes to `cli/`.
+- **Shared scientific logic** goes to `src/core/`.
+- **Docs and guardrails** go to `docs/`.
+- Existing `src/app/` NiceGUI code is legacy and should only receive migration-support fixes.
+- Dependency direction:
+    - frontend depends on API contracts, not backend internals
+    - desktop depends on frontend outputs and secure IPC, not business logic ownership
+    - backend API layer depends inward on services/domain
+    - CLI reuses shared services/core instead of duplicating workflow logic
+    - `src/core/` must stay framework-agnostic
 ```

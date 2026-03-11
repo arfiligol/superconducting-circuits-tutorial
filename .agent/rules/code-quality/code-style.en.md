@@ -1,9 +1,13 @@
 ## Code Style
-- **Standard**: PEP 8 (enforced by Ruff).
-- **Naming Conventions**:
-    - **Physics**: `frequency_hz`, `inductance_ph`, `admittance_s` (Include units).
-    - **Variables**: Noun (e.g., `dataset_record`).
-    - **Functions**: Verb-Noun (e.g., `calculate_impedance`).
-- **Clean Architecture**: `domain` <- `application` <- `infrastructure`.
-- **Refactoring**: Prefer small, atomic changes.
-- **Complexity**: Keep functions under 20 lines where possible.
+- **Standard**:
+    - Python uses Ruff + modern Python syntax
+    - TypeScript uses strict typing and consistent formatting
+- **Naming**:
+    - variables use clear nouns
+    - functions use clear verb phrases
+    - scientific names may include units when that removes ambiguity
+- **Boundaries**:
+    - do not put business workflow logic inside route handlers, React components, or CLI commands
+    - shared logic belongs in services or `src/core/`
+- **Refactoring**: prefer small, atomic changes
+- **Complexity**: keep functions focused; split code when one function starts handling multiple responsibilities

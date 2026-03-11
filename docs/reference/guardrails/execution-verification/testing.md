@@ -1,157 +1,64 @@
 ---
 aliases:
-  - "測試規範 (Testing)"
-  - "執行驗證測試"
+  - Testing
+  - 測試規範
 tags:
   - diataxis/reference
-  - audience/team
+  - audience/contributor
   - sot/true
-  - topic/governance
+  - topic/execution
 status: stable
 owner: docs-team
-audience: team
-scope: "自動化測試與文件更新驗證流程（含 Zensical 路由防 404）"
-version: v1.3.0
-last_updated: 2026-03-05
-updated_by: codex
+audience: contributor
+scope: rewrite branch 的 backend、frontend、CLI 與 docs 測試規範。
+version: v2.0.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# 測試規範 (Testing)
+# Testing
 
-本文件定義程式測試與文件更新驗證流程。
-重點：**任何文件異動都必須驗證不會產生 404。**
-
-## Python 測試
-
-我們使用 **Pytest**。
-
-### 全量測試
+## Backend / Core
 
 ```bash
 uv run pytest
 ```
 
-### 命名規範
-
-- 檔案名：`test_<module>.py`
-- 函式名：`test_<function_name>_<scenario>`
-
-## Lint / Format（建議一併執行）
+## Frontend
 
 ```bash
-uv run ruff check .
-uv run pre-commit run --all-files
+npm run test --prefix frontend
+npm run test:e2e --prefix frontend
 ```
 
-## 文件更新驗證（防 404，必做）
+## Docs
 
-只要變更任何 `docs/` 內容、`zensical*.toml` 導覽或頁面路徑，必須執行以下流程：
-
-1. 同步 locale staging trees
-2. 建置 zh-TW / en 站
-3. 產出正式靜態站
-4. 啟動本地站，驗證新頁路由
-5. 確認沒有遺留失效 `.md` URL 導覽
-
-### 標準指令
+文件變更必跑：
 
 ```bash
-# 一鍵完整檢查（建議）
-./scripts/verify_docs_integrity.sh
-
-# 0) 先檢查 nav 路由是否對應 docs 來源檔
-uv run python scripts/check_docs_nav_routes.py --check-source
-
-# 1) 同步文件來源
 ./scripts/prepare_docs_locales.sh
-
-# 2) 建置（雙語）
 uv run --group dev zensical build -f zensical.toml
 uv run --group dev zensical build -f zensical.en.toml
-
-# 3) 靜態輸出（CI 對齊）
 ./scripts/build_docs_sites.sh
-
-# 4) 檢查 nav 路由是否對應到 built html
-uv run python scripts/check_docs_nav_routes.py --check-built
 ```
 
-### 路由驗證（Playwright，推薦）
+## Policy
 
-```bash
-uv run python - <<'PY'
-from playwright.sync_api import sync_playwright
-
-routes = [
-    "http://localhost:8000/superconducting-circuits-tutorial/",
-    # 追加本次新增或移動的路由（不要含 .md）
-]
-
-with sync_playwright() as p:
-    b = p.chromium.launch(headless=True)
-    page = b.new_page()
-    for url in routes:
-        resp = page.goto(url, wait_until="domcontentloaded", timeout=30000)
-        assert resp is not None and resp.status == 200, f"Route failed: {url}"
-        assert "404 - Not found" not in page.content(), f"404 body found: {url}"
-    b.close()
-PY
-```
-
-### `.md` 相容路由驗證（必要）
-
-```bash
-uv run python - <<'PY'
-from playwright.sync_api import sync_playwright
-
-legacy_url = "http://localhost:8000/superconducting-circuits-tutorial/explanation/physics/schur-complement-kron-reduction.md"
-
-with sync_playwright() as p:
-    b = p.chromium.launch(headless=True)
-    page = b.new_page()
-    page.goto(legacy_url, wait_until="domcontentloaded", timeout=30000)
-    assert not page.locator("h1").first.inner_text().strip() == "404 - Not found"
-    assert page.url.endswith("/explanation/physics/schur-complement-kron-reduction/")
-    b.close()
-PY
-```
-
-### 導覽連結掃描（告警/差異檢查）
-
-```bash
-# 用於偵測本次變更是否引入新的 .md 型導覽鏈結
-# 注意：目前站內存在歷史 .md 導覽，不能要求輸出為空。
-rg -n "href=\"[^\"]+\\.md\"" docs/site
-```
-
-!!! warning "路由格式規則"
-    UI/Browser 驗證時，頁面路徑必須用目錄路由（例如 `/notebooks/foo/`），
-    不可拿來源檔路徑（`.../foo.md`）當最終站點 URL。
-
-## Julia 測試（需要時）
-
-```bash
-julia --project=. -e 'using Pkg; Pkg.test()'
-```
-
----
+- 關鍵 workflow 至少要有一條可重現測試路徑
+- backend service 與 CLI workflow 優先寫 pytest
+- frontend component 與互動流程分別用 unit / E2E 覆蓋
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Testing Commands
-- **Python tests**: `uv run pytest`
-- **Lint**: `uv run ruff check .`
-- **Docs-change required checks**:
-    1) `uv run python scripts/check_docs_nav_routes.py --check-source`
-    2) `./scripts/prepare_docs_locales.sh`
-    3) `uv run --group dev zensical build -f zensical.toml`
-    4) `uv run --group dev zensical build -f zensical.en.toml`
-    5) `./scripts/build_docs_sites.sh`
-    6) `uv run python scripts/check_docs_nav_routes.py --check-built`
-    7) Playwright route smoke (HTTP 200 + no "404 - Not found")
-    8) `.md` compatibility route check (legacy `.md` URL auto-normalizes to canonical route)
-    9) `rg -n "href=\"[^\"]+\\.md\"" docs/site` for warning/diff review (not hard-fail in current baseline)
-- **Route rule**: final docs URL uses directory routes (`/.../page/`), not source `.md` paths.
-- **Julia tests (if touched)**: `julia --project=. -e 'using Pkg; Pkg.test()'`
+- **Backend/core tests**: `uv run pytest`
+- **Frontend unit tests**: `npm run test --prefix frontend`
+- **Frontend E2E tests**: `npm run test:e2e --prefix frontend`
+- **Docs checks**:
+    - `./scripts/prepare_docs_locales.sh`
+    - `uv run --group dev zensical build -f zensical.toml`
+    - `uv run --group dev zensical build -f zensical.en.toml`
+    - `./scripts/build_docs_sites.sh`
+- Add tests for critical workflows instead of relying on manual verification only.
 ```

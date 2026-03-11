@@ -1,89 +1,68 @@
 ---
 aliases:
-  - "Guardrails: 程式碼風格與品質 (Code Style)"
+  - Code Style
+  - 程式碼風格
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/code-quality
+status: stable
+owner: docs-team
+audience: contributor
+scope: Python 與 TypeScript 的共同程式風格與實作原則。
+version: v2.0.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
-# Guardrails: 程式碼風格與品質 (Code Style)
+# Code Style
 
-本文檔概述了專案的程式碼撰寫標準與最佳實踐。
+本專案的風格規則以「可讀、可改、可測」為優先。
+若某個實作讓 UI、API、CLI 其中一層看起來方便，卻讓共享規則變得分散或難以驗證，則視為不合格。
 
-## 一般原則
+## Cross-Language Principles
 
-我們遵循 **[PEP 8](https://peps.python.org/pep-0008/)** 作為 Python 程式碼風格標準。
+- 優先小 diff，避免無關重構
+- 一個函式只做一件事
+- 明確命名，不用模糊縮寫
+- 避免把業務邏輯塞進 route handler、React component 或 CLI command
+- 重複邏輯先抽到共享層，再擴增呼叫點
 
-> **PEP 8** 是 Python 官方的風格指南（**規範標準**），而 **Ruff** 是我們用來自動檢查與強制執行這些規範的**工具**。詳見 [工具鏈章節](#toolchain)。
+## Python Rules
 
-## Clean Code 原則
+- 使用現代語法：`list[str]`、`str | None`
+- 依照 Ruff 規範維持 import 與格式一致
+- 在科學計算情境中，必要時可在名稱中保留單位，例如 `frequency_hz`
+- `core/` 與 service 層禁止 `print()`
 
-我們採用 Robert C. Martin 《*Clean Code*》一書中的原則。
+## TypeScript Rules
 
-### 1. 命名 (Naming)
-- **函數 (Functions)**：使用**動詞**或**動詞片語**，清楚描述函數做了什麼（例如：`calculate_frequency`, `build_record`, `process_data`）。
-    - *Bad*: `squid_lc_frequency`, `y11_imaginary`, `process`
-    - *Good*: `calculate_squid_lc_frequency`, `calculate_y11_imaginary`, `process_hfss_file`
-- **變數 (Variables)**：使用有意義的**名詞**。
-- **類別 (Classes)**：使用**名詞**或**名詞片語**。
+- 使用 TypeScript strict mode
+- 禁止無理由的 `any`
+- component props、service 回傳值、schema parse 結果都要有明確型別
+- React component 應保持 presentation-focused，資料抓取與 mutation 邏輯集中在 hooks / services
 
-### 2. 函數 (Functions)
-- **單一職責原則 (SRP)**：一個函數應該只做一件事，把它做好，且只做這件事。
-- **短小精悍 (Small)**：函數應該保持短小且專注。
-- **參數 (Arguments)**：限制參數數量（目標是 3 個或更少）。對於大量參數，請使用資料類別 (Data Classes) 或物件封裝。
+## Refactoring Rule
 
-## Clean Architecture 原則
-
-我們採用 **Clean Architecture** 來確保關注點分離與可維護性。
-
-### 1. 分層 (Separation of Layers)
-- **Domain Layer** (`domain/`)：包含核心業務邏輯與實體（例如 Pydantic schemas）。不依賴外部層級。
-- **Application Layer** (`application/`)：包含應用程式特定的業務規則與使用案例。僅依賴 Domain 層。
-- **Infrastructure Layer** (`infrastructure/`)：包含框架、驅動程式與外部介面（例如 視覺化、檔案 I/O）。依賴 Application/Domain 層。
-
-### 2. 依賴原則 (The Dependency Rule)
-原始碼的依賴關係必須只能**向內**指向更高級別的策略。
-- 內圈（如 Domain）中的任何東西都不能知道外圈（如 Infrastructure）的任何資訊。
-
-## 型別標註 (Type Hinting)
-- 使用 **Python 3.10+** 語法。
-- 使用 `|` 來表示 Union（例如：用 `int | None` 取代 `Optional[int]`）。
-- 使用標準集合型別 (`list`, `dict`, `tuple`) 取代 `typing` 模組的對應項目。
-
-## 工具鏈 (Toolchain) { #toolchain }
-
-專案使用自動化工具來確保程式碼一致性與品質。詳細說明請參考：
-
-👉 **[Linting & Formatting Guardrails](../execution-verification/linting.md)**
-
-### 快速參考
-- **Ruff**: 統一 Linting & Formatting
-- **Pre-commit**: Git commit 前自動檢查
-- **BasedPyright**: 型別檢查 (Basic mode)
-
-### 日常使用
-```bash
-# 執行所有檢查
-uv run pre-commit run --all-files
-
-# 手動執行 Ruff
-uv run ruff check .
-uv run ruff format .
-```
-
----
+- 先做能被驗證的小步修改
+- 先修正結構問題，再考慮抽象化
+- 若抽象只服務單一使用點且沒有減少複雜度，先不要抽
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Code Style
-- **Standard**: PEP 8 (enforced by Ruff).
-- **Naming Conventions**:
-    - **Physics**: `frequency_hz`, `inductance_ph`, `admittance_s` (Include units).
-    - **Variables**: Noun (e.g., `dataset_record`).
-    - **Functions**: Verb-Noun (e.g., `calculate_impedance`).
-- **Clean Architecture**: `domain` <- `application` <- `infrastructure`.
-- **Refactoring**: Prefer small, atomic changes.
-- **Complexity**: Keep functions under 20 lines where possible.
+- **Standard**:
+    - Python uses Ruff + modern Python syntax
+    - TypeScript uses strict typing and consistent formatting
+- **Naming**:
+    - variables use clear nouns
+    - functions use clear verb phrases
+    - scientific names may include units when that removes ambiguity
+- **Boundaries**:
+    - do not put business workflow logic inside route handlers, React components, or CLI commands
+    - shared logic belongs in services or `src/core/`
+- **Refactoring**: prefer small, atomic changes
+- **Complexity**: keep functions focused; split code when one function starts handling multiple responsibilities
 ```

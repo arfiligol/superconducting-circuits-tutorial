@@ -1,85 +1,93 @@
 ---
 aliases:
-  - "Guardrails"
+  - Guardrails
+  - 開發守則
 tags:
   - diataxis/reference
-  - status/draft
+  - audience/contributor
+  - sot/true
   - topic/governance
+status: stable
+owner: docs-team
+audience: contributor
+scope: 目前 workspace 的 guardrails 總索引，供人類與 AI Agent 載入任務相關規則。
+version: v2.0.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
 # Guardrails
 
-開發規範，確保程式碼品質與一致性。
-
-!!! important "Source of Truth"
-    此為開發規範的單一真理來源。所有開發者（人類與 AI Agent）必須遵守。
+本區是目前 workspace 的開發規範單一真理來源。
+這個 branch 的核心方向已改為以 **Next.js + FastAPI + CLI** 重寫既有 NiceGUI 能力，並保留科學計算核心與雙語文件系統。
 
 ## 如何使用
 
-- **人類**：閱讀各頁面的詳細說明，了解規範的「為什麼」。
-- **AI Agent**：點擊各頁面底部的 **[#agent-rule](#)** 錨點，複製程式碼區塊貼入 System Prompt。
+- 人類開發者：先讀對應主題頁面，理解設計邊界與品質門檻。
+- AI Agent：依任務載入必要的 guardrails，不要一次全載；優先使用 `_agent_catalog.yml` 選擇。
+- 規則同步：`docs/reference/guardrails/` 是 SoT，`.agent/rules/` 是已安裝版本，需與 Agent Rule 區塊同步。
 
 ## 快速參考
 
-### 專案基礎
+### Project Basics
 
 | 規範 | 說明 | Agent Rule |
-|---|---|---|
-| [專案概述](./project-basics/project-overview.md) | 專案目標、範疇與受眾 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
-| [技術堆疊](./project-basics/tech-stack.md) | Python (uv) + Julia (juliaup) | [#agent-rule](./project-basics/tech-stack.md#agent-rule) |
-| [目錄結構](./project-basics/folder-structure.md) | Clean Architecture 分層 | [#agent-rule](./project-basics/folder-structure.md#agent-rule) |
+| --- | --- | --- |
+| [Project Basics](./project-basics/index.md) | 專案目標、技術方向、目錄結構索引 | [#agent-rule](./project-basics/index.md#agent-rule) |
+| [Project Overview](./project-basics/project-overview.md) | Data Browser / Editor / Simulation / Characterization / Analysis / CLI 範疇 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
+| [Tech Stack](./project-basics/tech-stack.md) | Next.js + FastAPI + CLI + Julia simulation stack | [#agent-rule](./project-basics/tech-stack.md#agent-rule) |
+| [Folder Structure](./project-basics/folder-structure.md) | rewrite branch 的 frontend/backend/cli/core 分工 | [#agent-rule](./project-basics/folder-structure.md#agent-rule) |
 
-### 執行與驗證
-
-| 規範 | 說明 | Agent Rule |
-|---|---|---|
-| [執行指令](./execution-verification/build-commands.md) | `uv sync`, `./scripts/prepare_docs_locales.sh`, `zensical serve/build`, 腳本執行 | [#agent-rule](./execution-verification/build-commands.md#agent-rule) |
-| [Linting & Formatting](./execution-verification/linting.md) | Ruff, Pre-commit, BasedPyright | [#agent-rule](./execution-verification/linting.md#agent-rule) |
-| [測試規範](./execution-verification/testing.md) | Pytest, Julia Pkg.test | [#agent-rule](./execution-verification/testing.md#agent-rule) |
-| [CI 品質關卡](./execution-verification/ci-gates.md) | 合併前必通過的檢查 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
-| [多 Agent 協作](./execution-verification/multi-agent-collaboration.md) | 單一 Integrator 與本地並行防衝突規範 | [#agent-rule](./execution-verification/multi-agent-collaboration.md#agent-rule) |
-| [Contributor 回報格式](./execution-verification/contributor-reporting.md) | Contributor 標準交接模板（可讀 + 可複製貼上） | [#agent-rule](./execution-verification/contributor-reporting.md#agent-rule) |
-
-### 程式品質 (Code Quality)
+### Code Quality
 
 | 規範 | 說明 | Agent Rule |
-|---|---|---|
-| [程式碼風格](./code-quality/code-style.md) | Clean Code, PEP 8, Type Hints | [#agent-rule](./code-quality/code-style.md#agent-rule) |
-| [類型檢查](./code-quality/type-checking.md) | BasedPyright 配置 | [#agent-rule](./code-quality/type-checking.md#agent-rule) |
-| [腳本撰寫](./code-quality/script-authoring.md) | CLI 入口點結構 | [#agent-rule](./code-quality/script-authoring.md#agent-rule) |
-| [資料處理](./code-quality/data-handling.md) | Path, I/O 規範 | [#agent-rule](./code-quality/data-handling.md#agent-rule) |
+| --- | --- | --- |
+| [Code Quality](./code-quality/index.md) | 程式品質總覽 | [#agent-rule](./code-quality/index.md#agent-rule) |
+| [Code Style](./code-quality/code-style.md) | Python / TypeScript 的共同撰寫原則 | [#agent-rule](./code-quality/code-style.md#agent-rule) |
+| [Type Checking](./code-quality/type-checking.md) | BasedPyright + TypeScript strict | [#agent-rule](./code-quality/type-checking.md#agent-rule) |
+| [Design Patterns](./code-quality/design-patterns.md) | API/UI/CLI 與核心服務的依賴邊界 | [#agent-rule](./code-quality/design-patterns.md#agent-rule) |
+| [Script Authoring](./code-quality/script-authoring.md) | CLI 指令的結構與責任邊界 | [#agent-rule](./code-quality/script-authoring.md#agent-rule) |
+| [Data Handling](./code-quality/data-handling.md) | metadata / trace store 責任分工 | [#agent-rule](./code-quality/data-handling.md#agent-rule) |
+| [Logging](./code-quality/logging.md) | logging 使用方式 | [#agent-rule](./code-quality/logging.md#agent-rule) |
 
-### 文件設計 (Documentation Design)
-
-| 規範 | 說明 | Agent Rule |
-|---|---|---|
-| [文件設計](./documentation-design/documentation.md) | Standards / Style / Maintenance 索引 | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
-| [Explanation Physics](./documentation-design/explanation-physics.md) | Explanation/Physics 教學定位與一致性規範 | [#agent-rule](./documentation-design/explanation-physics.md#agent-rule) |
-| [電路繪圖](../../how-to/contributing/circuit-diagrams.md) | Schemdraw 規範 | [#agent-rule](../../how-to/contributing/circuit-diagrams.md#agent-rule) |
-
-### UI/UX 品質
+### UI/UX Quality
 
 | 規範 | 說明 | Agent Rule |
-|---|---|---|
-| [UI/UX 品質總覽](./ui-ux-quality/index.md) | 技術堆疊與子規範索引 | [#agent-rule](./ui-ux-quality/index.md#agent-rule) |
-| [主題系統](./ui-ux-quality/theming.md) | Design Token、深色模式、Plotly 同步 | [#agent-rule](./ui-ux-quality/theming.md#agent-rule) |
-| [元件規範](./ui-ux-quality/component-guidelines.md) | NiceGUI 元件規則、禁止項目 | [#agent-rule](./ui-ux-quality/component-guidelines.md#agent-rule) |
-| [佈局規範](./ui-ux-quality/layout-patterns.md) | Shell 架構、Card 排版、響應式規則 | [#agent-rule](./ui-ux-quality/layout-patterns.md#agent-rule) |
+| --- | --- | --- |
+| [UI/UX Quality](./ui-ux-quality/index.md) | Next.js frontend 的 UI/UX 總覽 | [#agent-rule](./ui-ux-quality/index.md#agent-rule) |
+| [Theming](./ui-ux-quality/theming.md) | semantic tokens、dark mode、theme provider | [#agent-rule](./ui-ux-quality/theming.md#agent-rule) |
+| [Component Guidelines](./ui-ux-quality/component-guidelines.md) | shadcn/ui、dialog、form、table 規範 | [#agent-rule](./ui-ux-quality/component-guidelines.md#agent-rule) |
+| [Layout Patterns](./ui-ux-quality/layout-patterns.md) | App Router layout 與 master-detail 規則 | [#agent-rule](./ui-ux-quality/layout-patterns.md#agent-rule) |
+| [State Management](./ui-ux-quality/state-management.md) | SWR / Context / RHF + Zod | [#agent-rule](./ui-ux-quality/state-management.md#agent-rule) |
+| [Accessibility](./ui-ux-quality/accessibility.md) | a11y 與 keyboard/ARIA 規則 | [#agent-rule](./ui-ux-quality/accessibility.md#agent-rule) |
+| [Routing](./ui-ux-quality/routing.md) | Next.js App Router 路由策略 | [#agent-rule](./ui-ux-quality/routing.md#agent-rule) |
 
----
+### Execution & Verification
+
+| 規範 | 說明 | Agent Rule |
+| --- | --- | --- |
+| [Execution & Verification](./execution-verification/index.md) | build / lint / test / CI 索引 | [#agent-rule](./execution-verification/index.md#agent-rule) |
+| [Build Commands](./execution-verification/build-commands.md) | frontend / backend / CLI / docs 常用指令 | [#agent-rule](./execution-verification/build-commands.md#agent-rule) |
+| [Linting & Formatting](./execution-verification/linting.md) | Ruff / BasedPyright / frontend checks | [#agent-rule](./execution-verification/linting.md#agent-rule) |
+| [Testing](./execution-verification/testing.md) | pytest / Vitest / Playwright / docs checks | [#agent-rule](./execution-verification/testing.md#agent-rule) |
+| [CI Gates](./execution-verification/ci-gates.md) | rewrite branch 的合併品質門檻 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
+| [Commit Standards](./execution-verification/commit-standards.md) | commit 邊界與訊息規範 | [#agent-rule](./execution-verification/commit-standards.md#agent-rule) |
+
+### Documentation Design
+
+| 規範 | 說明 | Agent Rule |
+| --- | --- | --- |
+| [Documentation Design](./documentation-design/documentation.md) | 文件規範索引 | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
+| [Documentation Standards](./documentation-design/standards.md) | Diataxis 與 frontmatter | [#agent-rule](./documentation-design/standards.md#agent-rule) |
+| [Documentation Maintenance](./documentation-design/maintenance.md) | 雙語同步與 build 流程 | [#agent-rule](./documentation-design/maintenance.md#agent-rule) |
 
 ## 驗證指令
 
 ```bash
-# Lint & Format
-uv run ruff check . --fix && uv run ruff format .
-
-# Type Check
+uv run ruff format .
+uv run ruff check .
 uv run basedpyright src
-
-# Test
 uv run pytest
-
-# Docs
+./scripts/prepare_docs_locales.sh
 ./scripts/build_docs_sites.sh
 ```

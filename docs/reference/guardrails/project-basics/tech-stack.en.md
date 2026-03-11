@@ -1,115 +1,149 @@
 ---
 aliases:
-  - "Tech Stack"
+  - Tech Stack
+  - Rewrite Stack
 tags:
   - diataxis/reference
-  - status/draft
-  - topic/governance
+  - audience/contributor
+  - sot/true
+  - topic/tech-stack
+status: stable
+owner: docs-team
+audience: contributor
+scope: Technical choices, desktop-shell direction, and shared tooling for the rewrite branch.
+version: v2.1.0
+last_updated: 2026-03-11
+updated_by: docs-team
 ---
 
 # Tech Stack
 
-This project is converging toward a **Python + Julia + Zarr Trace Store** scientific data platform.
+The target stack for this branch is **Next.js + FastAPI + CLI + Electron + Julia simulation core**.
+UI, API, and CLI should share the same canonical definitions and validation rules rather than diverging into framework-specific behavior.
 
-## Languages and Responsibilities
+## Shared Languages
 
 ### Python
 
 | Tool | Purpose |
-|---|---|
-| `uv` | environment and dependency management |
-| `numpy`, `pandas` | numeric and tabular processing |
-| `plotly` | interactive visualization |
-| `nicegui` | Web UI and local app shell |
-| `CodeMirror` (via `nicegui.ui.codemirror`) | schema editor |
-| `Ruff WebAssembly` (`@astral-sh/ruff-wasm`) | browser-side formatting |
-| `Panzoom` | SVG zoom/pan interaction |
-| `rich` | colored logging and CLI output |
+| --- | --- |
+| `uv` | dependency and environment management |
+| `fastapi` | API framework |
+| `pydantic` | schema and validation |
+| `sqlmodel`, `sqlalchemy` | metadata persistence |
 | `typer` | CLI framework |
-| `zensical` | documentation build |
-| `ruff`, `basedpyright` | lint / type check |
-| `pytest`, `Playwright` | automation and E2E verification |
-| `zarr` | trace numeric payload storage (chunked ND arrays) |
-| `fsspec`, `s3fs` | TraceStore backend abstraction (currently local-only; future extension-safe) |
-| `sqlmodel`, `sqlalchemy` | metadata DB and repository/UoW |
+| `numpy`, `pandas`, `scipy`, `lmfit` | numerics, analysis, fitting |
+| `plotly`, `schemdraw` | charts and circuit-diagram generation |
+| `juliacall` | Python ↔ Julia bridge |
+| `rich` | logging and CLI output |
+| `ruff`, `basedpyright`, `pytest` | lint / type / test |
+| `zarr` | numeric trace storage |
+
+### TypeScript / JavaScript
+
+| Tool | Purpose |
+| --- | --- |
+| `Next.js` (App Router) | frontend framework |
+| `React 19` | UI runtime |
+| `TypeScript` | frontend language |
+| `Tailwind CSS v4` | styling |
+| `Radix UI` + `shadcn/ui` | primitives and app components |
+| `next-themes` | theme switching |
+| `SWR` | server-state fetching and cache |
+| `react-hook-form` + `zod` | form state and validation |
+| `lucide-react` | icons |
+| `Playwright`, `Vitest` | frontend test stack |
+| `Electron` | desktop shell for local app packaging |
 
 ### Julia
 
 | Tool | Purpose |
-|---|---|
+| --- | --- |
 | `juliaup` | Julia version management |
-| `JosephsonCircuits.jl` | core superconducting-circuit simulation engine |
+| `JosephsonCircuits.jl` | core circuit-simulation engine |
 
-## Storage Strategy
+## Module Direction
 
-The target storage direction is:
+### Frontend
 
-1. **Metadata DB**
-   - current: `SQLite`
-   - future server/deployment: `PostgreSQL`
-2. **Numeric Trace Store**
-   - current: local filesystem `Zarr`
-   - future storage extension (deferred): `S3-compatible Zarr` (for example MinIO / S3 endpoints)
+- Next.js App Router
+- TypeScript strict mode
+- component system based on shadcn/ui + Radix
+- no business workflow logic inside components
 
-## Storage Responsibility Split
+### Desktop
 
-| Layer | Target Technology | Responsibility |
-|---|---|---|
-| Metadata | `SQLite` / `PostgreSQL` | `DesignRecord`, `TraceRecord`, `TraceBatchRecord`, `AnalysisRunRecord`, `DerivedParameterRecord` |
-| Numeric payload | `Zarr` | S/Y/Z traces, sweep ND arrays, axes arrays |
-| Object backend | local FS (current) | TraceStore backend (located via `TraceStoreRef.backend + store_key`; local path layout stays internal) |
+- Electron may be used as the desktop shell
+- the Electron main/preload layers only handle desktop capabilities, window lifecycle, and secure IPC
+- business workflow logic must not move into the Electron main process
+- desktop packaging must not break the canonical frontend/backend/CLI boundaries
 
-## TraceStore Runtime Config
+### Backend
 
-Current runtime config contract:
+- FastAPI + Pydantic
+- service layer separated from persistence
+- API handlers do I/O, validation, authorization, and response mapping only
 
-- `SC_TRACE_STORE_BACKEND`
-  - `local_zarr` (the only active backend right now)
-- `SC_TRACE_STORE_ROOT`
-  - root path for the local backend
+### CLI
 
-If object-storage extension work resumes later, add:
+- Typer as the primary command framework
+- CLI calls shared services/core rather than reimplementing API or UI logic
+- every critical workflow must stay runnable without the web UI
 
-- `SC_TRACE_STORE_S3_BUCKET`
-- `SC_TRACE_STORE_S3_PREFIX`
-- `SC_TRACE_STORE_S3_ENDPOINT_URL`
+### Scientific Core
 
-The application / UI layer must not parse local `store_uri` paths directly. Backend locator resolution must go through the persistence `TraceStore` abstraction.
+- `JosephsonCircuits.jl` remains the simulation source of truth
+- circuit definitions should feed simulation, schemdraw, and analysis from one canonical representation
+- characterization / analysis should stay source-agnostic across trace origins
+
+## Storage Direction
+
+- metadata DB:
+  - current baseline: `SQLite`
+  - service target: `PostgreSQL`
+- numeric traces:
+  - baseline: `Zarr`
+  - backend abstraction required for future extension
 
 ## Dependency Management
 
-- **Python**: `pyproject.toml` (managed by `uv`)
-- **Julia**: `Project.toml` + `Manifest.toml`
-
----
+- Python: `pyproject.toml` + `uv.lock`
+- Frontend: `frontend/package.json` + lockfile
+- Julia: `Project.toml` / `Manifest.toml`
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Tech Stack
-- **Python** (managed by `uv`):
-    - **Data / Numeric**: `numpy`, `pandas`
-    - **Trace Storage**: `zarr`
-    - **Storage Backends**: `fsspec`, `s3fs`
-    - **DB / ORM**: `sqlmodel`, `sqlalchemy`
-    - **Vis**: `plotly`
-    - **WebUI**: `nicegui`, `ui.codemirror`, `Ruff WebAssembly`, `Panzoom`
-    - **CLI**: `typer`
-    - **Logging**: `rich`
-    - **Testing**: `pytest`, `Playwright`
-- **Julia** (managed by `juliaup`):
-    - **Sim**: `JosephsonCircuits.jl`
-- **Docs**: `zensical`
-- **Metadata DB direction**:
-    - current: `SQLite`
-    - deployment target: `PostgreSQL`
-- **DB schema convergence**:
-    - no historical-data migration in the current program
-    - when physical schema convergence begins, cut directly to the new schema
-- **Numeric Trace Store direction**:
-    - current: local `Zarr`
-    - extension target (deferred): S3-compatible `Zarr` (for example MinIO / S3 endpoint)
-- **Config files**:
-    - Python: `pyproject.toml`
-    - Julia: `Project.toml`
+- **Frontend**:
+    - Next.js App Router
+    - React 19
+    - TypeScript
+    - Tailwind CSS v4
+    - Radix UI + shadcn/ui
+    - next-themes
+    - SWR
+    - react-hook-form + zod
+    - Electron is allowed as the desktop shell around the frontend
+- **Backend**:
+    - FastAPI
+    - Pydantic
+    - SQLModel / SQLAlchemy
+    - Rich-compatible logging
+- **CLI**:
+    - Typer
+    - must remain first-class, not a second-tier wrapper
+- **Scientific core**:
+    - JosephsonCircuits.jl via juliacall
+    - plotly + schemdraw for visualization output
+- **Quality tools**:
+    - Ruff
+    - BasedPyright
+    - pytest
+    - Vitest / Playwright when frontend exists
+- **Storage direction**:
+    - metadata DB: SQLite now, PostgreSQL target
+    - numeric trace store: Zarr
+- New UI work should target Next.js, not NiceGUI.
+- Desktop packaging should use Electron around the frontend instead of reviving NiceGUI-native desktop assumptions.
 ```
