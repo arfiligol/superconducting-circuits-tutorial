@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from sc_core.tasking import TaskExecutionMode, WorkerTaskName
+
 from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 
 TaskKind = Literal["simulation", "post_processing", "characterization"]

@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from sc_core.tasking import TaskExecutionMode, WorkerTaskName
+
 from src.app.api.schemas.storage import (
     MetadataRecordRefResponse,
     ResultHandleRefResponse,
