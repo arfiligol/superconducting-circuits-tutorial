@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import app.features.simulation.page as simulation_feature_page
+import app.features.simulation.views.post_processing as simulation_post_processing
 import app.pages.simulation as simulation_page
 from app.pages.simulation import (
     _POST_PROCESS_INPUT_Y_SOURCE_OPTIONS,
@@ -1247,12 +1249,12 @@ def test_load_cached_simulation_result_defers_preview_for_trace_batch_sweep(
             raise AssertionError("cache hit should not upgrade or commit in this path")
 
     monkeypatch.setattr(
-        simulation_page,
+        simulation_feature_page,
         "_ensure_simulation_cache_dataset",
         lambda _uow: cache_dataset,
     )
     monkeypatch.setattr(
-        simulation_page,
+        simulation_feature_page,
         "_decode_simulation_result_payload",
         lambda _payload: (_sample_result(), {"run_kind": "parameter_sweep", "point_count": 2}),
     )
@@ -1851,8 +1853,8 @@ def test_simulation_setup_storage_roundtrip_preserves_termination_compensation(m
     def fake_set(key: str, value: object) -> None:
         storage[key] = value
 
-    monkeypatch.setattr(simulation_page, "_user_storage_get", fake_get)
-    monkeypatch.setattr(simulation_page, "_user_storage_set", fake_set)
+    monkeypatch.setattr(simulation_feature_page, "_user_storage_get", fake_get)
+    monkeypatch.setattr(simulation_feature_page, "_user_storage_set", fake_set)
 
     schema_id = 183
     setup_payload = {
@@ -1953,8 +1955,8 @@ def test_post_process_setup_storage_roundtrip_per_schema(monkeypatch) -> None:
     def fake_set(key: str, value: object) -> None:
         storage[key] = value
 
-    monkeypatch.setattr(simulation_page, "_user_storage_get", fake_get)
-    monkeypatch.setattr(simulation_page, "_user_storage_set", fake_set)
+    monkeypatch.setattr(simulation_post_processing, "_user_storage_get", fake_get)
+    monkeypatch.setattr(simulation_post_processing, "_user_storage_set", fake_set)
 
     schema_a = 183
     schema_b = 999
@@ -1989,8 +1991,8 @@ def test_post_process_selected_setup_id_roundtrip(monkeypatch) -> None:
     def fake_set(key: str, value: object) -> None:
         storage[key] = value
 
-    monkeypatch.setattr(simulation_page, "_user_storage_get", fake_get)
-    monkeypatch.setattr(simulation_page, "_user_storage_set", fake_set)
+    monkeypatch.setattr(simulation_post_processing, "_user_storage_get", fake_get)
+    monkeypatch.setattr(simulation_post_processing, "_user_storage_set", fake_set)
 
     assert _load_selected_post_process_setup_id(183) == ""
     _save_selected_post_process_setup_id(183, "post-a")
@@ -2473,7 +2475,7 @@ def test_build_sweep_metric_rows_recomputes_without_process_global_cache(
             representative_point_index=0,
         )
     )
-    original_builder = simulation_page._build_simulation_result_figure
+    original_builder = simulation_feature_page._build_simulation_result_figure
     call_count = 0
 
     def counting_builder(*args: object, **kwargs: object):
@@ -2481,7 +2483,11 @@ def test_build_sweep_metric_rows_recomputes_without_process_global_cache(
         call_count += 1
         return original_builder(*args, **kwargs)
 
-    monkeypatch.setattr(simulation_page, "_build_simulation_result_figure", counting_builder)
+    monkeypatch.setattr(
+        simulation_feature_page,
+        "_build_simulation_result_figure",
+        counting_builder,
+    )
 
     kwargs = {
         "sweep_payload": payload,

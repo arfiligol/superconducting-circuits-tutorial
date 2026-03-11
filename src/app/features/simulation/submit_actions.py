@@ -1,6 +1,6 @@
-"""Compatibility wrapper for simulation submission helpers."""
+"""Backward-compatible page import surface for simulation submission helpers."""
 
-from app.features.simulation.submit_actions import (
+from app.services.simulation_submission import (
     PreparedSimulationSubmission,
     build_simulation_submission,
 )
