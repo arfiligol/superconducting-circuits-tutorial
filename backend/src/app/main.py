@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-
 from src.app.api.router import api_router
 from src.app.settings import AppSettings, get_settings
 
