@@ -11,15 +11,15 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 目前 workspace 的 guardrails 總索引，供人類與 AI Agent 載入任務相關規則。
-version: v2.0.0
-last_updated: 2026-03-11
-updated_by: docs-team
+version: v2.1.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Guardrails
 
 本區是目前 workspace 的開發規範單一真理來源。
-這個 branch 的核心方向已改為以 **Next.js + FastAPI + CLI** 重寫既有 NiceGUI 能力，並保留科學計算核心與雙語文件系統。
+這個 branch 的核心方向已改為以 **Next.js + FastAPI + CLI** 重寫既有 NiceGUI 能力，並保留科學計算核心與單語 zh-TW 文件系統。
 
 ## 如何使用
 
@@ -37,6 +37,7 @@ updated_by: docs-team
 | [Project Overview](./project-basics/project-overview.md) | Data Browser / Editor / Simulation / Characterization & Analysis / CLI 範疇 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
 | [Tech Stack](./project-basics/tech-stack.md) | Next.js + FastAPI + CLI + Julia simulation stack | [#agent-rule](./project-basics/tech-stack.md#agent-rule) |
 | [Folder Structure](./project-basics/folder-structure.md) | rewrite branch 的 frontend/backend/cli/core 分工 | [#agent-rule](./project-basics/folder-structure.md#agent-rule) |
+| [Source of Truth Order](./project-basics/source-of-truth-order.md) | reference、shared core、adapter、legacy 衝突時的裁決順序 | [#agent-rule](./project-basics/source-of-truth-order.md#agent-rule) |
 
 ### Code Quality
 
@@ -49,6 +50,8 @@ updated_by: docs-team
 | [Script Authoring](./code-quality/script-authoring.md) | CLI 指令的結構與責任邊界 | [#agent-rule](./code-quality/script-authoring.md#agent-rule) |
 | [Data Handling](./code-quality/data-handling.md) | metadata / trace store 責任分工 | [#agent-rule](./code-quality/data-handling.md#agent-rule) |
 | [Logging](./code-quality/logging.md) | logging 使用方式 | [#agent-rule](./code-quality/logging.md#agent-rule) |
+| [Contract Versioning](./code-quality/contract-versioning.md) | canonical contracts 的版本與相容性策略 | [#agent-rule](./code-quality/contract-versioning.md#agent-rule) |
+| [Error Handling](./code-quality/error-handling.md) | API、CLI、worker 與 recovery flow 共用錯誤模型 | [#agent-rule](./code-quality/error-handling.md#agent-rule) |
 
 ### UI/UX Quality
 
@@ -71,6 +74,7 @@ updated_by: docs-team
 | [Linting & Formatting](./execution-verification/linting.md) | Ruff / BasedPyright / frontend checks | [#agent-rule](./execution-verification/linting.md#agent-rule) |
 | [Testing](./execution-verification/testing.md) | pytest / Vitest / Playwright / docs checks | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI Gates](./execution-verification/ci-gates.md) | rewrite branch 的合併品質門檻 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
+| [Phase Gates](./execution-verification/phase-gates.md) | migration phase 的最低驗收條件與測試對照 | [#agent-rule](./execution-verification/phase-gates.md#agent-rule) |
 | [Commit Standards](./execution-verification/commit-standards.md) | commit 邊界與訊息規範 | [#agent-rule](./execution-verification/commit-standards.md#agent-rule) |
 
 ### Documentation Design
@@ -79,7 +83,7 @@ updated_by: docs-team
 | --- | --- | --- |
 | [Documentation Design](./documentation-design/documentation.md) | 文件規範索引 | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
 | [Documentation Standards](./documentation-design/standards.md) | Diataxis 與 frontmatter | [#agent-rule](./documentation-design/standards.md#agent-rule) |
-| [Documentation Maintenance](./documentation-design/maintenance.md) | 雙語同步與 build 流程 | [#agent-rule](./documentation-design/maintenance.md#agent-rule) |
+| [Documentation Maintenance](./documentation-design/maintenance.md) | 單語文件來源與 build 流程 | [#agent-rule](./documentation-design/maintenance.md#agent-rule) |
 
 ## 驗證指令
 

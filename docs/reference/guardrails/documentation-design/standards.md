@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Diataxis 分類邊界、Frontmatter/Tags 規格與文件核心規則"
-version: v0.1.0
-last_updated: 2026-02-08
-updated_by: docs-team
+version: v0.2.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Documentation Standards
@@ -109,7 +109,6 @@ Tags 採用 `namespace/value` 格式。
 |------|------|
 | Diataxis 分類 | 內容必須符合對應分類邊界（避免混雜） |
 | 連結格式 | 內部連結使用標準 Markdown（相對路徑） |
-| 雙語 | `.md` 與 `.en.md` 需一致 |
 | 專有名詞 | 優先保留英文或中英並列（例如：導納 (Admittance)） |
 | SoT 標記 | 權威文件標記 `sot/true` |
 | 禁止模糊時間 | 禁用「未來」「後續」「即將」等；請寫明確日期（例如：`2026-01-30`） |

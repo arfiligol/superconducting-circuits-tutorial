@@ -10,10 +10,10 @@ tags:
 status: stable
 owner: docs-team
 audience: contributor
-scope: 定義 rewrite branch 的專案目標、技術方向與目錄結構索引。
-version: v1.0.0
-last_updated: 2026-03-11
-updated_by: docs-team
+scope: 定義 rewrite branch 的專案目標、技術方向、結構與單一真理順序索引。
+version: v1.1.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Project Basics
@@ -24,6 +24,7 @@ updated_by: docs-team
 - [Project Overview](./project-overview.md)
 - [Tech Stack](./tech-stack.md)
 - [Folder Structure](./folder-structure.md)
+- [Source of Truth Order](./source-of-truth-order.md)
 
 ## Agent Rule { #agent-rule }
 

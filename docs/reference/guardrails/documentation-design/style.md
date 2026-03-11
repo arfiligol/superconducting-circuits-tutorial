@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "撰寫風格、語氣調性與視覺元素使用規範（Zensical）"
-version: v0.1.1
-last_updated: 2026-02-27
-updated_by: docs-team
+version: v0.2.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Documentation Style
@@ -27,7 +27,6 @@ updated_by: docs-team
 | 項目 | 規範 |
 |------|------|
 | 主要語言 | 繁體中文（zh-TW） |
-| 英文版 | 同步維護 `.en.md` |
 | 專有名詞 | 優先保留英文或中英並列（例如：`SQUID`、導納 (Admittance)） |
 | 句子/段落 | 短句、短段落；每段一個重點 |
 | 語氣 | 依 Diataxis 調整：Tutorial 引導、How-to 指令式、Reference 中立、Explanation 解釋式 |
@@ -148,7 +147,7 @@ flowchart TD
 
 ```markdown
 ## Documentation Style
-- **Language**: zh-TW primary; keep `.en.md` synchronized
+- **Language**: zh-TW primary
 - **Tone**: Tutorial guiding / How-to imperative / Reference neutral / Explanation reasoning
 - **Terms**: keep technical terms in English or bilingual
 - **Admonitions**: use Zensical `!!!` / `???` (4-space indent)

@@ -52,21 +52,16 @@ uv run pytest
 ```
 
 ### 預覽文件
-我們使用 `zensical` 的原生 Separate Builds：`zensical.toml`（繁中）與 `zensical.en.toml`（英文）。
+我們使用 `zensical` 的單語文件建置流程：`zensical.toml` 搭配 `docs/docs_zhtw/` staging tree。
 
 先產生語言 staging tree：
 ```bash
 ./scripts/prepare_docs_locales.sh
 ```
 
-預設埠（`localhost:8000`，繁中站）：
+預設埠（`localhost:8000`）：
 ```bash
 uv run --group dev zensical serve
-```
-
-英文站（例如 `localhost:8001`）：
-```bash
-uv run --group dev zensical serve -f zensical.en.toml -a localhost:8001
 ```
 
 正式靜態輸出會產生在 `docs/site/`：

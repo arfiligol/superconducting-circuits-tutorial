@@ -8,7 +8,7 @@ import tomllib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-DEFAULT_CONFIGS = ("zensical.toml", "zensical.en.toml")
+DEFAULT_CONFIGS = ("zensical.toml",)
 
 
 def _iter_nav_markdown_paths(node: Any) -> list[str]:
@@ -26,22 +26,13 @@ def _iter_nav_markdown_paths(node: Any) -> list[str]:
     return paths
 
 
-def _load_config(config_path: Path) -> tuple[str, list[str], Path]:
+def _load_config(config_path: Path) -> tuple[list[str], Path]:
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     project = data.get("project", {})
-    docs_dir = str(project.get("docs_dir", ""))
-    locale = "en" if docs_dir.endswith("docs_en") else "zh"
     nav = project.get("nav", [])
     site_dir = Path(str(project.get("site_dir", "docs/site")))
     paths = sorted(set(_iter_nav_markdown_paths(nav)))
-    return locale, paths, site_dir
-
-
-def _expected_source_candidates(relative_md_path: str, *, locale: str) -> list[Path]:
-    source = Path("docs") / relative_md_path
-    if locale == "en":
-        return [source.with_suffix(".en.md"), source]
-    return [source]
+    return paths, site_dir
 
 
 def _expected_built_html_path(relative_md_path: str, *, site_dir: Path) -> Path:
@@ -56,14 +47,13 @@ def _expected_built_html_path(relative_md_path: str, *, site_dir: Path) -> Path:
     return site_dir / Path(relative_html.as_posix())
 
 
-def _check_source(config_path: Path, *, locale: str, nav_paths: list[str]) -> list[str]:
+def _check_source(config_path: Path, *, nav_paths: list[str]) -> list[str]:
     missing: list[str] = []
     for relative_md_path in nav_paths:
-        candidates = _expected_source_candidates(relative_md_path, locale=locale)
-        if not any(path.exists() for path in candidates):
-            expected_list = ", ".join(path.as_posix() for path in candidates)
+        expected = Path("docs") / relative_md_path
+        if not expected.exists():
             missing.append(
-                f"[SOURCE] {config_path.name}: missing one of [{expected_list}] "
+                f"[SOURCE] {config_path.name}: missing '{expected.as_posix()}' "
                 f"(from nav '{relative_md_path}')"
             )
     return missing
@@ -92,7 +82,7 @@ def main() -> int:
         action="append",
         dest="configs",
         help=(
-            "Config file to validate (repeatable). Defaults to zensical.toml and zensical.en.toml."
+            "Config file to validate (repeatable). Defaults to zensical.toml."
         ),
     )
     parser.add_argument(
@@ -116,9 +106,9 @@ def main() -> int:
         if not config_path.exists():
             errors.append(f"[CONFIG] Missing config file: {config_path.as_posix()}")
             continue
-        locale, nav_paths, site_dir = _load_config(config_path)
+        nav_paths, site_dir = _load_config(config_path)
         if check_source:
-            errors.extend(_check_source(config_path, locale=locale, nav_paths=nav_paths))
+            errors.extend(_check_source(config_path, nav_paths=nav_paths))
         if check_built:
             errors.extend(_check_built(config_path, nav_paths=nav_paths, site_dir=site_dir))
 

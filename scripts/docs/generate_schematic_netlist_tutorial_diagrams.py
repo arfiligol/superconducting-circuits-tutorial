@@ -8,7 +8,6 @@ SRC = ROOT / "src"
 OUTPUT_DIRS = [
     ROOT / "docs" / "assets",
     ROOT / "docs" / "docs_zhtw" / "assets",
-    ROOT / "docs" / "docs_en" / "assets",
 ]
 
 EXAMPLES = {
