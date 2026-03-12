@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
-from sc_core.execution import TaskCreationSpec, TaskExecutionTransition, TaskLifecycleMutation
+from sc_core.execution import (
+    ExecutionEventLog,
+    TaskCreationSpec,
+    TaskExecutionTransition,
+    TaskLifecycleMutation,
+)
 from sc_core.storage import TraceResultLinkage
 
 from core.shared.persistence.models import AnalysisRunRecord, AuditLogRecord, TaskRecord, UserRecord
@@ -126,6 +131,13 @@ class UserPersistenceContract(Protocol):
 @runtime_checkable
 class AuditLogPersistenceContract(Protocol):
     """Audit-log persistence API for actor-traceable actions."""
+
+    def append_execution_event(
+        self,
+        *,
+        actor_id: int | None,
+        event: ExecutionEventLog,
+    ) -> AuditLogRecord: ...
 
     def append_log(
         self,

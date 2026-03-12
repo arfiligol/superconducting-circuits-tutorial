@@ -9,6 +9,7 @@ from typing import Final, cast
 
 from sc_core.execution import (
     STALE_TASK_TIMEOUT_ERROR_CODE,
+    build_reconcile_batch_failed_event,
     build_reconcile_stale_task_transition,
 )
 
@@ -101,15 +102,11 @@ def _persist_task_reconcile_transition(
         stale_before=stale_before,
     )
     uow.tasks.apply_execution_transition(task_id, transition)
-    if transition.audit_action_kind is None or transition.audit_summary is None:
+    if transition.event_log is None:
         return None
-    log = uow.audit_logs.append_log(
+    log = uow.audit_logs.append_execution_event(
         actor_id=None,
-        action_kind=transition.audit_action_kind,
-        resource_kind="task",
-        resource_id=task_id,
-        summary=transition.audit_summary,
-        payload=transition.audit_payload,
+        event=transition.event_log,
     )
     return int(log.id) if log.id is not None else None
 
@@ -176,13 +173,13 @@ def reconcile_stale_tasks_and_batches(
         )
         orphan_batch_ids.append(batch_id)
         failed_batch_ids.append(batch_id)
-        log = uow.audit_logs.append_log(
+        log = uow.audit_logs.append_execution_event(
             actor_id=None,
-            action_kind="reconcile.batch_failed",
-            resource_kind="trace_batch",
-            resource_id=batch_id,
-            summary=f"Reconciled orphan batch {batch_id}",
-            payload={"stale_before": stale_before.isoformat()},
+            event=build_reconcile_batch_failed_event(
+                batch_id=batch_id,
+                recorded_at=_utcnow(),
+                stale_before=stale_before,
+            ),
         )
         if log.id is not None:
             audit_log_ids.append(int(log.id))

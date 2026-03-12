@@ -9,6 +9,15 @@ from sc_core.tasking import LaneName, WorkerTaskName
 
 ExecutionPhase = Literal["running", "completed", "failed", "crashing"]
 TaskLifecycleStatus = Literal["queued", "running", "completed", "failed"]
+ExecutionEventKind = Literal[
+    "worker.task_started",
+    "worker.task_completed",
+    "worker.task_failed",
+    "worker.task_crashing",
+    "reconcile.task_failed",
+    "reconcile.batch_failed",
+]
+ExecutionEventResourceKind = Literal["task", "trace_batch"]
 TaskAuditActionKind = Literal[
     "worker.task_started",
     "worker.task_completed",
@@ -97,13 +106,40 @@ class TaskLifecycleMutation:
 
 
 @dataclass(frozen=True)
+class ExecutionEventLog:
+    """Canonical persisted execution-event envelope for audit/history adapters."""
+
+    action_kind: ExecutionEventKind
+    resource_kind: ExecutionEventResourceKind
+    resource_id: str
+    summary: str
+    payload: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class TaskExecutionTransition:
     """Canonical orchestration transition tying persistence mutation to audit metadata."""
 
     mutation: TaskLifecycleMutation
-    audit_action_kind: TaskExecutionAuditActionKind | None = None
-    audit_summary: str | None = None
-    audit_payload: dict[str, object] | None = None
+    event_log: ExecutionEventLog | None = None
+
+    @property
+    def audit_action_kind(self) -> ExecutionEventKind | None:
+        if self.event_log is None:
+            return None
+        return self.event_log.action_kind
+
+    @property
+    def audit_summary(self) -> str | None:
+        if self.event_log is None:
+            return None
+        return self.event_log.summary
+
+    @property
+    def audit_payload(self) -> dict[str, object] | None:
+        if self.event_log is None:
+            return None
+        return dict(self.event_log.payload)
 
 
 @dataclass(frozen=True)
@@ -361,6 +397,7 @@ def build_worker_running_transition(
         audit_payload=build_worker_audit_payload(
             phase="running",
             provenance=provenance,
+            recorded_at=recorded_at,
         ),
     )
 
@@ -422,7 +459,15 @@ def build_worker_completed_transition(
             result_summary_payload=completed_payload,
             result_handle=result.result_handle(),
         ),
-        audit_payload=completed_payload,
+        audit_payload={
+            **build_worker_audit_payload(
+                phase="completed",
+                provenance=provenance,
+                recorded_at=recorded_at,
+                result_handle=result.result_handle(),
+            ),
+            "summary": completed_payload["summary"],
+        },
     )
 
 
@@ -467,7 +512,17 @@ def build_worker_failed_transition(
             recorded_at=recorded_at,
             error_payload=error_payload,
         ),
-        audit_payload=error_payload,
+        audit_payload={
+            **build_worker_audit_payload(
+                phase="failed",
+                provenance=provenance,
+                recorded_at=recorded_at,
+            ),
+            "error_code": WORKER_TASK_FAILED_ERROR_CODE,
+            "exception_type": exc_type,
+            "message": message,
+            "summary": error_payload["summary"],
+        },
     )
 
 
@@ -534,6 +589,7 @@ def build_worker_audit_payload(
     *,
     phase: ExecutionPhase,
     provenance: WorkerExecutionProvenance,
+    recorded_at: datetime | None = None,
     result_handle: TaskResultHandle | None = None,
 ) -> dict[str, object]:
     """Build canonical audit payload metadata for one worker lifecycle event."""
@@ -542,9 +598,29 @@ def build_worker_audit_payload(
         "phase": phase,
         **provenance.to_payload(),
     }
+    if recorded_at is not None:
+        payload["recorded_at"] = recorded_at.isoformat()
     if result_handle is not None and not result_handle.is_empty():
         payload["result_refs"] = result_handle.to_payload()
     return payload
+
+
+def build_execution_event_log(
+    *,
+    action_kind: ExecutionEventKind,
+    resource_kind: ExecutionEventResourceKind,
+    resource_id: int | str,
+    summary: str,
+    payload: Mapping[str, object] | None = None,
+) -> ExecutionEventLog:
+    """Build the canonical persisted execution-event envelope."""
+    return ExecutionEventLog(
+        action_kind=action_kind,
+        resource_kind=resource_kind,
+        resource_id=str(resource_id),
+        summary=summary,
+        payload=_copy_payload(payload) or {},
+    )
 
 
 def audit_action_for_phase(phase: ExecutionPhase) -> TaskAuditActionKind:
@@ -593,9 +669,40 @@ def build_reconcile_stale_task_transition(
                 },
             },
         ),
-        audit_action_kind="reconcile.task_failed",
-        audit_summary=f"Reconciled stale task {task_id}",
-        audit_payload={"stale_before": stale_before_iso},
+        event_log=build_execution_event_log(
+            action_kind="reconcile.task_failed",
+            resource_kind="task",
+            resource_id=task_id,
+            summary=f"Reconciled stale task {task_id}",
+            payload={
+                "contract_version": EXECUTION_CONTRACT_VERSION,
+                "phase": "failed",
+                "error_code": STALE_TASK_TIMEOUT_ERROR_CODE,
+                "recorded_at": recorded_at.isoformat(),
+                "stale_before": stale_before_iso,
+            },
+        ),
+    )
+
+
+def build_reconcile_batch_failed_event(
+    *,
+    batch_id: int,
+    recorded_at: datetime,
+    stale_before: datetime,
+) -> ExecutionEventLog:
+    """Build the canonical execution-event log for one reconciled orphan batch."""
+    return build_execution_event_log(
+        action_kind="reconcile.batch_failed",
+        resource_kind="trace_batch",
+        resource_id=batch_id,
+        summary=f"Reconciled orphan batch {batch_id}",
+        payload={
+            "contract_version": EXECUTION_CONTRACT_VERSION,
+            "phase": "failed",
+            "recorded_at": recorded_at.isoformat(),
+            "stale_before": stale_before.isoformat(),
+        },
     )
 
 
@@ -623,6 +730,7 @@ def build_worker_crashing_transition(
         audit_payload=build_worker_audit_payload(
             phase="crashing",
             provenance=provenance,
+            recorded_at=recorded_at,
         ),
     )
 
@@ -637,13 +745,17 @@ def _build_worker_transition(
 ) -> TaskExecutionTransition:
     return TaskExecutionTransition(
         mutation=mutation,
-        audit_action_kind=audit_action_for_phase(phase),
-        audit_summary=build_worker_audit_summary(
-            phase=phase,
-            worker_task_name=worker_task_name,
-            task_id=task_id,
+        event_log=build_execution_event_log(
+            action_kind=audit_action_for_phase(phase),
+            resource_kind="task",
+            resource_id=task_id,
+            summary=build_worker_audit_summary(
+                phase=phase,
+                worker_task_name=worker_task_name,
+                task_id=task_id,
+            ),
+            payload=audit_payload,
         ),
-        audit_payload=_copy_payload(audit_payload),
     )
 
 

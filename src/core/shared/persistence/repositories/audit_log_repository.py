@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sc_core.execution import ExecutionEventLog
 from sqlalchemy import desc
 from sqlmodel import Session, col, select
 
@@ -15,6 +16,22 @@ class AuditLogRepository:
 
     def __init__(self, session: Session):
         self._session = session
+
+    def append_execution_event(
+        self,
+        *,
+        actor_id: int | None,
+        event: ExecutionEventLog,
+    ) -> AuditLogRecord:
+        """Append one canonical execution event to the audit log."""
+        return self.append_log(
+            actor_id=actor_id,
+            action_kind=event.action_kind,
+            resource_kind=event.resource_kind,
+            resource_id=event.resource_id,
+            summary=event.summary,
+            payload=event.payload,
+        )
 
     def append_log(
         self,

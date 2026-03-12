@@ -67,14 +67,10 @@ def _persist_transition(
     """Persist one shared orchestration transition and its optional audit record."""
     with get_unit_of_work() as uow:
         uow.tasks.apply_execution_transition(task_id, transition)
-        if transition.audit_action_kind is not None and transition.audit_summary is not None:
-            uow.audit_logs.append_log(
+        if transition.event_log is not None:
+            uow.audit_logs.append_execution_event(
                 actor_id=actor_id,
-                action_kind=transition.audit_action_kind,
-                resource_kind="task",
-                resource_id=task_id,
-                summary=transition.audit_summary,
-                payload=transition.audit_payload,
+                event=transition.event_log,
             )
         uow.commit()
 
