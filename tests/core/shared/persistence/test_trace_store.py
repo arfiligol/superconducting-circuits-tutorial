@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import numpy as np
+import zarr
 
 from core.shared.persistence.models import DataRecord
 from core.shared.persistence.trace_store import (
+    TRACE_STORE_SCHEMA_VERSION,
     LocalZarrTraceStore,
     LocalZarrTraceStoreBackend,
     S3ZarrTraceStoreBackend,
@@ -87,6 +89,8 @@ def test_local_zarr_trace_store_writes_trace_and_reads_slices(tmp_path) -> None:
     assert write_result.store_ref["array_path"] == "values"
     assert write_result.store_ref["shape"] == [4, 3]
     assert write_result.store_ref["chunk_shape"] == [4, 1]
+    assert write_result.store_ref["schema_version"] == TRACE_STORE_SCHEMA_VERSION
+    assert write_result.store_ref["payload_role"] == "raw"
     assert write_result.store_ref["store_uri"].endswith("designs/42/batches/105.zarr")
 
     read_column = store.read_trace_slice(write_result.store_ref, selection=(slice(None), 1))
@@ -116,7 +120,15 @@ def test_local_zarr_trace_store_supports_incremental_slice_writes(tmp_path) -> N
             {"name": "L_q", "unit": "nH", "values": [10.0, 12.0, 14.0]},
         ],
         chunk_shape=(4, 1),
+        payload_role="processed",
     )
+
+    root = zarr.open_group(store=tmp_path / "trace_store" / "designs/42/batches/105.zarr", mode="r")
+    version_markers = dict(root["traces"]["9002"].attrs["version_markers"])
+
+    assert write_result.store_ref["payload_role"] == "processed"
+    assert version_markers["schema_version"] == TRACE_STORE_SCHEMA_VERSION
+    assert version_markers["payload_role"] == "processed"
 
     store.write_trace_slice(
         write_result.store_ref,
@@ -151,11 +163,13 @@ def test_trace_store_ref_accepts_s3_backend_as_extension_direction() -> None:
             "shape": [4001, 11],
             "chunk_shape": [4001, 1],
             "schema_version": "1.0",
+            "payload_role": "analysis",
         }
     )
 
     assert ref["backend"] == "s3_zarr"
     assert ref["store_key"] == "designs/42/batches/105.zarr"
+    assert ref["payload_role"] == "analysis"
 
 
 def test_trace_store_ref_derives_store_key_from_legacy_local_store_uri() -> None:

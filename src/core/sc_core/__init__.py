@@ -24,6 +24,8 @@ from sc_core.execution import (
 )
 from sc_core.storage import (
     STORAGE_CONTRACT_VERSION,
+    TRACE_STORE_EVOLUTION_CONTRACT_VERSION,
+    TRACE_STORE_SCHEMA_BASELINE_VERSION,
     StorageRecordHandle,
     StorageRecordKind,
     TraceBatchHandle,
@@ -31,6 +33,8 @@ from sc_core.storage import (
     TraceResultLinkage,
     TraceStoreBackend,
     TraceStoreLocator,
+    TraceStorePayloadRole,
+    TraceStoreVersionMarkers,
 )
 from sc_core.tasking import (
     LaneName,
@@ -46,6 +50,8 @@ __all__ = [
     "DEFAULT_PREVIEW_ARTIFACTS",
     "EXECUTION_CONTRACT_VERSION",
     "STORAGE_CONTRACT_VERSION",
+    "TRACE_STORE_EVOLUTION_CONTRACT_VERSION",
+    "TRACE_STORE_SCHEMA_BASELINE_VERSION",
     "WORKER_TASK_FAILED_ERROR_CODE",
     "CircuitDefinitionInspection",
     "ExecutionPhase",
@@ -62,6 +68,8 @@ __all__ = [
     "TraceResultLinkage",
     "TraceStoreBackend",
     "TraceStoreLocator",
+    "TraceStorePayloadRole",
+    "TraceStoreVersionMarkers",
     "ValidationLevel",
     "ValidationNotice",
     "WorkerExecutionProvenance",

@@ -473,6 +473,7 @@ class IncrementalRawSimulationSweepWriter:
                 chunk_shape=_default_chunk_shape(shape),
                 array_path="values",
                 store_key=self._store_key,
+                payload_role="raw",
             )
             store_ref = {
                 **dict(write_result.store_ref),
@@ -654,6 +655,7 @@ class IncrementalPostProcessedSweepWriter:
                 chunk_shape=_default_chunk_shape(shape),
                 array_path="values",
                 store_key=self._store_key,
+                payload_role="processed",
             )
             store_ref = {
                 **dict(write_result.store_ref),

@@ -217,6 +217,7 @@ def save_dataset_payload_to_db(
                 trace_id=int(data_rec.id),
                 values=payload_ds.values,
                 axes=_trace_axes(payload_ds),
+                payload_role="raw",
             )
             data_rec.axes = list(write_result.axes)
             data_rec.store_ref = dict(write_result.store_ref)

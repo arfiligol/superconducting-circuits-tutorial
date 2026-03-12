@@ -10,9 +10,17 @@ from sc_core.storage.contracts import (
     TraceStoreBackend,
     TraceStoreLocator,
 )
+from sc_core.storage.evolution import (
+    TRACE_STORE_EVOLUTION_CONTRACT_VERSION,
+    TRACE_STORE_SCHEMA_BASELINE_VERSION,
+    TraceStorePayloadRole,
+    TraceStoreVersionMarkers,
+)
 
 __all__ = [
     "STORAGE_CONTRACT_VERSION",
+    "TRACE_STORE_EVOLUTION_CONTRACT_VERSION",
+    "TRACE_STORE_SCHEMA_BASELINE_VERSION",
     "StorageRecordHandle",
     "StorageRecordKind",
     "TraceBatchHandle",
@@ -20,4 +28,6 @@ __all__ = [
     "TraceResultLinkage",
     "TraceStoreBackend",
     "TraceStoreLocator",
+    "TraceStorePayloadRole",
+    "TraceStoreVersionMarkers",
 ]
