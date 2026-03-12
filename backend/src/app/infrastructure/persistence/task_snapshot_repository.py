@@ -19,6 +19,7 @@ from src.app.domain.tasks import (
     TaskStatus,
     TaskSubmissionSource,
     TaskVisibilityScope,
+    build_task_dispatch,
 )
 from src.app.infrastructure.persistence.models import (
     RewriteTaskDispatchRecord,
@@ -90,7 +91,20 @@ class SqliteRewriteTaskSnapshotRepository:
             )
             session.add(row)
             session.flush()
-            dispatch_row, _ = _upsert_dispatch_row(session, row)
+            dispatch_row, _ = _upsert_dispatch_row(
+                session,
+                row,
+                build_task_dispatch(
+                    task_id=row.task_id,
+                    worker_task_name=row.worker_task_name,
+                    task_status=cast(TaskStatus, row.status),
+                    submitted_from_active_dataset=row.submitted_from_active_dataset,
+                    dataset_id=row.dataset_id,
+                    accepted_at=row.submitted_at,
+                    last_updated_at=row.progress_updated_at,
+                    submission_source=draft.submission_source,
+                ),
+            )
             session.commit()
             session.refresh(row)
             session.refresh(dispatch_row)
@@ -128,7 +142,20 @@ class SqliteRewriteTaskSnapshotRepository:
             row.progress_updated_at = task.progress.updated_at
 
             session.flush()
-            dispatch_row, _ = _upsert_dispatch_row(session, row, _derive_dispatch_from_task(task))
+            dispatch_row, _ = _upsert_dispatch_row(
+                session,
+                row,
+                build_task_dispatch(
+                    task_id=task.task_id,
+                    worker_task_name=task.worker_task_name,
+                    task_status=task.status,
+                    submitted_from_active_dataset=task.submitted_from_active_dataset,
+                    dataset_id=task.dataset_id,
+                    accepted_at=task.submitted_at,
+                    last_updated_at=task.progress.updated_at,
+                    current_dispatch=task.dispatch,
+                ),
+            )
             session.commit()
             session.refresh(row)
             session.refresh(dispatch_row)
@@ -140,11 +167,20 @@ def _upsert_dispatch_row(
     task_row: RewriteTaskRecord,
     dispatch: TaskDispatch | None = None,
 ) -> tuple[RewriteTaskDispatchRecord, bool]:
-    desired_dispatch = dispatch or _derive_dispatch_from_row(task_row)
     row = session.scalar(
         select(RewriteTaskDispatchRecord).where(
             RewriteTaskDispatchRecord.task_id == task_row.task_id
         )
+    )
+    desired_dispatch = dispatch or build_task_dispatch(
+        task_id=task_row.task_id,
+        worker_task_name=task_row.worker_task_name,
+        task_status=cast(TaskStatus, task_row.status),
+        submitted_from_active_dataset=task_row.submitted_from_active_dataset,
+        dataset_id=task_row.dataset_id,
+        accepted_at=task_row.submitted_at,
+        last_updated_at=task_row.progress_updated_at,
+        current_dispatch=_to_task_dispatch(row),
     )
     changed = False
     if row is None:
@@ -172,59 +208,16 @@ def _upsert_dispatch_row(
     return row, changed
 
 
-def _derive_dispatch_from_row(task_row: RewriteTaskRecord) -> TaskDispatch:
+def _to_task_dispatch(dispatch_row: RewriteTaskDispatchRecord | None) -> TaskDispatch | None:
+    if dispatch_row is None:
+        return None
     return TaskDispatch(
-        dispatch_key=f"dispatch:{task_row.task_id}:{task_row.worker_task_name}",
-        status=_dispatch_status(cast(TaskStatus, task_row.status)),
-        submission_source=_submission_source(
-            submitted_from_active_dataset=task_row.submitted_from_active_dataset,
-            dataset_id=task_row.dataset_id,
-        ),
-        accepted_at=task_row.submitted_at,
-        last_updated_at=task_row.progress_updated_at,
+        dispatch_key=dispatch_row.dispatch_key,
+        status=cast(TaskDispatchStatus, dispatch_row.status),
+        submission_source=cast(TaskSubmissionSource, dispatch_row.submission_source),
+        accepted_at=dispatch_row.accepted_at,
+        last_updated_at=dispatch_row.last_updated_at,
     )
-
-
-def _derive_dispatch_from_task(task: TaskDetail) -> TaskDispatch:
-    existing_dispatch = task.dispatch
-    return TaskDispatch(
-        dispatch_key=(
-            existing_dispatch.dispatch_key
-            if existing_dispatch is not None
-            else f"dispatch:{task.task_id}:{task.worker_task_name}"
-        ),
-        status=_dispatch_status(task.status),
-        submission_source=(
-            existing_dispatch.submission_source
-            if existing_dispatch is not None
-            else _submission_source(
-                submitted_from_active_dataset=task.submitted_from_active_dataset,
-                dataset_id=task.dataset_id,
-            )
-        ),
-        accepted_at=(
-            existing_dispatch.accepted_at if existing_dispatch is not None else task.submitted_at
-        ),
-        last_updated_at=task.progress.updated_at,
-    )
-
-
-def _dispatch_status(task_status: TaskStatus) -> TaskDispatchStatus:
-    if task_status == "queued":
-        return "accepted"
-    return cast(TaskDispatchStatus, task_status)
-
-
-def _submission_source(
-    *,
-    submitted_from_active_dataset: bool,
-    dataset_id: str | None,
-) -> TaskSubmissionSource:
-    if submitted_from_active_dataset:
-        return "active_dataset"
-    if dataset_id is not None:
-        return "explicit_dataset"
-    return "definition_only"
 
 
 def _to_task_detail(
@@ -257,13 +250,7 @@ def _to_task_detail(
             updated_at=row.progress_updated_at,
         ),
         result_refs=_empty_result_refs(),
-        dispatch=TaskDispatch(
-            dispatch_key=dispatch_row.dispatch_key,
-            status=cast(TaskDispatchStatus, dispatch_row.status),
-            submission_source=cast(TaskSubmissionSource, dispatch_row.submission_source),
-            accepted_at=dispatch_row.accepted_at,
-            last_updated_at=dispatch_row.last_updated_at,
-        ),
+        dispatch=_to_task_dispatch(dispatch_row),
     )
 
 

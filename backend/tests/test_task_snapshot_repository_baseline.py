@@ -56,6 +56,7 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
             worker_task_name=worker_route.worker_task_name,
             request_ready=worker_route.request_ready,
             submitted_from_active_dataset=True,
+            submission_source="active_dataset",
         )
     )
     assert created.task_id == 304

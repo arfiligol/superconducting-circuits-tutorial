@@ -93,6 +93,7 @@ class PersistedRewriteTaskRepository:
                 current_task,
                 status=update.status,
                 summary=update.summary or current_task.summary,
+                dispatch=update.dispatch or current_task.dispatch,
                 progress=replace(
                     current_task.progress,
                     phase=update.status,

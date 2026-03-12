@@ -2,7 +2,12 @@ from dataclasses import replace
 
 import pytest
 from sc_core.execution import TaskResultHandle
+from sqlalchemy import update
 from src.app.domain.tasks import TaskLifecycleUpdate, TaskResultRefs, TaskSubmissionDraft
+from src.app.infrastructure.persistence import (
+    RewriteTaskDispatchRecord,
+    create_metadata_session_factory,
+)
 from src.app.infrastructure.runtime import (
     get_rewrite_app_state_repository,
     get_rewrite_task_repository,
@@ -18,6 +23,7 @@ from src.app.infrastructure.storage_reference_factory import (
     build_trace_payload_ref,
 )
 from src.app.services.service_errors import ServiceError
+from src.app.settings import get_settings
 
 
 def test_runtime_task_submission_persists_pending_result_metadata() -> None:
@@ -42,6 +48,27 @@ def test_runtime_task_submission_persists_pending_result_metadata() -> None:
     assert task.dispatch is not None
     assert task.dispatch.status == "accepted"
     assert task.dispatch.dispatch_key == "dispatch:306:characterization_run_task"
+
+
+def test_task_service_submit_preserves_explicit_dataset_dispatch_source_across_reset() -> None:
+    task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id="transmon-coupler-014",
+            definition_id=None,
+            summary=None,
+        )
+    )
+
+    assert task.dispatch is not None
+    assert task.dispatch.submission_source == "explicit_dataset"
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(task.task_id)
+
+    assert reloaded_task.dispatch is not None
+    assert reloaded_task.dispatch.submission_source == "explicit_dataset"
 
 
 def test_runtime_bootstrap_persists_seeded_trace_payload_and_materialized_handles() -> None:
@@ -172,6 +199,44 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     assert reloaded_task.dispatch.last_updated_at == "2026-03-12 11:15:00"
     assert reloaded_task.progress.percent_complete == 35
     assert reloaded_task.progress.summary == "Characterization worker picked up the task."
+
+
+def test_service_read_reconciles_stale_dispatch_snapshot_to_task_lifecycle() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary=None,
+        )
+    )
+    get_task_service().update_task_lifecycle(
+        TaskLifecycleUpdate(
+            task_id=submitted_task.task_id,
+            status="running",
+            progress_percent_complete=15,
+            progress_summary="Dispatch/lifecycle reconciliation proof.",
+            progress_updated_at="2026-03-12 11:17:00",
+        )
+    )
+
+    session_factory = create_metadata_session_factory(get_settings().database_path)
+    with session_factory() as session:
+        session.execute(
+            update(RewriteTaskDispatchRecord)
+            .where(RewriteTaskDispatchRecord.task_id == submitted_task.task_id)
+            .values(status="accepted", last_updated_at="2026-03-12 10:30:00")
+        )
+        session.commit()
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(submitted_task.task_id)
+
+    assert reloaded_task.dispatch is not None
+    assert reloaded_task.dispatch.status == "running"
+    assert reloaded_task.dispatch.last_updated_at == "2026-03-12 11:17:00"
+    assert reloaded_task.progress.summary == "Dispatch/lifecycle reconciliation proof."
 
 
 def test_task_service_lifecycle_update_persists_completed_result_refs_across_reset() -> None:

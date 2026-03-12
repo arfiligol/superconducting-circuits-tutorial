@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Protocol
 
 from sc_core.tasking import resolve_worker_task_route
@@ -13,6 +14,8 @@ from src.app.domain.tasks import (
     TaskLifecycleUpdate,
     TaskListQuery,
     TaskSubmissionDraft,
+    build_task_dispatch,
+    task_submission_source_for,
 )
 from src.app.services.service_errors import ServiceFieldError, service_error
 
@@ -53,7 +56,11 @@ class TaskService:
         self._circuit_definition_repository = circuit_definition_repository
 
     def list_tasks(self, query: TaskListQuery) -> list[TaskDetail]:
-        tasks = [task for task in self._repository.list_tasks() if self._matches_query(task, query)]
+        tasks = [
+            self._normalize_task(task)
+            for task in self._repository.list_tasks()
+            if self._matches_query(task, query)
+        ]
         return sorted(tasks, key=lambda task: task.submitted_at, reverse=True)[: query.limit]
 
     def get_task(self, task_id: int) -> TaskDetail:
@@ -66,7 +73,7 @@ class TaskService:
                 category="not_found",
                 message=f"Task {task_id} was not found.",
             )
-        return detail
+        return self._normalize_task(detail)
 
     def submit_task(self, draft: TaskSubmissionDraft) -> TaskDetail:
         session = self._session_repository.get_session_state()
@@ -114,12 +121,16 @@ class TaskService:
 
         owner_user_id = session.user.user_id if session.user is not None else "anonymous"
         owner_display_name = session.user.display_name if session.user is not None else "anonymous"
+        submission_source = task_submission_source_for(
+            submitted_from_active_dataset=submitted_from_active_dataset,
+            dataset_id=resolved_dataset_id,
+        )
         worker_route = resolve_worker_task_route(
             draft.kind,
             request_is_valid=True,
             has_trace_batch_id=False,
         )
-        return self._repository.create_task(
+        created_task = self._repository.create_task(
             TaskCreateDraft(
                 kind=draft.kind,
                 lane=worker_route.lane,
@@ -135,8 +146,10 @@ class TaskService:
                 worker_task_name=worker_route.worker_task_name,
                 request_ready=worker_route.request_ready,
                 submitted_from_active_dataset=submitted_from_active_dataset,
+                submission_source=submission_source,
             )
         )
+        return self._normalize_task(created_task)
 
     def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail:
         detail = self._repository.get_task(update.task_id)
@@ -158,7 +171,20 @@ class TaskService:
                 field_errors=field_errors,
             )
 
-        updated_task = self._repository.update_task_lifecycle(update)
+        enriched_update = replace(
+            update,
+            dispatch=build_task_dispatch(
+                task_id=detail.task_id,
+                worker_task_name=detail.worker_task_name,
+                task_status=update.status,
+                submitted_from_active_dataset=detail.submitted_from_active_dataset,
+                dataset_id=detail.dataset_id,
+                accepted_at=detail.submitted_at,
+                last_updated_at=update.progress_updated_at,
+                current_dispatch=detail.dispatch,
+            ),
+        )
+        updated_task = self._repository.update_task_lifecycle(enriched_update)
         if updated_task is None:
             raise service_error(
                 404,
@@ -166,7 +192,7 @@ class TaskService:
                 category="not_found",
                 message=f"Task {update.task_id} was not found.",
             )
-        return updated_task
+        return self._normalize_task(updated_task)
 
     def _matches_query(self, task: TaskDetail, query: TaskListQuery) -> bool:
         session = self._session_repository.get_session_state()
@@ -192,6 +218,21 @@ class TaskService:
         if scope == "owned":
             return task.owner_user_id == _session_user_id(session)
         return True
+
+    def _normalize_task(self, task: TaskDetail) -> TaskDetail:
+        return replace(
+            task,
+            dispatch=build_task_dispatch(
+                task_id=task.task_id,
+                worker_task_name=task.worker_task_name,
+                task_status=task.status,
+                submitted_from_active_dataset=task.submitted_from_active_dataset,
+                dataset_id=task.dataset_id,
+                accepted_at=task.submitted_at,
+                last_updated_at=task.progress.updated_at,
+                current_dispatch=task.dispatch,
+            ),
+        )
 
 
 def _default_task_summary(task_kind: TaskKind, dataset_id: str | None) -> str:

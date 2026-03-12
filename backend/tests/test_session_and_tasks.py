@@ -227,6 +227,22 @@ def test_submit_characterization_task_uses_active_dataset() -> None:
     ]
 
 
+def test_submit_characterization_task_with_explicit_dataset_sets_dispatch_source() -> None:
+    response = client.post(
+        "/tasks",
+        json={"kind": "characterization", "dataset_id": "transmon-coupler-014"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["task"]["dataset_id"] == "transmon-coupler-014"
+    assert payload["task"]["submitted_from_active_dataset"] is False
+    assert payload["task"]["dispatch"]["submission_source"] == "explicit_dataset"
+    assert payload["task"]["dispatch"]["dispatch_key"] == (
+        "dispatch:306:characterization_run_task"
+    )
+
+
 def test_submit_simulation_task_returns_queued_task_detail() -> None:
     response = client.post(
         "/tasks",
