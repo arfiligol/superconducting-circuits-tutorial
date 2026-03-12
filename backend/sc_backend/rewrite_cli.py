@@ -12,6 +12,8 @@ from src.app.api.presenters.storage import (
 from src.app.api.schemas.circuit_definitions import (
     CircuitDefinitionCreateRequest,
     CircuitDefinitionDetailResponse,
+    CircuitDefinitionSummaryResponse,
+    CircuitDefinitionUpdateRequest,
     CircuitDefinitionValidationSummaryResponse,
     ValidationNoticeResponse,
 )
@@ -29,7 +31,14 @@ from src.app.api.schemas.tasks import (
     TaskResultRefsResponse,
     TaskSummaryResponse,
 )
-from src.app.domain.circuit_definitions import CircuitDefinitionDetail, CircuitDefinitionDraft
+from src.app.domain.circuit_definitions import (
+    CircuitDefinitionDetail,
+    CircuitDefinitionDraft,
+    CircuitDefinitionListQuery,
+    CircuitDefinitionSortBy,
+    CircuitDefinitionSummary,
+    CircuitDefinitionUpdate,
+)
 from src.app.domain.datasets import (
     DatasetListQuery,
     DatasetSortBy,
@@ -154,6 +163,26 @@ def get_circuit_definition(definition_id: int) -> CircuitDefinitionDetailRespons
     )
 
 
+def list_circuit_definitions(
+    *,
+    search: str | None = None,
+    sort_by: CircuitDefinitionSortBy = "created_at",
+    sort_order: SortOrder = "desc",
+) -> list[CircuitDefinitionSummaryResponse]:
+    return [
+        _build_circuit_definition_summary_response(summary)
+        for summary in _run_backend_call(
+            lambda: get_circuit_definition_service().list_circuit_definitions(
+                CircuitDefinitionListQuery(
+                    search=search,
+                    sort_by=sort_by,
+                    sort_order=sort_order,
+                )
+            )
+        )
+    ]
+
+
 def create_circuit_definition(
     *,
     name: str,
@@ -162,6 +191,29 @@ def create_circuit_definition(
     draft = _validated_circuit_definition_draft(name=name, source_text=source_text)
     return _build_circuit_definition_detail_response(
         _run_backend_call(lambda: get_circuit_definition_service().create_circuit_definition(draft))
+    )
+
+
+def update_circuit_definition(
+    definition_id: int,
+    *,
+    name: str,
+    source_text: str,
+) -> CircuitDefinitionDetailResponse:
+    update = _validated_circuit_definition_update(name=name, source_text=source_text)
+    return _build_circuit_definition_detail_response(
+        _run_backend_call(
+            lambda: get_circuit_definition_service().update_circuit_definition(
+                definition_id,
+                update,
+            )
+        )
+    )
+
+
+def delete_circuit_definition(definition_id: int) -> None:
+    _run_backend_call(
+        lambda: get_circuit_definition_service().delete_circuit_definition(definition_id)
     )
 
 
@@ -234,6 +286,12 @@ def _build_task_summary_response(task: TaskDetail) -> TaskSummaryResponse:
         definition_id=task.definition_id,
         summary=task.summary,
     )
+
+
+def _build_circuit_definition_summary_response(
+    summary: CircuitDefinitionSummary,
+) -> CircuitDefinitionSummaryResponse:
+    return CircuitDefinitionSummaryResponse.model_validate(summary.__dict__)
 
 
 def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
@@ -312,26 +370,46 @@ def _validated_circuit_definition_draft(
     try:
         payload = CircuitDefinitionCreateRequest(name=name, source_text=source_text)
     except ValidationError as exc:
-        field_errors = [
-            {
-                "field": ".".join(str(part) for part in error["loc"]),
-                "message": error["msg"],
-            }
-            for error in exc.errors()
-        ]
-        raise backend_contract_error(
-            HTTPException(
-                status_code=422,
-                detail={
-                    "code": "request_validation_failed",
-                    "category": "validation",
-                    "message": "Request validation failed.",
-                    "field_errors": field_errors,
-                },
-            )
-        ) from exc
+        _raise_request_validation_error(exc)
 
     return CircuitDefinitionDraft(
         name=payload.name,
         source_text=payload.source_text,
     )
+
+
+def _validated_circuit_definition_update(
+    *,
+    name: str,
+    source_text: str,
+) -> CircuitDefinitionUpdate:
+    try:
+        payload = CircuitDefinitionUpdateRequest(name=name, source_text=source_text)
+    except ValidationError as exc:
+        _raise_request_validation_error(exc)
+
+    return CircuitDefinitionUpdate(
+        name=payload.name,
+        source_text=payload.source_text,
+    )
+
+
+def _raise_request_validation_error(exc: ValidationError) -> None:
+    field_errors = [
+        {
+            "field": ".".join(str(part) for part in error["loc"]),
+            "message": error["msg"],
+        }
+        for error in exc.errors()
+    ]
+    raise backend_contract_error(
+        HTTPException(
+            status_code=422,
+            detail={
+                "code": "request_validation_failed",
+                "category": "validation",
+                "message": "Request validation failed.",
+                "field_errors": field_errors,
+            },
+        )
+    ) from exc
