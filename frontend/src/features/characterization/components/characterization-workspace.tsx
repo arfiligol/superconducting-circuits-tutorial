@@ -33,6 +33,7 @@ import {
   SurfaceTag,
   cx,
 } from "@/features/shared/components/surface-kit";
+import { TaskEventHistoryPanel } from "@/features/shared/components/task-event-history-panel";
 import { ApiError } from "@/lib/api/client";
 
 const characterizationRequestSchema = z.object({
@@ -250,6 +251,15 @@ export function CharacterizationWorkspace() {
   });
   const activeDatasetErrorMessage = describeApiError(activeDatasetState.activeDatasetError);
   const activeTaskErrorMessage = describeApiError(activeTaskError);
+  const eventHistoryNarrative = !activeTask
+    ? "Attach or submit a characterization task to inspect its persisted event trail."
+    : taskAttachmentState.isStaleSnapshot && resolvedTaskId !== null
+      ? `Showing persisted events from task #${activeTask.taskId} while task #${resolvedTaskId} reattaches so dispatch and analysis history stay visible.`
+      : taskConnectionState.hasNewerLatestTask && latestTaskId !== null
+        ? `Task #${resolvedTaskId} remains attached for comparison while newer characterization activity exists on task #${latestTaskId}.`
+        : taskConnectionState.isFollowingLatest && latestTaskId !== null
+          ? `Following the latest characterization task #${latestTaskId}. Persisted events here should advance as backend analysis progresses.`
+          : `Task #${activeTask.taskId} keeps a persisted event trail that ties dispatch state to analysis progress and published outputs.`;
 
   function replaceSearchState(updates: Readonly<Record<string, string | null>>) {
     startTransition(() => {
@@ -825,6 +835,14 @@ export function CharacterizationWorkspace() {
               )}
             </div>
           </SurfacePanel>
+
+          <TaskEventHistoryPanel
+            title="Task Event History"
+            description="Inspect persisted event records so characterization dispatch, progress changes, and task outcomes remain readable after refresh or recovery."
+            task={activeTask}
+            narrative={eventHistoryNarrative}
+            emptyMessage="No persisted characterization task events are attached yet. Submit or attach a task to inspect its backend event history."
+          />
 
           <SurfacePanel
             title="Persisted Result Surface"

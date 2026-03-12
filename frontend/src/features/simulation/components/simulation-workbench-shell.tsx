@@ -37,6 +37,7 @@ import {
   SurfaceTag,
   cx,
 } from "@/features/shared/components/surface-kit";
+import { TaskEventHistoryPanel } from "@/features/shared/components/task-event-history-panel";
 import { ApiError } from "@/lib/api/client";
 
 const simulationRequestSchema = z.object({
@@ -319,6 +320,13 @@ export function SimulationWorkbenchShell() {
   const definitionsErrorMessage = describeApiError(definitionsError);
   const activeDefinitionErrorMessage = describeApiError(activeDefinitionError);
   const activeTaskErrorMessage = describeApiError(activeTaskError);
+  const eventHistoryNarrative = !activeTask
+    ? "Attach or submit a simulation task to inspect its persisted dispatch trail."
+    : taskAttachmentState.isStaleSnapshot && resolvedTaskId !== null
+      ? `Showing persisted events from task #${activeTask.taskId} while task #${resolvedTaskId} reattaches so the simulation surface stays readable during route switching.`
+      : latestSimulationTask && resolvedTaskId === latestSimulationTask.taskId
+        ? `Following the latest simulation task #${latestSimulationTask.taskId}. Persisted events should advance here as dispatch, progress, and result publication change.`
+        : `Task #${activeTask.taskId} keeps a persisted event trail alongside dispatch and progress so refreshes do not erase execution context.`;
 
   useEffect(() => {
     if (resolvedDefinitionId === null || resolvedDefinitionId === rawDefinitionId) {
@@ -864,6 +872,14 @@ export function SimulationWorkbenchShell() {
               )}
             </div>
           </SurfacePanel>
+
+          <TaskEventHistoryPanel
+            title="Task Event History"
+            description="Inspect the persisted task timeline directly so dispatch changes, progress movement, and task outcomes remain readable after refresh or reattachment."
+            task={activeTask}
+            narrative={eventHistoryNarrative}
+            emptyMessage="No persisted simulation task events are attached yet. Submit or attach a task to inspect its backend event history."
+          />
 
           <SurfacePanel
             title="Result Refs"
