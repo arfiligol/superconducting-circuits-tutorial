@@ -80,10 +80,12 @@ def test_sqlite_storage_metadata_repository_round_trips_storage_entities(
         writer_version="rewrite-backend.v0",
     ) == trace_payload
     assert repository.get_trace_payload(trace_payload.store_key) == trace_payload
+    assert repository.get_trace_payload_for_owner_record(dataset_record.record_id) == trace_payload
 
     persisted_result = repository.save_result_handle(result_handle)
     assert persisted_result == result_handle
     assert repository.get_result_handle(result_handle.handle_id) == result_handle
+    assert repository.list_result_handles_for_task(303) == (result_handle,)
 
     with session_factory() as session:
         stored_trace = session.scalar(

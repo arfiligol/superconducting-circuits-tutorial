@@ -25,6 +25,17 @@ from src.app.infrastructure.storage_reference_factory import (
 
 
 class StorageMetadataRepository(Protocol):
+    def get_storage_record(self, record_id: str) -> MetadataRecordRef | None: ...
+
+    def get_trace_payload_for_owner_record(
+        self,
+        owner_record_id: str,
+    ) -> TracePayloadRef | None: ...
+
+    def get_result_handle(self, handle_id: str) -> ResultHandleRef | None: ...
+
+    def list_result_handles_for_task(self, task_id: int) -> tuple[ResultHandleRef, ...]: ...
+
     def save_storage_record(self, record: MetadataRecordRef) -> MetadataRecordRef: ...
 
     def save_trace_payload(
@@ -57,10 +68,15 @@ class InMemoryRewriteAppStateRepository:
         return self._session_state
 
     def list_tasks(self) -> list[TaskDetail]:
-        return list(self._tasks.values())
+        return [self._hydrate_task(task) for task in self._tasks.values()]
 
     def get_task(self, task_id: int) -> TaskDetail | None:
-        return self._tasks.get(task_id)
+        task = self._tasks.get(task_id)
+        if task is None:
+            return None
+        hydrated_task = self._hydrate_task(task)
+        self._tasks[task_id] = hydrated_task
+        return hydrated_task
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         task_id = self._next_task_id
@@ -94,14 +110,16 @@ class InMemoryRewriteAppStateRepository:
         self._tasks[task.task_id] = task
         self._next_task_id += 1
         self._persist_result_refs(task.result_refs)
-        return task
+        hydrated_task = self._hydrate_task(task)
+        self._tasks[task.task_id] = hydrated_task
+        return hydrated_task
 
     def _persist_seed_storage_metadata(self) -> None:
         if self._storage_metadata_repository is None:
             return
 
         for task in self._tasks.values():
-            self._persist_result_refs(task.result_refs)
+            self._ensure_result_refs(task.result_refs)
 
     def _persist_result_refs(self, result_refs: TaskResultRefs) -> None:
         if self._storage_metadata_repository is None:
@@ -120,6 +138,73 @@ class InMemoryRewriteAppStateRepository:
 
         for result_handle in result_refs.result_handles:
             self._storage_metadata_repository.save_result_handle(result_handle)
+
+    def _ensure_result_refs(self, result_refs: TaskResultRefs) -> None:
+        if self._storage_metadata_repository is None:
+            return
+
+        for record in result_refs.metadata_records:
+            if self._storage_metadata_repository.get_storage_record(record.record_id) is None:
+                self._storage_metadata_repository.save_storage_record(record)
+
+        trace_owner_record = _trace_owner_record(result_refs)
+        if (
+            result_refs.trace_payload is not None
+            and trace_owner_record is not None
+            and self._storage_metadata_repository.get_trace_payload_for_owner_record(
+                trace_owner_record.record_id
+            )
+            is None
+        ):
+            self._storage_metadata_repository.save_trace_payload(
+                trace_owner_record,
+                result_refs.trace_payload,
+                writer_version="rewrite-backend.runtime",
+            )
+
+        for result_handle in result_refs.result_handles:
+            if self._storage_metadata_repository.get_result_handle(result_handle.handle_id) is None:
+                self._storage_metadata_repository.save_result_handle(result_handle)
+
+    def _hydrate_task(self, task: TaskDetail) -> TaskDetail:
+        if self._storage_metadata_repository is None:
+            return task
+
+        persisted_result_handles = self._storage_metadata_repository.list_result_handles_for_task(
+            task.task_id
+        )
+        if len(persisted_result_handles) == 0:
+            return task
+
+        primary_result_handle = persisted_result_handles[0]
+        owner_record = (
+            primary_result_handle.provenance.trace_batch_record
+            or primary_result_handle.provenance.analysis_run_record
+        )
+        trace_payload = task.result_refs.trace_payload
+        if owner_record is not None:
+            trace_payload = (
+                self._storage_metadata_repository.get_trace_payload_for_owner_record(
+                    owner_record.record_id
+                )
+                or trace_payload
+            )
+        metadata_records = _build_metadata_records_for_hydration(
+            owner_record=owner_record,
+            primary_result_handle=primary_result_handle,
+        )
+        return replace(
+            task,
+            result_refs=TaskResultRefs(
+                result_handle=_build_storage_linkage_handle(
+                    owner_record=owner_record,
+                    current_handle=task.result_refs.result_handle,
+                ),
+                metadata_records=metadata_records,
+                trace_payload=trace_payload,
+                result_handles=persisted_result_handles,
+            ),
+        )
 
 
 def _seed_session_state() -> SessionState:
@@ -459,3 +544,43 @@ def _trace_owner_record(result_refs: TaskResultRefs) -> MetadataRecordRef | None
         if record.record_type in {"trace_batch", "analysis_run", "dataset"}:
             return record
     return None
+
+
+def _build_storage_linkage_handle(
+    *,
+    owner_record: MetadataRecordRef | None,
+    current_handle: TaskResultHandle,
+) -> TaskResultHandle:
+    if owner_record is None:
+        return current_handle
+    if owner_record.record_type == "trace_batch":
+        return TaskResultHandle(trace_batch_id=_parse_record_suffix(owner_record.record_id))
+    if owner_record.record_type == "analysis_run":
+        return TaskResultHandle(analysis_run_id=_parse_record_suffix(owner_record.record_id))
+    return current_handle
+
+
+def _build_metadata_records_for_hydration(
+    *,
+    owner_record: MetadataRecordRef | None,
+    primary_result_handle: ResultHandleRef,
+) -> tuple[MetadataRecordRef, ...]:
+    metadata_records: list[MetadataRecordRef] = []
+    if owner_record is not None:
+        metadata_records.append(owner_record)
+    metadata_records.append(primary_result_handle.metadata_record)
+    return tuple(_dedupe_metadata_records(metadata_records))
+
+
+def _dedupe_metadata_records(
+    records: list[MetadataRecordRef],
+) -> list[MetadataRecordRef]:
+    deduped: dict[str, MetadataRecordRef] = {}
+    for record in records:
+        deduped.setdefault(record.record_id, record)
+    return list(deduped.values())
+
+
+def _parse_record_suffix(record_id: str) -> int:
+    _, _, suffix = record_id.partition(":")
+    return int(suffix)

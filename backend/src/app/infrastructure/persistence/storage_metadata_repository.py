@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.app.domain.storage import (
@@ -92,11 +92,17 @@ class SqliteRewriteStorageMetadataRepository:
 
     def get_trace_payload(self, store_key: str) -> TracePayloadRef | None:
         with self._session_factory() as session:
-            row = session.scalar(
-                select(RewriteTracePayloadRecord).where(
-                    RewriteTracePayloadRecord.store_key == store_key
-                )
-            )
+            row = session.scalar(_select_trace_payload_by_store_key(store_key))
+            if row is None:
+                return None
+            return _to_trace_payload_ref(row)
+
+    def get_trace_payload_for_owner_record(self, owner_record_id: str) -> TracePayloadRef | None:
+        with self._session_factory() as session:
+            owner_row = self._get_storage_record(session, owner_record_id)
+            if owner_row is None:
+                return None
+            row = session.scalar(_select_trace_payload_by_owner_row_id(owner_row.id))
             if row is None:
                 return None
             return _to_trace_payload_ref(row)
@@ -167,6 +173,15 @@ class SqliteRewriteStorageMetadataRepository:
             if row is None:
                 return None
             return self._load_result_handle(session, row)
+
+    def list_result_handles_for_task(self, task_id: int) -> tuple[ResultHandleRef, ...]:
+        with self._session_factory() as session:
+            rows = session.scalars(
+                select(RewriteResultHandleRecord)
+                .where(RewriteResultHandleRecord.provenance_task_id == task_id)
+                .order_by(RewriteResultHandleRecord.id.asc())
+            ).all()
+            return tuple(self._load_result_handle(session, row) for row in rows)
 
     def _upsert_storage_record(
         self,
@@ -249,6 +264,22 @@ class SqliteRewriteStorageMetadataRepository:
 
 def _record_row_id(row: RewriteStorageRecord | None) -> int | None:
     return row.id if row is not None else None
+
+
+def _select_trace_payload_by_store_key(store_key: str) -> Select[tuple[RewriteTracePayloadRecord]]:
+    return select(RewriteTracePayloadRecord).where(
+        RewriteTracePayloadRecord.store_key == store_key
+    )
+
+
+def _select_trace_payload_by_owner_row_id(
+    owner_row_id: int,
+) -> Select[tuple[RewriteTracePayloadRecord]]:
+    return (
+        select(RewriteTracePayloadRecord)
+        .where(RewriteTracePayloadRecord.owner_record_id == owner_row_id)
+        .order_by(RewriteTracePayloadRecord.id.asc())
+    )
 
 
 def _to_metadata_record_ref(row: RewriteStorageRecord) -> MetadataRecordRef:
