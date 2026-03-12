@@ -10,6 +10,7 @@ class AppSettings(BaseSettings):
     app_name: str = "Superconducting Circuits API"
     app_version: str = "0.1.0"
     environment: str = "development"
+    database_path: str = "data/database.db"
     session_secret: SecretStr = SecretStr("change-me-session-secret")
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: SecretStr = SecretStr("change-me-bootstrap-password")
