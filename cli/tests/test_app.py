@@ -86,6 +86,41 @@ def test_session_show_command_supports_json_output() -> None:
     assert '"workspace_id": "ws-device-lab"' in result.stdout
 
 
+def test_session_set_active_dataset_command_updates_session_state() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["session", "set-active-dataset", "transmon-coupler-014"],
+    )
+
+    assert result.exit_code == 0
+    assert "active_dataset_id: transmon-coupler-014" in result.stdout
+    assert "active_dataset_name: Coupler detuning 014" in result.stdout
+
+
+def test_session_set_active_dataset_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["session", "set-active-dataset", "transmon-coupler-014", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
+    assert '"name": "Coupler detuning 014"' in result.stdout
+
+
+def test_session_set_active_dataset_command_supports_clearing_context() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "set-active-dataset", "--clear"])
+
+    assert result.exit_code == 0
+    assert "active_dataset: none" in result.stdout
+
+
 def test_datasets_list_command_reads_rewrite_dataset_state() -> None:
     runner = CliRunner()
 
@@ -170,6 +205,32 @@ def test_tasks_show_command_uses_structured_backend_error_json() -> None:
     assert result.exit_code == 2
     assert '"error": {' in result.output
     assert '"code": "task_not_found"' in result.output
+    assert '"category": "not_found"' in result.output
+
+
+def test_session_set_active_dataset_command_uses_structured_backend_error_message() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "set-active-dataset", "missing-dataset"])
+
+    assert result.exit_code == 2
+    assert (
+        "error: Dataset missing-dataset was not found. [not_found/dataset_not_found]"
+        in result.output
+    )
+
+
+def test_session_set_active_dataset_command_uses_structured_backend_error_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["session", "set-active-dataset", "missing-dataset", "--output", "json"],
+    )
+
+    assert result.exit_code == 2
+    assert '"error": {' in result.output
+    assert '"code": "dataset_not_found"' in result.output
     assert '"category": "not_found"' in result.output
 
 
