@@ -116,9 +116,35 @@ export function CircuitDefinitionEditorWorkspace() {
     replaceDefinitionId(fallbackSelection);
   }
 
-  function startNewDefinition() {
+  function handleReplaceDefinitionIdRequest(nextId: string) {
+    if (nextId === String(selectedDefinitionId)) {
+      return;
+    }
+
+    if (form.formState.isDirty) {
+      const confirmed = window.confirm("You have unsaved changes. Discard them?");
+      if (!confirmed) {
+        return;
+      }
+    }
+
     clearMutationStatus();
-    replaceDefinitionId("new");
+    replaceDefinitionId(nextId);
+  }
+
+  function startNewDefinition() {
+    handleReplaceDefinitionIdRequest("new");
+  }
+
+  function discardChanges() {
+    if (selectedDefinitionId === "new") {
+      form.reset(emptyDefinitionForm);
+    } else if (activeDefinition) {
+      form.reset({
+        name: activeDefinition.name,
+        source_text: activeDefinition.source_text,
+      });
+    }
   }
 
   const activeDefinitionLabel =
@@ -204,8 +230,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   <button
                     type="button"
                     onClick={() => {
-                      clearMutationStatus();
-                      replaceDefinitionId(String(definition.definition_id));
+                      handleReplaceDefinitionIdRequest(String(definition.definition_id));
                     }}
                     className="min-w-0 text-left"
                   >
@@ -283,8 +308,13 @@ export function CircuitDefinitionEditorWorkspace() {
             <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
               <div className="flex flex-col gap-3 border-b border-border/80 pb-4 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     Definition Source
+                    {form.formState.isDirty ? (
+                      <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold normal-case tracking-normal text-amber-500">
+                        Unsaved Changes
+                      </span>
+                    ) : null}
                   </h2>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
                     Edit the canonical source text that downstream schematic and simulation tools
@@ -306,10 +336,20 @@ export function CircuitDefinitionEditorWorkspace() {
                       Delete
                     </button>
                   ) : null}
+                  {form.formState.isDirty ? (
+                    <button
+                      type="button"
+                      onClick={discardChanges}
+                      disabled={form.formState.isSubmitting || isNavigating}
+                      className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground transition hover:bg-surface-elevated disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Discard
+                    </button>
+                  ) : null}
                   <button
                     type="submit"
-                    disabled={form.formState.isSubmitting || isNavigating}
-                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={!form.formState.isDirty || form.formState.isSubmitting || isNavigating}
+                    className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {form.formState.isSubmitting ? (
                       <LoaderCircle size={14} className="animate-spin" />
