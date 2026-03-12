@@ -4,7 +4,13 @@ from typing import Protocol
 from sc_core.execution import TaskResultHandle
 
 from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
-from src.app.domain.tasks import TaskCreateDraft, TaskDetail, TaskLifecycleUpdate, TaskResultRefs
+from src.app.domain.tasks import (
+    TaskCreateDraft,
+    TaskDetail,
+    TaskEvent,
+    TaskLifecycleUpdate,
+    TaskResultRefs,
+)
 from src.app.infrastructure.rewrite_app_state_repository import (
     build_pending_result_refs,
     build_seed_tasks,
@@ -43,6 +49,8 @@ class TaskSnapshotRepository(Protocol):
 
     def get_task(self, task_id: int) -> TaskDetail | None: ...
 
+    def list_task_events(self, task_id: int) -> tuple[TaskEvent, ...]: ...
+
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail: ...
 
     def save_task_snapshot(self, task: TaskDetail) -> TaskDetail: ...
@@ -70,6 +78,11 @@ class PersistedRewriteTaskRepository:
         if task is None:
             return None
         return self._hydrate_task(task)
+
+    def list_task_events(self, task_id: int) -> tuple[TaskEvent, ...]:
+        if self._task_snapshot_repository.get_task(task_id) is None:
+            return ()
+        return self._task_snapshot_repository.list_task_events(task_id)
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         task_snapshot = self._task_snapshot_repository.create_task(draft)

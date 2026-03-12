@@ -19,6 +19,9 @@ from src.app.api.schemas.tasks import (
 )
 from src.app.domain.tasks import (
     TaskDetail,
+    TaskEventHistoryQuery,
+    TaskEventOrder,
+    TaskEventType,
     TaskLane,
     TaskListQuery,
     TaskStatus,
@@ -60,6 +63,34 @@ def get_task(
     task_service: Annotated[TaskService, Depends(get_task_service)],
 ) -> TaskDetailResponse:
     return _build_task_detail_response(task_service.get_task(task_id))
+
+
+@router.get("/{task_id}/events", response_model=list[TaskEventResponse])
+def list_task_events(
+    task_id: int,
+    task_service: Annotated[TaskService, Depends(get_task_service)],
+    order: Annotated[TaskEventOrder, Query()] = "desc",
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    event_type: Annotated[TaskEventType | None, Query()] = None,
+) -> list[TaskEventResponse]:
+    return [
+        TaskEventResponse(
+            event_key=event.event_key,
+            event_type=event.event_type,
+            level=event.level,
+            occurred_at=event.occurred_at,
+            message=event.message,
+            metadata=event.metadata,
+        )
+        for event in task_service.list_task_events(
+            task_id,
+            TaskEventHistoryQuery(
+                order=order,
+                limit=limit,
+                event_type=event_type,
+            ),
+        )
+    ]
 
 
 @router.post("", response_model=TaskMutationResponse, status_code=status.HTTP_201_CREATED)

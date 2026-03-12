@@ -77,6 +77,23 @@ class SqliteRewriteTaskSnapshotRepository:
                 session.commit()
             return _to_task_detail(row, dispatch_row, event_rows)
 
+    def list_task_events(self, task_id: int) -> tuple[TaskEvent, ...]:
+        with self._session_factory() as session:
+            row = session.scalar(
+                select(RewriteTaskRecord).where(RewriteTaskRecord.task_id == task_id)
+            )
+            if row is None:
+                return ()
+            dispatch_row, dispatch_changed = _upsert_dispatch_row(session, row)
+            event_rows, event_changed = _upsert_task_events(
+                session,
+                row,
+                dispatch_row,
+            )
+            if dispatch_changed or event_changed:
+                session.commit()
+            return _to_task_events(event_rows)
+
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         with self._session_factory() as session:
             next_task_id = session.scalar(select(func.max(RewriteTaskRecord.task_id))) or 305

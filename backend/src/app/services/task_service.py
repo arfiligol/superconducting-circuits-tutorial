@@ -10,6 +10,8 @@ from src.app.domain.session import SessionState
 from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
+    TaskEvent,
+    TaskEventHistoryQuery,
     TaskKind,
     TaskLifecycleUpdate,
     TaskListQuery,
@@ -24,6 +26,8 @@ class TaskRepository(Protocol):
     def list_tasks(self) -> Sequence[TaskDetail]: ...
 
     def get_task(self, task_id: int) -> TaskDetail | None: ...
+
+    def list_task_events(self, task_id: int) -> Sequence[TaskEvent]: ...
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail: ...
 
@@ -151,6 +155,26 @@ class TaskService:
         )
         return self._normalize_task(created_task)
 
+    def list_task_events(
+        self,
+        task_id: int,
+        query: TaskEventHistoryQuery,
+    ) -> list[TaskEvent]:
+        detail = self._repository.get_task(task_id)
+        session = self._session_repository.get_session_state()
+        if detail is None or not self._is_visible(detail, session, scope="workspace"):
+            raise service_error(
+                404,
+                code="task_not_found",
+                category="not_found",
+                message=f"Task {task_id} was not found.",
+            )
+
+        return _select_task_events(
+            self._repository.list_task_events(task_id),
+            query,
+        )
+
     def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail:
         detail = self._repository.get_task(update.task_id)
         if detail is None:
@@ -232,6 +256,15 @@ class TaskService:
                 last_updated_at=task.progress.updated_at,
                 current_dispatch=task.dispatch,
             ),
+            events=tuple(
+                _select_task_events(
+                    task.events,
+                    TaskEventHistoryQuery(
+                        order="asc",
+                        limit=max(len(task.events), 1),
+                    ),
+                )
+            ),
         )
 
 
@@ -294,3 +327,43 @@ def _validate_task_lifecycle_update(
             )
         )
     return tuple(field_errors)
+
+
+def _select_task_events(
+    events: Sequence[TaskEvent],
+    query: TaskEventHistoryQuery,
+) -> list[TaskEvent]:
+    filtered = [
+        _redact_task_event(event)
+        for event in events
+        if query.event_type is None or event.event_type == query.event_type
+    ]
+    filtered.sort(
+        key=lambda event: (event.occurred_at, event.event_key),
+        reverse=query.order == "desc",
+    )
+    return filtered[: query.limit]
+
+
+def _redact_task_event(event: TaskEvent) -> TaskEvent:
+    safe_metadata = {
+        key: value
+        for key, value in event.metadata.items()
+        if not _is_sensitive_event_field(key)
+    }
+    return replace(event, metadata=safe_metadata)
+
+
+def _is_sensitive_event_field(field_name: str) -> bool:
+    sensitive_tokens = (
+        "secret",
+        "token",
+        "password",
+        "credential",
+        "payload_body",
+        "request_body",
+        "connection_string",
+        "store_uri",
+    )
+    normalized = field_name.lower()
+    return any(token in normalized for token in sensitive_tokens)

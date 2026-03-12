@@ -212,6 +212,56 @@ def test_get_task_returns_not_found_for_hidden_task() -> None:
     assert response.json()["error"]["code"] == "task_not_found"
 
 
+def test_get_task_events_returns_desc_readmodel_by_default() -> None:
+    response = client.get("/tasks/303/events")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [event["event_type"] for event in payload] == [
+        "task_completed",
+        "task_submitted",
+    ]
+    assert payload[0]["metadata"]["result_handle_ids"] == [
+        "result:fluxonium-2025-031:fit-summary",
+        "result:fluxonium-2025-031:plot-bundle",
+    ]
+
+
+def test_get_task_events_supports_order_limit_and_filter() -> None:
+    asc_response = client.get("/tasks/303/events?order=asc&limit=1")
+
+    assert asc_response.status_code == 200
+    assert asc_response.json() == [
+        {
+            "event_key": "task_submitted:2026-03-11 19:05:00",
+            "event_type": "task_submitted",
+            "level": "info",
+            "occurred_at": "2026-03-11 19:05:00",
+            "message": "Task submission accepted by rewrite runtime.",
+            "metadata": {
+                "task_status": "queued",
+                "dispatch_status": "completed",
+                "dispatch_key": "dispatch:303:post_processing_run_task",
+                "submission_source": "active_dataset",
+                "worker_task_name": "post_processing_run_task",
+                "dataset_id": "fluxonium-2025-031",
+                "definition_id": None,
+            },
+        }
+    ]
+
+    filtered_response = client.get("/tasks/303/events?event_type=task_completed")
+    assert filtered_response.status_code == 200
+    assert [event["event_type"] for event in filtered_response.json()] == ["task_completed"]
+
+
+def test_get_task_events_returns_not_found_for_hidden_task() -> None:
+    response = client.get("/tasks/304/events")
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "task_not_found"
+
+
 def test_submit_characterization_task_uses_active_dataset() -> None:
     response = client.post("/tasks", json={"kind": "characterization"})
 

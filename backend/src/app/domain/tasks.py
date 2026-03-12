@@ -27,6 +27,7 @@ TaskSubmissionSource = Literal["active_dataset", "explicit_dataset", "definition
 TaskEventType = TaskExecutionHistoryEventType
 TaskEventLevel = TaskExecutionHistoryLevel
 TaskEventMetadataValue = TaskExecutionHistoryMetadataValue
+TaskEventOrder = Literal["asc", "desc"]
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,13 @@ class TaskListQuery:
     scope: TaskVisibilityScope = "workspace"
     dataset_id: str | None = None
     limit: int = 20
+
+
+@dataclass(frozen=True)
+class TaskEventHistoryQuery:
+    order: TaskEventOrder = "desc"
+    limit: int = 20
+    event_type: TaskEventType | None = None
 
 
 @dataclass(frozen=True)

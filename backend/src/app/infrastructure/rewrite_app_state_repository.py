@@ -13,6 +13,7 @@ from src.app.domain.storage import (
 from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
+    TaskEvent,
     TaskLifecycleUpdate,
     TaskProgress,
     TaskResultRefs,
@@ -108,6 +109,12 @@ class InMemoryRewriteAppStateRepository:
         hydrated_task = self._hydrate_task(task)
         self._tasks[task_id] = hydrated_task
         return hydrated_task
+
+    def list_task_events(self, task_id: int) -> tuple[TaskEvent, ...]:
+        task = self.get_task(task_id)
+        if task is None:
+            return ()
+        return task.events
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         if self._task_snapshot_repository is not None:

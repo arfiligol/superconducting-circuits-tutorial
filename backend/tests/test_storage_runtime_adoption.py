@@ -3,9 +3,15 @@ from dataclasses import replace
 import pytest
 from sc_core.execution import TaskResultHandle
 from sqlalchemy import update
-from src.app.domain.tasks import TaskLifecycleUpdate, TaskResultRefs, TaskSubmissionDraft
+from src.app.domain.tasks import (
+    TaskEventHistoryQuery,
+    TaskLifecycleUpdate,
+    TaskResultRefs,
+    TaskSubmissionDraft,
+)
 from src.app.infrastructure.persistence import (
     RewriteTaskDispatchRecord,
+    RewriteTaskEventRecord,
     create_metadata_session_factory,
 )
 from src.app.infrastructure.runtime import (
@@ -164,6 +170,20 @@ def test_runtime_reset_prefers_persisted_task_snapshot_over_scaffold_defaults() 
     assert reloaded_task.progress.summary == "Persisted failure summary."
 
 
+def test_task_service_event_history_query_supports_order_limit_and_filter() -> None:
+    events = get_task_service().list_task_events(
+        303,
+        TaskEventHistoryQuery(
+            order="desc",
+            limit=1,
+            event_type="task_completed",
+        ),
+    )
+
+    assert [event.event_type for event in events] == ["task_completed"]
+    assert events[0].metadata["dispatch_status"] == "completed"
+
+
 def test_task_service_lifecycle_update_persists_running_state_across_reset() -> None:
     submitted_task = get_task_service().submit_task(
         TaskSubmissionDraft(
@@ -248,6 +268,39 @@ def test_service_read_reconciles_stale_dispatch_snapshot_to_task_lifecycle() -> 
     assert reloaded_task.dispatch.status == "running"
     assert reloaded_task.dispatch.last_updated_at == "2026-03-12 11:17:00"
     assert reloaded_task.progress.summary == "Dispatch/lifecycle reconciliation proof."
+
+
+def test_task_service_event_history_redacts_sensitive_metadata_fields() -> None:
+    seeded_task = get_task_service().get_task(303)
+    assert seeded_task.task_id == 303
+
+    session_factory = create_metadata_session_factory(get_settings().database_path)
+    with session_factory() as session:
+        event_row = (
+            session.query(RewriteTaskEventRecord)
+            .filter(RewriteTaskEventRecord.task_id == 303)
+            .filter(RewriteTaskEventRecord.event_key == "task_completed:2026-03-11 19:18:00")
+            .one()
+        )
+        event_row.metadata_json = {
+            **event_row.metadata_json,
+            "token": "raw-secret-token",
+            "store_uri": "trace_store/datasets/private-secret.zarr",
+            "dispatch_key": "dispatch:303:post_processing_run_task",
+        }
+        session.commit()
+
+    reset_runtime_state()
+
+    events = get_task_service().list_task_events(
+        303,
+        TaskEventHistoryQuery(order="desc", limit=5),
+    )
+
+    assert events[0].event_type == "task_completed"
+    assert "token" not in events[0].metadata
+    assert "store_uri" not in events[0].metadata
+    assert events[0].metadata["dispatch_key"] == "dispatch:303:post_processing_run_task"
 
 
 def test_task_service_lifecycle_update_persists_completed_result_refs_across_reset() -> None:

@@ -43,6 +43,7 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert fetched_seed.status == persisted_seed.status
     assert fetched_seed.dispatch == persisted_seed.dispatch
     assert fetched_seed.events == persisted_seed.events
+    assert repository.list_task_events(303) == persisted_seed.events
     assert fetched_seed.result_refs.result_handles == ()
     listed_tasks = repository.list_tasks()
     assert [task.task_id for task in listed_tasks] == [303]
