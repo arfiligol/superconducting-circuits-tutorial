@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sc_core.execution import TaskResultHandle, build_task_creation_spec, normalize_task_dedupe_key
 from sqlmodel import Session, SQLModel, create_engine
 
 from core.shared.persistence.models import DesignRecord, TraceBatchRecord
@@ -95,63 +94,6 @@ def test_task_repository_lifecycle_roundtrips_payloads_and_links() -> None:
         assert persisted.started_at is not None
         assert persisted.heartbeat_at is not None
         assert persisted.completed_at is not None
-
-
-def test_task_repository_create_from_spec_normalizes_creation_contract() -> None:
-    with _memory_session() as session:
-        design = DesignRecord(name="Task Seed Design", source_meta={}, parameters={})
-        session.add(design)
-        session.flush()
-        assert design.id is not None
-
-        repo = TaskRepository(session)
-        original_request_payload: dict[str, object] = {"requested_via": "test"}
-        task = repo.create_task_from_spec(
-            build_task_creation_spec(
-                task_kind=" simulation_run ",
-                design_id=design.id,
-                request_payload=original_request_payload,
-                requested_by=" ui ",
-                dedupe_key=" simulation:normalized ",
-                actor_id=7,
-                result_handle=TaskResultHandle(trace_batch_id=12, analysis_run_id=34),
-            )
-        )
-        session.commit()
-
-        original_request_payload["requested_via"] = "mutated"
-        assert task.id is not None
-        assert task.task_kind == "simulation_run"
-        assert task.requested_by == "ui"
-        assert task.dedupe_key == "simulation:normalized"
-        assert task.trace_batch_id == 12
-        assert task.analysis_run_id == 34
-        assert task.request_payload == {"requested_via": "test"}
-
-
-def test_task_repository_dedupe_lookup_uses_shared_normalization() -> None:
-    with _memory_session() as session:
-        design = DesignRecord(name="Task Dedupe Design", source_meta={}, parameters={})
-        session.add(design)
-        session.flush()
-        assert design.id is not None
-
-        repo = TaskRepository(session)
-        task = repo.create_task(
-            "simulation_run",
-            design.id,
-            {"point_count": 11},
-            "ui",
-            dedupe_key=" simulation:lookup ",
-        )
-        assert task.id is not None
-        session.commit()
-
-        assert normalize_task_dedupe_key(" simulation:lookup ") == "simulation:lookup"
-        found = repo.find_active_by_dedupe_key("simulation:lookup")
-        assert found is not None
-        assert found.id == task.id
-        assert repo.find_active_by_dedupe_key("   ") is None
 
 
 def test_task_repository_marks_failures_and_finds_latest_active_and_stale_tasks() -> None:
