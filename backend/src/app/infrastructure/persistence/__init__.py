@@ -1,4 +1,5 @@
 from src.app.infrastructure.persistence.database import (
+    bootstrap_metadata_schema,
     build_sqlite_database_url,
     create_metadata_engine,
     create_metadata_session_factory,
@@ -20,6 +21,7 @@ __all__ = [
     "RewriteStorageRecord",
     "RewriteTracePayloadRecord",
     "SqliteRewriteStorageMetadataRepository",
+    "bootstrap_metadata_schema",
     "build_sqlite_database_url",
     "create_metadata_engine",
     "create_metadata_session_factory",

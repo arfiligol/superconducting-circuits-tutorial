@@ -1,9 +1,15 @@
 from dataclasses import replace
+from typing import Protocol
 
 from sc_core.execution import TaskResultHandle
 
 from src.app.domain.session import SessionState, SessionUser
-from src.app.domain.storage import ResultHandleKind
+from src.app.domain.storage import (
+    MetadataRecordRef,
+    ResultHandleKind,
+    ResultHandleRef,
+    TracePayloadRef,
+)
 from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
@@ -18,11 +24,30 @@ from src.app.infrastructure.storage_reference_factory import (
 )
 
 
+class StorageMetadataRepository(Protocol):
+    def save_storage_record(self, record: MetadataRecordRef) -> MetadataRecordRef: ...
+
+    def save_trace_payload(
+        self,
+        owner_record: MetadataRecordRef,
+        trace_payload: TracePayloadRef,
+        *,
+        writer_version: str | None = None,
+    ) -> TracePayloadRef: ...
+
+    def save_result_handle(self, result_handle: ResultHandleRef) -> ResultHandleRef: ...
+
+
 class InMemoryRewriteAppStateRepository:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        storage_metadata_repository: StorageMetadataRepository | None = None,
+    ) -> None:
+        self._storage_metadata_repository = storage_metadata_repository
         self._session_state = _seed_session_state()
         self._tasks = {task.task_id: task for task in _seed_tasks()}
         self._next_task_id = max(self._tasks) + 1
+        self._persist_seed_storage_metadata()
 
     def get_session_state(self) -> SessionState:
         return self._session_state
@@ -68,7 +93,33 @@ class InMemoryRewriteAppStateRepository:
         )
         self._tasks[task.task_id] = task
         self._next_task_id += 1
+        self._persist_result_refs(task.result_refs)
         return task
+
+    def _persist_seed_storage_metadata(self) -> None:
+        if self._storage_metadata_repository is None:
+            return
+
+        for task in self._tasks.values():
+            self._persist_result_refs(task.result_refs)
+
+    def _persist_result_refs(self, result_refs: TaskResultRefs) -> None:
+        if self._storage_metadata_repository is None:
+            return
+
+        for record in result_refs.metadata_records:
+            self._storage_metadata_repository.save_storage_record(record)
+
+        trace_owner_record = _trace_owner_record(result_refs)
+        if result_refs.trace_payload is not None and trace_owner_record is not None:
+            self._storage_metadata_repository.save_trace_payload(
+                trace_owner_record,
+                result_refs.trace_payload,
+                writer_version="rewrite-backend.runtime",
+            )
+
+        for result_handle in result_refs.result_handles:
+            self._storage_metadata_repository.save_result_handle(result_handle)
 
 
 def _seed_session_state() -> SessionState:
@@ -398,3 +449,13 @@ def _default_result_handle_label(task_kind: str) -> str:
     if task_kind == "post_processing":
         return "Pending fit summary"
     return "Pending simulation trace"
+
+
+def _trace_owner_record(result_refs: TaskResultRefs) -> MetadataRecordRef | None:
+    if result_refs.trace_payload is None:
+        return None
+
+    for record in result_refs.metadata_records:
+        if record.record_type in {"trace_batch", "analysis_run", "dataset"}:
+            return record
+    return None

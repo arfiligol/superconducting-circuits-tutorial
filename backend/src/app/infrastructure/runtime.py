@@ -1,5 +1,10 @@
 from functools import lru_cache
 
+from src.app.infrastructure.persistence import (
+    SqliteRewriteStorageMetadataRepository,
+    bootstrap_metadata_schema,
+    create_metadata_session_factory,
+)
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 from src.app.services.circuit_definition_service import CircuitDefinitionService
@@ -17,7 +22,18 @@ def get_rewrite_catalog_repository() -> InMemoryRewriteCatalogRepository:
 
 @lru_cache(maxsize=1)
 def get_rewrite_app_state_repository() -> InMemoryRewriteAppStateRepository:
-    return InMemoryRewriteAppStateRepository()
+    return InMemoryRewriteAppStateRepository(
+        storage_metadata_repository=get_storage_metadata_repository()
+    )
+
+
+@lru_cache(maxsize=1)
+def get_storage_metadata_repository() -> SqliteRewriteStorageMetadataRepository:
+    settings = get_settings()
+    bootstrap_metadata_schema(settings.database_path)
+    return SqliteRewriteStorageMetadataRepository(
+        create_metadata_session_factory(settings.database_path)
+    )
 
 
 def get_health_service() -> HealthService:
@@ -60,6 +76,7 @@ def reset_runtime_state() -> None:
     get_settings.cache_clear()
     get_rewrite_catalog_repository.cache_clear()
     get_rewrite_app_state_repository.cache_clear()
+    get_storage_metadata_repository.cache_clear()
     get_dataset_service.cache_clear()
     get_circuit_definition_service.cache_clear()
     get_session_service.cache_clear()
