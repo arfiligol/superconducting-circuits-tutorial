@@ -40,16 +40,18 @@ superconducting-circuits-tutorial/
 │   ├── src/app/services/      # use cases / orchestration
 │   ├── src/app/domain/        # domain models and rules
 │   ├── src/app/infrastructure/# DB, external integrations
+│   ├── sc_backend/            # CLI-safe backend facade package
 │   └── tests/                 # pytest unit / integration tests
 ├── cli/                       # Typer commands
-│   ├── src/cli/commands/
+│   ├── src/sc_cli/            # commands, presenters, runtime adapters
 │   └── tests/
 ├── src/core/                  # shared scientific kernels during migration
 │   ├── simulation/
 │   ├── analysis/
 │   └── shared/
-├── docs/                      # bilingual docs and guardrails
+├── docs/                      # zh-TW docs, guardrails, and docs staging tree
 ├── data/                      # raw / processed / trace-store / local DB
+├── openapi.json               # committed OpenAPI snapshot for contract sync
 ├── scripts/                   # repo helpers only
 └── src/app/                   # legacy NiceGUI code during migration only
 ```
@@ -61,10 +63,12 @@ superconducting-circuits-tutorial/
 | Next.js page, layout, component | `frontend/` |
 | Electron main / preload / packaging | `desktop/` |
 | API router, service, persistence | `backend/` |
+| CLI-safe backend facade | `backend/sc_backend/` |
 | CLI command or batch workflow | `cli/` |
 | 可被 API / CLI / simulation 共用的科學邏輯 | `src/core/` |
 | repo automation, docs helper, migration helper | `scripts/` |
 | 舊 NiceGUI 修補 | `src/app/`，且需明確標註為 migration-only |
+| committed OpenAPI contract snapshot | root `openapi.json` |
 
 ## Related Blueprints
 
@@ -77,7 +81,8 @@ superconducting-circuits-tutorial/
 2. desktop 依賴 frontend build 與受控 IPC，不承載業務規則
 3. backend API 層依賴 services/domain，不反向耦合到 web framework 以外的層
 4. CLI 直接依賴共享 services/core，不複製業務邏輯
-5. `src/core/` 不得依賴 Next.js、FastAPI、Electron 或 CLI framework
+5. `backend/sc_backend/` 是 backend 對 CLI 暴露的穩定 facade，CLI 不得直接 import `backend/src/app/*`
+6. `src/core/` 不得依賴 Next.js、FastAPI、Electron 或 CLI framework
 
 ## Agent Rule { #agent-rule }
 
@@ -86,9 +91,11 @@ superconducting-circuits-tutorial/
 - **Frontend** work goes to `frontend/`.
 - **Desktop shell** work goes to `desktop/`.
 - **Backend** work goes to `backend/`.
+- **CLI-safe backend facade** goes to `backend/sc_backend/`; do not import `backend/src/app/*` from CLI directly.
 - **CLI** work goes to `cli/`.
 - **Shared scientific logic** goes to `src/core/`.
-- **Docs and guardrails** go to `docs/`.
+- **Docs and guardrails** go to `docs/`; `docs/docs_zhtw/` is generated staging, not a primary edit source.
+- **Committed OpenAPI snapshot** stays at repo root as `openapi.json` for contract-sync verification.
 - Existing `src/app/` NiceGUI code is legacy and should only receive migration-support fixes.
 - Dependency direction:
     - frontend depends on API contracts, not backend internals

@@ -94,6 +94,8 @@ superconducting-circuits-tutorial/
 │   ├── src/sc_cli/          # Commands, presenters, entrypoint
 │   └── tests/               # CLI-focused pytest coverage
 ├── backend/                 # FastAPI rewrite service
+│   ├── src/app/             # API, services, domain, infrastructure
+│   └── sc_backend/          # CLI-safe backend facade package
 ├── frontend/                # Next.js rewrite frontend
 ├── desktop/                 # Electron rewrite wrapper
 ├── src/
@@ -105,9 +107,11 @@ superconducting-circuits-tutorial/
 │   └── worker/              # Worker runtime and task execution
 ├── data/                    # Local DB / raw / processed / trace-store data
 ├── docs/                    # Zensical docs and guardrails
-│   └── overrides/           # Docs theme overrides
+│   ├── overrides/           # Docs theme overrides
+│   └── docs_zhtw/           # Generated zh-TW staging tree (do not edit directly)
 ├── examples/                 # 可執行範例
 ├── sandbox/                  # Scratch scripts and legacy experiments
+├── openapi.json              # Committed OpenAPI snapshot for frontend-backend contract sync
 ├── pyproject.toml            # Python 依賴 (uv)
 ├── juliapkg.json             # Julia 依賴 (JosephsonCircuits.jl)
 ├── Project.toml              # Julia 專案設定

@@ -1,4 +1,4 @@
-# scripts/test_multi_param.jl
+# examples/julia/test_multi_param.jl
 
 # include("../src/JPACircuitModelSim.jl")
 using JPACircuitModelSim

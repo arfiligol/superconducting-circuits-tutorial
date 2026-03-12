@@ -1,4 +1,4 @@
-# scripts/test_new_framework.jl
+# examples/julia/test_new_framework.jl
 
 include("../src/JPACircuitModelSim.jl")
 using .JPACircuitModelSim

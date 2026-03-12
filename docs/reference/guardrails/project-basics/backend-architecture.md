@@ -11,7 +11,7 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite backend 的責任邊界、模組分層與對 sc_core 的依賴方向。
-version: v1.0.0
+version: v1.1.0
 last_updated: 2026-03-12
 updated_by: codex
 ---
@@ -139,6 +139,22 @@ backend 的角色是：
 - 暴露 API contract
 - 管理 persistence / auth / task / workspace semantics
 - 將 backend-owned adapter state 映射到 `sc_core` canonical surfaces
+
+## CLI Facade Boundary
+
+`backend/sc_backend/` 是 backend 對 `cli/` 暴露的穩定 facade package。
+
+它的責任是：
+
+- 以 package-safe 的方式重用 backend service/runtime contract
+- 對 CLI 提供穩定的 request validation 與 structured error translation 邊界
+- 避免 CLI 直接 import `backend/src/app/*`
+
+它不得承擔：
+
+- CLI command parsing 或呈現格式
+- 新的業務規則 owner
+- 繞過 backend service / schema validation 的捷徑
 
 ## Agent Rule { #agent-rule }
 

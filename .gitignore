@@ -127,6 +127,12 @@ data/**/*.zarr/
 *.db
 *.sqlite
 *.sqlite3
+data/huey/
+
+# Generated package metadata can appear inside workspace packages too
+backend/**/*.egg-info/
+cli/**/*.egg-info/
+src/core/**/*.egg-info/
 
 # NiceGUI local user storage generated during local UI/E2E sessions
 .nicegui/

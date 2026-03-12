@@ -1,4 +1,4 @@
-# scripts/simulate_lc_oscillator.jl
+# examples/julia/simulate_lc_oscillator.jl
 
 # ==========================================
 # LC 振盪器 S11 模擬範例
