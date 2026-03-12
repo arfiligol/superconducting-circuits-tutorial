@@ -65,6 +65,51 @@ def test_circuit_definition_inspect_command_supports_definition_id() -> None:
     assert "validation_status: warning" in result.stdout
 
 
+def test_circuit_definition_list_command_reads_rewrite_state() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["circuit-definition", "list"])
+
+    assert result.exit_code == 0
+    assert "circuit_definitions: 3" in result.stdout
+    assert "#18" in result.stdout
+    assert "FloatingQubitWithXYLine" in result.stdout
+
+
+def test_circuit_definition_list_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["circuit-definition", "list", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"definition_id": 18' in result.stdout
+    assert '"name": "FloatingQubitWithXYLine"' in result.stdout
+
+
+def test_circuit_definition_inspect_command_supports_json_output(tmp_path: Path) -> None:
+    source_file = tmp_path / "demo-json.circuit.yaml"
+    source_file.write_text(
+        "\n".join(
+            [
+                "name: fluxonium_demo_json",
+                "family: fluxonium",
+                "junction_1: JJ",
+                "capacitor_1: C",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app, ["circuit-definition", "inspect", str(source_file), "--output", "json"]
+    )
+
+    assert result.exit_code == 0
+    assert f'"source_file": "{source_file.resolve()}"' in result.stdout
+    assert '"circuit_name": "fluxonium_demo_json"' in result.stdout
+
+
 def test_circuit_definition_create_command_persists_local_source(tmp_path: Path) -> None:
     source_file = tmp_path / "created.circuit.yaml"
     source_file.write_text(
@@ -162,6 +207,113 @@ def test_circuit_definition_create_command_uses_structured_validation_error(
         "error: Request validation failed. [validation/request_validation_failed]" in result.output
     )
     assert "field_error: source_text:" in result.output
+
+
+def test_circuit_definition_update_command_updates_existing_definition(tmp_path: Path) -> None:
+    source_file = tmp_path / "updated.circuit.yaml"
+    source_file.write_text(
+        "\n".join(
+            [
+                "circuit:",
+                "  name: floating_qubit_cli_update",
+                "  family: fluxonium",
+                "  elements:",
+                "    junction:",
+                "      ej_ghz: 8.73",
+                "    shunt_inductor:",
+                "      el_ghz: 0.47",
+                "    capacitance:",
+                "      ec_ghz: 1.19",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "update",
+            "18",
+            str(source_file),
+            "--name",
+            "FloatingQubitCliUpdate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "source_definition_id: 18" in result.stdout
+    assert "definition_name: FloatingQubitCliUpdate" in result.stdout
+    assert "validation_status: warning" in result.stdout
+
+
+def test_circuit_definition_update_command_supports_json_output(tmp_path: Path) -> None:
+    source_file = tmp_path / "updated-json.circuit.yaml"
+    source_file.write_text(
+        "\n".join(
+            [
+                "circuit:",
+                "  name: readout_chain_cli_update",
+                "  family: fluxonium",
+                "  elements:",
+                "    readout:",
+                "      resonator_ghz: 6.92",
+                "    coupling:",
+                "      chi_mhz: 2.8",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "update",
+            "12",
+            str(source_file),
+            "--name",
+            "ReadoutChainCliUpdate",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"definition_id": 12' in result.stdout
+    assert '"name": "ReadoutChainCliUpdate"' in result.stdout
+    assert '"validation_status": "warning"' in result.stdout
+
+
+def test_circuit_definition_delete_command_deletes_definition() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["circuit-definition", "delete", "7", "--yes"])
+
+    assert result.exit_code == 0
+    assert "operation: deleted" in result.stdout
+    assert "definition_id: 7" in result.stdout
+
+
+def test_circuit_definition_delete_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["circuit-definition", "delete", "7", "--yes", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"operation": "deleted"' in result.stdout
+    assert '"definition_id": 7' in result.stdout
+
+
+def test_circuit_definition_delete_command_requires_confirmation() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["circuit-definition", "delete", "7"])
+
+    assert result.exit_code == 2
+    assert "error: Pass --yes to delete a persisted circuit definition." in result.output
 
 
 def test_session_show_command_reads_rewrite_session_state() -> None:

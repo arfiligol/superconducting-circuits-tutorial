@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sc_backend import (
     ApiErrorBodyResponse,
     CircuitDefinitionDetailResponse,
+    CircuitDefinitionSummaryResponse,
     DatasetSummaryResponse,
     SessionResponse,
     TaskDetailResponse,
@@ -25,8 +26,25 @@ def render_preview_artifacts(artifacts: tuple[str, ...]) -> str:
 
 
 def render_circuit_definition_inspection(
-    source_file: Path, inspection: CircuitDefinitionInspection
+    source_file: Path,
+    inspection: CircuitDefinitionInspection,
+    *,
+    output: OutputMode = OutputMode.TEXT,
 ) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "source_file": str(source_file),
+                "circuit_name": inspection.circuit_name,
+                "family": inspection.family,
+                "element_count": inspection.element_count,
+                "normalized_output": inspection.normalized_output,
+                "validation_notices": [
+                    {"level": notice.level, "message": notice.message}
+                    for notice in inspection.validation_notices
+                ],
+            }
+        )
     lines = [
         f"source_file: {source_file}",
         f"circuit_name: {inspection.circuit_name}",
@@ -37,6 +55,30 @@ def render_circuit_definition_inspection(
         "validation_notices:",
     ]
     lines.extend(f"- [{notice.level}] {notice.message}" for notice in inspection.validation_notices)
+    return "\n".join(lines)
+
+
+def render_circuit_definition_summaries(
+    definitions: list[CircuitDefinitionSummaryResponse],
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_models(definitions)
+    lines = [f"circuit_definitions: {len(definitions)}"]
+    lines.extend(
+        _render_list_line(
+            f"#{definition.definition_id}",
+            (
+                definition.name,
+                f"created_at={definition.created_at}",
+                f"elements={definition.element_count}",
+                f"validation={definition.validation_status}",
+                f"preview_artifacts={definition.preview_artifact_count}",
+            ),
+        )
+        for definition in definitions
+    )
     return "\n".join(lines)
 
 
@@ -196,6 +238,21 @@ def render_circuit_definition_detail(
     )
     lines.extend(f"- [{notice.level}] {notice.message}" for notice in definition.validation_notices)
     return "\n".join(lines)
+
+
+def render_circuit_definition_delete_result(
+    definition_id: int,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload({"operation": "deleted", "definition_id": definition_id})
+    return "\n".join(
+        [
+            "operation: deleted",
+            f"definition_id: {definition_id}",
+        ]
+    )
 
 
 def render_api_error(error: ApiErrorBodyResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
