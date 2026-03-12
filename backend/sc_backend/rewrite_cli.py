@@ -3,12 +3,14 @@
 from collections.abc import Callable
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from src.app.api.presenters.storage import (
     build_metadata_record_ref_response,
     build_result_handle_ref_response,
     build_trace_payload_ref_response,
 )
 from src.app.api.schemas.circuit_definitions import (
+    CircuitDefinitionCreateRequest,
     CircuitDefinitionDetailResponse,
     CircuitDefinitionValidationSummaryResponse,
     ValidationNoticeResponse,
@@ -27,7 +29,7 @@ from src.app.api.schemas.tasks import (
     TaskResultRefsResponse,
     TaskSummaryResponse,
 )
-from src.app.domain.circuit_definitions import CircuitDefinitionDetail
+from src.app.domain.circuit_definitions import CircuitDefinitionDetail, CircuitDefinitionDraft
 from src.app.domain.datasets import (
     DatasetListQuery,
     DatasetSortBy,
@@ -149,6 +151,17 @@ def get_circuit_definition(definition_id: int) -> CircuitDefinitionDetailRespons
         _run_backend_call(
             lambda: get_circuit_definition_service().get_circuit_definition(definition_id)
         )
+    )
+
+
+def create_circuit_definition(
+    *,
+    name: str,
+    source_text: str,
+) -> CircuitDefinitionDetailResponse:
+    draft = _validated_circuit_definition_draft(name=name, source_text=source_text)
+    return _build_circuit_definition_detail_response(
+        _run_backend_call(lambda: get_circuit_definition_service().create_circuit_definition(draft))
     )
 
 
@@ -288,4 +301,37 @@ def _build_circuit_definition_detail_response(
             warning_count=warning_count,
         ),
         preview_artifacts=list(detail.preview_artifacts),
+    )
+
+
+def _validated_circuit_definition_draft(
+    *,
+    name: str,
+    source_text: str,
+) -> CircuitDefinitionDraft:
+    try:
+        payload = CircuitDefinitionCreateRequest(name=name, source_text=source_text)
+    except ValidationError as exc:
+        field_errors = [
+            {
+                "field": ".".join(str(part) for part in error["loc"]),
+                "message": error["msg"],
+            }
+            for error in exc.errors()
+        ]
+        raise backend_contract_error(
+            HTTPException(
+                status_code=422,
+                detail={
+                    "code": "request_validation_failed",
+                    "category": "validation",
+                    "message": "Request validation failed.",
+                    "field_errors": field_errors,
+                },
+            )
+        ) from exc
+
+    return CircuitDefinitionDraft(
+        name=payload.name,
+        source_text=payload.source_text,
     )

@@ -10,6 +10,7 @@ from src.app.domain.tasks import TaskKind, TaskLane, TaskStatus, TaskVisibilityS
 
 from sc_backend.errors import BackendContractError
 from sc_backend.rewrite_cli import (
+    create_circuit_definition,
     get_circuit_definition,
     get_session,
     get_task,
@@ -35,6 +36,7 @@ __all__ = [
     "TaskStatus",
     "TaskSummaryResponse",
     "TaskVisibilityScope",
+    "create_circuit_definition",
     "get_circuit_definition",
     "get_session",
     "get_task",
