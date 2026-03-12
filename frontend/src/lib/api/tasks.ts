@@ -52,6 +52,14 @@ export type TaskResultHandleRef = Readonly<{
   }>;
 }>;
 
+export type TaskDispatch = Readonly<{
+  dispatchKey: string;
+  status: "accepted" | "running" | "completed" | "failed";
+  submissionSource: "active_dataset" | "explicit_dataset" | "definition_only";
+  acceptedAt: string;
+  lastUpdatedAt: string;
+}>;
+
 export type TaskSummary = Readonly<{
   taskId: number;
   kind: "simulation" | "post_processing" | "characterization";
@@ -85,6 +93,7 @@ export type TaskDetail = TaskSummary &
       | "characterization_crash_task";
     requestReady: boolean;
     submittedFromActiveDataset: boolean;
+    dispatch: TaskDispatch;
     progress: Readonly<{
       phase: "queued" | "running" | "completed" | "failed";
       percentComplete: number;
@@ -167,6 +176,16 @@ function mapResultHandleRef(
   };
 }
 
+function mapTaskDispatch(payload: components["schemas"]["TaskDispatchResponse"]): TaskDispatch {
+  return {
+    dispatchKey: payload.dispatch_key,
+    status: payload.status,
+    submissionSource: payload.submission_source,
+    acceptedAt: payload.accepted_at,
+    lastUpdatedAt: payload.last_updated_at,
+  };
+}
+
 export function mapTaskSummaryResponse(payload: TaskSummaryResponseShape): TaskSummary {
   return {
     taskId: payload.task_id,
@@ -198,6 +217,7 @@ export function mapTaskDetailResponse(payload: TaskDetailResponseShape): TaskDet
     workerTaskName: payload.worker_task_name,
     requestReady: payload.request_ready,
     submittedFromActiveDataset: payload.submitted_from_active_dataset,
+    dispatch: mapTaskDispatch(payload.dispatch),
     progress: {
       phase: payload.progress.phase,
       percentComplete: payload.progress.percent_complete,

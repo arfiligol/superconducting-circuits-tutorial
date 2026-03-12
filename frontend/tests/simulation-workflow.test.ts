@@ -172,6 +172,13 @@ describe("simulation task workflow helpers", () => {
           workerTaskName: "post_processing_run_task",
           requestReady: true,
           submittedFromActiveDataset: true,
+          dispatch: {
+            dispatchKey: "dispatch:29:post_processing_run_task",
+            status: "completed",
+            submissionSource: "active_dataset",
+            acceptedAt: "2026-03-12 10:10:00",
+            lastUpdatedAt: "2026-03-12 10:11:00",
+          },
           progress: {
             phase: "completed",
             percentComplete: 100,
@@ -215,6 +222,13 @@ describe("simulation task workflow helpers", () => {
         workerTaskName: "post_processing_run_task",
         requestReady: true,
         submittedFromActiveDataset: true,
+        dispatch: {
+          dispatchKey: "dispatch:29:post_processing_run_task",
+          status: "completed",
+          submissionSource: "active_dataset",
+          acceptedAt: "2026-03-12 10:10:00",
+          lastUpdatedAt: "2026-03-12 10:11:00",
+        },
         progress: {
           phase: "completed",
           percentComplete: 100,
@@ -379,6 +393,13 @@ describe("task api detail mapping", () => {
 
     expect(detail.resultRefs.traceBatchId).toBe(44);
     expect(detail.resultRefs.resultHandles[0]?.handleId).toBe("handle-44");
+    expect(detail.dispatch).toEqual({
+      dispatchKey: "dispatch:31:simulation_run_task",
+      status: "running",
+      submissionSource: "active_dataset",
+      acceptedAt: "2026-03-12 10:20:00",
+      lastUpdatedAt: "2026-03-12 10:21:00",
+    });
     expect(
       unwrapTaskMutation({
         operation: "submitted",
@@ -422,7 +443,14 @@ describe("task api detail mapping", () => {
             result_handles: [],
           },
         },
-      }).taskId,
-    ).toBe(31);
+      }),
+    ).toMatchObject({
+      taskId: 31,
+      dispatch: {
+        dispatchKey: "dispatch:31:simulation_run_task",
+        status: "running",
+        submissionSource: "active_dataset",
+      },
+    });
   });
 });
