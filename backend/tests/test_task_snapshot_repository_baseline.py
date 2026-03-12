@@ -10,6 +10,7 @@ from sqlalchemy import delete
 from src.app.domain.tasks import TaskCreateDraft
 from src.app.infrastructure.persistence import (
     RewriteTaskDispatchRecord,
+    RewriteTaskEventRecord,
     SqliteRewriteTaskSnapshotRepository,
     build_sqlite_database_url,
     create_metadata_session_factory,
@@ -31,9 +32,21 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert persisted_seed.task_id == seeded_task.task_id
     assert persisted_seed.dispatch is not None
     assert persisted_seed.dispatch.dispatch_key == "dispatch:303:post_processing_run_task"
+    assert [event.event_type for event in persisted_seed.events] == [
+        "task_submitted",
+        "task_completed",
+    ]
     assert repository.has_tasks() is True
-    assert repository.get_task(303) == persisted_seed
-    assert repository.list_tasks() == (persisted_seed,)
+    fetched_seed = repository.get_task(303)
+    assert fetched_seed is not None
+    assert fetched_seed.task_id == persisted_seed.task_id
+    assert fetched_seed.status == persisted_seed.status
+    assert fetched_seed.dispatch == persisted_seed.dispatch
+    assert fetched_seed.events == persisted_seed.events
+    assert fetched_seed.result_refs.result_handles == ()
+    listed_tasks = repository.list_tasks()
+    assert [task.task_id for task in listed_tasks] == [303]
+    assert listed_tasks[0].events == persisted_seed.events
 
     worker_route = resolve_worker_task_route(
         "characterization",
@@ -66,6 +79,7 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert created.dispatch.submission_source == "active_dataset"
     assert created.progress.phase == "queued"
     assert created.result_refs.result_handles == ()
+    assert [event.event_type for event in created.events] == ["task_submitted"]
     assert repository.get_task(304) == created
     assert [task.task_id for task in repository.list_tasks()] == [303, 304]
 
@@ -91,10 +105,17 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert persisted_updated.progress.summary == "Persisted failure summary."
     assert persisted_updated.dispatch is not None
     assert persisted_updated.dispatch.last_updated_at == "2026-03-12 11:05:00"
+    assert [event.event_type for event in persisted_updated.events] == [
+        "task_submitted",
+        "task_failed",
+    ]
 
     with create_metadata_session_factory(str(database_path))() as session:
         session.execute(
             delete(RewriteTaskDispatchRecord).where(RewriteTaskDispatchRecord.task_id == 304)
+        )
+        session.execute(
+            delete(RewriteTaskEventRecord).where(RewriteTaskEventRecord.task_id == 304)
         )
         session.commit()
 
@@ -103,6 +124,10 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert backfilled_dispatch.dispatch is not None
     assert backfilled_dispatch.dispatch.dispatch_key == "dispatch:304:characterization_run_task"
     assert backfilled_dispatch.dispatch.status == "failed"
+    assert [event.event_type for event in backfilled_dispatch.events] == [
+        "task_submitted",
+        "task_failed",
+    ]
 
 
 def _upgrade_schema(database_path: Path) -> None:

@@ -166,6 +166,7 @@ class InMemoryRewriteAppStateRepository:
             current_task,
             status=update.status,
             summary=update.summary or current_task.summary,
+            dispatch=update.dispatch or current_task.dispatch,
             progress=replace(
                 current_task.progress,
                 phase=update.status,
@@ -173,16 +174,13 @@ class InMemoryRewriteAppStateRepository:
                 summary=update.progress_summary,
                 updated_at=update.progress_updated_at,
             ),
+            result_refs=update.result_refs or current_task.result_refs,
         )
         if self._task_snapshot_repository is not None:
             persisted_snapshot = self._task_snapshot_repository.save_task_snapshot(updated_task)
-            task_with_result_refs = replace(
-                persisted_snapshot,
-                result_refs=update.result_refs or current_task.result_refs,
-            )
             if update.result_refs is not None:
                 self._persist_result_refs(update.result_refs)
-            return self._hydrate_task(task_with_result_refs)
+            return self._hydrate_task(persisted_snapshot)
 
         if update.result_refs is not None:
             updated_task = replace(updated_task, result_refs=update.result_refs)

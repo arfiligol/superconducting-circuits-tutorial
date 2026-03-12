@@ -156,3 +156,28 @@ class RewriteTaskDispatchRecord(RewriteMetadataBase):
         nullable=False,
         server_default=func.current_timestamp(),
     )
+
+
+class RewriteTaskEventRecord(RewriteMetadataBase):
+    __tablename__ = "rewrite_task_event_records"
+    __table_args__ = (
+        Index("ix_rewrite_task_event_records_task_id", "task_id"),
+        Index("ix_rewrite_task_event_records_event_key", "task_id", "event_key", unique=True),
+        Index("ix_rewrite_task_event_records_occurred_at", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("rewrite_task_records.task_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    occurred_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    message: Mapped[str] = mapped_column(String(255), nullable=False)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )

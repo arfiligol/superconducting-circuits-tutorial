@@ -10,6 +10,7 @@ from src.app.infrastructure.persistence.models import (
     RewriteResultHandleRecord,
     RewriteStorageRecord,
     RewriteTaskDispatchRecord,
+    RewriteTaskEventRecord,
     RewriteTaskRecord,
     RewriteTracePayloadRecord,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "RewriteResultHandleRecord",
     "RewriteStorageRecord",
     "RewriteTaskDispatchRecord",
+    "RewriteTaskEventRecord",
     "RewriteTaskRecord",
     "RewriteTracePayloadRecord",
     "SqliteRewriteStorageMetadataRepository",

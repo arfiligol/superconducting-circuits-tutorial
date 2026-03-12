@@ -25,6 +25,15 @@ class TaskDispatchResponse(BaseModel):
     last_updated_at: str
 
 
+class TaskEventResponse(BaseModel):
+    event_key: str
+    event_type: Literal["task_submitted", "task_running", "task_completed", "task_failed"]
+    level: Literal["info", "warning", "error"]
+    occurred_at: str
+    message: str
+    metadata: dict[str, str | int | bool | None | list[str]]
+
+
 class TaskResultRefsResponse(BaseModel):
     trace_batch_id: int | None
     analysis_run_id: int | None
@@ -58,6 +67,7 @@ class TaskDetailResponse(TaskSummaryResponse):
     dispatch: TaskDispatchResponse
     progress: TaskProgressResponse
     result_refs: TaskResultRefsResponse
+    events: list[TaskEventResponse]
 
 
 class TaskSubmissionRequest(BaseModel):

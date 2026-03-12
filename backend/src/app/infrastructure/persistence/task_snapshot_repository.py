@@ -11,6 +11,9 @@ from src.app.domain.tasks import (
     TaskDetail,
     TaskDispatch,
     TaskDispatchStatus,
+    TaskEvent,
+    TaskEventLevel,
+    TaskEventType,
     TaskKind,
     TaskLane,
     TaskProgress,
@@ -20,9 +23,11 @@ from src.app.domain.tasks import (
     TaskSubmissionSource,
     TaskVisibilityScope,
     build_task_dispatch,
+    build_task_event_history,
 )
 from src.app.infrastructure.persistence.models import (
     RewriteTaskDispatchRecord,
+    RewriteTaskEventRecord,
     RewriteTaskRecord,
 )
 
@@ -41,12 +46,17 @@ class SqliteRewriteTaskSnapshotRepository:
                 select(RewriteTaskRecord).order_by(RewriteTaskRecord.task_id.asc())
             ).all()
             details: list[TaskDetail] = []
-            dispatch_rows_changed = False
+            changed = False
             for row in rows:
-                dispatch_row, changed = _upsert_dispatch_row(session, row)
-                dispatch_rows_changed = dispatch_rows_changed or changed
-                details.append(_to_task_detail(row, dispatch_row))
-            if dispatch_rows_changed:
+                dispatch_row, dispatch_changed = _upsert_dispatch_row(session, row)
+                event_rows, event_changed = _upsert_task_events(
+                    session,
+                    row,
+                    dispatch_row,
+                )
+                changed = changed or dispatch_changed or event_changed
+                details.append(_to_task_detail(row, dispatch_row, event_rows))
+            if changed:
                 session.commit()
             return tuple(details)
 
@@ -57,10 +67,15 @@ class SqliteRewriteTaskSnapshotRepository:
             )
             if row is None:
                 return None
-            dispatch_row, changed = _upsert_dispatch_row(session, row)
-            if changed:
+            dispatch_row, dispatch_changed = _upsert_dispatch_row(session, row)
+            event_rows, event_changed = _upsert_task_events(
+                session,
+                row,
+                dispatch_row,
+            )
+            if dispatch_changed or event_changed:
                 session.commit()
-            return _to_task_detail(row, dispatch_row)
+            return _to_task_detail(row, dispatch_row, event_rows)
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         with self._session_factory() as session:
@@ -105,10 +120,15 @@ class SqliteRewriteTaskSnapshotRepository:
                     submission_source=draft.submission_source,
                 ),
             )
+            event_rows, _ = _upsert_task_events(
+                session,
+                row,
+                dispatch_row,
+            )
             session.commit()
             session.refresh(row)
             session.refresh(dispatch_row)
-            return _to_task_detail(row, dispatch_row)
+            return _to_task_detail(row, dispatch_row, event_rows)
 
     def save_task_snapshot(self, task: TaskDetail) -> TaskDetail:
         with self._session_factory() as session:
@@ -156,10 +176,16 @@ class SqliteRewriteTaskSnapshotRepository:
                     current_dispatch=task.dispatch,
                 ),
             )
+            event_rows, _ = _upsert_task_events(
+                session,
+                row,
+                dispatch_row,
+                result_refs=task.result_refs,
+            )
             session.commit()
             session.refresh(row)
             session.refresh(dispatch_row)
-            return _to_task_detail(row, dispatch_row)
+            return _to_task_detail(row, dispatch_row, event_rows, result_refs=task.result_refs)
 
 
 def _upsert_dispatch_row(
@@ -208,6 +234,63 @@ def _upsert_dispatch_row(
     return row, changed
 
 
+def _upsert_task_events(
+    session: Session,
+    task_row: RewriteTaskRecord,
+    dispatch_row: RewriteTaskDispatchRecord,
+    *,
+    result_refs: TaskResultRefs | None = None,
+) -> tuple[tuple[RewriteTaskEventRecord, ...], bool]:
+    desired_events = build_task_event_history(
+        _to_task_detail(task_row, dispatch_row, (), result_refs=result_refs)
+    )
+    existing_rows: list[RewriteTaskEventRecord] = list(
+        session.scalars(
+        select(RewriteTaskEventRecord)
+        .where(RewriteTaskEventRecord.task_id == task_row.task_id)
+        .order_by(RewriteTaskEventRecord.occurred_at.asc(), RewriteTaskEventRecord.id.asc())
+        ).all()
+    )
+    existing_by_key = {row.event_key: row for row in existing_rows}
+    changed = False
+    for event in desired_events:
+        row = existing_by_key.get(event.event_key)
+        if row is None:
+            row = RewriteTaskEventRecord(task_id=task_row.task_id, event_key=event.event_key)
+            session.add(row)
+            existing_rows.append(row)
+            existing_by_key[event.event_key] = row
+            changed = True
+            changed = _apply_task_event_row(row, event) or changed
+            continue
+        if result_refs is not None:
+            changed = _apply_task_event_row(row, event) or changed
+
+    session.flush()
+    existing_rows.sort(key=lambda row: (row.occurred_at, row.id or 0))
+    return tuple(existing_rows), changed
+
+
+def _apply_task_event_row(row: RewriteTaskEventRecord, event: TaskEvent) -> bool:
+    changed = False
+    if row.event_type != event.event_type:
+        row.event_type = event.event_type
+        changed = True
+    if row.level != event.level:
+        row.level = event.level
+        changed = True
+    if row.occurred_at != event.occurred_at:
+        row.occurred_at = event.occurred_at
+        changed = True
+    if row.message != event.message:
+        row.message = event.message
+        changed = True
+    if row.metadata_json != event.metadata:
+        row.metadata_json = cast(dict[str, object], event.metadata)
+        changed = True
+    return changed
+
+
 def _to_task_dispatch(dispatch_row: RewriteTaskDispatchRecord | None) -> TaskDispatch | None:
     if dispatch_row is None:
         return None
@@ -220,9 +303,42 @@ def _to_task_dispatch(dispatch_row: RewriteTaskDispatchRecord | None) -> TaskDis
     )
 
 
+def _to_task_events(
+    event_rows: tuple[RewriteTaskEventRecord, ...],
+) -> tuple[TaskEvent, ...]:
+    return tuple(
+        TaskEvent(
+            event_key=row.event_key,
+            event_type=cast(TaskEventType, row.event_type),
+            level=cast(TaskEventLevel, row.level),
+            occurred_at=row.occurred_at,
+            message=row.message,
+            metadata=_coerce_event_metadata(row.metadata_json),
+        )
+        for row in event_rows
+    )
+
+
+def _coerce_event_metadata(
+    metadata_json: dict[str, object],
+) -> dict[str, str | int | bool | None | list[str]]:
+    coerced: dict[str, str | int | bool | None | list[str]] = {}
+    for key, value in metadata_json.items():
+        if isinstance(value, list):
+            coerced[key] = [str(item) for item in value]
+        elif isinstance(value, (str, int, bool)) or value is None:
+            coerced[key] = value
+        else:
+            coerced[key] = str(value)
+    return coerced
+
+
 def _to_task_detail(
     row: RewriteTaskRecord,
     dispatch_row: RewriteTaskDispatchRecord,
+    event_rows: tuple[RewriteTaskEventRecord, ...],
+    *,
+    result_refs: TaskResultRefs | None = None,
 ) -> TaskDetail:
     return TaskDetail(
         task_id=row.task_id,
@@ -249,8 +365,9 @@ def _to_task_detail(
             summary=row.progress_summary,
             updated_at=row.progress_updated_at,
         ),
-        result_refs=_empty_result_refs(),
+        result_refs=result_refs or _empty_result_refs(),
         dispatch=_to_task_dispatch(dispatch_row),
+        events=_to_task_events(event_rows),
     )
 
 

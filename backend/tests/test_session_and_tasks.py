@@ -110,6 +110,42 @@ def test_get_task_returns_detail_payload() -> None:
         "accepted_at": "2026-03-11 19:05:00",
         "last_updated_at": "2026-03-11 19:18:00",
     }
+    assert payload["events"] == [
+        {
+            "event_key": "task_submitted:2026-03-11 19:05:00",
+            "event_type": "task_submitted",
+            "level": "info",
+            "occurred_at": "2026-03-11 19:05:00",
+            "message": "Task submission accepted by rewrite runtime.",
+            "metadata": {
+                "task_status": "queued",
+                "dispatch_status": "completed",
+                "dispatch_key": "dispatch:303:post_processing_run_task",
+                "submission_source": "active_dataset",
+                "worker_task_name": "post_processing_run_task",
+                "dataset_id": "fluxonium-2025-031",
+                "definition_id": None,
+            },
+        },
+        {
+            "event_key": "task_completed:2026-03-11 19:18:00",
+            "event_type": "task_completed",
+            "level": "info",
+            "occurred_at": "2026-03-11 19:18:00",
+            "message": "Task completed and persisted result metadata.",
+            "metadata": {
+                "task_status": "completed",
+                "dispatch_status": "completed",
+                "dispatch_key": "dispatch:303:post_processing_run_task",
+                "progress_percent_complete": 100,
+                "worker_task_name": "post_processing_run_task",
+                "result_handle_ids": [
+                    "result:fluxonium-2025-031:fit-summary",
+                    "result:fluxonium-2025-031:plot-bundle",
+                ],
+            },
+        },
+    ]
     assert payload["result_refs"]["trace_batch_id"] == 88
     assert payload["result_refs"]["metadata_records"] == [
         {
@@ -197,6 +233,24 @@ def test_submit_characterization_task_uses_active_dataset() -> None:
         "accepted_at": "2026-03-12 10:30:00",
         "last_updated_at": "2026-03-12 10:30:00",
     }
+    assert payload["task"]["events"] == [
+        {
+            "event_key": "task_submitted:2026-03-12 10:30:00",
+            "event_type": "task_submitted",
+            "level": "info",
+            "occurred_at": "2026-03-12 10:30:00",
+            "message": "Task submission accepted by rewrite runtime.",
+            "metadata": {
+                "task_status": "queued",
+                "dispatch_status": "accepted",
+                "dispatch_key": "dispatch:306:characterization_run_task",
+                "submission_source": "active_dataset",
+                "worker_task_name": "characterization_run_task",
+                "dataset_id": "fluxonium-2025-031",
+                "definition_id": None,
+            },
+        }
+    ]
     assert payload["task"]["result_refs"]["trace_payload"] is None
     assert payload["task"]["result_refs"]["result_handles"] == [
         {
@@ -303,6 +357,7 @@ def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
     assert reloaded_task["dataset_id"] == created_task["dataset_id"]
     assert reloaded_task["status"] == "queued"
     assert reloaded_task["dispatch"] == created_task["dispatch"]
+    assert reloaded_task["events"] == created_task["events"]
     assert reloaded_task["result_refs"]["result_handles"] == created_task["result_refs"][
         "result_handles"
     ]
@@ -336,6 +391,11 @@ def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
     assert payload["dispatch"]["last_updated_at"] == "2026-03-12 11:05:00"
     assert payload["progress"]["phase"] == "failed"
     assert payload["progress"]["summary"] == "Persisted failure summary."
+    assert [event["event_type"] for event in payload["events"]] == [
+        "task_submitted",
+        "task_failed",
+    ]
+    assert payload["events"][1]["metadata"]["progress_percent_complete"] == 100
 
 
 def test_submit_simulation_task_requires_definition_id() -> None:

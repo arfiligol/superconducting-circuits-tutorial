@@ -88,6 +88,7 @@ class PersistedRewriteTaskRepository:
         if current_task is None:
             return None
 
+        effective_result_refs = update.result_refs or current_task.result_refs
         persisted_snapshot = self._task_snapshot_repository.save_task_snapshot(
             replace(
                 current_task,
@@ -101,10 +102,10 @@ class PersistedRewriteTaskRepository:
                     summary=update.progress_summary,
                     updated_at=update.progress_updated_at,
                 ),
+                result_refs=effective_result_refs,
             )
         )
 
-        effective_result_refs = update.result_refs or current_task.result_refs
         if update.result_refs is not None:
             self._persist_result_refs(update.result_refs)
 

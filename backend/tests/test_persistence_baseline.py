@@ -11,6 +11,7 @@ from src.app.infrastructure.persistence.models import (
     RewriteResultHandleRecord,
     RewriteStorageRecord,
     RewriteTaskDispatchRecord,
+    RewriteTaskEventRecord,
     RewriteTaskRecord,
     RewriteTracePayloadRecord,
 )
@@ -38,6 +39,7 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
         "rewrite_result_handles",
         "rewrite_storage_records",
         "rewrite_task_dispatch_records",
+        "rewrite_task_event_records",
         "rewrite_task_records",
         "rewrite_trace_payloads",
     ]
@@ -178,6 +180,25 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
                 last_updated_at="2026-03-11 19:18:00",
             )
         )
+        session.add(
+            RewriteTaskEventRecord(
+                task_id=303,
+                event_key="task_submitted:2026-03-11 19:05:00",
+                event_type="task_submitted",
+                level="info",
+                occurred_at="2026-03-11 19:05:00",
+                message="Task submission accepted by rewrite runtime.",
+                metadata_json={
+                    "task_status": "queued",
+                    "dispatch_status": "completed",
+                    "dispatch_key": "dispatch:303:post_processing_run_task",
+                    "submission_source": "active_dataset",
+                    "worker_task_name": "post_processing_run_task",
+                    "dataset_id": "fluxonium-2025-031",
+                    "definition_id": None,
+                },
+            )
+        )
         session.commit()
 
         persisted_trace = session.scalar(
@@ -196,6 +217,9 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
         persisted_dispatch = session.scalar(
             select(RewriteTaskDispatchRecord).where(RewriteTaskDispatchRecord.task_id == 303)
         )
+        persisted_event = session.scalar(
+            select(RewriteTaskEventRecord).where(RewriteTaskEventRecord.task_id == 303)
+        )
 
     assert persisted_trace is not None
     assert persisted_trace.schema_version == REWRITE_TRACE_SCHEMA_VERSION
@@ -209,6 +233,9 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
     assert persisted_dispatch is not None
     assert persisted_dispatch.dispatch_key == "dispatch:303:post_processing_run_task"
     assert persisted_dispatch.status == "completed"
+    assert persisted_event is not None
+    assert persisted_event.event_type == "task_submitted"
+    assert persisted_event.metadata_json["dispatch_key"] == "dispatch:303:post_processing_run_task"
 
 
 def _build_alembic_config(database_path: Path) -> Config:

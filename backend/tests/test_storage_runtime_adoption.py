@@ -48,6 +48,8 @@ def test_runtime_task_submission_persists_pending_result_metadata() -> None:
     assert task.dispatch is not None
     assert task.dispatch.status == "accepted"
     assert task.dispatch.dispatch_key == "dispatch:306:characterization_run_task"
+    assert [event.event_type for event in task.events] == ["task_submitted"]
+    assert task.events[0].metadata["dispatch_key"] == "dispatch:306:characterization_run_task"
 
 
 def test_task_service_submit_preserves_explicit_dataset_dispatch_source_across_reset() -> None:
@@ -188,6 +190,10 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     assert updated_task.dispatch.status == "running"
     assert updated_task.progress.percent_complete == 35
     assert updated_task.summary == "Characterization task is running against persisted state."
+    assert [event.event_type for event in updated_task.events] == [
+        "task_submitted",
+        "task_running",
+    ]
 
     reset_runtime_state()
 
@@ -199,6 +205,11 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     assert reloaded_task.dispatch.last_updated_at == "2026-03-12 11:15:00"
     assert reloaded_task.progress.percent_complete == 35
     assert reloaded_task.progress.summary == "Characterization worker picked up the task."
+    assert [event.event_type for event in reloaded_task.events] == [
+        "task_submitted",
+        "task_running",
+    ]
+    assert reloaded_task.events[1].metadata["progress_percent_complete"] == 35
 
 
 def test_service_read_reconciles_stale_dispatch_snapshot_to_task_lifecycle() -> None:
@@ -312,12 +323,26 @@ def test_task_service_lifecycle_update_persists_completed_result_refs_across_res
     assert completed_task.result_refs.trace_batch_id == submitted_task.task_id
     assert completed_task.result_refs.result_handles[0].status == "materialized"
     assert completed_task.result_refs.trace_payload is not None
+    assert [event.event_type for event in completed_task.events] == [
+        "task_submitted",
+        "task_completed",
+    ]
+    assert completed_task.events[1].metadata["result_handle_ids"] == [
+        f"task-result:{submitted_task.task_id}:primary"
+    ]
 
     reset_runtime_state()
 
     reloaded_task = get_task_service().get_task(submitted_task.task_id)
 
     assert reloaded_task.status == "completed"
+    assert [event.event_type for event in reloaded_task.events] == [
+        "task_submitted",
+        "task_completed",
+    ]
+    assert reloaded_task.events[1].metadata["result_handle_ids"] == [
+        f"task-result:{submitted_task.task_id}:primary"
+    ]
     assert reloaded_task.dispatch is not None
     assert reloaded_task.dispatch.dispatch_key == (
         f"dispatch:{submitted_task.task_id}:characterization_run_task"
