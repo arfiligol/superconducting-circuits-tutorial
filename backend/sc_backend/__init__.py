@@ -6,7 +6,7 @@ from src.app.api.schemas.errors import ApiErrorBodyResponse
 from src.app.api.schemas.session import SessionResponse
 from src.app.api.schemas.tasks import TaskDetailResponse, TaskSummaryResponse
 from src.app.domain.datasets import DatasetSortBy, DatasetStatus, SortOrder
-from src.app.domain.tasks import TaskLane, TaskStatus, TaskVisibilityScope
+from src.app.domain.tasks import TaskKind, TaskLane, TaskStatus, TaskVisibilityScope
 
 from sc_backend.errors import BackendContractError
 from sc_backend.rewrite_cli import (
@@ -17,6 +17,7 @@ from sc_backend.rewrite_cli import (
     list_tasks,
     reset_runtime_state,
     set_active_dataset,
+    submit_task,
 )
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "SessionResponse",
     "SortOrder",
     "TaskDetailResponse",
+    "TaskKind",
     "TaskLane",
     "TaskStatus",
     "TaskSummaryResponse",
@@ -40,4 +42,5 @@ __all__ = [
     "list_tasks",
     "reset_runtime_state",
     "set_active_dataset",
+    "submit_task",
 ]

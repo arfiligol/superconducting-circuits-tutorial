@@ -38,9 +38,11 @@ from src.app.domain.datasets import (
 from src.app.domain.session import AppSession
 from src.app.domain.tasks import (
     TaskDetail,
+    TaskKind,
     TaskLane,
     TaskListQuery,
     TaskStatus,
+    TaskSubmissionDraft,
     TaskVisibilityScope,
 )
 from src.app.infrastructure.runtime import (
@@ -118,6 +120,27 @@ def list_tasks(
 def get_task(task_id: int) -> TaskDetailResponse:
     return _build_task_detail_response(
         _run_backend_call(lambda: get_task_service().get_task(task_id))
+    )
+
+
+def submit_task(
+    *,
+    kind: TaskKind,
+    dataset_id: str | None = None,
+    definition_id: int | None = None,
+    summary: str | None = None,
+) -> TaskDetailResponse:
+    return _build_task_detail_response(
+        _run_backend_call(
+            lambda: get_task_service().submit_task(
+                TaskSubmissionDraft(
+                    kind=kind,
+                    dataset_id=dataset_id,
+                    definition_id=definition_id,
+                    summary=summary,
+                )
+            )
+        )
     )
 
 
