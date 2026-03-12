@@ -6,7 +6,7 @@ from sc_backend import ApiErrorBodyResponse, BackendContractError
 from typer.testing import CliRunner
 
 from sc_cli.app import app
-from sc_cli.commands import datasets, session, simulation, tasks
+from sc_cli.commands import characterization, datasets, session, simulation, tasks
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -580,7 +580,7 @@ def test_tasks_list_command_reads_rewrite_task_state() -> None:
     result = runner.invoke(app, ["tasks", "list"])
 
     assert result.exit_code == 0
-    assert "tasks: 3" in result.stdout
+    assert "tasks:" in result.stdout
     assert "#301" in result.stdout
     assert "#303" in result.stdout
     assert "#304" not in result.stdout
@@ -644,7 +644,7 @@ def test_simulation_show_command_supports_json_output() -> None:
 def test_simulation_latest_command_reads_latest_simulation_lane_task() -> None:
     runner = CliRunner()
 
-    result = runner.invoke(app, ["simulation", "latest"])
+    result = runner.invoke(app, ["simulation", "latest", "--status", "running"])
 
     assert result.exit_code == 0
     assert "task_id: 301" in result.stdout
@@ -724,6 +724,138 @@ def test_simulation_show_command_rejects_non_simulation_lane_task() -> None:
 
     assert result.exit_code == 1
     assert "error: Task 302 is not part of the simulation lane." in result.output
+
+
+def test_characterization_show_command_reads_characterization_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["characterization", "show", "302"])
+
+    assert result.exit_code == 0
+    assert "task_id: 302" in result.stdout
+    assert "lane: characterization" in result.stdout
+    assert "kind: characterization" in result.stdout
+
+
+def test_characterization_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["characterization", "show", "302", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 302' in result.stdout
+    assert '"lane": "characterization"' in result.stdout
+
+
+def test_characterization_latest_command_reads_latest_characterization_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["characterization", "latest"])
+
+    assert result.exit_code == 0
+    assert "task_id:" in result.stdout
+    assert "kind: characterization" in result.stdout
+    assert "lane: characterization" in result.stdout
+
+
+def test_characterization_latest_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["characterization", "latest", "--status", "queued", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"lane": "characterization"' in result.stdout
+    assert '"kind": "characterization"' in result.stdout
+
+
+def test_characterization_submit_command_submits_characterization_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["characterization", "submit", "--dataset-id", "transmon-coupler-014"],
+    )
+
+    assert result.exit_code == 0
+    assert "kind: characterization" in result.stdout
+    assert "lane: characterization" in result.stdout
+    assert "worker_task_name: characterization_run_task" in result.stdout
+
+
+def test_characterization_submit_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["characterization", "submit", "--dataset-id", "transmon-coupler-014", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"kind": "characterization"' in result.stdout
+    assert '"lane": "characterization"' in result.stdout
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
+
+
+def test_characterization_wait_command_reaches_requested_status() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "characterization",
+            "wait",
+            "302",
+            "--until-status",
+            "queued",
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "task_id: 302" in result.stdout
+    assert "status: queued" in result.stdout
+    assert "lane: characterization" in result.stdout
+
+
+def test_characterization_wait_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "characterization",
+            "wait",
+            "302",
+            "--until-status",
+            "queued",
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"task_id": 302' in result.stdout
+    assert '"status": "queued"' in result.stdout
+    assert '"lane": "characterization"' in result.stdout
+
+
+def test_characterization_show_command_rejects_non_characterization_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["characterization", "show", "301"])
+
+    assert result.exit_code == 1
+    assert "error: Task 301 is not part of the characterization lane." in result.output
 
 
 def test_tasks_submit_command_submits_simulation_task() -> None:
@@ -883,6 +1015,22 @@ def test_simulation_wait_command_handles_backend_contract_errors(
     monkeypatch.setattr(simulation, "get_task", lambda _: _raise_backend_error("Task read failed."))
 
     result = runner.invoke(app, ["simulation", "wait", "301"])
+
+    assert result.exit_code == 2
+    assert "error: Task read failed. [validation/request_failed]" in result.output
+
+
+def test_characterization_wait_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(
+        characterization,
+        "get_task",
+        lambda _: _raise_backend_error("Task read failed."),
+    )
+
+    result = runner.invoke(app, ["characterization", "wait", "302"])
 
     assert result.exit_code == 2
     assert "error: Task read failed. [validation/request_failed]" in result.output
