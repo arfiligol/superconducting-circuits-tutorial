@@ -6,7 +6,7 @@ from sc_backend import ApiErrorBodyResponse, BackendContractError
 from typer.testing import CliRunner
 
 from sc_cli.app import app
-from sc_cli.commands import characterization, datasets, session, simulation, tasks
+from sc_cli.commands import characterization, datasets, results, session, simulation, tasks
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -620,6 +620,98 @@ def test_tasks_show_command_supports_json_output() -> None:
     assert '"result_handles": []' in result.stdout
 
 
+def test_results_show_command_groups_persisted_result_refs() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "show", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "trace_batch_id: 88" in result.stdout
+    assert "metadata_record_count: 2" in result.stdout
+    assert "result_handle_count: 2" in result.stdout
+    assert "result:fluxonium-2025-031:fit-summary" in result.stdout
+
+
+def test_results_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "show", "303", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"result_refs": {' in result.stdout
+    assert '"trace_batch_id": 88' in result.stdout
+    assert '"result_handles": [' in result.stdout
+
+
+def test_results_trace_command_reads_trace_payload() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "trace", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "backend: local_zarr" in result.stdout
+    assert (
+        "store_uri: trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr" in result.stdout
+    )
+    assert "shape: 184, 1024" in result.stdout
+
+
+def test_results_trace_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "trace", "303", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"trace_payload": {' in result.stdout
+    assert '"store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr"' in result.stdout
+
+
+def test_results_handles_command_reads_persisted_handles() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "handles", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "result_handle_count: 2" in result.stdout
+    assert "handle_id: result:fluxonium-2025-031:fit-summary" in result.stdout
+    assert "payload_locator: artifacts/fit-summary.json" in result.stdout
+    assert "handle_id: result:fluxonium-2025-031:plot-bundle" in result.stdout
+
+
+def test_results_handles_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "handles", "303", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"metadata_records": [' in result.stdout
+    assert '"handle_id": "result:fluxonium-2025-031:fit-summary"' in result.stdout
+
+
+def test_results_trace_command_rejects_tasks_without_trace_payload() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "trace", "301"])
+
+    assert result.exit_code == 1
+    assert "error: Task 301 does not expose a persisted trace payload." in result.output
+
+
+def test_results_handles_command_rejects_tasks_without_result_handles() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["results", "handles", "301"])
+
+    assert result.exit_code == 1
+    assert "error: Task 301 does not expose persisted result handles." in result.output
+
+
 def test_simulation_show_command_reads_simulation_lane_task() -> None:
     runner = CliRunner()
 
@@ -1031,6 +1123,18 @@ def test_characterization_wait_command_handles_backend_contract_errors(
     )
 
     result = runner.invoke(app, ["characterization", "wait", "302"])
+
+    assert result.exit_code == 2
+    assert "error: Task read failed. [validation/request_failed]" in result.output
+
+
+def test_results_show_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(results, "get_task", lambda _: _raise_backend_error("Task read failed."))
+
+    result = runner.invoke(app, ["results", "show", "303"])
 
     assert result.exit_code == 2
     assert "error: Task read failed. [validation/request_failed]" in result.output

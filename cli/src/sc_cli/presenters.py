@@ -354,6 +354,101 @@ def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputM
     )
 
 
+def render_task_result_refs(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "result_refs": task.result_refs.model_dump(mode="json"),
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
+        f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
+        f"metadata_record_count: {len(task.result_refs.metadata_records)}",
+        f"result_handle_count: {len(task.result_refs.result_handles)}",
+        "metadata_records:",
+    ]
+    lines.extend(_render_metadata_record_lines(task))
+    lines.extend(
+        [
+            f"trace_payload_present: {_render_bool(task.result_refs.trace_payload is not None)}",
+            "trace_payload_summary:",
+        ]
+    )
+    lines.extend(_render_trace_payload_summary_lines(task))
+    lines.extend(["result_handles:"])
+    lines.extend(_render_result_handle_summary_lines(task))
+    return "\n".join(lines)
+
+
+def render_task_trace_payload(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    trace_payload = task.result_refs.trace_payload
+    assert trace_payload is not None
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "trace_payload": trace_payload.model_dump(mode="json"),
+            }
+        )
+    return "\n".join(
+        [
+            *_build_task_result_context_lines(task),
+            f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
+            f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
+            f"contract_version: {trace_payload.contract_version}",
+            f"backend: {trace_payload.backend}",
+            f"payload_role: {trace_payload.payload_role}",
+            f"store_key: {trace_payload.store_key}",
+            f"store_uri: {trace_payload.store_uri}",
+            f"group_path: {trace_payload.group_path}",
+            f"array_path: {trace_payload.array_path}",
+            f"dtype: {trace_payload.dtype}",
+            f"shape: {_render_list_value(trace_payload.shape)}",
+            f"chunk_shape: {_render_list_value(trace_payload.chunk_shape)}",
+            f"schema_version: {trace_payload.schema_version}",
+        ]
+    )
+
+
+def render_task_result_handles(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "metadata_records": [
+                    record.model_dump(mode="json") for record in task.result_refs.metadata_records
+                ],
+                "result_handles": [
+                    handle.model_dump(mode="json") for handle in task.result_refs.result_handles
+                ],
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        f"result_handle_count: {len(task.result_refs.result_handles)}",
+        "metadata_records:",
+    ]
+    lines.extend(_render_metadata_record_lines(task))
+    lines.extend(["result_handles:"])
+    lines.extend(_render_result_handle_detail_lines(task))
+    return "\n".join(lines)
+
+
 def render_circuit_definition_detail(
     definition: CircuitDefinitionDetailResponse,
     *,
@@ -415,8 +510,128 @@ def _render_bool(value: bool) -> str:
     return "true" if value else "false"
 
 
+def _render_nullable(value: object | None) -> str:
+    return "-" if value is None else str(value)
+
+
+def _render_list_value(values: Sequence[object]) -> str:
+    return ", ".join(str(value) for value in values)
+
+
 def _render_list_line(label: str, parts: Iterable[str]) -> str:
     return f"- {label} | " + " | ".join(parts)
+
+
+def _build_task_result_context(task: TaskDetailResponse) -> dict[str, object]:
+    return {
+        "task_id": task.task_id,
+        "kind": task.kind,
+        "lane": task.lane,
+        "status": task.status,
+        "worker_task_name": task.worker_task_name,
+        "dataset_id": task.dataset_id,
+        "definition_id": task.definition_id,
+        "dispatch": task.dispatch.model_dump(mode="json"),
+    }
+
+
+def _build_task_result_context_lines(task: TaskDetailResponse) -> list[str]:
+    return [
+        f"task_id: {task.task_id}",
+        f"kind: {task.kind}",
+        f"lane: {task.lane}",
+        f"status: {task.status}",
+        f"worker_task_name: {task.worker_task_name}",
+        f"dataset_id: {task.dataset_id or '-'}",
+        f"definition_id: {_render_nullable(task.definition_id)}",
+        f"dispatch_key: {task.dispatch.dispatch_key}",
+        f"dispatch_status: {task.dispatch.status}",
+        f"submission_source: {task.dispatch.submission_source}",
+    ]
+
+
+def _render_metadata_record_lines(task: TaskDetailResponse) -> list[str]:
+    if not task.result_refs.metadata_records:
+        return ["- none"]
+    return [
+        _render_list_line(
+            record.record_id,
+            (
+                f"type={record.record_type}",
+                f"backend={record.backend}",
+                f"version={record.version}",
+                f"schema={record.schema_version}",
+            ),
+        )
+        for record in task.result_refs.metadata_records
+    ]
+
+
+def _render_trace_payload_summary_lines(task: TaskDetailResponse) -> list[str]:
+    trace_payload = task.result_refs.trace_payload
+    if trace_payload is None:
+        return ["- none"]
+    return [
+        f"- store_uri={trace_payload.store_uri}",
+        f"- array_path={trace_payload.array_path}",
+        f"- dtype={trace_payload.dtype}",
+        f"- shape={_render_list_value(trace_payload.shape)}",
+        f"- chunk_shape={_render_list_value(trace_payload.chunk_shape)}",
+        f"- role={trace_payload.payload_role}",
+    ]
+
+
+def _render_result_handle_summary_lines(task: TaskDetailResponse) -> list[str]:
+    if not task.result_refs.result_handles:
+        return ["- none"]
+    return [
+        _render_list_line(
+            handle.handle_id,
+            (
+                f"kind={handle.kind}",
+                f"status={handle.status}",
+                f"label={handle.label}",
+                f"payload_format={handle.payload_format or '-'}",
+                f"payload_locator={handle.payload_locator or '-'}",
+            ),
+        )
+        for handle in task.result_refs.result_handles
+    ]
+
+
+def _render_result_handle_detail_lines(task: TaskDetailResponse) -> list[str]:
+    if not task.result_refs.result_handles:
+        return ["- none"]
+    lines: list[str] = []
+    for handle in task.result_refs.result_handles:
+        trace_batch_record_id = (
+            "-"
+            if handle.provenance.trace_batch_record is None
+            else handle.provenance.trace_batch_record.record_id
+        )
+        analysis_run_record_id = (
+            "-"
+            if handle.provenance.analysis_run_record is None
+            else handle.provenance.analysis_run_record.record_id
+        )
+        lines.extend(
+            [
+                f"- handle_id: {handle.handle_id}",
+                f"  kind: {handle.kind}",
+                f"  status: {handle.status}",
+                f"  label: {handle.label}",
+                f"  payload_backend: {handle.payload_backend or '-'}",
+                f"  payload_format: {handle.payload_format or '-'}",
+                f"  payload_role: {handle.payload_role or '-'}",
+                f"  payload_locator: {handle.payload_locator or '-'}",
+                f"  metadata_record_id: {handle.metadata_record.record_id}",
+                f"  provenance_task_id: {_render_nullable(handle.provenance_task_id)}",
+                f"  provenance_source_dataset_id: {handle.provenance.source_dataset_id or '-'}",
+                f"  provenance_trace_batch_record: {trace_batch_record_id}",
+                f"  provenance_analysis_run_record: {analysis_run_record_id}",
+            ]
+        )
+    return lines
 
 
 def _render_primary_trace_store_uri(dataset: DatasetDetailResponse) -> str:
