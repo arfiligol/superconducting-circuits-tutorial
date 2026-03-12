@@ -309,6 +309,13 @@ describe("task api detail mapping", () => {
       worker_task_name: "simulation_run_task",
       request_ready: true,
       submitted_from_active_dataset: true,
+      dispatch: {
+        dispatch_key: "dispatch:31:simulation_run_task",
+        status: "running",
+        submission_source: "active_dataset",
+        accepted_at: "2026-03-12 10:20:00",
+        last_updated_at: "2026-03-12 10:21:00",
+      },
       progress: {
         phase: "running",
         percent_complete: 62,
@@ -394,6 +401,13 @@ describe("task api detail mapping", () => {
           worker_task_name: "simulation_run_task",
           request_ready: true,
           submitted_from_active_dataset: true,
+          dispatch: {
+            dispatch_key: "dispatch:31:simulation_run_task",
+            status: "running",
+            submission_source: "active_dataset",
+            accepted_at: "2026-03-12 10:20:00",
+            last_updated_at: "2026-03-12 10:21:00",
+          },
           progress: {
             phase: "running",
             percent_complete: 62,

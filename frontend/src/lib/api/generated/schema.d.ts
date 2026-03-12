@@ -564,8 +564,28 @@ export interface components {
             request_ready: boolean;
             /** Submitted From Active Dataset */
             submitted_from_active_dataset: boolean;
+            dispatch: components["schemas"]["TaskDispatchResponse"];
             progress: components["schemas"]["TaskProgressResponse"];
             result_refs: components["schemas"]["TaskResultRefsResponse"];
+        };
+        /** TaskDispatchResponse */
+        TaskDispatchResponse: {
+            /** Dispatch Key */
+            dispatch_key: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "accepted" | "running" | "completed" | "failed";
+            /**
+             * Submission Source
+             * @enum {string}
+             */
+            submission_source: "active_dataset" | "explicit_dataset" | "definition_only";
+            /** Accepted At */
+            accepted_at: string;
+            /** Last Updated At */
+            last_updated_at: string;
         };
         /** TaskMutationResponse */
         TaskMutationResponse: {

@@ -1803,6 +1803,9 @@
             "type": "boolean",
             "title": "Submitted From Active Dataset"
           },
+          "dispatch": {
+            "$ref": "#/components/schemas/TaskDispatchResponse"
+          },
           "progress": {
             "$ref": "#/components/schemas/TaskProgressResponse"
           },
@@ -1830,10 +1833,55 @@
           "worker_task_name",
           "request_ready",
           "submitted_from_active_dataset",
+          "dispatch",
           "progress",
           "result_refs"
         ],
         "title": "TaskDetailResponse"
+      },
+      "TaskDispatchResponse": {
+        "properties": {
+          "dispatch_key": {
+            "type": "string",
+            "title": "Dispatch Key"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "submission_source": {
+            "type": "string",
+            "enum": [
+              "active_dataset",
+              "explicit_dataset",
+              "definition_only"
+            ],
+            "title": "Submission Source"
+          },
+          "accepted_at": {
+            "type": "string",
+            "title": "Accepted At"
+          },
+          "last_updated_at": {
+            "type": "string",
+            "title": "Last Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dispatch_key",
+          "status",
+          "submission_source",
+          "accepted_at",
+          "last_updated_at"
+        ],
+        "title": "TaskDispatchResponse"
       },
       "TaskMutationResponse": {
         "properties": {
