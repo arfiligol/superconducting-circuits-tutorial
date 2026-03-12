@@ -4,9 +4,14 @@ type TaskSummaryResponseShape = Readonly<{
   task_id: number;
   kind: "simulation" | "post_processing" | "characterization";
   lane: "simulation" | "characterization";
+  execution_mode: "run" | "smoke";
   status: "queued" | "running" | "completed" | "failed";
   submitted_at: string;
-  submitted_by: string;
+  owner_user_id: string;
+  owner_display_name: string;
+  workspace_id: string;
+  workspace_slug: string;
+  visibility_scope: "workspace" | "owned";
   dataset_id: string | null;
   definition_id: number | null;
   summary: string;
@@ -16,9 +21,14 @@ export type TaskSummary = Readonly<{
   taskId: number;
   kind: "simulation" | "post_processing" | "characterization";
   lane: "simulation" | "characterization";
+  executionMode: "run" | "smoke";
   status: "queued" | "running" | "completed" | "failed";
   submittedAt: string;
-  submittedBy: string;
+  ownerUserId: string;
+  ownerDisplayName: string;
+  workspaceId: string;
+  workspaceSlug: string;
+  visibilityScope: "workspace" | "owned";
   datasetId: string | null;
   definitionId: number | null;
   summary: string;
@@ -31,9 +41,14 @@ export function mapTaskSummaryResponse(payload: TaskSummaryResponseShape): TaskS
     taskId: payload.task_id,
     kind: payload.kind,
     lane: payload.lane,
+    executionMode: payload.execution_mode,
     status: payload.status,
     submittedAt: payload.submitted_at,
-    submittedBy: payload.submitted_by,
+    ownerUserId: payload.owner_user_id,
+    ownerDisplayName: payload.owner_display_name,
+    workspaceId: payload.workspace_id,
+    workspaceSlug: payload.workspace_slug,
+    visibilityScope: payload.visibility_scope,
     datasetId: payload.dataset_id,
     definitionId: payload.definition_id,
     summary: payload.summary,

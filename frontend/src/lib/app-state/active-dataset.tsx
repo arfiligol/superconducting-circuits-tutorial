@@ -9,14 +9,18 @@ import {
 } from "@/lib/api/datasets";
 import { patchActiveDataset } from "@/lib/api/session";
 import {
+  canRetryRouteDatasetSync,
   parseDatasetIdFromSearch,
   resolveActiveDatasetId,
   resolveActiveDatasetSource,
+  shouldAutoSyncRouteDataset,
+  type RouteDatasetSyncState,
 } from "@/lib/app-state/active-dataset-state";
 import { useAppSession } from "@/lib/app-state/app-session";
 import { useUrlState } from "@/lib/app-state/url-state";
 
 export type ActiveDatasetSource = "url" | "session" | "none";
+export type ActiveDatasetStatus = "loading" | "ready" | "empty" | "syncing-route" | "error";
 
 export type ActiveDatasetSnapshot = Readonly<{
   datasetId: string;
@@ -32,10 +36,15 @@ type ActiveDatasetContextValue = Readonly<{
   routeDatasetId: string | null;
   sessionDatasetId: string | null;
   source: ActiveDatasetSource;
+  status: ActiveDatasetStatus;
   isDatasetDetailLoading: boolean;
   datasetDetailError: Error | undefined;
   isUpdatingActiveDataset: boolean;
+  isRouteSyncPending: boolean;
+  canRetryRouteSync: boolean;
   activeDatasetError: Error | undefined;
+  refreshActiveDataset: () => Promise<void>;
+  retryRouteSync: () => Promise<void>;
   setActiveDataset: (datasetId: string | null) => Promise<void>;
   clearActiveDataset: () => Promise<void>;
 }>;
@@ -49,13 +58,19 @@ type ActiveDatasetProviderProps = Readonly<{
 export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) {
   const {
     session,
+    refreshSession,
     sessionError,
     replaceSession,
+    hasResolvedSession,
   } = useAppSession();
   const urlState = useUrlState();
   const [mutationError, setMutationError] = useState<Error | undefined>(undefined);
   const [isUpdatingActiveDataset, setIsUpdatingActiveDataset] = useState(false);
-  const [lastRouteSyncTargetId, setLastRouteSyncTargetId] = useState<string | null>(null);
+  const [routeSyncError, setRouteSyncError] = useState<Error | undefined>(undefined);
+  const [routeSyncState, setRouteSyncState] = useState<RouteDatasetSyncState>({
+    targetDatasetId: null,
+    status: "idle",
+  });
   const routeDatasetId = parseDatasetIdFromSearch(urlState.search);
   const sessionDatasetId = session?.activeDataset?.datasetId ?? null;
   const resolvedDatasetId = resolveActiveDatasetId(routeDatasetId, sessionDatasetId);
@@ -64,45 +79,98 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
   const detailQuery = useSWR(detailKey, () =>
     resolvedDatasetId ? getDataset(resolvedDatasetId) : Promise.resolve(undefined),
   );
+  const isRouteSyncPending = routeSyncState.status === "syncing";
+  const canRetryRouteSyncNow = canRetryRouteDatasetSync(
+    routeDatasetId,
+    sessionDatasetId,
+    routeSyncState,
+  );
 
-  async function syncActiveDataset(datasetId: string | null) {
-    setMutationError(undefined);
-    setIsUpdatingActiveDataset(true);
-    setLastRouteSyncTargetId(datasetId);
+  async function syncActiveDataset(
+    datasetId: string | null,
+    options?: Readonly<{ isRouteSync?: boolean }>,
+  ) {
+    const isRouteSync = options?.isRouteSync ?? false;
+    const targetDatasetId = datasetId ?? null;
+
+    if (isRouteSync) {
+      setRouteSyncError(undefined);
+      setRouteSyncState({
+        targetDatasetId,
+        status: "syncing",
+      });
+    } else {
+      setMutationError(undefined);
+      setIsUpdatingActiveDataset(true);
+    }
 
     try {
       const nextSession = await patchActiveDataset(datasetId);
       await replaceSession(nextSession);
+
+      if (isRouteSync) {
+        setRouteSyncState({
+          targetDatasetId,
+          status: "idle",
+        });
+      }
     } catch (error) {
-      setMutationError(error instanceof Error ? error : new Error("Unable to update active dataset."));
-      throw error;
+      const resolvedError =
+        error instanceof Error ? error : new Error("Unable to update active dataset.");
+
+      if (isRouteSync) {
+        setRouteSyncError(resolvedError);
+        setRouteSyncState({
+          targetDatasetId,
+          status: "error",
+        });
+      } else {
+        setMutationError(resolvedError);
+      }
+
+      throw resolvedError;
     } finally {
-      setIsUpdatingActiveDataset(false);
+      if (!isRouteSync) {
+        setIsUpdatingActiveDataset(false);
+      }
     }
   }
 
   const syncRouteDatasetToSession = useEffectEvent((datasetId: string) => {
-    void syncActiveDataset(datasetId).catch(() => undefined);
+    void syncActiveDataset(datasetId, { isRouteSync: true }).catch(() => undefined);
   });
+
+  useEffect(() => {
+    if (routeDatasetId !== routeSyncState.targetDatasetId) {
+      setRouteSyncError(undefined);
+      setRouteSyncState({
+        targetDatasetId: routeDatasetId,
+        status: "idle",
+      });
+    }
+  }, [routeDatasetId, routeSyncState.targetDatasetId]);
+
+  useEffect(() => {
+    if (routeDatasetId && routeDatasetId === sessionDatasetId) {
+      setRouteSyncError(undefined);
+      setRouteSyncState({
+        targetDatasetId: routeDatasetId,
+        status: "idle",
+      });
+    }
+  }, [routeDatasetId, sessionDatasetId]);
 
   useEffect(() => {
     if (
       !routeDatasetId ||
-      routeDatasetId === sessionDatasetId ||
       isUpdatingActiveDataset ||
-      routeDatasetId === lastRouteSyncTargetId
+      !shouldAutoSyncRouteDataset(routeDatasetId, sessionDatasetId, routeSyncState)
     ) {
       return;
     }
 
     syncRouteDatasetToSession(routeDatasetId);
-  }, [routeDatasetId, sessionDatasetId, isUpdatingActiveDataset, lastRouteSyncTargetId]);
-
-  useEffect(() => {
-    if (routeDatasetId && routeDatasetId === sessionDatasetId && lastRouteSyncTargetId === routeDatasetId) {
-      setLastRouteSyncTargetId(null);
-    }
-  }, [routeDatasetId, sessionDatasetId, lastRouteSyncTargetId]);
+  }, [routeDatasetId, routeSyncState, sessionDatasetId, isUpdatingActiveDataset]);
 
   const activeDataset =
     resolvedDatasetId && source !== "none"
@@ -112,7 +180,10 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
             session?.activeDataset?.datasetId === resolvedDatasetId
               ? session.activeDataset.name
               : (detailQuery.data?.name ?? null),
-          owner: detailQuery.data?.owner ?? null,
+          owner:
+            session?.activeDataset?.datasetId === resolvedDatasetId
+              ? session.activeDataset.owner
+              : (detailQuery.data?.owner ?? null),
           family:
             session?.activeDataset?.datasetId === resolvedDatasetId
               ? session.activeDataset.family
@@ -124,6 +195,17 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
           source,
         }
       : null;
+  const activeDatasetError =
+    routeSyncError ?? mutationError ?? (detailQuery.error as Error | undefined) ?? sessionError;
+  const status: ActiveDatasetStatus = !hasResolvedSession && !activeDataset
+    ? "loading"
+    : isRouteSyncPending
+      ? "syncing-route"
+      : activeDatasetError && !activeDataset
+        ? "error"
+        : activeDataset
+          ? "ready"
+          : "empty";
 
   return (
     <ActiveDatasetContext.Provider
@@ -132,10 +214,26 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
         routeDatasetId,
         sessionDatasetId,
         source,
+        status,
         isDatasetDetailLoading: detailQuery.isLoading,
         datasetDetailError: detailQuery.error as Error | undefined,
         isUpdatingActiveDataset,
-        activeDatasetError: mutationError ?? (detailQuery.error as Error | undefined) ?? sessionError,
+        isRouteSyncPending,
+        canRetryRouteSync: canRetryRouteSyncNow,
+        activeDatasetError,
+        async refreshActiveDataset() {
+          await Promise.all([
+            refreshSession().then(() => undefined),
+            detailQuery.mutate().then(() => undefined),
+          ]);
+        },
+        async retryRouteSync() {
+          if (!routeDatasetId) {
+            return;
+          }
+
+          await syncActiveDataset(routeDatasetId, { isRouteSync: true });
+        },
         async setActiveDataset(datasetId) {
           await syncActiveDataset(datasetId);
         },

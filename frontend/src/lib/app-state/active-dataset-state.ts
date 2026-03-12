@@ -25,3 +25,39 @@ export function resolveActiveDatasetSource(
 
   return "none";
 }
+
+export type RouteDatasetSyncStatus = "idle" | "syncing" | "error";
+
+export type RouteDatasetSyncState = Readonly<{
+  targetDatasetId: string | null;
+  status: RouteDatasetSyncStatus;
+}>;
+
+export function shouldAutoSyncRouteDataset(
+  routeDatasetId: string | null,
+  sessionDatasetId: string | null,
+  syncState: RouteDatasetSyncState,
+): boolean {
+  if (!routeDatasetId || routeDatasetId === sessionDatasetId) {
+    return false;
+  }
+
+  if (syncState.targetDatasetId !== routeDatasetId) {
+    return true;
+  }
+
+  return syncState.status === "idle";
+}
+
+export function canRetryRouteDatasetSync(
+  routeDatasetId: string | null,
+  sessionDatasetId: string | null,
+  syncState: RouteDatasetSyncState,
+): boolean {
+  return (
+    !!routeDatasetId &&
+    routeDatasetId !== sessionDatasetId &&
+    syncState.status === "error" &&
+    syncState.targetDatasetId === routeDatasetId
+  );
+}

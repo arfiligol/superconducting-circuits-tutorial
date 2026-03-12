@@ -1,6 +1,6 @@
 "use client";
 
-import { Database, LoaderCircle, Shield, Workflow, X } from "lucide-react";
+import { Database, LoaderCircle, RefreshCw, Shield, Workflow, X } from "lucide-react";
 
 import { cx } from "@/features/shared/components/surface-kit";
 import {
@@ -8,6 +8,7 @@ import {
   useAppSession,
   useTaskQueue,
 } from "@/lib/app-state";
+import { ApiError } from "@/lib/api/client";
 
 type WorkspaceStatusStripProps = Readonly<{
   compact?: boolean;
@@ -20,6 +21,32 @@ type StatusCardProps = Readonly<{
   detail: string;
   action?: React.ReactNode;
 }>;
+
+type StatusActionButtonProps = Readonly<{
+  label: string;
+  onClick?: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  disabled?: boolean;
+  spinning?: boolean;
+}>;
+
+function getStatusErrorDetail(error: Error): string {
+  if (error instanceof ApiError) {
+    const errorCode = error.errorCode ? ` (${error.errorCode})` : "";
+    const debugRef = error.debugRef ? ` · Ref ${error.debugRef}` : "";
+    return `${error.message}${errorCode}${debugRef}`;
+  }
+
+  return error.message;
+}
+
+function isRetryableError(error: Error | undefined): boolean {
+  if (!error) {
+    return false;
+  }
+
+  return !(error instanceof ApiError) || error.retryable !== false;
+}
 
 function StatusCard({ icon: Icon, label, value, detail, action }: StatusCardProps) {
   return (
@@ -39,56 +66,155 @@ function StatusCard({ icon: Icon, label, value, detail, action }: StatusCardProp
   );
 }
 
+function StatusActionButton({
+  label,
+  onClick,
+  icon: Icon,
+  disabled = false,
+  spinning = false,
+}: StatusActionButtonProps) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <Icon className={cx("h-4 w-4", spinning ? "animate-spin" : undefined)} />
+    </button>
+  );
+}
+
 export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripProps) {
-  const { session, sessionError, isSessionLoading } = useAppSession();
+  const {
+    session,
+    workspace,
+    sessionError,
+    status: sessionStatus,
+    isSessionLoading,
+    isSessionRefreshing,
+    refreshSession,
+  } = useAppSession();
   const {
     activeDataset,
     source,
+    status: activeDatasetStatus,
     routeDatasetId,
     sessionDatasetId,
     isDatasetDetailLoading,
     isUpdatingActiveDataset,
+    isRouteSyncPending,
+    canRetryRouteSync,
     activeDatasetError,
+    refreshActiveDataset,
+    retryRouteSync,
     clearActiveDataset,
   } = useActiveDataset();
-  const { latestTask, summary, isTaskQueueLoading, taskQueueError } = useTaskQueue();
+  const {
+    activeTasks,
+    latestTask,
+    summary,
+    status: taskQueueStatus,
+    isTaskQueueLoading,
+    isTaskQueueRefreshing,
+    taskQueueError,
+    refreshIntervalMs,
+    refreshTaskQueue,
+  } = useTaskQueue();
 
-  const datasetLabel = isUpdatingActiveDataset
-    ? "Syncing active dataset..."
-    : isSessionLoading && !activeDataset
-      ? "Loading active dataset..."
-    : activeDataset?.name ?? activeDataset?.datasetId ?? "No active dataset";
+  const datasetLabel =
+    activeDatasetStatus === "syncing-route" || isUpdatingActiveDataset
+      ? "Restoring active dataset..."
+      : activeDatasetStatus === "loading"
+        ? "Loading active dataset..."
+        : activeDatasetStatus === "error" && !activeDataset
+          ? "Active dataset unavailable"
+          : activeDatasetStatus === "empty"
+            ? "No active dataset"
+            : activeDataset?.name ?? activeDataset?.datasetId ?? "No active dataset";
   const datasetDetail = activeDatasetError
-    ? activeDatasetError.message
-    : isSessionLoading && !activeDataset
+    ? getStatusErrorDetail(activeDatasetError)
+    : activeDatasetStatus === "loading"
       ? "Waiting for GET /session"
-    : source === "url" && routeDatasetId !== sessionDatasetId
-      ? "URL selection is being synced to the session contract"
-      : source === "url"
-        ? "URL-aware selection, backed by session state"
-        : source === "session"
-          ? "Session-backed active dataset"
-          : "Set an active dataset from a route-enabled workspace";
-  const sessionValue = isSessionLoading
-    ? "Loading session..."
-    : session?.user?.displayName ?? "Anonymous session";
+      : activeDatasetStatus === "syncing-route"
+        ? "Reattaching the URL-selected dataset to the backend session"
+        : source === "url" && routeDatasetId === sessionDatasetId
+          ? "URL selection is attached to the session contract"
+          : source === "url"
+            ? "URL-selected dataset has not attached to the session yet"
+            : source === "session" && workspace
+              ? `${workspace.displayName} session-backed dataset`
+              : "No active dataset has been restored for this session";
+  const datasetAction = isDatasetDetailLoading ? (
+    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground">
+      <LoaderCircle className="h-4 w-4 animate-spin" />
+    </span>
+  ) : (
+    <div className="flex shrink-0 items-center gap-2">
+      <StatusActionButton
+        label="Refresh active dataset state"
+        icon={RefreshCw}
+        spinning={isUpdatingActiveDataset || isRouteSyncPending}
+        disabled={isUpdatingActiveDataset || isRouteSyncPending}
+        onClick={() => {
+          void refreshActiveDataset();
+        }}
+      />
+      {canRetryRouteSync && isRetryableError(activeDatasetError) ? (
+        <StatusActionButton
+          label="Retry dataset restore"
+          icon={RefreshCw}
+          onClick={() => {
+            void retryRouteSync();
+          }}
+        />
+      ) : null}
+      {source === "session" && activeDataset ? (
+        <StatusActionButton
+          label="Clear active dataset"
+          icon={X}
+          disabled={isUpdatingActiveDataset}
+          onClick={() => {
+            void clearActiveDataset();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+
+  const sessionValue =
+    sessionStatus === "loading"
+      ? "Loading session..."
+      : sessionStatus === "error" && !session
+        ? "Session unavailable"
+        : session?.user?.displayName ?? "Anonymous session";
   const sessionDetail = sessionError
-    ? sessionError.message
+    ? getStatusErrorDetail(sessionError)
     : !session
       ? "Waiting for GET /session"
-      : session.authState === "authenticated"
-        ? `${session.authMode} · ${session.scopes.length} scopes`
-        : `${session.authMode} · anonymous`;
-  const taskValue = isTaskQueueLoading
-    ? "Loading tasks..."
-    : summary.total === 0
-      ? "Queue idle"
-      : `${summary.runningCount} running · ${summary.queuedCount} queued`;
+      : isSessionRefreshing
+        ? "Refreshing backend session state"
+        : `${workspace?.displayName ?? "Unknown workspace"} · ${session.authMode} · ${session.scopes.length} scopes`;
+
+  const taskValue =
+    taskQueueStatus === "loading"
+      ? "Loading tasks..."
+      : taskQueueStatus === "error" && summary.total === 0
+        ? "Task queue unavailable"
+        : summary.total === 0
+          ? "Queue idle"
+          : activeTasks.length > 0
+            ? `${activeTasks.length} active · ${summary.failedCount} failed`
+            : `${summary.completedCount} completed · ${summary.failedCount} failed`;
   const taskDetail = taskQueueError
-    ? taskQueueError.message
-    : latestTask
-      ? `${latestTask.kind} · ${latestTask.summary}`
-      : "No queued or running tasks from GET /tasks";
+    ? getStatusErrorDetail(taskQueueError)
+    : activeTasks[0]
+      ? `Recovered #${activeTasks[0].taskId} · ${activeTasks[0].kind} · polling every ${Math.round(refreshIntervalMs / 1000)}s`
+      : latestTask
+        ? `Latest #${latestTask.taskId} · ${latestTask.kind} · ${latestTask.summary}`
+        : "No task history returned from GET /tasks";
 
   return (
     <div
@@ -102,24 +228,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         label="Active Dataset"
         value={datasetLabel}
         detail={datasetDetail}
-        action={
-          isUpdatingActiveDataset || isDatasetDetailLoading ? (
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground">
-              <LoaderCircle className="h-4 w-4 animate-spin" />
-            </span>
-          ) : source === "session" && activeDataset ? (
-            <button
-              type="button"
-              aria-label="Clear active dataset"
-              onClick={() => {
-                void clearActiveDataset();
-              }}
-              className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : null
-        }
+        action={datasetAction}
       />
 
       <StatusCard
@@ -127,6 +236,17 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         label="Task Queue"
         value={taskValue}
         detail={taskDetail}
+        action={
+          <StatusActionButton
+            label="Refresh task queue"
+            icon={RefreshCw}
+            spinning={isTaskQueueRefreshing}
+            disabled={isTaskQueueLoading}
+            onClick={() => {
+              void refreshTaskQueue();
+            }}
+          />
+        }
       />
 
       <StatusCard
@@ -134,6 +254,17 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         label="Session"
         value={sessionValue}
         detail={sessionDetail}
+        action={
+          <StatusActionButton
+            label="Refresh session"
+            icon={RefreshCw}
+            spinning={isSessionRefreshing}
+            disabled={isSessionLoading}
+            onClick={() => {
+              void refreshSession();
+            }}
+          />
+        }
       />
     </div>
   );

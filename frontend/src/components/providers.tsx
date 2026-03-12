@@ -15,6 +15,7 @@ export function Providers({ children }: ProvidersProps) {
       <SWRConfig
         value={{
           revalidateOnFocus: false,
+          revalidateOnReconnect: true,
           shouldRetryOnError: false,
         }}
       >

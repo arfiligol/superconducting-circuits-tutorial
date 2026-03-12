@@ -1,13 +1,20 @@
 export type TaskQueueScope = "simulation" | "characterization";
 export type TaskQueueStatus = "queued" | "running" | "completed" | "failed";
+export type TaskQueueExecutionMode = "run" | "smoke";
+export type TaskQueueVisibilityScope = "workspace" | "owned";
 
 export type TaskQueueItem = Readonly<{
   taskId: number;
   kind: "simulation" | "post_processing" | "characterization";
   lane: TaskQueueScope;
+  executionMode: TaskQueueExecutionMode;
   status: TaskQueueStatus;
   submittedAt: string;
-  submittedBy: string;
+  ownerUserId: string;
+  ownerDisplayName: string;
+  workspaceId: string;
+  workspaceSlug: string;
+  visibilityScope: TaskQueueVisibilityScope;
   datasetId: string | null;
   definitionId: number | null;
   summary: string;
@@ -38,4 +45,16 @@ export function summarizeTaskQueue(tasks: readonly TaskQueueItem[]): TaskQueueSu
       completedCount: 0,
     },
   );
+}
+
+export function isTaskQueueTaskActive(task: TaskQueueItem): boolean {
+  return task.status === "queued" || task.status === "running";
+}
+
+export function resolveLatestTask(tasks: readonly TaskQueueItem[]): TaskQueueItem | undefined {
+  return tasks.find(isTaskQueueTaskActive) ?? tasks[0];
+}
+
+export function resolveTaskQueueRefreshInterval(tasks: readonly TaskQueueItem[]): number {
+  return tasks.some(isTaskQueueTaskActive) ? 5_000 : 0;
 }
