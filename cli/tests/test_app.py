@@ -65,6 +65,105 @@ def test_circuit_definition_inspect_command_supports_definition_id() -> None:
     assert "validation_status: warning" in result.stdout
 
 
+def test_circuit_definition_create_command_persists_local_source(tmp_path: Path) -> None:
+    source_file = tmp_path / "created.circuit.yaml"
+    source_file.write_text(
+        "\n".join(
+            [
+                "circuit:",
+                "  name: fluxonium_cli_create",
+                "  family: fluxonium",
+                "  elements:",
+                "    junction:",
+                "      ej_ghz: 8.91",
+                "    capacitance:",
+                "      ec_ghz: 1.17",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "create",
+            str(source_file),
+            "--name",
+            "FluxoniumCliCreate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "source_definition_id: 19" in result.stdout
+    assert "definition_name: FluxoniumCliCreate" in result.stdout
+    assert "validation_status: warning" in result.stdout
+
+
+def test_circuit_definition_create_command_supports_json_output(tmp_path: Path) -> None:
+    source_file = tmp_path / "created-json.circuit.yaml"
+    source_file.write_text(
+        "\n".join(
+            [
+                "circuit:",
+                "  name: transmon_cli_create",
+                "  family: transmon",
+                "  elements:",
+                "    coupler:",
+                "      g_mhz: 12.4",
+                "    bus:",
+                "      resonance_ghz: 6.94",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "create",
+            str(source_file),
+            "--name",
+            "TransmonCliCreate",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"definition_id": 19' in result.stdout
+    assert '"name": "TransmonCliCreate"' in result.stdout
+    assert '"validation_status": "warning"' in result.stdout
+
+
+def test_circuit_definition_create_command_uses_structured_validation_error(
+    tmp_path: Path,
+) -> None:
+    source_file = tmp_path / "blank.circuit.yaml"
+    source_file.write_text("   \n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "create",
+            str(source_file),
+            "--name",
+            "BlankDefinition",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert (
+        "error: Request validation failed. [validation/request_validation_failed]" in result.output
+    )
+    assert "field_error: source_text:" in result.output
+
+
 def test_session_show_command_reads_rewrite_session_state() -> None:
     runner = CliRunner()
 

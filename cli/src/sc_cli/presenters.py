@@ -168,7 +168,13 @@ def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputM
     )
 
 
-def render_circuit_definition_detail(definition: CircuitDefinitionDetailResponse) -> str:
+def render_circuit_definition_detail(
+    definition: CircuitDefinitionDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(definition)
     lines = [
         f"source_definition_id: {definition.definition_id}",
         f"definition_name: {definition.name}",

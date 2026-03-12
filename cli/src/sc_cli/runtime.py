@@ -1,6 +1,7 @@
-"""Read-only runtime accessors for the backend public CLI facade."""
+"""Runtime accessors for the backend public CLI facade."""
 
 from sc_backend import (
+    create_circuit_definition,
     get_circuit_definition,
     get_session,
     get_task,
@@ -12,6 +13,7 @@ from sc_backend import (
 )
 
 __all__ = [
+    "create_circuit_definition",
     "get_circuit_definition",
     "get_session",
     "get_task",
