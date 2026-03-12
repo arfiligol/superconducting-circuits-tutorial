@@ -134,6 +134,29 @@ describe("characterization workflow helpers", () => {
         accepted_at: "2026-03-13 09:20:00",
         last_updated_at: "2026-03-13 09:21:00",
       },
+      events: [
+        {
+          event_key: "task-event-41-submitted",
+          event_type: "task_submitted",
+          level: "info",
+          occurred_at: "2026-03-13 09:20:00",
+          message: "Characterization task was submitted.",
+          metadata: {
+            task_id: 41,
+            lane: "characterization",
+          },
+        },
+        {
+          event_key: "task-event-41-running",
+          event_type: "task_running",
+          level: "info",
+          occurred_at: "2026-03-13 09:21:00",
+          message: "Task entered the running state.",
+          metadata: {
+            progress_percent_complete: 58,
+          },
+        },
+      ],
       progress: {
         phase: "running",
         percent_complete: 58,

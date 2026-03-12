@@ -179,6 +179,19 @@ describe("simulation task workflow helpers", () => {
             acceptedAt: "2026-03-12 10:10:00",
             lastUpdatedAt: "2026-03-12 10:11:00",
           },
+          events: [
+            {
+              eventKey: "task-event-29-completed",
+              eventType: "task_completed",
+              level: "info",
+              occurredAt: "2026-03-12 10:11:00",
+              message: "Post-processing artifacts were materialized.",
+              metadata: {
+                task_id: 29,
+                phase: "completed",
+              },
+            },
+          ],
           progress: {
             phase: "completed",
             percentComplete: 100,
@@ -229,6 +242,19 @@ describe("simulation task workflow helpers", () => {
           acceptedAt: "2026-03-12 10:10:00",
           lastUpdatedAt: "2026-03-12 10:11:00",
         },
+        events: [
+          {
+            eventKey: "task-event-29-completed",
+            eventType: "task_completed",
+            level: "info",
+            occurredAt: "2026-03-12 10:11:00",
+            message: "Post-processing artifacts were materialized.",
+            metadata: {
+              task_id: 29,
+              phase: "completed",
+            },
+          },
+        ],
         progress: {
           phase: "completed",
           percentComplete: 100,
@@ -330,6 +356,29 @@ describe("task api detail mapping", () => {
         accepted_at: "2026-03-12 10:20:00",
         last_updated_at: "2026-03-12 10:21:00",
       },
+      events: [
+        {
+          event_key: "task-event-31-submitted",
+          event_type: "task_submitted",
+          level: "info",
+          occurred_at: "2026-03-12 10:20:00",
+          message: "Simulation task submitted.",
+          metadata: {
+            task_id: 31,
+            lane: "simulation",
+          },
+        },
+        {
+          event_key: "task-event-31-running",
+          event_type: "task_running",
+          level: "info",
+          occurred_at: "2026-03-12 10:21:00",
+          message: "Simulation is running.",
+          metadata: {
+            progress_percent_complete: 62,
+          },
+        },
+      ],
       progress: {
         phase: "running",
         percent_complete: 62,
@@ -400,6 +449,29 @@ describe("task api detail mapping", () => {
       acceptedAt: "2026-03-12 10:20:00",
       lastUpdatedAt: "2026-03-12 10:21:00",
     });
+    expect(detail.events).toEqual([
+      {
+        eventKey: "task-event-31-submitted",
+        eventType: "task_submitted",
+        level: "info",
+        occurredAt: "2026-03-12 10:20:00",
+        message: "Simulation task submitted.",
+        metadata: {
+          task_id: 31,
+          lane: "simulation",
+        },
+      },
+      {
+        eventKey: "task-event-31-running",
+        eventType: "task_running",
+        level: "info",
+        occurredAt: "2026-03-12 10:21:00",
+        message: "Simulation is running.",
+        metadata: {
+          progress_percent_complete: 62,
+        },
+      },
+    ]);
     expect(
       unwrapTaskMutation({
         operation: "submitted",
@@ -429,6 +501,18 @@ describe("task api detail mapping", () => {
             accepted_at: "2026-03-12 10:20:00",
             last_updated_at: "2026-03-12 10:21:00",
           },
+          events: [
+            {
+              event_key: "task-event-31-submitted",
+              event_type: "task_submitted",
+              level: "info",
+              occurred_at: "2026-03-12 10:20:00",
+              message: "Simulation task submitted.",
+              metadata: {
+                task_id: 31,
+              },
+            },
+          ],
           progress: {
             phase: "running",
             percent_complete: 62,

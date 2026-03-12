@@ -60,6 +60,15 @@ export type TaskDispatch = Readonly<{
   lastUpdatedAt: string;
 }>;
 
+export type TaskEvent = Readonly<{
+  eventKey: string;
+  eventType: "task_submitted" | "task_running" | "task_completed" | "task_failed";
+  level: "info" | "warning" | "error";
+  occurredAt: string;
+  message: string;
+  metadata: Readonly<Record<string, string | number | boolean | readonly string[] | null>>;
+}>;
+
 export type TaskSummary = Readonly<{
   taskId: number;
   kind: "simulation" | "post_processing" | "characterization";
@@ -94,6 +103,7 @@ export type TaskDetail = TaskSummary &
     requestReady: boolean;
     submittedFromActiveDataset: boolean;
     dispatch: TaskDispatch;
+    events: readonly TaskEvent[];
     progress: Readonly<{
       phase: "queued" | "running" | "completed" | "failed";
       percentComplete: number;
@@ -186,6 +196,22 @@ function mapTaskDispatch(payload: components["schemas"]["TaskDispatchResponse"])
   };
 }
 
+function mapTaskEvent(payload: components["schemas"]["TaskEventResponse"]): TaskEvent {
+  return {
+    eventKey: payload.event_key,
+    eventType: payload.event_type,
+    level: payload.level,
+    occurredAt: payload.occurred_at,
+    message: payload.message,
+    metadata: Object.fromEntries(
+      Object.entries(payload.metadata).map(([key, value]) => [
+        key,
+        Array.isArray(value) ? [...value] : value,
+      ]),
+    ),
+  };
+}
+
 export function mapTaskSummaryResponse(payload: TaskSummaryResponseShape): TaskSummary {
   return {
     taskId: payload.task_id,
@@ -218,6 +244,7 @@ export function mapTaskDetailResponse(payload: TaskDetailResponseShape): TaskDet
     requestReady: payload.request_ready,
     submittedFromActiveDataset: payload.submitted_from_active_dataset,
     dispatch: mapTaskDispatch(payload.dispatch),
+    events: payload.events.map(mapTaskEvent),
     progress: {
       phase: payload.progress.phase,
       percentComplete: payload.progress.percent_complete,

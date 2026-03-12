@@ -1811,6 +1811,13 @@
           },
           "result_refs": {
             "$ref": "#/components/schemas/TaskResultRefsResponse"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/TaskEventResponse"
+            },
+            "type": "array",
+            "title": "Events"
           }
         },
         "type": "object",
@@ -1835,7 +1842,8 @@
           "submitted_from_active_dataset",
           "dispatch",
           "progress",
-          "result_refs"
+          "result_refs",
+          "events"
         ],
         "title": "TaskDetailResponse"
       },
@@ -1882,6 +1890,77 @@
           "last_updated_at"
         ],
         "title": "TaskDispatchResponse"
+      },
+      "TaskEventResponse": {
+        "properties": {
+          "event_key": {
+            "type": "string",
+            "title": "Event Key"
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "task_submitted",
+              "task_running",
+              "task_completed",
+              "task_failed"
+            ],
+            "title": "Event Type"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ],
+            "title": "Level"
+          },
+          "occurred_at": {
+            "type": "string",
+            "title": "Occurred At"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "event_key",
+          "event_type",
+          "level",
+          "occurred_at",
+          "message",
+          "metadata"
+        ],
+        "title": "TaskEventResponse"
       },
       "TaskMutationResponse": {
         "properties": {

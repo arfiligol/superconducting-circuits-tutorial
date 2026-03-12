@@ -567,6 +567,8 @@ export interface components {
             dispatch: components["schemas"]["TaskDispatchResponse"];
             progress: components["schemas"]["TaskProgressResponse"];
             result_refs: components["schemas"]["TaskResultRefsResponse"];
+            /** Events */
+            events: components["schemas"]["TaskEventResponse"][];
         };
         /** TaskDispatchResponse */
         TaskDispatchResponse: {
@@ -586,6 +588,29 @@ export interface components {
             accepted_at: string;
             /** Last Updated At */
             last_updated_at: string;
+        };
+        /** TaskEventResponse */
+        TaskEventResponse: {
+            /** Event Key */
+            event_key: string;
+            /**
+             * Event Type
+             * @enum {string}
+             */
+            event_type: "task_submitted" | "task_running" | "task_completed" | "task_failed";
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "info" | "warning" | "error";
+            /** Occurred At */
+            occurred_at: string;
+            /** Message */
+            message: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: string | number | boolean | string[] | null;
+            };
         };
         /** TaskMutationResponse */
         TaskMutationResponse: {
