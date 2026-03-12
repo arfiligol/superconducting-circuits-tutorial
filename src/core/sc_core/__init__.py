@@ -23,6 +23,9 @@ from sc_core.execution import (
     build_worker_audit_summary,
 )
 from sc_core.storage import (
+    DATASET_IMPORT_TRACE_WRITER_VERSION,
+    POSTPROCESS_SWEEP_TRACE_WRITER_VERSION,
+    SIMULATION_RAW_SWEEP_TRACE_WRITER_VERSION,
     STORAGE_CONTRACT_VERSION,
     TRACE_STORE_EVOLUTION_CONTRACT_VERSION,
     TRACE_STORE_SCHEMA_BASELINE_VERSION,
@@ -33,6 +36,7 @@ from sc_core.storage import (
     TraceResultLinkage,
     TraceStoreBackend,
     TraceStoreLocator,
+    TraceStorePayloadLifecycle,
     TraceStorePayloadRole,
     TraceStoreVersionMarkers,
 )
@@ -47,8 +51,11 @@ from sc_core.tasking import (
 )
 
 __all__ = [
+    "DATASET_IMPORT_TRACE_WRITER_VERSION",
     "DEFAULT_PREVIEW_ARTIFACTS",
     "EXECUTION_CONTRACT_VERSION",
+    "POSTPROCESS_SWEEP_TRACE_WRITER_VERSION",
+    "SIMULATION_RAW_SWEEP_TRACE_WRITER_VERSION",
     "STORAGE_CONTRACT_VERSION",
     "TRACE_STORE_EVOLUTION_CONTRACT_VERSION",
     "TRACE_STORE_SCHEMA_BASELINE_VERSION",
@@ -68,6 +75,7 @@ __all__ = [
     "TraceResultLinkage",
     "TraceStoreBackend",
     "TraceStoreLocator",
+    "TraceStorePayloadLifecycle",
     "TraceStorePayloadRole",
     "TraceStoreVersionMarkers",
     "ValidationLevel",
