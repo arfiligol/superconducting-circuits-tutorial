@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Literal, cast
 
@@ -113,10 +114,8 @@ class AnalysisRunProvenance:
             config_snapshot.get("selected_trace_mode_group"),
         )
 
-        analysis_id = _require_str(source_meta.get("analysis_id"), field_name="analysis_id")
-        analysis_label = _first_non_empty_str(source_meta.get("analysis_label"), analysis_id)
-        if analysis_label is None:
-            raise ValueError("analysis_label is required.")
+        analysis_id = _first_non_empty_str(source_meta.get("analysis_id")) or ""
+        analysis_label = _first_non_empty_str(source_meta.get("analysis_label"), analysis_id) or ""
 
         return cls(
             analysis_id=analysis_id,
@@ -147,6 +146,102 @@ class AnalysisRunProvenance:
         if self.trace_mode_group:
             payload["trace_mode_group"] = self.trace_mode_group
         return payload
+
+
+@dataclass(frozen=True)
+class TraceBatchLifecyclePayload:
+    """Canonical lifecycle view over one persisted trace-batch payload boundary."""
+
+    source_kind: str
+    stage_kind: str
+    provenance_payload: dict[str, object]
+    setup_payload: dict[str, object]
+    summary_payload: dict[str, object]
+    setup_kind: str | None = None
+    setup_version: str | None = None
+
+    @classmethod
+    def from_persisted_batch(
+        cls,
+        *,
+        bundle_type: str,
+        role: str,
+        source_meta: Mapping[str, object],
+        config_snapshot: Mapping[str, object],
+        result_payload: Mapping[str, object],
+    ) -> TraceBatchLifecyclePayload:
+        source_kind = _first_non_empty_str(source_meta.get("source_kind"))
+        if source_kind is None:
+            if bundle_type == "simulation_postprocess":
+                source_kind = "circuit_simulation"
+            elif bundle_type == "characterization":
+                source_kind = "analysis"
+            else:
+                source_kind = bundle_type.strip()
+
+        stage_kind = _first_non_empty_str(source_meta.get("stage_kind"))
+        if stage_kind is None:
+            if bundle_type == "circuit_simulation" and role == "cache":
+                stage_kind = "raw"
+            elif bundle_type == "simulation_postprocess":
+                stage_kind = "postprocess"
+            else:
+                stage_kind = role.strip()
+
+        setup_kind = _first_non_empty_str(config_snapshot.get("setup_kind"))
+        if setup_kind is None and source_kind and stage_kind:
+            setup_kind = f"{source_kind}.{stage_kind}"
+
+        setup_version = _first_non_empty_str(
+            config_snapshot.get("setup_version"),
+            source_meta.get("schema_version"),
+        )
+
+        return cls(
+            source_kind=source_kind,
+            stage_kind=stage_kind,
+            provenance_payload=deepcopy(dict(source_meta)),
+            setup_payload=deepcopy(dict(config_snapshot)),
+            summary_payload=deepcopy(dict(result_payload)),
+            setup_kind=setup_kind,
+            setup_version=setup_version,
+        )
+
+    def to_snapshot_payload(self) -> dict[str, object]:
+        return {
+            "source_kind": self.source_kind,
+            "stage_kind": self.stage_kind,
+            "setup_kind": self.setup_kind,
+            "setup_version": self.setup_version,
+            "provenance_payload": deepcopy(self.provenance_payload),
+            "setup_payload": deepcopy(self.setup_payload),
+            "summary_payload": deepcopy(self.summary_payload),
+        }
+
+
+def merge_trace_batch_summary_payload(
+    result_payload: Mapping[str, object],
+    summary_payload: Mapping[str, object],
+) -> dict[str, object]:
+    """Merge summary metadata into canonical or legacy trace-batch payload shapes."""
+    if not summary_payload:
+        return deepcopy(dict(result_payload))
+
+    merged = deepcopy(dict(result_payload))
+    trace_batch_record = merged.get("trace_batch_record")
+    if isinstance(trace_batch_record, dict):
+        existing_summary = trace_batch_record.get("summary_payload")
+        trace_batch_record["summary_payload"] = {
+            **(deepcopy(existing_summary) if isinstance(existing_summary, dict) else {}),
+            **deepcopy(dict(summary_payload)),
+        }
+        merged["trace_batch_record"] = trace_batch_record
+        return merged
+
+    return {
+        **merged,
+        **deepcopy(dict(summary_payload)),
+    }
 
 
 @dataclass(frozen=True)

@@ -33,6 +33,7 @@ from sc_core.storage import (
     StorageRecordHandle,
     StorageRecordKind,
     TraceBatchHandle,
+    TraceBatchLifecyclePayload,
     TraceBatchProvenance,
     TraceResultLinkage,
     TraceStoreBackend,
@@ -40,6 +41,7 @@ from sc_core.storage import (
     TraceStorePayloadLifecycle,
     TraceStorePayloadRole,
     TraceStoreVersionMarkers,
+    merge_trace_batch_summary_payload,
 )
 from sc_core.tasking import (
     LaneName,
@@ -73,6 +75,7 @@ __all__ = [
     "TaskResultHandle",
     "TaskSubmissionKind",
     "TraceBatchHandle",
+    "TraceBatchLifecyclePayload",
     "TraceBatchProvenance",
     "TraceResultLinkage",
     "TraceStoreBackend",
@@ -93,5 +96,6 @@ __all__ = [
     "build_worker_audit_summary",
     "extract_parameters_payload",
     "inspect_circuit_definition_source",
+    "merge_trace_batch_summary_payload",
     "resolve_worker_task_route",
 ]

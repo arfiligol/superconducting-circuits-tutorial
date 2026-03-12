@@ -6,10 +6,12 @@ from sc_core.storage.contracts import (
     StorageRecordHandle,
     StorageRecordKind,
     TraceBatchHandle,
+    TraceBatchLifecyclePayload,
     TraceBatchProvenance,
     TraceResultLinkage,
     TraceStoreBackend,
     TraceStoreLocator,
+    merge_trace_batch_summary_payload,
 )
 from sc_core.storage.evolution import (
     DATASET_IMPORT_TRACE_WRITER_VERSION,
@@ -33,6 +35,7 @@ __all__ = [
     "StorageRecordHandle",
     "StorageRecordKind",
     "TraceBatchHandle",
+    "TraceBatchLifecyclePayload",
     "TraceBatchProvenance",
     "TraceResultLinkage",
     "TraceStoreBackend",
@@ -40,4 +43,5 @@ __all__ = [
     "TraceStorePayloadLifecycle",
     "TraceStorePayloadRole",
     "TraceStoreVersionMarkers",
+    "merge_trace_batch_summary_payload",
 ]
