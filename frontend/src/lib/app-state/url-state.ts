@@ -8,7 +8,12 @@ export type UrlSnapshot = Readonly<{
 }>;
 
 const URL_STATE_EVENT = "app:url-state-change";
+const EMPTY_URL_SNAPSHOT: UrlSnapshot = {
+  pathname: "",
+  search: "",
+};
 let historyPatched = false;
+let cachedUrlSnapshot: UrlSnapshot = EMPTY_URL_SNAPSHOT;
 
 function emitUrlStateChange() {
   window.dispatchEvent(new Event(URL_STATE_EVENT));
@@ -35,15 +40,41 @@ function patchHistoryMethods() {
   };
 }
 
-function getUrlSnapshot(): UrlSnapshot {
-  if (typeof window === "undefined") {
-    return { pathname: "", search: "" };
+export function resolveUrlSnapshot(
+  previousSnapshot: UrlSnapshot,
+  pathname: string,
+  search: string,
+): UrlSnapshot {
+  if (previousSnapshot.pathname === pathname && previousSnapshot.search === search) {
+    return previousSnapshot;
   }
 
   return {
-    pathname: window.location.pathname,
-    search: window.location.search,
+    pathname,
+    search,
   };
+}
+
+function getClientUrlSnapshot(): UrlSnapshot {
+  cachedUrlSnapshot = resolveUrlSnapshot(
+    cachedUrlSnapshot,
+    window.location.pathname,
+    window.location.search,
+  );
+
+  return cachedUrlSnapshot;
+}
+
+function getServerUrlSnapshot(): UrlSnapshot {
+  return EMPTY_URL_SNAPSHOT;
+}
+
+function getUrlSnapshot(): UrlSnapshot {
+  if (typeof window === "undefined") {
+    return getServerUrlSnapshot();
+  }
+
+  return getClientUrlSnapshot();
 }
 
 function subscribeToUrlState(onStoreChange: () => void) {
@@ -63,5 +94,9 @@ function subscribeToUrlState(onStoreChange: () => void) {
 }
 
 export function useUrlState() {
-  return useSyncExternalStore(subscribeToUrlState, getUrlSnapshot, getUrlSnapshot);
+  return useSyncExternalStore(
+    subscribeToUrlState,
+    getUrlSnapshot,
+    getServerUrlSnapshot,
+  );
 }

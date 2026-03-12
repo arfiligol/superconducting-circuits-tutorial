@@ -7,6 +7,7 @@ import {
   resolveActiveDatasetSource,
   shouldAutoSyncRouteDataset,
 } from "../src/lib/app-state/active-dataset-state";
+import { resolveUrlSnapshot } from "../src/lib/app-state/url-state";
 import { mapSessionResponse } from "../src/lib/api/session";
 import { mapTaskSummaryResponse } from "../src/lib/api/tasks";
 import {
@@ -55,6 +56,33 @@ describe("active dataset state helpers", () => {
         status: "error",
       }),
     ).toBe(false);
+  });
+});
+
+describe("url state snapshot helpers", () => {
+  it("reuses the previous snapshot object when pathname and search are unchanged", () => {
+    const snapshot = {
+      pathname: "/circuit-simulation",
+      search: "?definitionId=18&taskId=31",
+    } as const;
+
+    expect(resolveUrlSnapshot(snapshot, snapshot.pathname, snapshot.search)).toBe(snapshot);
+  });
+
+  it("returns a new snapshot when pathname or search changes", () => {
+    const snapshot = {
+      pathname: "/circuit-simulation",
+      search: "?definitionId=18",
+    } as const;
+
+    expect(resolveUrlSnapshot(snapshot, "/circuit-simulation", "?definitionId=24")).toEqual({
+      pathname: "/circuit-simulation",
+      search: "?definitionId=24",
+    });
+    expect(resolveUrlSnapshot(snapshot, "/data-browser", "?datasetId=fluxonium-2025-031")).toEqual({
+      pathname: "/data-browser",
+      search: "?datasetId=fluxonium-2025-031",
+    });
   });
 });
 
