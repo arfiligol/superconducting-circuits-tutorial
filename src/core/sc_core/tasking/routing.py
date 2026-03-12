@@ -31,6 +31,21 @@ class WorkerTaskRoute:
     requires_trace_batch: bool
 
 
+@dataclass(frozen=True)
+class WorkerDispatchPlan:
+    """Canonical queue-dispatch plan for one persisted task submission."""
+
+    lane: LaneName
+    queue_name: LaneName
+    worker_task_name: WorkerTaskName
+    execution_mode: TaskExecutionMode
+    request_ready: bool
+    requires_trace_batch: bool
+    job_timeout: int = -1
+    failure_ttl: int = 86400
+    result_ttl: int = 3600
+
+
 def extract_parameters_payload(request_payload: Mapping[str, object] | None) -> dict[str, object]:
     """Return a shallow parameters payload from one task request body."""
     if request_payload is None:
@@ -84,6 +99,27 @@ def resolve_worker_task_route(
         )
 
     raise ValueError(f"Unsupported task kind '{task_kind}'.")
+
+
+def build_worker_dispatch_plan(
+    route: WorkerTaskRoute,
+    *,
+    job_timeout: int = -1,
+    failure_ttl: int = 86400,
+    result_ttl: int = 3600,
+) -> WorkerDispatchPlan:
+    """Build the canonical queue-dispatch plan for one resolved worker route."""
+    return WorkerDispatchPlan(
+        lane=route.lane,
+        queue_name=route.lane,
+        worker_task_name=route.worker_task_name,
+        execution_mode=route.execution_mode,
+        request_ready=route.request_ready,
+        requires_trace_batch=route.requires_trace_batch,
+        job_timeout=job_timeout,
+        failure_ttl=failure_ttl,
+        result_ttl=result_ttl,
+    )
 
 
 def _build_route(

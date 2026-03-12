@@ -14,6 +14,7 @@ from sc_core.execution import (
     build_task_creation_spec,
     build_task_failed_mutation,
     build_task_heartbeat_mutation,
+    build_task_queued_mutation,
     build_task_running_mutation,
     normalize_task_dedupe_key,
 )
@@ -125,13 +126,12 @@ class TaskRepository:
             task_kind=spec.task_kind,
             status="queued",
             design_id=spec.design_id,
-            trace_batch_id=spec.result_handle.trace_batch_id,
-            analysis_run_id=spec.result_handle.analysis_run_id,
             requested_by=spec.requested_by,
             actor_id=spec.actor_id,
             dedupe_key=spec.dedupe_key,
             request_payload=dict(spec.request_payload),
         )
+        self._apply_task_mutation(task, build_task_queued_mutation(creation_spec=spec))
         self._session.add(task)
         self._session.flush()
         return task

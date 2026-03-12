@@ -8,7 +8,7 @@ from typing import Literal
 from sc_core.tasking import LaneName, WorkerTaskName
 
 ExecutionPhase = Literal["running", "completed", "failed", "crashing"]
-TaskLifecycleStatus = Literal["running", "completed", "failed"]
+TaskLifecycleStatus = Literal["queued", "running", "completed", "failed"]
 TaskAuditActionKind = Literal[
     "worker.task_started",
     "worker.task_completed",
@@ -163,6 +163,39 @@ def normalize_task_dedupe_key(dedupe_key: str | None) -> str | None:
         return None
     normalized = dedupe_key.strip()
     return normalized or None
+
+
+def build_task_queued_payload(
+    *,
+    creation_spec: TaskCreationSpec,
+) -> dict[str, object]:
+    """Build the canonical persisted payload for one queued task."""
+    payload: dict[str, object] = {
+        "contract_version": EXECUTION_CONTRACT_VERSION,
+        "phase": "queued",
+        "summary": f"{creation_spec.task_kind} queued by {creation_spec.requested_by}.",
+        "task_kind": creation_spec.task_kind,
+        "requested_by": creation_spec.requested_by,
+    }
+    if creation_spec.actor_id is not None:
+        payload["actor_id"] = creation_spec.actor_id
+    if creation_spec.dedupe_key is not None:
+        payload["dedupe_key"] = creation_spec.dedupe_key
+    if not creation_spec.result_handle.is_empty():
+        payload["result_refs"] = creation_spec.result_handle.to_payload()
+    return payload
+
+
+def build_task_queued_mutation(
+    *,
+    creation_spec: TaskCreationSpec,
+) -> TaskLifecycleMutation:
+    """Build the canonical queued-state mutation for one newly created task."""
+    return TaskLifecycleMutation(
+        status="queued",
+        progress_payload=build_task_queued_payload(creation_spec=creation_spec),
+        result_handle=creation_spec.result_handle,
+    )
 
 
 def build_task_running_mutation(
