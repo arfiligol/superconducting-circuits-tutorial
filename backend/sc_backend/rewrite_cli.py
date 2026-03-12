@@ -3,6 +3,11 @@
 from collections.abc import Callable
 
 from fastapi import HTTPException
+from src.app.api.presenters.storage import (
+    build_metadata_record_ref_response,
+    build_result_handle_ref_response,
+    build_trace_payload_ref_response,
+)
 from src.app.api.schemas.circuit_definitions import (
     CircuitDefinitionDetailResponse,
     CircuitDefinitionValidationSummaryResponse,
@@ -218,6 +223,15 @@ def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
         result_refs=TaskResultRefsResponse(
             trace_batch_id=task.result_refs.trace_batch_id,
             analysis_run_id=task.result_refs.analysis_run_id,
+            metadata_records=[
+                build_metadata_record_ref_response(record)
+                for record in task.result_refs.metadata_records
+            ],
+            trace_payload=build_trace_payload_ref_response(task.result_refs.trace_payload),
+            result_handles=[
+                build_result_handle_ref_response(handle)
+                for handle in task.result_refs.result_handles
+            ],
         ),
     )
 
