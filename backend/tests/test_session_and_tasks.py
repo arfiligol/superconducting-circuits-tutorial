@@ -1,7 +1,13 @@
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 from sc_core.storage import STORAGE_CONTRACT_VERSION
-from src.app.infrastructure.runtime import reset_runtime_state
+from src.app.infrastructure.runtime import (
+    get_task_service,
+    get_task_snapshot_repository,
+    reset_runtime_state,
+)
 from src.app.main import app
 
 client = TestClient(app)
@@ -264,6 +270,41 @@ def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
     assert reloaded_task["result_refs"]["result_handles"] == created_task["result_refs"][
         "result_handles"
     ]
+
+
+def test_persisted_task_snapshot_changes_flow_through_task_routes() -> None:
+    get_task_service().get_task(302)
+    snapshot_repository = get_task_snapshot_repository()
+    task = snapshot_repository.get_task(302)
+    assert task is not None
+    snapshot_repository.save_task_snapshot(
+        replace(
+            task,
+            status="failed",
+            summary="Persisted task snapshot override",
+            progress=replace(
+                task.progress,
+                phase="failed",
+                percent_complete=100,
+                summary="Persisted failure summary.",
+                updated_at="2026-03-12 11:05:00",
+            ),
+        )
+    )
+
+    reset_runtime_state()
+
+    list_response = client.get("/tasks?status=failed&scope=workspace")
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["task_id"] == 302
+
+    detail_response = client.get("/tasks/302")
+    assert detail_response.status_code == 200
+    payload = detail_response.json()
+    assert payload["status"] == "failed"
+    assert payload["summary"] == "Persisted task snapshot override"
+    assert payload["progress"]["phase"] == "failed"
+    assert payload["progress"]["summary"] == "Persisted failure summary."
 
 
 def test_submit_simulation_task_requires_definition_id() -> None:

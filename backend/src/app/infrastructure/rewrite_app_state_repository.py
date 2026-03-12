@@ -66,12 +66,16 @@ class InMemoryRewriteAppStateRepository:
         self,
         storage_metadata_repository: StorageMetadataRepository | None = None,
         task_snapshot_repository: TaskSnapshotRepository | None = None,
+        *,
+        include_task_scaffold: bool = True,
     ) -> None:
         self._storage_metadata_repository = storage_metadata_repository
         self._task_snapshot_repository = task_snapshot_repository
         self._session_state = _seed_session_state()
-        self._tasks = {task.task_id: task for task in _seed_tasks()}
-        self._next_task_id = max(self._tasks) + 1
+        self._tasks = (
+            {task.task_id: task for task in build_seed_tasks()} if include_task_scaffold else {}
+        )
+        self._next_task_id = max(self._tasks, default=305) + 1
         self._persist_seed_task_snapshots()
         self._persist_seed_storage_metadata()
 
@@ -109,7 +113,7 @@ class InMemoryRewriteAppStateRepository:
             task_snapshot = self._task_snapshot_repository.create_task(draft)
             task_with_result_refs = replace(
                 task_snapshot,
-                result_refs=_build_pending_result_refs(
+                result_refs=build_pending_result_refs(
                     task_id=task_snapshot.task_id,
                     draft=draft,
                 ),
@@ -143,7 +147,7 @@ class InMemoryRewriteAppStateRepository:
                 summary="Task accepted by rewrite in-memory scaffold.",
                 updated_at="2026-03-12 10:30:00",
             ),
-            result_refs=_build_pending_result_refs(task_id=task_id, draft=draft),
+            result_refs=build_pending_result_refs(task_id=task_id, draft=draft),
         )
         self._tasks[task.task_id] = task
         self._next_task_id += 1
@@ -274,7 +278,7 @@ def _seed_session_state() -> SessionState:
     )
 
 
-def _seed_tasks() -> tuple[TaskDetail, ...]:
+def build_seed_tasks() -> tuple[TaskDetail, ...]:
     return (
         TaskDetail(
             task_id=301,
@@ -532,7 +536,7 @@ def _characterization_result_refs() -> TaskResultRefs:
     )
 
 
-def _build_pending_result_refs(
+def build_pending_result_refs(
     *,
     task_id: int,
     draft: TaskCreateDraft,
@@ -565,6 +569,10 @@ def _build_pending_result_refs(
             ),
         ),
     )
+
+
+def _seed_tasks() -> tuple[TaskDetail, ...]:
+    return build_seed_tasks()
 
 
 def _default_result_handle_kind(task_kind: str) -> ResultHandleKind:

@@ -1,11 +1,12 @@
 from dataclasses import replace
 
-from sc_core.execution import TaskResultHandle
-from src.app.domain.tasks import TaskResultRefs, TaskSubmissionDraft
+from src.app.domain.tasks import TaskSubmissionDraft
 from src.app.infrastructure.runtime import (
     get_rewrite_app_state_repository,
+    get_rewrite_task_repository,
     get_storage_metadata_repository,
     get_task_service,
+    get_task_snapshot_repository,
     reset_runtime_state,
 )
 from src.app.infrastructure.storage_reference_factory import build_result_handle_ref
@@ -50,27 +51,16 @@ def test_runtime_bootstrap_persists_seeded_trace_payload_and_materialized_handle
     )
 
 
-def test_get_task_hydrates_result_refs_from_persisted_storage_when_memory_slice_is_empty() -> None:
+def test_task_service_uses_persisted_task_repository_not_app_state_scaffold() -> None:
     app_state_repository = get_rewrite_app_state_repository()
-    original_task = app_state_repository.get_task(303)
+    persisted_task = get_task_service().get_task(303)
 
-    assert original_task is not None
-    app_state_repository._tasks[303] = replace(  # pyright: ignore[reportPrivateUsage]
-        original_task,
-        result_refs=TaskResultRefs(
-            result_handle=TaskResultHandle(),
-            metadata_records=(),
-            trace_payload=None,
-            result_handles=(),
-        ),
+    assert app_state_repository.list_tasks() == []
+    assert app_state_repository.get_task(303) is None
+    assert persisted_task.result_refs.trace_batch_id == 88
+    assert persisted_task.result_refs.result_handles[0].handle_id == (
+        "result:fluxonium-2025-031:fit-summary"
     )
-
-    hydrated_task = get_task_service().get_task(303)
-
-    assert hydrated_task.result_refs.trace_batch_id == 88
-    assert hydrated_task.result_refs.metadata_records == original_task.result_refs.metadata_records
-    assert hydrated_task.result_refs.trace_payload == original_task.result_refs.trace_payload
-    assert hydrated_task.result_refs.result_handles == original_task.result_refs.result_handles
 
 
 def test_runtime_reset_prefers_persisted_result_handle_over_seed_defaults() -> None:
@@ -105,6 +95,33 @@ def test_runtime_reset_prefers_persisted_result_handle_over_seed_defaults() -> N
     assert reloaded_task.result_refs.metadata_records[1].version == 9
 
 
+def test_runtime_reset_prefers_persisted_task_snapshot_over_scaffold_defaults() -> None:
+    task_snapshot_repository = get_task_snapshot_repository()
+    initial_task = get_task_service().get_task(302)
+    updated_task = replace(
+        initial_task,
+        status="failed",
+        summary="Persisted task snapshot override",
+        progress=replace(
+            initial_task.progress,
+            phase="failed",
+            percent_complete=100,
+            summary="Persisted failure summary.",
+            updated_at="2026-03-12 11:05:00",
+        ),
+    )
+    task_snapshot_repository.save_task_snapshot(updated_task)
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(302)
+
+    assert reloaded_task.status == "failed"
+    assert reloaded_task.summary == "Persisted task snapshot override"
+    assert reloaded_task.progress.phase == "failed"
+    assert reloaded_task.progress.summary == "Persisted failure summary."
+
+
 def test_runtime_reset_keeps_submitted_task_row_and_storage_refs() -> None:
     submitted_task = get_task_service().submit_task(
         TaskSubmissionDraft(
@@ -123,3 +140,4 @@ def test_runtime_reset_keeps_submitted_task_row_and_storage_refs() -> None:
     assert reloaded_task.status == "queued"
     assert reloaded_task.dataset_id == "fluxonium-2025-031"
     assert reloaded_task.result_refs.result_handles == submitted_task.result_refs.result_handles
+    assert get_rewrite_task_repository().get_task(submitted_task.task_id) is not None

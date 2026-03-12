@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from alembic import command
@@ -11,7 +12,7 @@ from src.app.infrastructure.persistence import (
     build_sqlite_database_url,
     create_metadata_session_factory,
 )
-from src.app.infrastructure.rewrite_app_state_repository import _seed_tasks
+from src.app.infrastructure.rewrite_app_state_repository import build_seed_tasks
 
 
 def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -> None:
@@ -21,7 +22,7 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
         create_metadata_session_factory(str(database_path))
     )
 
-    seeded_task = _seed_tasks()[2]
+    seeded_task = build_seed_tasks()[2]
 
     assert repository.has_tasks() is False
     persisted_seed = repository.save_task_snapshot(seeded_task)
@@ -59,6 +60,25 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert created.result_refs.result_handles == ()
     assert repository.get_task(304) == created
     assert [task.task_id for task in repository.list_tasks()] == [303, 304]
+
+    updated = repository.save_task_snapshot(
+        replace(
+            created,
+            status="failed",
+            summary="Persisted failure snapshot",
+            progress=replace(
+                created.progress,
+                phase="failed",
+                percent_complete=100,
+                summary="Persisted failure summary.",
+                updated_at="2026-03-12 11:05:00",
+            ),
+        )
+    )
+    assert updated.status == "failed"
+    persisted_updated = repository.get_task(304)
+    assert persisted_updated is not None
+    assert persisted_updated.progress.summary == "Persisted failure summary."
 
 
 def _upgrade_schema(database_path: Path) -> None:
