@@ -1,0 +1,414 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  mapTaskDetailResponse,
+  taskDetailKey,
+  unwrapTaskMutation,
+} from "../src/lib/api/tasks";
+import {
+  parseSimulationDefinitionIdParam,
+  resolveSimulationDefinitionId,
+} from "../src/features/simulation/lib/definition-id";
+import {
+  buildSimulationRequestSummary,
+  filterSimulationDefinitions,
+  filterSimulationTasks,
+  resolveLatestSimulationTask,
+  resolveSimulationSelectionRecovery,
+  resolveSimulationTaskAttachmentState,
+  resolveSimulationTaskRecovery,
+  summarizeSimulationTaskResults,
+  summarizeSimulationTasks,
+} from "../src/features/simulation/lib/workflow";
+
+describe("simulation definition routing helpers", () => {
+  const definitions = [
+    {
+      definition_id: 18,
+      name: "FloatingQubitWithXYLine",
+      created_at: "2026-03-08 18:19:42",
+      element_count: 12,
+      validation_status: "warning",
+      preview_artifact_count: 2,
+    },
+    {
+      definition_id: 24,
+      name: "TransmonControlReference",
+      created_at: "2026-03-10 09:22:11",
+      element_count: 7,
+      validation_status: "ok",
+      preview_artifact_count: 3,
+    },
+  ] as const;
+
+  it("parses numeric simulation definition ids", () => {
+    expect(parseSimulationDefinitionIdParam("24")).toBe(24);
+    expect(parseSimulationDefinitionIdParam("new")).toBeNull();
+    expect(parseSimulationDefinitionIdParam(null)).toBeNull();
+  });
+
+  it("falls back to the first definition when routing is missing or invalid", () => {
+    expect(resolveSimulationDefinitionId(null, definitions)).toBe(18);
+    expect(resolveSimulationDefinitionId("999", definitions)).toBe(18);
+  });
+
+  it("filters the simulation definition catalog and reports invalid route recovery", () => {
+    expect(filterSimulationDefinitions(definitions, "trans")).toEqual([definitions[1]]);
+    expect(resolveSimulationSelectionRecovery("bad", 18, definitions)?.title).toBe(
+      "Invalid URL selection",
+    );
+  });
+});
+
+describe("simulation task workflow helpers", () => {
+  const tasks = [
+    {
+      taskId: 31,
+      kind: "simulation",
+      lane: "simulation",
+      executionMode: "run",
+      status: "running",
+      submittedAt: "2026-03-12 10:20:00",
+      ownerUserId: "user-dev-01",
+      ownerDisplayName: "Device Lab",
+      workspaceId: "workspace-lab",
+      workspaceSlug: "device-lab",
+      visibilityScope: "workspace",
+      datasetId: "fluxonium-2025-031",
+      definitionId: 18,
+      summary: "Simulation request for FloatingQubitWithXYLine",
+    },
+    {
+      taskId: 29,
+      kind: "post_processing",
+      lane: "simulation",
+      executionMode: "run",
+      status: "completed",
+      submittedAt: "2026-03-12 10:10:00",
+      ownerUserId: "user-dev-01",
+      ownerDisplayName: "Device Lab",
+      workspaceId: "workspace-lab",
+      workspaceSlug: "device-lab",
+      visibilityScope: "workspace",
+      datasetId: "fluxonium-2025-031",
+      definitionId: 18,
+      summary: "Post-processing request for FloatingQubitWithXYLine",
+    },
+    {
+      taskId: 28,
+      kind: "characterization",
+      lane: "characterization",
+      executionMode: "run",
+      status: "failed",
+      submittedAt: "2026-03-12 09:55:00",
+      ownerUserId: "user-dev-02",
+      ownerDisplayName: "Analysis Team",
+      workspaceId: "workspace-lab",
+      workspaceSlug: "device-lab",
+      visibilityScope: "owned",
+      datasetId: "transmon-014",
+      definitionId: null,
+      summary: "Characterization task",
+    },
+  ] as const;
+
+  it("builds stable submission summaries and chooses the latest simulation task", () => {
+    expect(
+      buildSimulationRequestSummary({
+        kind: "simulation",
+        definitionId: 18,
+        definitionName: "FloatingQubitWithXYLine",
+        datasetId: "fluxonium-2025-031",
+        datasetName: "Fluxonium sweep 031",
+        note: "cache validation",
+      }),
+    ).toBe(
+      "Simulation request for FloatingQubitWithXYLine · dataset Fluxonium sweep 031 · cache validation",
+    );
+    expect(resolveLatestSimulationTask(tasks)?.taskId).toBe(31);
+  });
+
+  it("filters and summarizes simulation-lane tasks", () => {
+    const filtered = filterSimulationTasks(tasks, {
+      searchQuery: "floating",
+      scope: "definition",
+      statusFilter: "all",
+      selectedDefinitionId: 18,
+      activeDatasetId: "fluxonium-2025-031",
+    });
+
+    expect(filtered.map((task) => task.taskId)).toEqual([31, 29]);
+    expect(summarizeSimulationTasks(filtered)).toEqual({
+      total: 2,
+      activeCount: 1,
+      completedCount: 1,
+      failedCount: 0,
+      resultBackedCount: 1,
+    });
+  });
+
+  it("reports task recovery and attachment state", () => {
+    expect(resolveSimulationTaskRecovery(91, 31, new Error("not found"))?.title).toBe(
+      "Task reattach available",
+    );
+    expect(
+      resolveSimulationTaskAttachmentState(
+        {
+          taskId: 29,
+          kind: "post_processing",
+          lane: "simulation",
+          executionMode: "run",
+          status: "completed",
+          submittedAt: "2026-03-12 10:10:00",
+          ownerUserId: "user-dev-01",
+          ownerDisplayName: "Device Lab",
+          workspaceId: "workspace-lab",
+          workspaceSlug: "device-lab",
+          visibilityScope: "workspace",
+          datasetId: "fluxonium-2025-031",
+          definitionId: 18,
+          summary: "Post-processing request for FloatingQubitWithXYLine",
+          queueBackend: "in_memory_scaffold",
+          workerTaskName: "post_processing_run_task",
+          requestReady: true,
+          submittedFromActiveDataset: true,
+          progress: {
+            phase: "completed",
+            percentComplete: 100,
+            summary: "Post-processing complete",
+            updatedAt: "2026-03-12 10:11:00",
+          },
+          resultRefs: {
+            traceBatchId: 44,
+            analysisRunId: 9,
+            metadataRecords: [],
+            tracePayload: null,
+            resultHandles: [],
+          },
+        },
+        31,
+      ),
+    ).toEqual({
+      isAttached: false,
+      isStaleSnapshot: true,
+    });
+  });
+
+  it("summarizes task result refs", () => {
+    expect(
+      summarizeSimulationTaskResults({
+        taskId: 29,
+        kind: "post_processing",
+        lane: "simulation",
+        executionMode: "run",
+        status: "completed",
+        submittedAt: "2026-03-12 10:10:00",
+        ownerUserId: "user-dev-01",
+        ownerDisplayName: "Device Lab",
+        workspaceId: "workspace-lab",
+        workspaceSlug: "device-lab",
+        visibilityScope: "workspace",
+        datasetId: "fluxonium-2025-031",
+        definitionId: 18,
+        summary: "Post-processing request for FloatingQubitWithXYLine",
+        queueBackend: "in_memory_scaffold",
+        workerTaskName: "post_processing_run_task",
+        requestReady: true,
+        submittedFromActiveDataset: true,
+        progress: {
+          phase: "completed",
+          percentComplete: 100,
+          summary: "Post-processing complete",
+          updatedAt: "2026-03-12 10:11:00",
+        },
+        resultRefs: {
+          traceBatchId: 44,
+          analysisRunId: 9,
+          metadataRecords: [
+            {
+              backend: "sqlite_metadata",
+              recordType: "trace_batch",
+              recordId: "trace-batch-44",
+              version: 1,
+              schemaVersion: "trace-batch/v1",
+            },
+          ],
+          tracePayload: {
+            contractVersion: "trace-payload/v1",
+            backend: "local_zarr",
+            payloadRole: "task_output",
+            storeKey: "trace-output-44",
+            storeUri: "/data/trace-output-44.zarr",
+            groupPath: "/",
+            arrayPath: "/s11",
+            dtype: "float64",
+            shape: [801],
+            chunkShape: [128],
+            schemaVersion: "zarr/v2",
+          },
+          resultHandles: [
+            {
+              contractVersion: "result-handle/v1",
+              handleId: "handle-44",
+              kind: "simulation_trace",
+              status: "materialized",
+              label: "S11",
+              metadataRecord: {
+                backend: "sqlite_metadata",
+                recordType: "result_handle",
+                recordId: "handle-44",
+                version: 1,
+                schemaVersion: "result-handle/v1",
+              },
+              payloadBackend: "local_zarr",
+              payloadFormat: "zarr",
+              payloadRole: "trace_payload",
+              payloadLocator: "/data/trace-output-44.zarr",
+              provenanceTaskId: 29,
+              provenance: {
+                sourceDatasetId: "fluxonium-2025-031",
+                sourceTaskId: 29,
+                traceBatchRecord: null,
+                analysisRunRecord: null,
+              },
+            },
+          ],
+        },
+      }),
+    ).toEqual({
+      metadataRecordCount: 1,
+      resultHandleCount: 1,
+      materializedHandleCount: 1,
+      hasTracePayload: true,
+      traceBatchId: 44,
+      analysisRunId: 9,
+    });
+  });
+});
+
+describe("task api detail mapping", () => {
+  it("maps task detail responses, detail keys, and mutation envelopes", () => {
+    expect(taskDetailKey(31)).toBe("/api/backend/tasks/31");
+
+    const detail = mapTaskDetailResponse({
+      task_id: 31,
+      kind: "simulation",
+      lane: "simulation",
+      execution_mode: "run",
+      status: "running",
+      submitted_at: "2026-03-12 10:20:00",
+      owner_user_id: "user-dev-01",
+      owner_display_name: "Device Lab",
+      workspace_id: "workspace-lab",
+      workspace_slug: "device-lab",
+      visibility_scope: "workspace",
+      dataset_id: "fluxonium-2025-031",
+      definition_id: 18,
+      summary: "Simulation request for FloatingQubitWithXYLine",
+      queue_backend: "in_memory_scaffold",
+      worker_task_name: "simulation_run_task",
+      request_ready: true,
+      submitted_from_active_dataset: true,
+      progress: {
+        phase: "running",
+        percent_complete: 62,
+        summary: "point 5/8",
+        updated_at: "2026-03-12 10:21:00",
+      },
+      result_refs: {
+        trace_batch_id: 44,
+        analysis_run_id: null,
+        metadata_records: [
+          {
+            backend: "sqlite_metadata",
+            record_type: "trace_batch",
+            record_id: "trace-batch-44",
+            version: 1,
+            schema_version: "trace-batch/v1",
+          },
+        ],
+        trace_payload: {
+          contract_version: "trace-payload/v1",
+          backend: "local_zarr",
+          payload_role: "task_output",
+          store_key: "trace-output-44",
+          store_uri: "/data/trace-output-44.zarr",
+          group_path: "/",
+          array_path: "/s11",
+          dtype: "float64",
+          shape: [801],
+          chunk_shape: [128],
+          schema_version: "zarr/v2",
+        },
+        result_handles: [
+          {
+            contract_version: "result-handle/v1",
+            handle_id: "handle-44",
+            kind: "simulation_trace",
+            status: "materialized",
+            label: "S11",
+            metadata_record: {
+              backend: "sqlite_metadata",
+              record_type: "result_handle",
+              record_id: "handle-44",
+              version: 1,
+              schema_version: "result-handle/v1",
+            },
+            payload_backend: "local_zarr",
+            payload_format: "zarr",
+            payload_role: "trace_payload",
+            payload_locator: "/data/trace-output-44.zarr",
+            provenance_task_id: 31,
+            provenance: {
+              source_dataset_id: "fluxonium-2025-031",
+              source_task_id: 31,
+              trace_batch_record: null,
+              analysis_run_record: null,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(detail.resultRefs.traceBatchId).toBe(44);
+    expect(detail.resultRefs.resultHandles[0]?.handleId).toBe("handle-44");
+    expect(
+      unwrapTaskMutation({
+        operation: "submitted",
+        task: {
+          task_id: 31,
+          kind: "simulation",
+          lane: "simulation",
+          execution_mode: "run",
+          status: "running",
+          submitted_at: "2026-03-12 10:20:00",
+          owner_user_id: "user-dev-01",
+          owner_display_name: "Device Lab",
+          workspace_id: "workspace-lab",
+          workspace_slug: "device-lab",
+          visibility_scope: "workspace",
+          dataset_id: "fluxonium-2025-031",
+          definition_id: 18,
+          summary: "Simulation request for FloatingQubitWithXYLine",
+          queue_backend: "in_memory_scaffold",
+          worker_task_name: "simulation_run_task",
+          request_ready: true,
+          submitted_from_active_dataset: true,
+          progress: {
+            phase: "running",
+            percent_complete: 62,
+            summary: "point 5/8",
+            updated_at: "2026-03-12 10:21:00",
+          },
+          result_refs: {
+            trace_batch_id: 44,
+            analysis_run_id: null,
+            metadata_records: [],
+            trace_payload: null,
+            result_handles: [],
+          },
+        },
+      }).taskId,
+    ).toBe(31);
+  });
+});
