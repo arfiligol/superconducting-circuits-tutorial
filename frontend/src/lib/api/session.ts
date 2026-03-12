@@ -1,39 +1,9 @@
 import { apiRequest } from "@/lib/api/client";
 
-type SessionResponseShape = Readonly<{
-  session_id: string;
-  auth: Readonly<{
-    state: "authenticated" | "anonymous";
-    mode: "development_stub";
-    scopes: readonly string[];
-    can_submit_tasks: boolean;
-    can_manage_datasets: boolean;
-  }>;
-  identity:
-    | Readonly<{
-        user_id: string;
-        display_name: string;
-        email: string | null;
-      }>
-    | null;
-  workspace: Readonly<{
-    workspace_id: string;
-    slug: string;
-    display_name: string;
-    role: "owner" | "member" | "viewer";
-    default_task_scope: "workspace" | "owned";
-    active_dataset:
-      | Readonly<{
-          dataset_id: string;
-          name: string;
-          family: string;
-          status: "Ready" | "Queued" | "Review";
-          owner: string;
-          access_scope: "workspace" | "shared";
-        }>
-      | null;
-  }>;
-}>;
+import { components } from "./generated/schema";
+
+type SessionResponseShape = components["schemas"]["SessionResponse"];
+
 
 export type SessionSnapshot = Readonly<{
   sessionId: string;

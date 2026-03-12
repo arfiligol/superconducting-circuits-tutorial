@@ -20,6 +20,10 @@ describe("data browser routing helpers", () => {
       updated_at: "2026-02-26 13:40",
       samples: 184,
       status: "Ready",
+      device_type: "simulator",
+      source: "manual",
+      capability_count: 0,
+      tag_count: 0,
     },
     {
       dataset_id: "transmon-coupler-014",
@@ -29,6 +33,10 @@ describe("data browser routing helpers", () => {
       updated_at: "2026-02-24 09:15",
       samples: 76,
       status: "Review",
+      device_type: "simulator",
+      source: "manual",
+      capability_count: 0,
+      tag_count: 0,
     },
   ] as const;
 

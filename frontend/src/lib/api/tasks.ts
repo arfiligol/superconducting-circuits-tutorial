@@ -1,21 +1,9 @@
 import { apiRequest } from "@/lib/api/client";
 
-type TaskSummaryResponseShape = Readonly<{
-  task_id: number;
-  kind: "simulation" | "post_processing" | "characterization";
-  lane: "simulation" | "characterization";
-  execution_mode: "run" | "smoke";
-  status: "queued" | "running" | "completed" | "failed";
-  submitted_at: string;
-  owner_user_id: string;
-  owner_display_name: string;
-  workspace_id: string;
-  workspace_slug: string;
-  visibility_scope: "workspace" | "owned";
-  dataset_id: string | null;
-  definition_id: number | null;
-  summary: string;
-}>;
+import { components } from "./generated/schema";
+
+type TaskSummaryResponseShape = components["schemas"]["TaskSummaryResponse"];
+
 
 export type TaskSummary = Readonly<{
   taskId: number;
