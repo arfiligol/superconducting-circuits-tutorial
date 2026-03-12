@@ -2,6 +2,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 DEFAULT_DATABASE_PATH = "data/database.db"
 
@@ -20,6 +21,15 @@ def build_sqlite_database_url(database_path: Path) -> str:
 
 def create_metadata_engine(configured_path: str = DEFAULT_DATABASE_PATH) -> Engine:
     return create_engine(build_sqlite_database_url(resolve_metadata_database_path(configured_path)))
+
+
+def create_metadata_session_factory(
+    configured_path: str = DEFAULT_DATABASE_PATH,
+) -> sessionmaker[Session]:
+    return sessionmaker(
+        bind=create_metadata_engine(configured_path),
+        expire_on_commit=False,
+    )
 
 
 def _repo_root() -> Path:

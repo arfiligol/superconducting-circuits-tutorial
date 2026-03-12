@@ -1,6 +1,7 @@
 from src.app.infrastructure.persistence.database import (
     build_sqlite_database_url,
     create_metadata_engine,
+    create_metadata_session_factory,
     resolve_metadata_database_path,
 )
 from src.app.infrastructure.persistence.models import (
@@ -9,13 +10,18 @@ from src.app.infrastructure.persistence.models import (
     RewriteStorageRecord,
     RewriteTracePayloadRecord,
 )
+from src.app.infrastructure.persistence.storage_metadata_repository import (
+    SqliteRewriteStorageMetadataRepository,
+)
 
 __all__ = [
     "RewriteMetadataBase",
     "RewriteResultHandleRecord",
     "RewriteStorageRecord",
     "RewriteTracePayloadRecord",
+    "SqliteRewriteStorageMetadataRepository",
     "build_sqlite_database_url",
     "create_metadata_engine",
+    "create_metadata_session_factory",
     "resolve_metadata_database_path",
 ]
