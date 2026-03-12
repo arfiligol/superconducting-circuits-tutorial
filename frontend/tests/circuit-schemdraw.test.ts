@@ -13,12 +13,16 @@ describe("circuit schemdraw routing helpers", () => {
       name: "FloatingQubitWithXYLine",
       created_at: "2026-03-08 18:19:42",
       element_count: 12,
+      validation_status: "warning",
+      preview_artifact_count: 2,
     },
     {
       definition_id: 12,
       name: "FluxoniumReadoutChain",
       created_at: "2026-03-05 11:14:03",
       element_count: 9,
+      validation_status: "warning",
+      preview_artifact_count: 1,
     },
   ] as const;
 
@@ -47,10 +51,17 @@ describe("circuit schemdraw readiness inference", () => {
       name: "FloatingQubitWithXYLine",
       created_at: "2026-03-08 18:19:42",
       element_count: 12,
+      validation_status: "ok",
+      preview_artifact_count: 2,
       source_text: "circuit:\n  name: fluxonium_reference_a\n",
       normalized_output:
         '{ "circuit": "fluxonium_reference_a", "elements": 3, "ports": "pending", "schemdraw_ready": true }',
       validation_notices: [{ level: "ok", message: "Canonical schema matches rewrite draft v1." }],
+      validation_summary: {
+        status: "ok",
+        notice_count: 1,
+        warning_count: 0,
+      },
       preview_artifacts: ["definition.normalized.json", "schematic-input.yaml"],
     });
 
@@ -66,9 +77,16 @@ describe("circuit schemdraw readiness inference", () => {
       name: "FluxoniumReadoutChain",
       created_at: "2026-03-05 11:14:03",
       element_count: 9,
+      validation_status: "warning",
+      preview_artifact_count: 1,
       source_text: "circuit:\n  name: fluxonium_readout_chain\n",
       normalized_output: '{ "schemdraw_ready": true }',
       validation_notices: [{ level: "warning", message: "Port mapping metadata still needs migration." }],
+      validation_summary: {
+        status: "warning",
+        notice_count: 1,
+        warning_count: 1,
+      },
       preview_artifacts: ["definition.normalized.json"],
     });
 

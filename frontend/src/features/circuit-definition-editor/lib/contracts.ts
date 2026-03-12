@@ -1,24 +1,15 @@
-export type DefinitionValidationNotice = Readonly<{
-  level: "ok" | "warning";
-  message: string;
-}>;
+import { components } from "@/lib/api/generated/schema";
 
-export type CircuitDefinitionSummary = Readonly<{
-  definition_id: number;
-  name: string;
-  created_at: string;
-  element_count: number;
-}>;
+export type DefinitionValidationNotice = components["schemas"]["ValidationNoticeResponse"];
 
-export type CircuitDefinitionDetail = CircuitDefinitionSummary &
-  Readonly<{
-    source_text: string;
-    normalized_output: string;
-    validation_notices: readonly DefinitionValidationNotice[];
-    preview_artifacts: readonly string[];
-  }>;
+export type CircuitDefinitionValidationSummary =
+  components["schemas"]["CircuitDefinitionValidationSummaryResponse"];
 
-export type CircuitDefinitionDraft = Readonly<{
-  name: string;
-  source_text: string;
-}>;
+export type CircuitDefinitionSummary = components["schemas"]["CircuitDefinitionSummaryResponse"];
+
+export type CircuitDefinitionDetail = components["schemas"]["CircuitDefinitionDetailResponse"];
+
+export type CircuitDefinitionMutationResponse =
+  components["schemas"]["CircuitDefinitionMutationResponse"];
+
+export type CircuitDefinitionDraft = components["schemas"]["CircuitDefinitionCreateRequest"];

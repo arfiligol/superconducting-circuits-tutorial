@@ -3,6 +3,7 @@ import { apiRequest } from "@/lib/api/client";
 import type {
   CircuitDefinitionDetail,
   CircuitDefinitionDraft,
+  CircuitDefinitionMutationResponse,
   CircuitDefinitionSummary,
 } from "@/features/circuit-definition-editor/lib/contracts";
 
@@ -10,6 +11,12 @@ export const circuitDefinitionsListKey = "/api/backend/circuit-definitions";
 
 export function circuitDefinitionDetailKey(definitionId: number) {
   return `/api/backend/circuit-definitions/${definitionId}`;
+}
+
+export function unwrapCircuitDefinitionMutation(
+  response: CircuitDefinitionMutationResponse,
+): CircuitDefinitionDetail {
+  return response.definition;
 }
 
 export async function listCircuitDefinitions() {
@@ -21,20 +28,27 @@ export async function getCircuitDefinition(definitionId: number) {
 }
 
 export async function createCircuitDefinition(payload: CircuitDefinitionDraft) {
-  return apiRequest<CircuitDefinitionDetail>(circuitDefinitionsListKey, {
+  const response = await apiRequest<CircuitDefinitionMutationResponse>(circuitDefinitionsListKey, {
     method: "POST",
     body: payload,
   });
+
+  return unwrapCircuitDefinitionMutation(response);
 }
 
 export async function updateCircuitDefinition(
   definitionId: number,
   payload: CircuitDefinitionDraft,
 ) {
-  return apiRequest<CircuitDefinitionDetail>(circuitDefinitionDetailKey(definitionId), {
-    method: "PUT",
-    body: payload,
-  });
+  const response = await apiRequest<CircuitDefinitionMutationResponse>(
+    circuitDefinitionDetailKey(definitionId),
+    {
+      method: "PUT",
+      body: payload,
+    },
+  );
+
+  return unwrapCircuitDefinitionMutation(response);
 }
 
 export async function deleteCircuitDefinition(definitionId: number) {
