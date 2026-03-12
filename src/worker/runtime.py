@@ -66,7 +66,7 @@ def _persist_transition(
 ) -> None:
     """Persist one shared orchestration transition and its optional audit record."""
     with get_unit_of_work() as uow:
-        uow.tasks.apply_lifecycle_mutation(task_id, transition.mutation)
+        uow.tasks.apply_execution_transition(task_id, transition)
         if transition.audit_action_kind is not None and transition.audit_summary is not None:
             uow.audit_logs.append_log(
                 actor_id=actor_id,

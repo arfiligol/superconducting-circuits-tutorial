@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Final, cast
+
+from sc_core.execution import (
+    STALE_TASK_TIMEOUT_ERROR_CODE,
+    build_reconcile_stale_task_transition,
+)
 
 from core.shared.persistence.models import TraceBatchRecord
 from core.shared.persistence.trace_store import (
@@ -14,7 +19,7 @@ from core.shared.persistence.trace_store import (
 )
 from core.shared.persistence.unit_of_work import SqliteUnitOfWork
 
-_STALE_TASK_RECONCILE_REASON: Final[str] = "stale_task_timeout"
+_STALE_TASK_RECONCILE_REASON: Final[str] = STALE_TASK_TIMEOUT_ERROR_CODE
 _ORPHAN_BATCH_RECONCILE_REASON: Final[str] = "orphan_incomplete_batch"
 
 
@@ -27,6 +32,11 @@ class ReconcileSummary:
     orphan_batch_ids: list[int] = field(default_factory=list)
     deleted_store_keys: list[str] = field(default_factory=list)
     audit_log_ids: list[int] = field(default_factory=list)
+
+
+def _utcnow() -> datetime:
+    """Return one naive UTC timestamp without using deprecated utcnow()."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _extract_store_keys(batch: TraceBatchRecord) -> list[str]:
@@ -78,6 +88,32 @@ def _reconcile_summary_payload(*, reason: str, stale_before: datetime) -> dict[s
     }
 
 
+def _persist_task_reconcile_transition(
+    uow: SqliteUnitOfWork,
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    stale_before: datetime,
+) -> int | None:
+    transition = build_reconcile_stale_task_transition(
+        task_id=task_id,
+        recorded_at=recorded_at,
+        stale_before=stale_before,
+    )
+    uow.tasks.apply_execution_transition(task_id, transition)
+    if transition.audit_action_kind is None or transition.audit_summary is None:
+        return None
+    log = uow.audit_logs.append_log(
+        actor_id=None,
+        action_kind=transition.audit_action_kind,
+        resource_kind="task",
+        resource_id=task_id,
+        summary=transition.audit_summary,
+        payload=transition.audit_payload,
+    )
+    return int(log.id) if log.id is not None else None
+
+
 def reconcile_stale_tasks_and_batches(
     uow: SqliteUnitOfWork,
     *,
@@ -112,26 +148,14 @@ def reconcile_stale_tasks_and_batches(
                 )
                 failed_batch_ids.append(related_batch_id)
 
-        uow.tasks.mark_failed(
-            int(task.id),
-            {
-                "error_code": _STALE_TASK_RECONCILE_REASON,
-                "summary": "Task marked failed during reconcile.",
-                "details": {
-                    "stale_before": stale_before.isoformat(),
-                },
-            },
+        audit_log_id = _persist_task_reconcile_transition(
+            uow,
+            task_id=int(task.id),
+            recorded_at=_utcnow(),
+            stale_before=stale_before,
         )
-        log = uow.audit_logs.append_log(
-            actor_id=None,
-            action_kind="reconcile.task_failed",
-            resource_kind="task",
-            resource_id=int(task.id),
-            summary=f"Reconciled stale task {int(task.id)}",
-            payload={"stale_before": stale_before.isoformat()},
-        )
-        if log.id is not None:
-            audit_log_ids.append(int(log.id))
+        if audit_log_id is not None:
+            audit_log_ids.append(audit_log_id)
 
     for batch in uow.result_bundles.list_incomplete_batches():
         if batch.id is None:

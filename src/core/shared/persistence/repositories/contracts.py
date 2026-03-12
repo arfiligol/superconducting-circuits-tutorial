@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
-from sc_core.execution import TaskCreationSpec, TaskLifecycleMutation
+from sc_core.execution import TaskCreationSpec, TaskExecutionTransition, TaskLifecycleMutation
 from sc_core.storage import TraceResultLinkage
 
 from core.shared.persistence.models import AnalysisRunRecord, AuditLogRecord, TaskRecord, UserRecord
@@ -58,6 +58,12 @@ class TaskPersistenceContract(Protocol):
     ) -> TaskRecord: ...
 
     def apply_lifecycle_mutation(self, task_id: int, mutation: TaskLifecycleMutation) -> None: ...
+
+    def apply_execution_transition(
+        self,
+        task_id: int,
+        transition: TaskExecutionTransition,
+    ) -> None: ...
 
     def mark_running(self, task_id: int) -> None: ...
 

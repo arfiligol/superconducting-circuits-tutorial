@@ -8,12 +8,13 @@ from typing import Any
 
 from sc_core.execution import (
     TaskCreationSpec,
+    TaskExecutionTransition,
     TaskLifecycleMutation,
     TaskResultHandle,
     build_task_completed_mutation,
     build_task_creation_spec,
     build_task_failed_mutation,
-    build_task_heartbeat_mutation,
+    build_task_heartbeat_transition,
     build_task_queued_transition,
     build_task_running_mutation,
     normalize_task_dedupe_key,
@@ -144,6 +145,14 @@ class TaskRepository:
         self._session.add(task)
         self._session.flush()
 
+    def apply_execution_transition(
+        self,
+        task_id: int,
+        transition: TaskExecutionTransition,
+    ) -> None:
+        """Apply one canonical orchestration transition to a persisted task record."""
+        self.apply_lifecycle_mutation(task_id, transition.mutation)
+
     def mark_running(self, task_id: int) -> None:
         """Mark one task as running and stamp start/heartbeat timestamps."""
         self.apply_lifecycle_mutation(
@@ -153,9 +162,9 @@ class TaskRepository:
 
     def heartbeat(self, task_id: int, progress_payload: dict[str, Any]) -> None:
         """Persist one task heartbeat and progress snapshot."""
-        self.apply_lifecycle_mutation(
+        self.apply_execution_transition(
             task_id,
-            build_task_heartbeat_mutation(
+            build_task_heartbeat_transition(
                 recorded_at=_utcnow(),
                 progress_payload=progress_payload,
             ),

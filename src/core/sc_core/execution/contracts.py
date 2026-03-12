@@ -15,9 +15,17 @@ TaskAuditActionKind = Literal[
     "worker.task_failed",
     "worker.task_crashing",
 ]
+TaskExecutionAuditActionKind = Literal[
+    "worker.task_started",
+    "worker.task_completed",
+    "worker.task_failed",
+    "worker.task_crashing",
+    "reconcile.task_failed",
+]
 
 EXECUTION_CONTRACT_VERSION = "sc_execution.v1"
 WORKER_TASK_FAILED_ERROR_CODE = "worker_task_failed"
+STALE_TASK_TIMEOUT_ERROR_CODE = "stale_task_timeout"
 
 
 @dataclass(frozen=True)
@@ -93,7 +101,7 @@ class TaskExecutionTransition:
     """Canonical orchestration transition tying persistence mutation to audit metadata."""
 
     mutation: TaskLifecycleMutation
-    audit_action_kind: TaskAuditActionKind | None = None
+    audit_action_kind: TaskExecutionAuditActionKind | None = None
     audit_summary: str | None = None
     audit_payload: dict[str, object] | None = None
 
@@ -272,6 +280,56 @@ def build_task_running_mutation(
         started_at=recorded_at,
         heartbeat_at=recorded_at,
         progress_payload=_copy_payload(progress_payload),
+    )
+
+
+def build_task_heartbeat_payload(
+    *,
+    summary: str,
+    recorded_at: datetime,
+    stage_label: str | None = None,
+    phase: str = "running",
+    current_step: int | None = None,
+    total_steps: int | None = None,
+    warning: str | None = None,
+    stale_after_seconds: int | None = None,
+    details: Mapping[str, object] | None = None,
+    extra_payload: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Build the canonical persisted heartbeat payload shape for one task."""
+    payload: dict[str, object] = {
+        "phase": phase,
+        "summary": summary,
+        "recorded_at": recorded_at.isoformat(),
+    }
+    if stage_label is not None:
+        payload["stage_label"] = stage_label
+    if current_step is not None:
+        payload["current_step"] = current_step
+    if total_steps is not None:
+        payload["total_steps"] = total_steps
+    if warning is not None:
+        payload["warning"] = warning
+    if stale_after_seconds is not None:
+        payload["stale_after_seconds"] = stale_after_seconds
+    if details:
+        payload["details"] = dict(details)
+    if extra_payload:
+        payload.update(dict(extra_payload))
+    return payload
+
+
+def build_task_heartbeat_transition(
+    *,
+    recorded_at: datetime,
+    progress_payload: Mapping[str, object],
+) -> TaskExecutionTransition:
+    """Build the canonical orchestration transition for one task heartbeat."""
+    return TaskExecutionTransition(
+        mutation=build_task_heartbeat_mutation(
+            recorded_at=recorded_at,
+            progress_payload=progress_payload,
+        ),
     )
 
 
@@ -514,6 +572,31 @@ def build_worker_audit_summary(
     if phase == "failed":
         return f"Worker failed {worker_task_name} for task {task_id}"
     return f"Worker is about to crash while running {worker_task_name} for task {task_id}"
+
+
+def build_reconcile_stale_task_transition(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    stale_before: datetime,
+) -> TaskExecutionTransition:
+    """Build the reconcile transition for one stale running task."""
+    stale_before_iso = stale_before.isoformat()
+    return TaskExecutionTransition(
+        mutation=build_task_failed_mutation(
+            recorded_at=recorded_at,
+            error_payload={
+                "error_code": STALE_TASK_TIMEOUT_ERROR_CODE,
+                "summary": "Task marked failed during reconcile.",
+                "details": {
+                    "stale_before": stale_before_iso,
+                },
+            },
+        ),
+        audit_action_kind="reconcile.task_failed",
+        audit_summary=f"Reconciled stale task {task_id}",
+        audit_payload={"stale_before": stale_before_iso},
+    )
 
 
 def build_worker_crashing_transition(
