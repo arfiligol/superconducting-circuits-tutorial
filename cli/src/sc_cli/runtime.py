@@ -8,6 +8,7 @@ from sc_backend import (
     list_tasks,
     reset_runtime_state,
     set_active_dataset,
+    submit_task,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "list_tasks",
     "reset_runtime_state",
     "set_active_dataset",
+    "submit_task",
 ]

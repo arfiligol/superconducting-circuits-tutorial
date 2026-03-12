@@ -188,6 +188,66 @@ def test_tasks_show_command_supports_json_output() -> None:
     assert '"result_handles": []' in result.stdout
 
 
+def test_tasks_submit_command_submits_simulation_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["tasks", "submit", "simulation", "--definition-id", "18"],
+    )
+
+    assert result.exit_code == 0
+    assert "kind: simulation" in result.stdout
+    assert "definition_id: 18" in result.stdout
+    assert "status: queued" in result.stdout
+    assert "worker_task_name: simulation_smoke_task" in result.stdout
+    assert "request_ready: false" in result.stdout
+
+
+def test_tasks_submit_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "tasks",
+            "submit",
+            "characterization",
+            "--dataset-id",
+            "transmon-coupler-014",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"kind": "characterization"' in result.stdout
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
+    assert '"status": "queued"' in result.stdout
+
+
+def test_tasks_submit_command_uses_structured_backend_error_message() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["tasks", "submit", "simulation"])
+
+    assert result.exit_code == 2
+    assert (
+        "error: Simulation tasks require definition_id. [validation/simulation_definition_required]"
+    ) in result.output
+
+
+def test_tasks_submit_command_uses_structured_backend_error_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["tasks", "submit", "simulation", "--output", "json"])
+
+    assert result.exit_code == 2
+    assert '"error": {' in result.output
+    assert '"code": "simulation_definition_required"' in result.output
+    assert '"category": "validation"' in result.output
+
+
 def test_tasks_show_command_uses_structured_backend_error_message() -> None:
     runner = CliRunner()
 
