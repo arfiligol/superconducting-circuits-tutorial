@@ -5,6 +5,7 @@ from sc_core.execution.contracts import (
     WORKER_TASK_FAILED_ERROR_CODE,
     ExecutionPhase,
     TaskAuditActionKind,
+    TaskCreationSpec,
     TaskExecutionResult,
     TaskLifecycleMutation,
     TaskLifecycleStatus,
@@ -13,6 +14,7 @@ from sc_core.execution.contracts import (
     audit_action_for_phase,
     build_task_completed_mutation,
     build_task_crash_payload,
+    build_task_creation_spec,
     build_task_failed_mutation,
     build_task_failure_payload,
     build_task_heartbeat_mutation,
@@ -20,6 +22,7 @@ from sc_core.execution.contracts import (
     build_task_start_payload,
     build_task_success_payload,
     build_worker_audit_summary,
+    normalize_task_dedupe_key,
 )
 
 __all__ = [
@@ -27,6 +30,7 @@ __all__ = [
     "WORKER_TASK_FAILED_ERROR_CODE",
     "ExecutionPhase",
     "TaskAuditActionKind",
+    "TaskCreationSpec",
     "TaskExecutionResult",
     "TaskLifecycleMutation",
     "TaskLifecycleStatus",
@@ -35,6 +39,7 @@ __all__ = [
     "audit_action_for_phase",
     "build_task_completed_mutation",
     "build_task_crash_payload",
+    "build_task_creation_spec",
     "build_task_failed_mutation",
     "build_task_failure_payload",
     "build_task_heartbeat_mutation",
@@ -42,4 +47,5 @@ __all__ = [
     "build_task_start_payload",
     "build_task_success_payload",
     "build_worker_audit_summary",
+    "normalize_task_dedupe_key",
 ]

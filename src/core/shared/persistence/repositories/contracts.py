@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
-from sc_core.execution import TaskLifecycleMutation
+from sc_core.execution import TaskCreationSpec, TaskLifecycleMutation
 from sc_core.storage import TraceResultLinkage
 
 from core.shared.persistence.models import AnalysisRunRecord, AuditLogRecord, TaskRecord, UserRecord
@@ -41,6 +41,8 @@ class AnalysisRunPersistenceContract(Protocol):
 @runtime_checkable
 class TaskPersistenceContract(Protocol):
     """Task lifecycle persistence API for persisted orchestration flows."""
+
+    def create_task_from_spec(self, spec: TaskCreationSpec) -> TaskRecord: ...
 
     def create_task(
         self,

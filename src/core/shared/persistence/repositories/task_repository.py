@@ -7,12 +7,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sc_core.execution import (
+    TaskCreationSpec,
     TaskLifecycleMutation,
     TaskResultHandle,
     build_task_completed_mutation,
+    build_task_creation_spec,
     build_task_failed_mutation,
     build_task_heartbeat_mutation,
     build_task_running_mutation,
+    normalize_task_dedupe_key,
 )
 from sc_core.storage import TraceResultLinkage
 from sqlalchemy import desc, or_
@@ -101,16 +104,33 @@ class TaskRepository:
         analysis_run_id: int | None = None,
     ) -> TaskRecord:
         """Create and flush one queued task record."""
+        return self.create_task_from_spec(
+            build_task_creation_spec(
+                task_kind=task_kind,
+                design_id=design_id,
+                request_payload=request_payload,
+                requested_by=requested_by,
+                actor_id=actor_id,
+                dedupe_key=dedupe_key,
+                result_handle=TaskResultHandle(
+                    trace_batch_id=trace_batch_id,
+                    analysis_run_id=analysis_run_id,
+                ),
+            )
+        )
+
+    def create_task_from_spec(self, spec: TaskCreationSpec) -> TaskRecord:
+        """Create and flush one queued task record from the canonical creation spec."""
         task = TaskRecord(
-            task_kind=task_kind,
+            task_kind=spec.task_kind,
             status="queued",
-            design_id=design_id,
-            trace_batch_id=trace_batch_id,
-            analysis_run_id=analysis_run_id,
-            requested_by=requested_by,
-            actor_id=actor_id,
-            dedupe_key=dedupe_key,
-            request_payload=dict(request_payload),
+            design_id=spec.design_id,
+            trace_batch_id=spec.result_handle.trace_batch_id,
+            analysis_run_id=spec.result_handle.analysis_run_id,
+            requested_by=spec.requested_by,
+            actor_id=spec.actor_id,
+            dedupe_key=spec.dedupe_key,
+            request_payload=dict(spec.request_payload),
         )
         self._session.add(task)
         self._session.flush()
@@ -200,8 +220,8 @@ class TaskRepository:
 
     def find_active_by_dedupe_key(self, dedupe_key: str) -> TaskRecord | None:
         """Find one queued/running task by its dedupe key."""
-        normalized_key = dedupe_key.strip()
-        if not normalized_key:
+        normalized_key = normalize_task_dedupe_key(dedupe_key)
+        if normalized_key is None:
             return None
         statement = (
             select(TaskRecord)

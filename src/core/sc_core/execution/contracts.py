@@ -21,6 +21,19 @@ WORKER_TASK_FAILED_ERROR_CODE = "worker_task_failed"
 
 
 @dataclass(frozen=True)
+class TaskCreationSpec:
+    """Canonical queued-task creation contract for persistence adapters."""
+
+    task_kind: str
+    design_id: int
+    request_payload: dict[str, object] = field(default_factory=dict)
+    requested_by: str = ""
+    actor_id: int | None = None
+    dedupe_key: str | None = None
+    result_handle: TaskResultHandle = field(default_factory=lambda: TaskResultHandle())
+
+
+@dataclass(frozen=True)
 class TaskResultHandle:
     """Stable references to execution outputs created by one task."""
 
@@ -120,6 +133,36 @@ def build_task_start_payload(
         "lane": provenance.lane,
         "worker_task_name": provenance.worker_task_name,
     }
+
+
+def build_task_creation_spec(
+    *,
+    task_kind: str,
+    design_id: int,
+    request_payload: Mapping[str, object] | None,
+    requested_by: str,
+    actor_id: int | None = None,
+    dedupe_key: str | None = None,
+    result_handle: TaskResultHandle | None = None,
+) -> TaskCreationSpec:
+    """Build the canonical queued-task creation contract for one persisted task."""
+    return TaskCreationSpec(
+        task_kind=task_kind.strip(),
+        design_id=design_id,
+        request_payload=_copy_payload(request_payload) or {},
+        requested_by=requested_by.strip(),
+        actor_id=actor_id,
+        dedupe_key=normalize_task_dedupe_key(dedupe_key),
+        result_handle=result_handle or TaskResultHandle(),
+    )
+
+
+def normalize_task_dedupe_key(dedupe_key: str | None) -> str | None:
+    """Normalize optional dedupe keys so create/read paths share the same contract."""
+    if dedupe_key is None:
+        return None
+    normalized = dedupe_key.strip()
+    return normalized or None
 
 
 def build_task_running_mutation(

@@ -12,6 +12,7 @@ from sc_core.execution import (
     WORKER_TASK_FAILED_ERROR_CODE,
     ExecutionPhase,
     TaskAuditActionKind,
+    TaskCreationSpec,
     TaskExecutionResult,
     TaskLifecycleMutation,
     TaskLifecycleStatus,
@@ -20,6 +21,7 @@ from sc_core.execution import (
     audit_action_for_phase,
     build_task_completed_mutation,
     build_task_crash_payload,
+    build_task_creation_spec,
     build_task_failed_mutation,
     build_task_failure_payload,
     build_task_heartbeat_mutation,
@@ -27,6 +29,7 @@ from sc_core.execution import (
     build_task_start_payload,
     build_task_success_payload,
     build_worker_audit_summary,
+    normalize_task_dedupe_key,
 )
 from sc_core.storage import (
     DATASET_IMPORT_TRACE_WRITER_VERSION,
@@ -76,6 +79,7 @@ __all__ = [
     "StorageRecordHandle",
     "StorageRecordKind",
     "TaskAuditActionKind",
+    "TaskCreationSpec",
     "TaskExecutionMode",
     "TaskExecutionResult",
     "TaskLifecycleMutation",
@@ -99,6 +103,7 @@ __all__ = [
     "audit_action_for_phase",
     "build_task_completed_mutation",
     "build_task_crash_payload",
+    "build_task_creation_spec",
     "build_task_failed_mutation",
     "build_task_failure_payload",
     "build_task_heartbeat_mutation",
@@ -109,5 +114,6 @@ __all__ = [
     "extract_parameters_payload",
     "inspect_circuit_definition_source",
     "merge_trace_batch_summary_payload",
+    "normalize_task_dedupe_key",
     "resolve_worker_task_route",
 ]
