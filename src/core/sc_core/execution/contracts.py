@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
@@ -18,6 +18,19 @@ ExecutionEventKind = Literal[
     "reconcile.batch_failed",
 ]
 ExecutionEventResourceKind = Literal["task", "trace_batch"]
+TaskExecutionHistoryEventType = Literal[
+    "task_submitted",
+    "task_running",
+    "task_completed",
+    "task_failed",
+]
+TaskExecutionHistoryLevel = Literal["info", "warning", "error"]
+TaskExecutionHistoryDispatchStatus = Literal["accepted", "running", "completed", "failed"]
+TaskExecutionHistorySubmissionSource = Literal[
+    "active_dataset",
+    "explicit_dataset",
+    "definition_only",
+]
 TaskAuditActionKind = Literal[
     "worker.task_started",
     "worker.task_completed",
@@ -35,6 +48,7 @@ TaskExecutionAuditActionKind = Literal[
 EXECUTION_CONTRACT_VERSION = "sc_execution.v1"
 WORKER_TASK_FAILED_ERROR_CODE = "worker_task_failed"
 STALE_TASK_TIMEOUT_ERROR_CODE = "stale_task_timeout"
+TaskExecutionHistoryMetadataValue = str | int | bool | None | list[str]
 
 
 @dataclass(frozen=True)
@@ -114,6 +128,56 @@ class ExecutionEventLog:
     resource_id: str
     summary: str
     payload: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TaskExecutionHistoryEvent:
+    """Canonical task-history entry suitable for API/read-model adapters."""
+
+    event_key: str
+    event_type: TaskExecutionHistoryEventType
+    level: TaskExecutionHistoryLevel
+    occurred_at: str
+    message: str
+    metadata: dict[str, TaskExecutionHistoryMetadataValue] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(
+        cls,
+        *,
+        event_key: str,
+        event_type: TaskExecutionHistoryEventType,
+        level: TaskExecutionHistoryLevel,
+        occurred_at: str,
+        message: str,
+        metadata: Mapping[str, object] | None = None,
+    ) -> TaskExecutionHistoryEvent:
+        """Build one canonical task-history entry from primitive mapping data."""
+        return cls(
+            event_key=event_key,
+            event_type=event_type,
+            level=level,
+            occurred_at=occurred_at,
+            message=message,
+            metadata=coerce_task_execution_history_metadata(metadata),
+        )
+
+
+@dataclass(frozen=True)
+class TaskExecutionHistoryContext:
+    """Framework-agnostic snapshot used to assemble task event history."""
+
+    task_status: TaskLifecycleStatus
+    submitted_at: str
+    progress_updated_at: str
+    progress_percent_complete: int
+    dispatch_key: str
+    dispatch_status: TaskExecutionHistoryDispatchStatus
+    submission_source: TaskExecutionHistorySubmissionSource
+    worker_task_name: WorkerTaskName
+    dataset_id: str | None
+    definition_id: int | None
+    result_handle_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -621,6 +685,123 @@ def build_execution_event_log(
         summary=summary,
         payload=_copy_payload(payload) or {},
     )
+
+
+def coerce_task_execution_history_metadata(
+    metadata: Mapping[str, object] | None,
+) -> dict[str, TaskExecutionHistoryMetadataValue]:
+    """Coerce persisted event metadata into the primitive-safe history contract."""
+    if metadata is None:
+        return {}
+    coerced: dict[str, TaskExecutionHistoryMetadataValue] = {}
+    for key, value in metadata.items():
+        if isinstance(value, list):
+            coerced[key] = [str(item) for item in value]
+        elif isinstance(value, (str, int, bool)) or value is None:
+            coerced[key] = value
+        else:
+            coerced[key] = str(value)
+    return coerced
+
+
+def build_task_submission_history_event(
+    *,
+    submitted_at: str,
+    dispatch_status: TaskExecutionHistoryDispatchStatus,
+    dispatch_key: str,
+    submission_source: TaskExecutionHistorySubmissionSource,
+    worker_task_name: WorkerTaskName,
+    dataset_id: str | None,
+    definition_id: int | None,
+) -> TaskExecutionHistoryEvent:
+    """Build the canonical task-submission history entry."""
+    return TaskExecutionHistoryEvent(
+        event_key=f"task_submitted:{submitted_at}",
+        event_type="task_submitted",
+        level="info",
+        occurred_at=submitted_at,
+        message="Task submission accepted by rewrite runtime.",
+        metadata={
+            "task_status": "queued",
+            "dispatch_status": dispatch_status,
+            "dispatch_key": dispatch_key,
+            "submission_source": submission_source,
+            "worker_task_name": worker_task_name,
+            "dataset_id": dataset_id,
+            "definition_id": definition_id,
+        },
+    )
+
+
+def build_task_lifecycle_history_event(
+    *,
+    task_status: TaskLifecycleStatus,
+    progress_updated_at: str,
+    progress_percent_complete: int,
+    dispatch_status: TaskExecutionHistoryDispatchStatus,
+    dispatch_key: str,
+    worker_task_name: WorkerTaskName,
+    result_handle_ids: Sequence[str] = (),
+) -> TaskExecutionHistoryEvent | None:
+    """Build one lifecycle history entry from the current persisted task state."""
+    if task_status == "queued":
+        return None
+    if task_status == "running":
+        event_type: TaskExecutionHistoryEventType = "task_running"
+        level: TaskExecutionHistoryLevel = "info"
+        message = "Task entered the running state."
+    elif task_status == "completed":
+        event_type = "task_completed"
+        level = "info"
+        message = "Task completed and persisted result metadata."
+    else:
+        event_type = "task_failed"
+        level = "error"
+        message = "Task entered the failed state."
+    return TaskExecutionHistoryEvent(
+        event_key=f"{event_type}:{progress_updated_at}",
+        event_type=event_type,
+        level=level,
+        occurred_at=progress_updated_at,
+        message=message,
+        metadata={
+            "task_status": task_status,
+            "dispatch_status": dispatch_status,
+            "dispatch_key": dispatch_key,
+            "progress_percent_complete": progress_percent_complete,
+            "worker_task_name": worker_task_name,
+            "result_handle_ids": [str(handle_id) for handle_id in result_handle_ids],
+        },
+    )
+
+
+def build_task_execution_history(
+    context: TaskExecutionHistoryContext,
+) -> tuple[TaskExecutionHistoryEvent, ...]:
+    """Build the canonical task-history list for one persisted task snapshot."""
+    events = [
+        build_task_submission_history_event(
+            submitted_at=context.submitted_at,
+            dispatch_status=context.dispatch_status,
+            dispatch_key=context.dispatch_key,
+            submission_source=context.submission_source,
+            worker_task_name=context.worker_task_name,
+            dataset_id=context.dataset_id,
+            definition_id=context.definition_id,
+        )
+    ]
+    lifecycle_event = build_task_lifecycle_history_event(
+        task_status=context.task_status,
+        progress_updated_at=context.progress_updated_at,
+        progress_percent_complete=context.progress_percent_complete,
+        dispatch_status=context.dispatch_status,
+        dispatch_key=context.dispatch_key,
+        worker_task_name=context.worker_task_name,
+        result_handle_ids=context.result_handle_ids,
+    )
+    if lifecycle_event is not None:
+        events.append(lifecycle_event)
+    return tuple(events)
 
 
 def audit_action_for_phase(phase: ExecutionPhase) -> TaskAuditActionKind:

@@ -307,32 +307,16 @@ def _to_task_events(
     event_rows: tuple[RewriteTaskEventRecord, ...],
 ) -> tuple[TaskEvent, ...]:
     return tuple(
-        TaskEvent(
+        TaskEvent.from_mapping(
             event_key=row.event_key,
             event_type=cast(TaskEventType, row.event_type),
             level=cast(TaskEventLevel, row.level),
             occurred_at=row.occurred_at,
             message=row.message,
-            metadata=_coerce_event_metadata(row.metadata_json),
+            metadata=row.metadata_json,
         )
         for row in event_rows
     )
-
-
-def _coerce_event_metadata(
-    metadata_json: dict[str, object],
-) -> dict[str, str | int | bool | None | list[str]]:
-    coerced: dict[str, str | int | bool | None | list[str]] = {}
-    for key, value in metadata_json.items():
-        if isinstance(value, list):
-            coerced[key] = [str(item) for item in value]
-        elif isinstance(value, (str, int, bool)) or value is None:
-            coerced[key] = value
-        else:
-            coerced[key] = str(value)
-    return coerced
-
-
 def _to_task_detail(
     row: RewriteTaskRecord,
     dispatch_row: RewriteTaskDispatchRecord,
