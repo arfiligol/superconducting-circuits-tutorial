@@ -4,7 +4,9 @@ import { useEffect, useTransition } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { FileCode2, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
+import CodeMirror from "@uiw/react-codemirror";
+import { yaml } from "@codemirror/lang-yaml";
 import { z } from "zod";
 
 import { useCircuitDefinitionEditorData } from "@/features/circuit-definition-editor/hooks/use-circuit-definition-editor-data";
@@ -334,19 +336,30 @@ export function CircuitDefinitionEditorWorkspace() {
                   ) : null}
                 </label>
 
-                <label className="grid gap-2 text-sm">
+                <div className="grid gap-2 text-sm">
                   <span className="font-medium text-foreground">Canonical Source</span>
-                  <textarea
-                    id="definition-source"
-                    className="min-h-80 w-full rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm leading-6 text-foreground outline-none"
-                    {...form.register("source_text")}
-                  />
+                  <div className="overflow-hidden rounded-[0.8rem] border border-border bg-background">
+                    <Controller
+                      name="source_text"
+                      control={form.control}
+                      render={({ field }) => (
+                        <CodeMirror
+                          value={field.value}
+                          height="400px"
+                          theme="dark"
+                          extensions={[yaml()]}
+                          onChange={(value) => field.onChange(value)}
+                          className="text-sm leading-6"
+                        />
+                      )}
+                    />
+                  </div>
                   {form.formState.errors.source_text ? (
                     <span className="text-xs text-rose-300">
                       {form.formState.errors.source_text.message}
                     </span>
                   ) : null}
-                </label>
+                </div>
               </div>
             </section>
           </form>
