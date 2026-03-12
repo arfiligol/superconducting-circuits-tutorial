@@ -2,7 +2,7 @@ using JosephsonCircuits
 using PlotlyJS
 using CSV, DataFrames
 
-include("../utils.jl")
+include("../../src/julia/utils.jl")
 
 # --- 1. 定義常數與參數 ---
 nH = 1e-9

@@ -2,7 +2,7 @@ using JosephsonCircuits
 using PlotlyJS
 using CSV, DataFrames
 
-include("../utils.jl")
+include("../../src/julia/utils.jl")
 # using GLMakie
 
 nH = 1e-9

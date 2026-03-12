@@ -1,6 +1,6 @@
 using CSV, DataFrames
 
-include("../utils.jl")
+include("../../src/julia/utils.jl")
 
 df = CSV.read("/Users/arfiligol/Github/Lab/Quantum-Chip-Design-Julia/circuit_model_analysis/Q4_Differential_Pair_Y.csv", DataFrame)
 

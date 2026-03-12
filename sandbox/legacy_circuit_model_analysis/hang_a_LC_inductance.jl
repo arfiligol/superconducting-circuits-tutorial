@@ -1,7 +1,7 @@
 using JosephsonCircuits
 using PlotlyJS, CSV, DataFrames
 
-include("../utils.jl")
+include("../../src/julia/utils.jl")
 
 pF = 1e-12
 nH = 1e-9

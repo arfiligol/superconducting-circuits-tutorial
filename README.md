@@ -97,19 +97,21 @@ superconducting-circuits-tutorial/
 ├── frontend/                # Next.js rewrite frontend
 ├── desktop/                 # Electron rewrite wrapper
 ├── src/
-│   ├── core/                 # Installable shared scientific core
-│   │   └── sc_core/          # Framework-agnostic rewrite boundary
-│   ├── scripts/              # Legacy CLI and migration helpers
-│   └── app/                  # Legacy NiceGUI runtime
-├── data/                     # 數據生命週期
-│   ├── raw/                  # 原始數據 (HFSS/VNA)
-│   └── processed/            # 分析結果
-│   └── database.db           # SQLite 資料庫
-├── docs/                     # Zensical 教學文件
+│   ├── app/                 # Legacy NiceGUI runtime (migration-only)
+│   ├── core/                # Installable shared scientific core
+│   │   └── sc_core/         # Framework-agnostic rewrite boundary
+│   ├── julia/               # Shared Julia utilities and plotting helpers
+│   ├── scripts/             # Legacy CLI and migration helpers
+│   └── worker/              # Worker runtime and task execution
+├── data/                    # Local DB / raw / processed / trace-store data
+├── docs/                    # Zensical docs and guardrails
+│   └── overrides/           # Docs theme overrides
 ├── examples/                 # 可執行範例
+├── sandbox/                  # Scratch scripts and legacy experiments
 ├── pyproject.toml            # Python 依賴 (uv)
 ├── juliapkg.json             # Julia 依賴 (JosephsonCircuits.jl)
-└── Project.toml              # Julia 專案設定
+├── Project.toml              # Julia 專案設定
+└── Manifest.toml             # Julia lock file
 ```
 
 ## 🔬 模擬工具 (Simulation)

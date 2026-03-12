@@ -1,4 +1,4 @@
-# src/plotting.jl
+# src/julia/plotting.jl
 
 using PlotlyJS
 using Printf

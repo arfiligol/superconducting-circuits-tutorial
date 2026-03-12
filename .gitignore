@@ -101,6 +101,7 @@ Thumbs.db
 # Sandbox - Experiments
 sandbox/*
 !sandbox/README.md
+!sandbox/test_sim.py
 !sandbox/legacy_circuit_model_analysis/
 
 # Local history
@@ -128,9 +129,12 @@ data/**/*.zarr/
 *.sqlite3
 
 # NiceGUI local user storage generated during local UI/E2E sessions
+.nicegui/
 .nicegui/storage-user-*.json
 
 # Local Playwright runtime outputs/logs
+output/
 output/playwright/
+tmp/
 tmp/rewrite_logs/
 tmp/rewrite_pids/

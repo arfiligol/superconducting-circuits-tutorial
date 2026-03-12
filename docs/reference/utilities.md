@@ -13,7 +13,7 @@ tags:
 ## 基本用法
 
 ```julia
-include("src/plotting.jl")
+include("src/julia/plotting.jl")
 
 traces = [
     scatter(x=freqs, y=data1, mode="lines", name="Trace 1"),
