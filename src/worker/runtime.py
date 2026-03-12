@@ -14,18 +14,13 @@ from rq import Queue, SimpleWorker
 from rq.timeouts import TimerDeathPenalty
 from sc_core.execution import (
     TaskExecutionResult,
-    WorkerExecutionProvenance,
-    audit_action_for_phase,
-    build_task_completed_mutation,
-    build_task_crash_payload,
-    build_task_failed_mutation,
-    build_task_failure_payload,
-    build_task_running_mutation,
-    build_task_start_payload,
-    build_task_success_payload,
-    build_worker_audit_payload,
-    build_worker_audit_summary,
-    build_worker_execution_provenance,
+    TaskExecutionTransition,
+    WorkerExecutionContext,
+    build_worker_completed_transition,
+    build_worker_crashing_transition,
+    build_worker_execution_context,
+    build_worker_failed_transition,
+    build_worker_running_transition,
 )
 from sc_core.tasking import WorkerTaskName
 
@@ -49,23 +44,39 @@ def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _worker_provenance(
+def _worker_execution_context(
     *,
     lane_name: LaneName,
     worker_task_name: WorkerTaskName,
-    started_at: datetime | None = None,
-    completed_at: datetime | None = None,
-    crash_requested_at: datetime | None = None,
-) -> WorkerExecutionProvenance:
-    """Build canonical worker provenance for one runtime lifecycle event."""
-    return build_worker_execution_provenance(
+    worker_pid: int | None = None,
+) -> WorkerExecutionContext:
+    """Build canonical worker execution context for one runtime process."""
+    return build_worker_execution_context(
         lane=lane_name,
         worker_task_name=worker_task_name,
-        worker_pid=os.getpid(),
-        started_at=started_at,
-        completed_at=completed_at,
-        crash_requested_at=crash_requested_at,
+        worker_pid=worker_pid if worker_pid is not None else os.getpid(),
     )
+
+
+def _persist_transition(
+    *,
+    task_id: int,
+    actor_id: int | None,
+    transition: TaskExecutionTransition,
+) -> None:
+    """Persist one shared orchestration transition and its optional audit record."""
+    with get_unit_of_work() as uow:
+        uow.tasks.apply_lifecycle_mutation(task_id, transition.mutation)
+        if transition.audit_action_kind is not None and transition.audit_summary is not None:
+            uow.audit_logs.append_log(
+                actor_id=actor_id,
+                action_kind=transition.audit_action_kind,
+                resource_kind="task",
+                resource_id=task_id,
+                summary=transition.audit_summary,
+                payload=transition.audit_payload,
+            )
+        uow.commit()
 
 
 def execute_managed_task(
@@ -77,114 +88,62 @@ def execute_managed_task(
 ) -> dict[str, object]:
     """Run one managed worker operation and persist its lifecycle into TaskRecord."""
     running_at = _utcnow()
-    running_provenance = _worker_provenance(
+    context = _worker_execution_context(
         lane_name=lane_name,
         worker_task_name=worker_task_name,
-        started_at=running_at,
     )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-        uow.tasks.apply_lifecycle_mutation(
-            task_id,
-            build_task_running_mutation(
-                recorded_at=running_at,
-                progress_payload=build_task_start_payload(provenance=running_provenance),
-            ),
-        )
-        uow.audit_logs.append_log(
-            actor_id=actor_id,
-            action_kind=audit_action_for_phase("running"),
-            resource_kind="task",
-            resource_id=task_id,
-            summary=build_worker_audit_summary(
-                phase="running",
-                worker_task_name=worker_task_name,
-                task_id=task_id,
-            ),
-            payload=build_worker_audit_payload(
-                phase="running",
-                provenance=running_provenance,
-            ),
-        )
-        uow.commit()
+    _persist_transition(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_worker_running_transition(
+            task_id=task_id,
+            recorded_at=running_at,
+            context=context,
+        ),
+    )
 
     try:
         result = operation()
     except Exception as exc:
         failed_at = _utcnow()
-        failure_provenance = _worker_provenance(
-            lane_name=lane_name,
-            worker_task_name=worker_task_name,
-        )
-        failure_payload = build_task_failure_payload(
-            provenance=failure_provenance,
-            exc_type=type(exc).__name__,
-            message=str(exc),
-        )
         with get_unit_of_work() as uow:
             task = uow.tasks.get_task(task_id)
             actor_id = task.actor_id if task is not None else None
-            uow.tasks.apply_lifecycle_mutation(
-                task_id,
-                build_task_failed_mutation(
-                    recorded_at=failed_at,
-                    error_payload=failure_payload,
-                ),
-            )
-            uow.audit_logs.append_log(
-                actor_id=actor_id,
-                action_kind=audit_action_for_phase("failed"),
-                resource_kind="task",
-                resource_id=task_id,
-                summary=build_worker_audit_summary(
-                    phase="failed",
-                    worker_task_name=worker_task_name,
-                    task_id=task_id,
-                ),
-                payload=failure_payload,
-            )
-            uow.commit()
-        return failure_payload
+        failed_transition = build_worker_failed_transition(
+            task_id=task_id,
+            recorded_at=failed_at,
+            context=context,
+            exc_type=type(exc).__name__,
+            message=str(exc),
+        )
+        _persist_transition(
+            task_id=task_id,
+            actor_id=actor_id,
+            transition=failed_transition,
+        )
+        return dict(failed_transition.audit_payload or {})
 
     completed_at = _utcnow()
-    completed_provenance = _worker_provenance(
-        lane_name=lane_name,
-        worker_task_name=worker_task_name,
-        completed_at=completed_at,
-    )
-    completed_payload = build_task_success_payload(
-        provenance=completed_provenance,
-        summary_payload=dict(result.result_summary_payload),
-        result_handle=result.result_handle(),
-    )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         actor_id = task.actor_id if task is not None else None
-        uow.tasks.apply_lifecycle_mutation(
-            task_id,
-            build_task_completed_mutation(
-                recorded_at=completed_at,
-                result_summary_payload=completed_payload,
-                result_handle=result.result_handle(),
-            ),
-        )
-        uow.audit_logs.append_log(
-            actor_id=actor_id,
-            action_kind=audit_action_for_phase("completed"),
-            resource_kind="task",
-            resource_id=task_id,
-            summary=build_worker_audit_summary(
-                phase="completed",
-                worker_task_name=worker_task_name,
-                task_id=task_id,
-            ),
-            payload=completed_payload,
-        )
-        uow.commit()
-    return completed_payload
+    completed_transition = build_worker_completed_transition(
+        task_id=task_id,
+        recorded_at=completed_at,
+        context=context,
+        result=result,
+    )
+    _persist_transition(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=completed_transition,
+    )
+    return dict(completed_transition.audit_payload or {})
 
 
 def mark_task_running_before_crash(
@@ -195,39 +154,24 @@ def mark_task_running_before_crash(
 ) -> None:
     """Persist a running state immediately before an intentional worker crash."""
     crash_requested_at = _utcnow()
-    crash_provenance = _worker_provenance(
+    context = _worker_execution_context(
         lane_name=lane_name,
         worker_task_name=worker_task_name,
-        crash_requested_at=crash_requested_at,
     )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-        uow.tasks.apply_lifecycle_mutation(
-            task_id,
-            build_task_running_mutation(
-                recorded_at=crash_requested_at,
-                progress_payload=build_task_crash_payload(provenance=crash_provenance),
-            ),
-        )
-        uow.audit_logs.append_log(
-            actor_id=actor_id,
-            action_kind=audit_action_for_phase("crashing"),
-            resource_kind="task",
-            resource_id=task_id,
-            summary=build_worker_audit_summary(
-                phase="crashing",
-                worker_task_name=worker_task_name,
-                task_id=task_id,
-            ),
-            payload=build_worker_audit_payload(
-                phase="crashing",
-                provenance=crash_provenance,
-            ),
-        )
-        uow.commit()
+    _persist_transition(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_worker_crashing_transition(
+            task_id=task_id,
+            recorded_at=crash_requested_at,
+            context=context,
+        ),
+    )
 
 
 def reconcile_stale_worker_tasks(*, stale_after_seconds: int) -> ReconcileSummary:

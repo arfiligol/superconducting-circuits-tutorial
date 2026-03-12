@@ -14,7 +14,7 @@ from sc_core.execution import (
     build_task_creation_spec,
     build_task_failed_mutation,
     build_task_heartbeat_mutation,
-    build_task_queued_mutation,
+    build_task_queued_transition,
     build_task_running_mutation,
     normalize_task_dedupe_key,
 )
@@ -122,6 +122,7 @@ class TaskRepository:
 
     def create_task_from_spec(self, spec: TaskCreationSpec) -> TaskRecord:
         """Create and flush one queued task record from the canonical creation spec."""
+        queued_transition = build_task_queued_transition(creation_spec=spec)
         task = TaskRecord(
             task_kind=spec.task_kind,
             status="queued",
@@ -131,7 +132,7 @@ class TaskRepository:
             dedupe_key=spec.dedupe_key,
             request_payload=dict(spec.request_payload),
         )
-        self._apply_task_mutation(task, build_task_queued_mutation(creation_spec=spec))
+        self._apply_task_mutation(task, queued_transition.mutation)
         self._session.add(task)
         self._session.flush()
         return task

@@ -89,6 +89,25 @@ class TaskLifecycleMutation:
 
 
 @dataclass(frozen=True)
+class TaskExecutionTransition:
+    """Canonical orchestration transition tying persistence mutation to audit metadata."""
+
+    mutation: TaskLifecycleMutation
+    audit_action_kind: TaskAuditActionKind | None = None
+    audit_summary: str | None = None
+    audit_payload: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class WorkerExecutionContext:
+    """Stable worker execution identity used across dispatch-adjacent lifecycle phases."""
+
+    lane: LaneName
+    worker_task_name: WorkerTaskName
+    worker_pid: int | None = None
+
+
+@dataclass(frozen=True)
 class WorkerExecutionProvenance:
     """Provenance fields attached to persisted execution payloads and logs."""
 
@@ -132,6 +151,20 @@ def build_worker_execution_provenance(
         started_at=_optional_isoformat(started_at),
         completed_at=_optional_isoformat(completed_at),
         crash_requested_at=_optional_isoformat(crash_requested_at),
+    )
+
+
+def build_worker_execution_context(
+    *,
+    lane: LaneName,
+    worker_task_name: WorkerTaskName,
+    worker_pid: int | None = None,
+) -> WorkerExecutionContext:
+    """Build canonical worker execution context for runtime orchestration flows."""
+    return WorkerExecutionContext(
+        lane=lane,
+        worker_task_name=worker_task_name,
+        worker_pid=worker_pid,
     )
 
 
@@ -218,6 +251,16 @@ def build_task_queued_mutation(
     )
 
 
+def build_task_queued_transition(
+    *,
+    creation_spec: TaskCreationSpec,
+) -> TaskExecutionTransition:
+    """Build the canonical orchestration transition for one newly queued task."""
+    return TaskExecutionTransition(
+        mutation=build_task_queued_mutation(creation_spec=creation_spec),
+    )
+
+
 def build_task_running_mutation(
     *,
     recorded_at: datetime,
@@ -229,6 +272,38 @@ def build_task_running_mutation(
         started_at=recorded_at,
         heartbeat_at=recorded_at,
         progress_payload=_copy_payload(progress_payload),
+    )
+
+
+def build_worker_running_transition(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    stale_after_seconds: int = 300,
+) -> TaskExecutionTransition:
+    """Build the running transition for one worker-managed task execution."""
+    provenance = build_worker_execution_provenance(
+        lane=context.lane,
+        worker_task_name=context.worker_task_name,
+        worker_pid=context.worker_pid,
+        started_at=recorded_at,
+    )
+    return _build_worker_transition(
+        phase="running",
+        task_id=task_id,
+        worker_task_name=context.worker_task_name,
+        mutation=build_task_running_mutation(
+            recorded_at=recorded_at,
+            progress_payload=build_task_start_payload(
+                provenance=provenance,
+                stale_after_seconds=stale_after_seconds,
+            ),
+        ),
+        audit_payload=build_worker_audit_payload(
+            phase="running",
+            provenance=provenance,
+        ),
     )
 
 
@@ -261,6 +336,38 @@ def build_task_completed_mutation(
     )
 
 
+def build_worker_completed_transition(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    result: TaskExecutionResult,
+) -> TaskExecutionTransition:
+    """Build the completion transition for one worker-managed task execution."""
+    provenance = build_worker_execution_provenance(
+        lane=context.lane,
+        worker_task_name=context.worker_task_name,
+        worker_pid=context.worker_pid,
+        completed_at=recorded_at,
+    )
+    completed_payload = build_task_success_payload(
+        provenance=provenance,
+        summary_payload=dict(result.result_summary_payload),
+        result_handle=result.result_handle(),
+    )
+    return _build_worker_transition(
+        phase="completed",
+        task_id=task_id,
+        worker_task_name=context.worker_task_name,
+        mutation=build_task_completed_mutation(
+            recorded_at=recorded_at,
+            result_summary_payload=completed_payload,
+            result_handle=result.result_handle(),
+        ),
+        audit_payload=completed_payload,
+    )
+
+
 def build_task_failed_mutation(
     *,
     recorded_at: datetime,
@@ -272,6 +379,37 @@ def build_task_failed_mutation(
         heartbeat_at=recorded_at,
         completed_at=recorded_at,
         error_payload=_copy_payload(error_payload),
+    )
+
+
+def build_worker_failed_transition(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    exc_type: str,
+    message: str,
+) -> TaskExecutionTransition:
+    """Build the failure transition for one worker-managed task execution."""
+    provenance = build_worker_execution_provenance(
+        lane=context.lane,
+        worker_task_name=context.worker_task_name,
+        worker_pid=context.worker_pid,
+    )
+    error_payload = build_task_failure_payload(
+        provenance=provenance,
+        exc_type=exc_type,
+        message=message,
+    )
+    return _build_worker_transition(
+        phase="failed",
+        task_id=task_id,
+        worker_task_name=context.worker_task_name,
+        mutation=build_task_failed_mutation(
+            recorded_at=recorded_at,
+            error_payload=error_payload,
+        ),
+        audit_payload=error_payload,
     )
 
 
@@ -376,6 +514,54 @@ def build_worker_audit_summary(
     if phase == "failed":
         return f"Worker failed {worker_task_name} for task {task_id}"
     return f"Worker is about to crash while running {worker_task_name} for task {task_id}"
+
+
+def build_worker_crashing_transition(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+) -> TaskExecutionTransition:
+    """Build the crashing transition for one worker-managed task execution."""
+    provenance = build_worker_execution_provenance(
+        lane=context.lane,
+        worker_task_name=context.worker_task_name,
+        worker_pid=context.worker_pid,
+        crash_requested_at=recorded_at,
+    )
+    return _build_worker_transition(
+        phase="crashing",
+        task_id=task_id,
+        worker_task_name=context.worker_task_name,
+        mutation=build_task_running_mutation(
+            recorded_at=recorded_at,
+            progress_payload=build_task_crash_payload(provenance=provenance),
+        ),
+        audit_payload=build_worker_audit_payload(
+            phase="crashing",
+            provenance=provenance,
+        ),
+    )
+
+
+def _build_worker_transition(
+    *,
+    phase: ExecutionPhase,
+    task_id: int,
+    worker_task_name: WorkerTaskName,
+    mutation: TaskLifecycleMutation,
+    audit_payload: Mapping[str, object],
+) -> TaskExecutionTransition:
+    return TaskExecutionTransition(
+        mutation=mutation,
+        audit_action_kind=audit_action_for_phase(phase),
+        audit_summary=build_worker_audit_summary(
+            phase=phase,
+            worker_task_name=worker_task_name,
+            task_id=task_id,
+        ),
+        audit_payload=_copy_payload(audit_payload),
+    )
 
 
 def _optional_int(value: object) -> int | None:
