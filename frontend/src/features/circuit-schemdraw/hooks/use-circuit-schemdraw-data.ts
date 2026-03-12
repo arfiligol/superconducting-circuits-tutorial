@@ -16,6 +16,12 @@ export function useCircuitSchemdrawData(selectedDefinitionId: number | null) {
     selectedDefinitionId === null ? null : String(selectedDefinitionId),
     definitionsQuery.data,
   );
+  const selectedDefinitionSummary =
+    typeof resolvedDefinitionId === "number"
+      ? definitionsQuery.data?.find(
+          (definition) => definition.definition_id === resolvedDefinitionId,
+        )
+      : undefined;
   const detailKey =
     typeof resolvedDefinitionId === "number"
       ? circuitDefinitionDetailKey(resolvedDefinitionId)
@@ -24,16 +30,28 @@ export function useCircuitSchemdrawData(selectedDefinitionId: number | null) {
   const detailQuery = useSWR(detailKey, () =>
     typeof resolvedDefinitionId === "number"
       ? getCircuitDefinition(resolvedDefinitionId)
-      : Promise.resolve(undefined),
+      : Promise.resolve(undefined), {
+        keepPreviousData: true,
+      },
   );
+  const activeDefinition = detailQuery.data;
+  const hasAttachedDefinition =
+    typeof resolvedDefinitionId === "number" &&
+    activeDefinition?.definition_id === resolvedDefinitionId;
 
   return {
     definitions: definitionsQuery.data,
     definitionsError: definitionsQuery.error as Error | undefined,
     isDefinitionsLoading: definitionsQuery.isLoading,
     resolvedDefinitionId,
-    activeDefinition: detailQuery.data,
+    selectedDefinitionSummary,
+    activeDefinition,
     activeDefinitionError: detailQuery.error as Error | undefined,
     isActiveDefinitionLoading: detailQuery.isLoading,
+    isDefinitionTransitioning:
+      typeof resolvedDefinitionId === "number" &&
+      (!hasAttachedDefinition || detailQuery.isLoading),
+    refreshDefinitions: definitionsQuery.mutate,
+    refreshActiveDefinition: detailQuery.mutate,
   };
 }
