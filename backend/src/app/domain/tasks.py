@@ -102,3 +102,14 @@ class TaskCreateDraft:
     worker_task_name: WorkerTaskName
     request_ready: bool
     submitted_from_active_dataset: bool
+
+
+@dataclass(frozen=True)
+class TaskLifecycleUpdate:
+    task_id: int
+    status: TaskStatus
+    progress_percent_complete: int
+    progress_summary: str
+    progress_updated_at: str
+    summary: str | None = None
+    result_refs: TaskResultRefs | None = None

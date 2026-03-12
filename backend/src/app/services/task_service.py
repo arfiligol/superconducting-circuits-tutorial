@@ -10,10 +10,11 @@ from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
     TaskKind,
+    TaskLifecycleUpdate,
     TaskListQuery,
     TaskSubmissionDraft,
 )
-from src.app.services.service_errors import service_error
+from src.app.services.service_errors import ServiceFieldError, service_error
 
 
 class TaskRepository(Protocol):
@@ -22,6 +23,8 @@ class TaskRepository(Protocol):
     def get_task(self, task_id: int) -> TaskDetail | None: ...
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail: ...
+
+    def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail | None: ...
 
 
 class TaskDatasetRepository(Protocol):
@@ -135,6 +138,36 @@ class TaskService:
             )
         )
 
+    def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail:
+        detail = self._repository.get_task(update.task_id)
+        if detail is None:
+            raise service_error(
+                404,
+                code="task_not_found",
+                category="not_found",
+                message=f"Task {update.task_id} was not found.",
+            )
+
+        field_errors = _validate_task_lifecycle_update(update)
+        if len(field_errors) > 0:
+            raise service_error(
+                422,
+                code="task_lifecycle_update_invalid",
+                category="validation",
+                message="Task lifecycle update is invalid.",
+                field_errors=field_errors,
+            )
+
+        updated_task = self._repository.update_task_lifecycle(update)
+        if updated_task is None:
+            raise service_error(
+                404,
+                code="task_not_found",
+                category="not_found",
+                message=f"Task {update.task_id} was not found.",
+            )
+        return updated_task
+
     def _matches_query(self, task: TaskDetail, query: TaskListQuery) -> bool:
         session = self._session_repository.get_session_state()
         if not self._is_visible(task, session, scope=query.scope):
@@ -171,3 +204,52 @@ def _session_user_id(session: SessionState) -> str:
     if session.user is None:
         return "anonymous"
     return session.user.user_id
+
+
+def _validate_task_lifecycle_update(
+    update: TaskLifecycleUpdate,
+) -> tuple[ServiceFieldError, ...]:
+    field_errors: list[ServiceFieldError] = []
+    if not 0 <= update.progress_percent_complete <= 100:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_percent_complete",
+                message="progress_percent_complete must be between 0 and 100.",
+            )
+        )
+    if update.status == "queued" and update.progress_percent_complete != 0:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_percent_complete",
+                message="Queued tasks must report 0 percent_complete.",
+            )
+        )
+    if update.status == "running" and update.progress_percent_complete == 100:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_percent_complete",
+                message="Running tasks cannot report 100 percent_complete.",
+            )
+        )
+    if update.status == "completed" and update.progress_percent_complete != 100:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_percent_complete",
+                message="Completed tasks must report 100 percent_complete.",
+            )
+        )
+    if len(update.progress_summary.strip()) == 0:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_summary",
+                message="progress_summary must not be empty.",
+            )
+        )
+    if len(update.progress_updated_at.strip()) == 0:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_updated_at",
+                message="progress_updated_at must not be empty.",
+            )
+        )
+    return tuple(field_errors)

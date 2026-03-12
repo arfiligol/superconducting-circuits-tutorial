@@ -1,6 +1,8 @@
 from dataclasses import replace
 
-from src.app.domain.tasks import TaskSubmissionDraft
+import pytest
+from sc_core.execution import TaskResultHandle
+from src.app.domain.tasks import TaskLifecycleUpdate, TaskResultRefs, TaskSubmissionDraft
 from src.app.infrastructure.runtime import (
     get_rewrite_app_state_repository,
     get_rewrite_task_repository,
@@ -9,7 +11,13 @@ from src.app.infrastructure.runtime import (
     get_task_snapshot_repository,
     reset_runtime_state,
 )
-from src.app.infrastructure.storage_reference_factory import build_result_handle_ref
+from src.app.infrastructure.storage_reference_factory import (
+    build_metadata_record_ref,
+    build_result_handle_ref,
+    build_result_provenance_ref,
+    build_trace_payload_ref,
+)
+from src.app.services.service_errors import ServiceError
 
 
 def test_runtime_task_submission_persists_pending_result_metadata() -> None:
@@ -120,6 +128,152 @@ def test_runtime_reset_prefers_persisted_task_snapshot_over_scaffold_defaults() 
     assert reloaded_task.summary == "Persisted task snapshot override"
     assert reloaded_task.progress.phase == "failed"
     assert reloaded_task.progress.summary == "Persisted failure summary."
+
+
+def test_task_service_lifecycle_update_persists_running_state_across_reset() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary=None,
+        )
+    )
+
+    updated_task = get_task_service().update_task_lifecycle(
+        TaskLifecycleUpdate(
+            task_id=submitted_task.task_id,
+            status="running",
+            progress_percent_complete=35,
+            progress_summary="Characterization worker picked up the task.",
+            progress_updated_at="2026-03-12 11:15:00",
+            summary="Characterization task is running against persisted state.",
+        )
+    )
+
+    assert updated_task.status == "running"
+    assert updated_task.progress.percent_complete == 35
+    assert updated_task.summary == "Characterization task is running against persisted state."
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(submitted_task.task_id)
+
+    assert reloaded_task.status == "running"
+    assert reloaded_task.progress.percent_complete == 35
+    assert reloaded_task.progress.summary == "Characterization worker picked up the task."
+
+
+def test_task_service_lifecycle_update_persists_completed_result_refs_across_reset() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary=None,
+        )
+    )
+    trace_batch_record = build_metadata_record_ref(
+        "trace_batch",
+        f"trace_batch:{submitted_task.task_id}",
+        version=1,
+    )
+    result_handle_record = build_metadata_record_ref(
+        "result_handle",
+        f"result_handle:{submitted_task.task_id}",
+        version=2,
+    )
+    completed_result_refs = TaskResultRefs(
+        result_handle=TaskResultHandle(trace_batch_id=submitted_task.task_id),
+        metadata_records=(trace_batch_record, result_handle_record),
+        trace_payload=build_trace_payload_ref(
+            payload_role="task_output",
+            store_key=f"tasks/{submitted_task.task_id}/trace-batch.zarr",
+            store_uri=f"trace_store/tasks/{submitted_task.task_id}/trace-batch.zarr",
+            group_path=f"tasks/{submitted_task.task_id}/trace_batch",
+            array_path="signals/iq_real",
+            dtype="float64",
+            shape=(64, 1024),
+            chunk_shape=(16, 1024),
+        ),
+        result_handles=(
+            build_result_handle_ref(
+                handle_id=f"task-result:{submitted_task.task_id}:primary",
+                kind="characterization_report",
+                status="materialized",
+                label="Materialized characterization report",
+                metadata_record=result_handle_record,
+                payload_backend="json_artifact",
+                payload_format="json",
+                payload_role="report_artifact",
+                payload_locator=(
+                    f"artifacts/tasks/{submitted_task.task_id}/characterization-report.json"
+                ),
+                provenance_task_id=submitted_task.task_id,
+                provenance=build_result_provenance_ref(
+                    source_dataset_id=submitted_task.dataset_id,
+                    source_task_id=submitted_task.task_id,
+                    trace_batch_record=trace_batch_record,
+                ),
+            ),
+        ),
+    )
+
+    completed_task = get_task_service().update_task_lifecycle(
+        TaskLifecycleUpdate(
+            task_id=submitted_task.task_id,
+            status="completed",
+            progress_percent_complete=100,
+            progress_summary="Characterization task completed and published artifacts.",
+            progress_updated_at="2026-03-12 11:22:00",
+            summary="Characterization artifacts were materialized.",
+            result_refs=completed_result_refs,
+        )
+    )
+
+    assert completed_task.status == "completed"
+    assert completed_task.result_refs.trace_batch_id == submitted_task.task_id
+    assert completed_task.result_refs.result_handles[0].status == "materialized"
+    assert completed_task.result_refs.trace_payload is not None
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(submitted_task.task_id)
+
+    assert reloaded_task.status == "completed"
+    assert reloaded_task.progress.phase == "completed"
+    assert reloaded_task.result_refs.trace_batch_id == submitted_task.task_id
+    assert reloaded_task.result_refs.result_handles[0].payload_locator == (
+        f"artifacts/tasks/{submitted_task.task_id}/characterization-report.json"
+    )
+    assert reloaded_task.result_refs.trace_payload is not None
+    assert reloaded_task.result_refs.trace_payload.store_key == (
+        f"tasks/{submitted_task.task_id}/trace-batch.zarr"
+    )
+
+
+def test_task_service_lifecycle_update_rejects_invalid_completed_progress() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary=None,
+        )
+    )
+
+    with pytest.raises(ServiceError) as exc_info:
+        get_task_service().update_task_lifecycle(
+            TaskLifecycleUpdate(
+                task_id=submitted_task.task_id,
+                status="completed",
+                progress_percent_complete=80,
+                progress_summary="Invalid completion payload.",
+                progress_updated_at="2026-03-12 11:25:00",
+            )
+        )
+
+    assert exc_info.value.code == "task_lifecycle_update_invalid"
 
 
 def test_runtime_reset_keeps_submitted_task_row_and_storage_refs() -> None:

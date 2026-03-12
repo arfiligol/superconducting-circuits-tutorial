@@ -4,7 +4,7 @@ from typing import Protocol
 from sc_core.execution import TaskResultHandle
 
 from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
-from src.app.domain.tasks import TaskCreateDraft, TaskDetail, TaskResultRefs
+from src.app.domain.tasks import TaskCreateDraft, TaskDetail, TaskLifecycleUpdate, TaskResultRefs
 from src.app.infrastructure.rewrite_app_state_repository import (
     build_pending_result_refs,
     build_seed_tasks,
@@ -82,6 +82,32 @@ class PersistedRewriteTaskRepository:
         )
         self._persist_result_refs(task_with_result_refs.result_refs)
         return self._hydrate_task(task_with_result_refs)
+
+    def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail | None:
+        current_task = self.get_task(update.task_id)
+        if current_task is None:
+            return None
+
+        persisted_snapshot = self._task_snapshot_repository.save_task_snapshot(
+            replace(
+                current_task,
+                status=update.status,
+                summary=update.summary or current_task.summary,
+                progress=replace(
+                    current_task.progress,
+                    phase=update.status,
+                    percent_complete=update.progress_percent_complete,
+                    summary=update.progress_summary,
+                    updated_at=update.progress_updated_at,
+                ),
+            )
+        )
+
+        effective_result_refs = update.result_refs or current_task.result_refs
+        if update.result_refs is not None:
+            self._persist_result_refs(update.result_refs)
+
+        return self._hydrate_task(replace(persisted_snapshot, result_refs=effective_result_refs))
 
     def _ensure_seed_task_snapshots(self) -> None:
         if self._task_snapshot_repository.has_tasks():

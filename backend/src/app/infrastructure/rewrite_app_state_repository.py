@@ -13,6 +13,7 @@ from src.app.domain.storage import (
 from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
+    TaskLifecycleUpdate,
     TaskProgress,
     TaskResultRefs,
 )
@@ -154,6 +155,41 @@ class InMemoryRewriteAppStateRepository:
         self._persist_result_refs(task.result_refs)
         hydrated_task = self._hydrate_task(task)
         self._tasks[task.task_id] = hydrated_task
+        return hydrated_task
+
+    def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail | None:
+        current_task = self.get_task(update.task_id)
+        if current_task is None:
+            return None
+
+        updated_task = replace(
+            current_task,
+            status=update.status,
+            summary=update.summary or current_task.summary,
+            progress=replace(
+                current_task.progress,
+                phase=update.status,
+                percent_complete=update.progress_percent_complete,
+                summary=update.progress_summary,
+                updated_at=update.progress_updated_at,
+            ),
+        )
+        if self._task_snapshot_repository is not None:
+            persisted_snapshot = self._task_snapshot_repository.save_task_snapshot(updated_task)
+            task_with_result_refs = replace(
+                persisted_snapshot,
+                result_refs=update.result_refs or current_task.result_refs,
+            )
+            if update.result_refs is not None:
+                self._persist_result_refs(update.result_refs)
+            return self._hydrate_task(task_with_result_refs)
+
+        if update.result_refs is not None:
+            updated_task = replace(updated_task, result_refs=update.result_refs)
+            self._persist_result_refs(update.result_refs)
+
+        hydrated_task = self._hydrate_task(updated_task)
+        self._tasks[update.task_id] = hydrated_task
         return hydrated_task
 
     def _persist_seed_task_snapshots(self) -> None:

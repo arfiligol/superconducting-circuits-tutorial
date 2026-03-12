@@ -1,11 +1,9 @@
-from dataclasses import replace
-
 import pytest
 from fastapi.testclient import TestClient
 from sc_core.storage import STORAGE_CONTRACT_VERSION
+from src.app.domain.tasks import TaskLifecycleUpdate
 from src.app.infrastructure.runtime import (
     get_task_service,
-    get_task_snapshot_repository,
     reset_runtime_state,
 )
 from src.app.main import app
@@ -272,25 +270,18 @@ def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
     ]
 
 
-def test_persisted_task_snapshot_changes_flow_through_task_routes() -> None:
-    get_task_service().get_task(302)
-    snapshot_repository = get_task_snapshot_repository()
-    task = snapshot_repository.get_task(302)
-    assert task is not None
-    snapshot_repository.save_task_snapshot(
-        replace(
-            task,
+def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
+    updated_task = get_task_service().update_task_lifecycle(
+        TaskLifecycleUpdate(
+            task_id=302,
             status="failed",
+            progress_percent_complete=100,
+            progress_summary="Persisted failure summary.",
+            progress_updated_at="2026-03-12 11:05:00",
             summary="Persisted task snapshot override",
-            progress=replace(
-                task.progress,
-                phase="failed",
-                percent_complete=100,
-                summary="Persisted failure summary.",
-                updated_at="2026-03-12 11:05:00",
-            ),
         )
     )
+    assert updated_task.status == "failed"
 
     reset_runtime_state()
 
