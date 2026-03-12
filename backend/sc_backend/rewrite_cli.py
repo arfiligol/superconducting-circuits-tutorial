@@ -35,6 +35,7 @@ from src.app.api.schemas.session import (
 from src.app.api.schemas.tasks import (
     TaskDetailResponse,
     TaskDispatchResponse,
+    TaskEventResponse,
     TaskProgressResponse,
     TaskResultRefsResponse,
     TaskSummaryResponse,
@@ -419,6 +420,17 @@ def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
                 for handle in task.result_refs.result_handles
             ],
         ),
+        events=[
+            TaskEventResponse(
+                event_key=event.event_key,
+                event_type=event.event_type,
+                level=event.level,
+                occurred_at=event.occurred_at,
+                message=event.message,
+                metadata=event.metadata,
+            )
+            for event in task.events
+        ],
     )
 
 

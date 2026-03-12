@@ -7,6 +7,7 @@ from sc_cli.commands import (
     circuit_definition,
     core,
     datasets,
+    events,
     results,
     session,
     simulation,
@@ -24,6 +25,7 @@ app.add_typer(core.app, name="core", help="Inspect the shared core package bound
 app.add_typer(session.app, name="session", help="Inspect rewrite session state.")
 app.add_typer(datasets.app, name="datasets", help="Inspect rewrite dataset state.")
 app.add_typer(tasks.app, name="tasks", help="Inspect rewrite task state.")
+app.add_typer(events.app, name="events", help="Inspect persisted task event history.")
 app.add_typer(results.app, name="results", help="Inspect persisted task result references.")
 app.add_typer(
     characterization.app,

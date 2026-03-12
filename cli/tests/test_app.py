@@ -6,7 +6,7 @@ from sc_backend import ApiErrorBodyResponse, BackendContractError
 from typer.testing import CliRunner
 
 from sc_cli.app import app
-from sc_cli.commands import characterization, datasets, results, session, simulation, tasks
+from sc_cli.commands import characterization, datasets, events, results, session, simulation, tasks
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -618,6 +618,76 @@ def test_tasks_show_command_supports_json_output() -> None:
     assert '"task_id": 301' in result.stdout
     assert '"metadata_records": []' in result.stdout
     assert '"result_handles": []' in result.stdout
+    assert '"events": [' in result.stdout
+
+
+def test_events_show_command_groups_persisted_task_history() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["events", "show", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "event_count: 2" in result.stdout
+    assert "event_type: task_submitted" in result.stdout
+    assert "event_type: task_completed" in result.stdout
+    assert "result_handle_ids:" in result.stdout
+    assert "result:fluxonium-2025-031:fit-summary" in result.stdout
+    assert "result:fluxonium-2025-031:plot-bundle" in result.stdout
+
+
+def test_events_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["events", "show", "303", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"event_count": 2' in result.stdout
+    assert '"event_type": "task_completed"' in result.stdout
+
+
+def test_events_show_command_supports_event_type_filters() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["events", "show", "301", "--event-type", "task_running"])
+
+    assert result.exit_code == 0
+    assert "event_count: 1" in result.stdout
+    assert "event_type: task_running" in result.stdout
+    assert "event_type: task_submitted" not in result.stdout
+
+
+def test_events_latest_command_reads_latest_persisted_event() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["events", "latest", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "latest_event:" in result.stdout
+    assert "event_type: task_completed" in result.stdout
+    assert "occurred_at: 2026-03-11 19:18:00" in result.stdout
+
+
+def test_events_latest_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["events", "latest", "303", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"event": {' in result.stdout
+    assert '"event_type": "task_completed"' in result.stdout
+
+
+def test_events_show_command_rejects_empty_filtered_history() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["events", "show", "301", "--level", "error"])
+
+    assert result.exit_code == 1
+    assert "error: No persisted task events matched the requested filters for 301." in result.output
 
 
 def test_results_show_command_groups_persisted_result_refs() -> None:
@@ -1135,6 +1205,18 @@ def test_results_show_command_handles_backend_contract_errors(
     monkeypatch.setattr(results, "get_task", lambda _: _raise_backend_error("Task read failed."))
 
     result = runner.invoke(app, ["results", "show", "303"])
+
+    assert result.exit_code == 2
+    assert "error: Task read failed. [validation/request_failed]" in result.output
+
+
+def test_events_show_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(events, "get_task", lambda _: _raise_backend_error("Task read failed."))
+
+    result = runner.invoke(app, ["events", "show", "303"])
 
     assert result.exit_code == 2
     assert "error: Task read failed. [validation/request_failed]" in result.output

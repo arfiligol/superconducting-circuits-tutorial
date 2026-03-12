@@ -11,7 +11,7 @@ from src.app.api.schemas.datasets import (
 )
 from src.app.api.schemas.errors import ApiErrorBodyResponse
 from src.app.api.schemas.session import SessionResponse
-from src.app.api.schemas.tasks import TaskDetailResponse, TaskSummaryResponse
+from src.app.api.schemas.tasks import TaskDetailResponse, TaskEventResponse, TaskSummaryResponse
 from src.app.domain.circuit_definitions import CircuitDefinitionSortBy
 from src.app.domain.datasets import DatasetSortBy, DatasetStatus, SortOrder
 from src.app.domain.tasks import TaskKind, TaskLane, TaskStatus, TaskVisibilityScope
@@ -48,6 +48,7 @@ __all__ = [
     "SessionResponse",
     "SortOrder",
     "TaskDetailResponse",
+    "TaskEventResponse",
     "TaskKind",
     "TaskLane",
     "TaskStatus",

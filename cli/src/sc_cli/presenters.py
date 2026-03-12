@@ -449,6 +449,51 @@ def render_task_result_handles(
     return "\n".join(lines)
 
 
+def render_task_event_history(
+    task: TaskDetailResponse,
+    *,
+    events: Sequence[BaseModel],
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "event_count": len(events),
+                "events": [event.model_dump(mode="json") for event in events],
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        f"event_count: {len(events)}",
+        "events:",
+    ]
+    for event in events:
+        lines.extend(_render_event_lines(event))
+    return "\n".join(lines)
+
+
+def render_task_latest_event(
+    task: TaskDetailResponse,
+    *,
+    event: BaseModel,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "event": event.model_dump(mode="json"),
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        "latest_event:",
+    ]
+    lines.extend(_render_event_lines(event))
+    return "\n".join(lines)
+
+
 def render_circuit_definition_detail(
     definition: CircuitDefinitionDetailResponse,
     *,
@@ -632,6 +677,33 @@ def _render_result_handle_detail_lines(task: TaskDetailResponse) -> list[str]:
             ]
         )
     return lines
+
+
+def _render_event_lines(event: BaseModel) -> list[str]:
+    event_data = event.model_dump(mode="json")
+    metadata = event_data["metadata"]
+    lines = [
+        f"- event_key: {event_data['event_key']}",
+        f"  event_type: {event_data['event_type']}",
+        f"  level: {event_data['level']}",
+        f"  occurred_at: {event_data['occurred_at']}",
+        f"  message: {event_data['message']}",
+        "  metadata:",
+    ]
+    if not metadata:
+        lines.append("  - none")
+        return lines
+    for key, value in metadata.items():
+        lines.append(f"  - {key}: {_render_event_metadata_value(value)}")
+    return lines
+
+
+def _render_event_metadata_value(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    if value is None:
+        return "-"
+    return str(value)
 
 
 def _render_primary_trace_store_uri(dataset: DatasetDetailResponse) -> str:
