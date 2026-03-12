@@ -20,6 +20,10 @@ extra_javascript = [
   "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
 ]
 nav = [
+  { "About" = [
+    { "Overview" = "about/index.md" },
+    { "Product Capabilities" = "about/product-capabilities.md" },
+  ] },
   { "How-to Guides" = [
     { "Overview" = "how-to/index.md" },
     { "Getting Started" = [
@@ -110,6 +114,7 @@ nav = [
     { "Architecture" = [
       { "Overview" = "reference/architecture/index.md" },
       { "Circuit Netlist Core" = "reference/architecture/schematic-netlist-core.md" },
+      { "Core Blueprint" = "reference/architecture/core-blueprint.md" },
       { "Identity / Workspace Minimal Model" = "reference/architecture/identity-workspace-model.md" },
       { "Task Semantics" = "reference/architecture/task-semantics.md" },
       { "Parity Matrix" = "reference/architecture/parity-matrix.md" },
@@ -145,6 +150,7 @@ nav = [
         { "Project Overview" = "reference/guardrails/project-basics/project-overview.md" },
         { "Tech Stack" = "reference/guardrails/project-basics/tech-stack.md" },
         { "Folder Structure" = "reference/guardrails/project-basics/folder-structure.md" },
+        { "Backend Architecture" = "reference/guardrails/project-basics/backend-architecture.md" },
         { "Source of Truth Order" = "reference/guardrails/project-basics/source-of-truth-order.md" },
       ] },
       { "Execution & Verification" = [

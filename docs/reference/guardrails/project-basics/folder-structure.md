@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite branch 中 frontend/backend/cli/desktop/core 的放置邊界。
-version: v2.1.0
-last_updated: 2026-03-11
-updated_by: docs-team
+version: v2.2.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Folder Structure
@@ -65,6 +65,11 @@ superconducting-circuits-tutorial/
 | 可被 API / CLI / simulation 共用的科學邏輯 | `src/core/` |
 | repo automation, docs helper, migration helper | `scripts/` |
 | 舊 NiceGUI 修補 | `src/app/`，且需明確標註為 migration-only |
+
+## Related Blueprints
+
+- backend 的責任分層與模組邊界，參見 [Backend Architecture](./backend-architecture.md)
+- shared core 的 canonical contract 與 adoption roadmap，參見 [Core Blueprint](../../architecture/core-blueprint.md)
 
 ## Dependency Direction
 
