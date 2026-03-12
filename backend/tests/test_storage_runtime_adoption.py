@@ -103,3 +103,23 @@ def test_runtime_reset_prefers_persisted_result_handle_over_seed_defaults() -> N
         "artifacts/persisted-fit-summary.json"
     )
     assert reloaded_task.result_refs.metadata_records[1].version == 9
+
+
+def test_runtime_reset_keeps_submitted_task_row_and_storage_refs() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary=None,
+        )
+    )
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(submitted_task.task_id)
+
+    assert reloaded_task.task_id == submitted_task.task_id
+    assert reloaded_task.status == "queued"
+    assert reloaded_task.dataset_id == "fluxonium-2025-031"
+    assert reloaded_task.result_refs.result_handles == submitted_task.result_refs.result_handles

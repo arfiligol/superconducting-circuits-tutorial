@@ -10,6 +10,7 @@ from src.app.infrastructure.persistence.database import build_sqlite_database_ur
 from src.app.infrastructure.persistence.models import (
     RewriteResultHandleRecord,
     RewriteStorageRecord,
+    RewriteTaskRecord,
     RewriteTracePayloadRecord,
 )
 from src.app.infrastructure.storage_reference_factory import (
@@ -35,6 +36,7 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
         "alembic_version",
         "rewrite_result_handles",
         "rewrite_storage_records",
+        "rewrite_task_records",
         "rewrite_trace_payloads",
     ]
 
@@ -138,6 +140,32 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
                 analysis_run_record_id=None,
             )
         )
+        session.add(
+            RewriteTaskRecord(
+                task_id=303,
+                kind="post_processing",
+                lane="simulation",
+                execution_mode="run",
+                status="completed",
+                submitted_at="2026-03-11 19:05:00",
+                owner_user_id="researcher-01",
+                owner_display_name="Rewrite Local User",
+                workspace_id="ws-device-lab",
+                workspace_slug="device-lab",
+                visibility_scope="owned",
+                dataset_id="fluxonium-2025-031",
+                definition_id=None,
+                summary="Fluxonium fit bundle was post-processed.",
+                queue_backend="in_memory_scaffold",
+                worker_task_name="post_processing_run_task",
+                request_ready=True,
+                submitted_from_active_dataset=True,
+                progress_phase="completed",
+                progress_percent_complete=100,
+                progress_summary="post_processing_run_task completed in the simulation lane.",
+                progress_updated_at="2026-03-11 19:18:00",
+            )
+        )
         session.commit()
 
         persisted_trace = session.scalar(
@@ -150,6 +178,9 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
                 RewriteResultHandleRecord.handle_id == result_handle.handle_id
             )
         )
+        persisted_task = session.scalar(
+            select(RewriteTaskRecord).where(RewriteTaskRecord.task_id == 303)
+        )
 
     assert persisted_trace is not None
     assert persisted_trace.schema_version == REWRITE_TRACE_SCHEMA_VERSION
@@ -157,6 +188,9 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
     assert persisted_result is not None
     assert persisted_result.source_dataset_id == "fluxonium-2025-031"
     assert persisted_result.provenance_task_id == 303
+    assert persisted_task is not None
+    assert persisted_task.progress_phase == "completed"
+    assert persisted_task.summary == "Fluxonium fit bundle was post-processed."
 
 
 def _build_alembic_config(database_path: Path) -> Config:

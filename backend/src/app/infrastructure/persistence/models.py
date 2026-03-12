@@ -92,3 +92,43 @@ class RewriteResultHandleRecord(RewriteMetadataBase):
         nullable=False,
         server_default=func.current_timestamp(),
     )
+
+
+class RewriteTaskRecord(RewriteMetadataBase):
+    __tablename__ = "rewrite_task_records"
+    __table_args__ = (
+        Index("ix_rewrite_task_records_task_id", "task_id", unique=True),
+        Index("ix_rewrite_task_records_workspace_id", "workspace_id"),
+        Index("ix_rewrite_task_records_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    lane: Mapped[str] = mapped_column(String(32), nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    submitted_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    owner_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    owner_display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    workspace_slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    visibility_scope: Mapped[str] = mapped_column(String(32), nullable=False)
+    dataset_id: Mapped[str | None] = mapped_column(String(128))
+    definition_id: Mapped[int | None]
+    summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    queue_backend: Mapped[str] = mapped_column(String(64), nullable=False)
+    worker_task_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_ready: Mapped[bool] = mapped_column(nullable=False, default=False)
+    submitted_from_active_dataset: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+    )
+    progress_phase: Mapped[str] = mapped_column(String(32), nullable=False)
+    progress_percent_complete: Mapped[int] = mapped_column(nullable=False)
+    progress_summary: Mapped[str] = mapped_column(String(255), nullable=False)
+    progress_updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )

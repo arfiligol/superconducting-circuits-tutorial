@@ -243,6 +243,29 @@ def test_submit_simulation_task_returns_queued_task_detail() -> None:
     )
 
 
+def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
+    response = client.post("/tasks", json={"kind": "characterization"})
+
+    assert response.status_code == 201
+    created_task = response.json()["task"]
+
+    reset_runtime_state()
+
+    list_response = client.get("/tasks")
+    assert list_response.status_code == 200
+    assert [task["task_id"] for task in list_response.json()][:2] == [306, 301]
+
+    detail_response = client.get("/tasks/306")
+    assert detail_response.status_code == 200
+    reloaded_task = detail_response.json()
+    assert reloaded_task["task_id"] == created_task["task_id"]
+    assert reloaded_task["dataset_id"] == created_task["dataset_id"]
+    assert reloaded_task["status"] == "queued"
+    assert reloaded_task["result_refs"]["result_handles"] == created_task["result_refs"][
+        "result_handles"
+    ]
+
+
 def test_submit_simulation_task_requires_definition_id() -> None:
     response = client.post("/tasks", json={"kind": "simulation"})
 

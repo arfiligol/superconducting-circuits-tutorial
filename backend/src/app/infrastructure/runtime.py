@@ -2,6 +2,7 @@ from functools import lru_cache
 
 from src.app.infrastructure.persistence import (
     SqliteRewriteStorageMetadataRepository,
+    SqliteRewriteTaskSnapshotRepository,
     bootstrap_metadata_schema,
     create_metadata_session_factory,
 )
@@ -23,7 +24,8 @@ def get_rewrite_catalog_repository() -> InMemoryRewriteCatalogRepository:
 @lru_cache(maxsize=1)
 def get_rewrite_app_state_repository() -> InMemoryRewriteAppStateRepository:
     return InMemoryRewriteAppStateRepository(
-        storage_metadata_repository=get_storage_metadata_repository()
+        storage_metadata_repository=get_storage_metadata_repository(),
+        task_snapshot_repository=get_task_snapshot_repository(),
     )
 
 
@@ -32,6 +34,15 @@ def get_storage_metadata_repository() -> SqliteRewriteStorageMetadataRepository:
     settings = get_settings()
     bootstrap_metadata_schema(settings.database_path)
     return SqliteRewriteStorageMetadataRepository(
+        create_metadata_session_factory(settings.database_path)
+    )
+
+
+@lru_cache(maxsize=1)
+def get_task_snapshot_repository() -> SqliteRewriteTaskSnapshotRepository:
+    settings = get_settings()
+    bootstrap_metadata_schema(settings.database_path)
+    return SqliteRewriteTaskSnapshotRepository(
         create_metadata_session_factory(settings.database_path)
     )
 
@@ -77,6 +88,7 @@ def reset_runtime_state() -> None:
     get_rewrite_catalog_repository.cache_clear()
     get_rewrite_app_state_repository.cache_clear()
     get_storage_metadata_repository.cache_clear()
+    get_task_snapshot_repository.cache_clear()
     get_dataset_service.cache_clear()
     get_circuit_definition_service.cache_clear()
     get_session_service.cache_clear()

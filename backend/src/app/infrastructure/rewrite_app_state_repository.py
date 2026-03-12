@@ -49,15 +49,30 @@ class StorageMetadataRepository(Protocol):
     def save_result_handle(self, result_handle: ResultHandleRef) -> ResultHandleRef: ...
 
 
+class TaskSnapshotRepository(Protocol):
+    def has_tasks(self) -> bool: ...
+
+    def list_tasks(self) -> tuple[TaskDetail, ...]: ...
+
+    def get_task(self, task_id: int) -> TaskDetail | None: ...
+
+    def create_task(self, draft: TaskCreateDraft) -> TaskDetail: ...
+
+    def save_task_snapshot(self, task: TaskDetail) -> TaskDetail: ...
+
+
 class InMemoryRewriteAppStateRepository:
     def __init__(
         self,
         storage_metadata_repository: StorageMetadataRepository | None = None,
+        task_snapshot_repository: TaskSnapshotRepository | None = None,
     ) -> None:
         self._storage_metadata_repository = storage_metadata_repository
+        self._task_snapshot_repository = task_snapshot_repository
         self._session_state = _seed_session_state()
         self._tasks = {task.task_id: task for task in _seed_tasks()}
         self._next_task_id = max(self._tasks) + 1
+        self._persist_seed_task_snapshots()
         self._persist_seed_storage_metadata()
 
     def get_session_state(self) -> SessionState:
@@ -68,9 +83,20 @@ class InMemoryRewriteAppStateRepository:
         return self._session_state
 
     def list_tasks(self) -> list[TaskDetail]:
+        if self._task_snapshot_repository is not None:
+            return [
+                self._hydrate_task(task)
+                for task in self._task_snapshot_repository.list_tasks()
+            ]
         return [self._hydrate_task(task) for task in self._tasks.values()]
 
     def get_task(self, task_id: int) -> TaskDetail | None:
+        if self._task_snapshot_repository is not None:
+            task = self._task_snapshot_repository.get_task(task_id)
+            if task is None:
+                return None
+            return self._hydrate_task(task)
+
         task = self._tasks.get(task_id)
         if task is None:
             return None
@@ -79,6 +105,18 @@ class InMemoryRewriteAppStateRepository:
         return hydrated_task
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
+        if self._task_snapshot_repository is not None:
+            task_snapshot = self._task_snapshot_repository.create_task(draft)
+            task_with_result_refs = replace(
+                task_snapshot,
+                result_refs=_build_pending_result_refs(
+                    task_id=task_snapshot.task_id,
+                    draft=draft,
+                ),
+            )
+            self._persist_result_refs(task_with_result_refs.result_refs)
+            return self._hydrate_task(task_with_result_refs)
+
         task_id = self._next_task_id
         task = TaskDetail(
             task_id=task_id,
@@ -113,6 +151,15 @@ class InMemoryRewriteAppStateRepository:
         hydrated_task = self._hydrate_task(task)
         self._tasks[task.task_id] = hydrated_task
         return hydrated_task
+
+    def _persist_seed_task_snapshots(self) -> None:
+        if self._task_snapshot_repository is None:
+            return
+        if self._task_snapshot_repository.has_tasks():
+            return
+
+        for task in self._tasks.values():
+            self._task_snapshot_repository.save_task_snapshot(task)
 
     def _persist_seed_storage_metadata(self) -> None:
         if self._storage_metadata_repository is None:
