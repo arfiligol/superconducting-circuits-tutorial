@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal
 
 from sc_core.tasking import LaneName, WorkerTaskName
 
 ExecutionPhase = Literal["running", "completed", "failed", "crashing"]
+TaskLifecycleStatus = Literal["running", "completed", "failed"]
 TaskAuditActionKind = Literal[
     "worker.task_started",
     "worker.task_completed",
@@ -60,6 +62,20 @@ class TaskExecutionResult:
 
 
 @dataclass(frozen=True)
+class TaskLifecycleMutation:
+    """Canonical persistence-layer mutation for one task lifecycle transition."""
+
+    status: TaskLifecycleStatus | None = None
+    started_at: datetime | None = None
+    heartbeat_at: datetime | None = None
+    completed_at: datetime | None = None
+    progress_payload: dict[str, object] | None = None
+    result_summary_payload: dict[str, object] | None = None
+    error_payload: dict[str, object] | None = None
+    result_handle: TaskResultHandle | None = None
+
+
+@dataclass(frozen=True)
 class WorkerExecutionProvenance:
     """Provenance fields attached to persisted execution payloads and logs."""
 
@@ -104,6 +120,63 @@ def build_task_start_payload(
         "lane": provenance.lane,
         "worker_task_name": provenance.worker_task_name,
     }
+
+
+def build_task_running_mutation(
+    *,
+    recorded_at: datetime,
+    progress_payload: Mapping[str, object] | None = None,
+) -> TaskLifecycleMutation:
+    """Build the canonical running-state mutation for one task."""
+    return TaskLifecycleMutation(
+        status="running",
+        started_at=recorded_at,
+        heartbeat_at=recorded_at,
+        progress_payload=_copy_payload(progress_payload),
+    )
+
+
+def build_task_heartbeat_mutation(
+    *,
+    recorded_at: datetime,
+    progress_payload: Mapping[str, object],
+) -> TaskLifecycleMutation:
+    """Build the canonical heartbeat mutation for one already-running task."""
+    return TaskLifecycleMutation(
+        heartbeat_at=recorded_at,
+        progress_payload=_copy_payload(progress_payload),
+    )
+
+
+def build_task_completed_mutation(
+    *,
+    recorded_at: datetime,
+    result_summary_payload: Mapping[str, object],
+    result_handle: TaskResultHandle,
+) -> TaskLifecycleMutation:
+    """Build the canonical completion mutation for one finished task."""
+    return TaskLifecycleMutation(
+        status="completed",
+        heartbeat_at=recorded_at,
+        completed_at=recorded_at,
+        result_summary_payload=_copy_payload(result_summary_payload),
+        error_payload={},
+        result_handle=result_handle,
+    )
+
+
+def build_task_failed_mutation(
+    *,
+    recorded_at: datetime,
+    error_payload: Mapping[str, object],
+) -> TaskLifecycleMutation:
+    """Build the canonical failure mutation for one task."""
+    return TaskLifecycleMutation(
+        status="failed",
+        heartbeat_at=recorded_at,
+        completed_at=recorded_at,
+        error_payload=_copy_payload(error_payload),
+    )
 
 
 def build_task_success_payload(
@@ -204,3 +277,9 @@ def _optional_int(value: object) -> int | None:
         if text:
             return int(text)
     raise ValueError("Expected integer-compatible value.")
+
+
+def _copy_payload(payload: Mapping[str, object] | None) -> dict[str, object] | None:
+    if payload is None:
+        return None
+    return dict(payload)

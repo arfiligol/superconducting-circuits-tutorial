@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
+from sc_core.execution import TaskLifecycleMutation
 from sc_core.storage import TraceResultLinkage
 
 from core.shared.persistence.models import AnalysisRunRecord, AuditLogRecord, TaskRecord, UserRecord
@@ -54,6 +55,8 @@ class TaskPersistenceContract(Protocol):
         analysis_run_id: int | None = None,
     ) -> TaskRecord: ...
 
+    def apply_lifecycle_mutation(self, task_id: int, mutation: TaskLifecycleMutation) -> None: ...
+
     def mark_running(self, task_id: int) -> None: ...
 
     def heartbeat(self, task_id: int, progress_payload: dict[str, Any]) -> None: ...
@@ -61,8 +64,10 @@ class TaskPersistenceContract(Protocol):
     def mark_completed(
         self,
         task_id: int,
-        result_linkage: TraceResultLinkage,
+        result_linkage: TraceResultLinkage | int | None,
         result_summary_payload: dict[str, Any],
+        *,
+        analysis_run_id: int | None = None,
     ) -> None: ...
 
     def mark_failed(self, task_id: int, error_payload: dict[str, Any]) -> None: ...

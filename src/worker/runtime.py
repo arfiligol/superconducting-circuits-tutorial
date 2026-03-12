@@ -17,13 +17,15 @@ from sc_core.execution import (
     TaskExecutionResult,
     WorkerExecutionProvenance,
     audit_action_for_phase,
+    build_task_completed_mutation,
     build_task_crash_payload,
+    build_task_failed_mutation,
     build_task_failure_payload,
+    build_task_running_mutation,
     build_task_start_payload,
     build_task_success_payload,
     build_worker_audit_summary,
 )
-from sc_core.storage import TraceResultLinkage
 from sc_core.tasking import WorkerTaskName
 
 from core.shared.persistence.reconcile import ReconcileSummary, reconcile_stale_tasks_and_batches
@@ -112,10 +114,15 @@ def execute_managed_task(
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-        uow.tasks.mark_running(task_id)
-        uow.tasks.heartbeat(
+        uow.tasks.apply_lifecycle_mutation(
             task_id,
-            _task_start_payload(lane_name=lane_name, worker_task_name=worker_task_name),
+            build_task_running_mutation(
+                recorded_at=_utcnow(),
+                progress_payload=_task_start_payload(
+                    lane_name=lane_name,
+                    worker_task_name=worker_task_name,
+                ),
+            ),
         )
         uow.audit_logs.append_log(
             actor_id=actor_id,
@@ -142,7 +149,13 @@ def execute_managed_task(
         with get_unit_of_work() as uow:
             task = uow.tasks.get_task(task_id)
             actor_id = task.actor_id if task is not None else None
-            uow.tasks.mark_failed(task_id, failure_payload)
+            uow.tasks.apply_lifecycle_mutation(
+                task_id,
+                build_task_failed_mutation(
+                    recorded_at=_utcnow(),
+                    error_payload=failure_payload,
+                ),
+            )
             uow.audit_logs.append_log(
                 actor_id=actor_id,
                 action_kind=audit_action_for_phase("failed"),
@@ -163,14 +176,16 @@ def execute_managed_task(
         worker_task_name=worker_task_name,
         result=result,
     )
-    result_linkage = TraceResultLinkage.from_result_handle(result.result_handle())
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         actor_id = task.actor_id if task is not None else None
-        uow.tasks.mark_completed(
+        uow.tasks.apply_lifecycle_mutation(
             task_id,
-            result_linkage,
-            completed_payload,
+            build_task_completed_mutation(
+                recorded_at=_utcnow(),
+                result_summary_payload=completed_payload,
+                result_handle=result.result_handle(),
+            ),
         )
         uow.audit_logs.append_log(
             actor_id=actor_id,
@@ -200,15 +215,17 @@ def mark_task_running_before_crash(
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-        uow.tasks.mark_running(task_id)
-        uow.tasks.heartbeat(
+        uow.tasks.apply_lifecycle_mutation(
             task_id,
-            build_task_crash_payload(
-                provenance=WorkerExecutionProvenance(
-                    lane=lane_name,
-                    worker_task_name=worker_task_name,
-                    worker_pid=os.getpid(),
-                    crash_requested_at=_utcnow().isoformat(),
+            build_task_running_mutation(
+                recorded_at=_utcnow(),
+                progress_payload=build_task_crash_payload(
+                    provenance=WorkerExecutionProvenance(
+                        lane=lane_name,
+                        worker_task_name=worker_task_name,
+                        worker_pid=os.getpid(),
+                        crash_requested_at=_utcnow().isoformat(),
+                    )
                 )
             ),
         )

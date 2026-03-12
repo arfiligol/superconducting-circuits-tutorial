@@ -8,6 +8,8 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import UTC, datetime
 from typing import Any
 
+from sc_core.execution import build_task_heartbeat_mutation
+
 from app.services.simulation_batch_persistence import (
     mark_simulation_batch_failed,
     persist_simulation_result_into_batch,
@@ -46,26 +48,29 @@ def _heartbeat_task(
     warning: str | None = None,
 ) -> None:
     with get_unit_of_work() as uow:
-        uow.tasks.heartbeat(
+        uow.tasks.apply_lifecycle_mutation(
             task_id,
-            progress_update(
-                phase="running",
-                summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
-                stage_label=stage_label,
-                stale_after_seconds=300,
-                details={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "point_label": point_label,
-                    "warning": warning,
-                },
-            ).to_payload(
-                extra={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "point_label": point_label,
-                    "warning": warning,
-                }
+            build_task_heartbeat_mutation(
+                recorded_at=_utcnow(),
+                progress_payload=progress_update(
+                    phase="running",
+                    summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
+                    stage_label=stage_label,
+                    stale_after_seconds=300,
+                    details={
+                        "elapsed_seconds": int(elapsed_seconds),
+                        "trace_batch_id": batch_id,
+                        "point_label": point_label,
+                        "warning": warning,
+                    },
+                ).to_payload(
+                    extra={
+                        "elapsed_seconds": int(elapsed_seconds),
+                        "trace_batch_id": batch_id,
+                        "point_label": point_label,
+                        "warning": warning,
+                    }
+                ),
             ),
         )
         uow.commit()

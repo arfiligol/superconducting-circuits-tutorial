@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import UTC, datetime
 
+from sc_core.execution import build_task_heartbeat_mutation
+
 from app.services.post_processing_batch_persistence import (
     mark_post_processing_batch_failed,
     persist_post_processing_result_into_batch,
@@ -43,24 +45,27 @@ def _heartbeat_task(
     warning: str | None = None,
 ) -> None:
     with get_unit_of_work() as uow:
-        uow.tasks.heartbeat(
+        uow.tasks.apply_lifecycle_mutation(
             task_id,
-            progress_update(
-                phase="running",
-                summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
-                stage_label=stage_label,
-                stale_after_seconds=300,
-                details={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "warning": warning,
-                },
-            ).to_payload(
-                extra={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "warning": warning,
-                }
+            build_task_heartbeat_mutation(
+                recorded_at=_utcnow(),
+                progress_payload=progress_update(
+                    phase="running",
+                    summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
+                    stage_label=stage_label,
+                    stale_after_seconds=300,
+                    details={
+                        "elapsed_seconds": int(elapsed_seconds),
+                        "trace_batch_id": batch_id,
+                        "warning": warning,
+                    },
+                ).to_payload(
+                    extra={
+                        "elapsed_seconds": int(elapsed_seconds),
+                        "trace_batch_id": batch_id,
+                        "warning": warning,
+                    }
+                ),
             ),
         )
         uow.commit()

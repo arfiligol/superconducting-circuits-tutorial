@@ -6,6 +6,8 @@ import asyncio
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from sc_core.execution import build_task_heartbeat_mutation
+
 from app.services.characterization_runner import (
     execute_characterization_run_async,
     save_analysis_run_status,
@@ -58,13 +60,16 @@ def execute_characterization_task(task_id: int) -> TaskExecutionResult:
 
     def _handle_progress(update: TaskProgressUpdate) -> None:
         with get_unit_of_work() as uow:
-            uow.tasks.heartbeat(
+            uow.tasks.apply_lifecycle_mutation(
                 task_id,
-                update.to_payload(
-                    extra={
-                        "analysis_run_id": analysis_run_id,
-                        "analysis_id": request.analysis_id,
-                    }
+                build_task_heartbeat_mutation(
+                    recorded_at=_utcnow(),
+                    progress_payload=update.to_payload(
+                        extra={
+                            "analysis_run_id": analysis_run_id,
+                            "analysis_id": request.analysis_id,
+                        }
+                    ),
                 ),
             )
             uow.commit()
