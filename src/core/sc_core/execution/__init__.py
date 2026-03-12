@@ -23,7 +23,9 @@ from sc_core.execution.contracts import (
     build_task_running_mutation,
     build_task_start_payload,
     build_task_success_payload,
+    build_worker_audit_payload,
     build_worker_audit_summary,
+    build_worker_execution_provenance,
     normalize_task_dedupe_key,
 )
 
@@ -50,6 +52,8 @@ __all__ = [
     "build_task_running_mutation",
     "build_task_start_payload",
     "build_task_success_payload",
+    "build_worker_audit_payload",
     "build_worker_audit_summary",
+    "build_worker_execution_provenance",
     "normalize_task_dedupe_key",
 ]

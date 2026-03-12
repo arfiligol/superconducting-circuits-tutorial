@@ -30,7 +30,9 @@ from sc_core.execution import (
     build_task_running_mutation,
     build_task_start_payload,
     build_task_success_payload,
+    build_worker_audit_payload,
     build_worker_audit_summary,
+    build_worker_execution_provenance,
     normalize_task_dedupe_key,
 )
 from sc_core.storage import (
@@ -55,13 +57,16 @@ from sc_core.storage import (
     merge_trace_batch_summary_payload,
 )
 from sc_core.tasking import (
+    TASKING_CONTRACT_VERSION,
     LaneName,
     TaskExecutionMode,
     TaskSubmissionKind,
     WorkerDispatchPlan,
     WorkerTaskName,
     WorkerTaskRoute,
+    build_worker_dispatch_payload,
     build_worker_dispatch_plan,
+    build_worker_enqueue_kwargs,
     extract_parameters_payload,
     resolve_worker_task_route,
 )
@@ -73,6 +78,7 @@ __all__ = [
     "POSTPROCESS_SWEEP_TRACE_WRITER_VERSION",
     "SIMULATION_RAW_SWEEP_TRACE_WRITER_VERSION",
     "STORAGE_CONTRACT_VERSION",
+    "TASKING_CONTRACT_VERSION",
     "TRACE_STORE_EVOLUTION_CONTRACT_VERSION",
     "TRACE_STORE_SCHEMA_BASELINE_VERSION",
     "WORKER_TASK_FAILED_ERROR_CODE",
@@ -117,8 +123,12 @@ __all__ = [
     "build_task_running_mutation",
     "build_task_start_payload",
     "build_task_success_payload",
+    "build_worker_audit_payload",
     "build_worker_audit_summary",
+    "build_worker_dispatch_payload",
     "build_worker_dispatch_plan",
+    "build_worker_enqueue_kwargs",
+    "build_worker_execution_provenance",
     "extract_parameters_payload",
     "inspect_circuit_definition_source",
     "merge_trace_batch_summary_payload",

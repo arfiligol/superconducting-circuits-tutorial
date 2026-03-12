@@ -7,6 +7,7 @@ from typing import Any, Literal
 from sc_core.tasking import (
     WorkerDispatchPlan,
     build_worker_dispatch_plan,
+    build_worker_enqueue_kwargs,
     extract_parameters_payload,
     resolve_worker_task_route,
 )
@@ -44,73 +45,12 @@ def enqueue_task(
     )
     task_callable = dispatch.worker_task_name
     queue = create_queue(dispatch.queue_name)
-    if task_callable == "simulation_run_task":
-        from worker.simulation_tasks import simulation_run_task
-
-        queue.enqueue(
-            simulation_run_task,
-            task_id,
-            job_timeout=dispatch.job_timeout,
-            failure_ttl=dispatch.failure_ttl,
-            result_ttl=dispatch.result_ttl,
-        )
-        return dispatch
-    if task_callable == "simulation_smoke_task":
-        from worker.simulation_tasks import simulation_smoke_task
-
-        queue.enqueue(
-            simulation_smoke_task,
-            task_id,
-            job_timeout=dispatch.job_timeout,
-            failure_ttl=dispatch.failure_ttl,
-            result_ttl=dispatch.result_ttl,
-        )
-        return dispatch
-    if task_callable == "post_processing_run_task":
-        from worker.simulation_tasks import post_processing_run_task
-
-        queue.enqueue(
-            post_processing_run_task,
-            task_id,
-            job_timeout=dispatch.job_timeout,
-            failure_ttl=dispatch.failure_ttl,
-            result_ttl=dispatch.result_ttl,
-        )
-        return dispatch
-    if task_callable == "post_processing_smoke_task":
-        from worker.simulation_tasks import post_processing_smoke_task
-
-        queue.enqueue(
-            post_processing_smoke_task,
-            task_id,
-            job_timeout=dispatch.job_timeout,
-            failure_ttl=dispatch.failure_ttl,
-            result_ttl=dispatch.result_ttl,
-        )
-        return dispatch
-    if task_callable == "characterization_run_task":
-        from worker.characterization_tasks import characterization_run_task
-
-        queue.enqueue(
-            characterization_run_task,
-            task_id,
-            job_timeout=dispatch.job_timeout,
-            failure_ttl=dispatch.failure_ttl,
-            result_ttl=dispatch.result_ttl,
-        )
-        return dispatch
-    if task_callable == "characterization_smoke_task":
-        from worker.characterization_tasks import characterization_smoke_task
-
-        queue.enqueue(
-            characterization_smoke_task,
-            task_id,
-            job_timeout=dispatch.job_timeout,
-            failure_ttl=dispatch.failure_ttl,
-            result_ttl=dispatch.result_ttl,
-        )
-        return dispatch
-    raise ValueError(f"Unsupported worker task '{task_callable}'.")
+    queue.enqueue(
+        _resolve_worker_task_callable(task_callable),
+        task_id,
+        **build_worker_enqueue_kwargs(dispatch),
+    )
+    return dispatch
 
 
 def _request_is_valid(
@@ -125,3 +65,31 @@ def _request_is_valid(
     if task_kind == "characterization":
         return extract_characterization_request_from_api_payload(parameters) is not None
     raise ValueError(f"Unsupported task kind '{task_kind}'.")
+
+
+def _resolve_worker_task_callable(task_callable: str):
+    if task_callable == "simulation_run_task":
+        from worker.simulation_tasks import simulation_run_task
+
+        return simulation_run_task
+    if task_callable == "simulation_smoke_task":
+        from worker.simulation_tasks import simulation_smoke_task
+
+        return simulation_smoke_task
+    if task_callable == "post_processing_run_task":
+        from worker.simulation_tasks import post_processing_run_task
+
+        return post_processing_run_task
+    if task_callable == "post_processing_smoke_task":
+        from worker.simulation_tasks import post_processing_smoke_task
+
+        return post_processing_smoke_task
+    if task_callable == "characterization_run_task":
+        from worker.characterization_tasks import characterization_run_task
+
+        return characterization_run_task
+    if task_callable == "characterization_smoke_task":
+        from worker.characterization_tasks import characterization_smoke_task
+
+        return characterization_smoke_task
+    raise ValueError(f"Unsupported worker task '{task_callable}'.")

@@ -5,6 +5,7 @@ from typing import Literal
 LaneName = Literal["simulation", "characterization"]
 TaskSubmissionKind = Literal["simulation", "post_processing", "characterization"]
 TaskExecutionMode = Literal["run", "smoke"]
+TASKING_CONTRACT_VERSION = "sc_tasking.v1"
 WorkerTaskName = Literal[
     "simulation_run_task",
     "simulation_smoke_task",
@@ -120,6 +121,28 @@ def build_worker_dispatch_plan(
         failure_ttl=failure_ttl,
         result_ttl=result_ttl,
     )
+
+
+def build_worker_dispatch_payload(dispatch: WorkerDispatchPlan) -> dict[str, object]:
+    """Build canonical dispatch metadata for one resolved worker enqueue plan."""
+    return {
+        "contract_version": TASKING_CONTRACT_VERSION,
+        "lane": dispatch.lane,
+        "queue_name": dispatch.queue_name,
+        "worker_task_name": dispatch.worker_task_name,
+        "execution_mode": dispatch.execution_mode,
+        "request_ready": dispatch.request_ready,
+        "requires_trace_batch": dispatch.requires_trace_batch,
+    }
+
+
+def build_worker_enqueue_kwargs(dispatch: WorkerDispatchPlan) -> dict[str, int]:
+    """Build canonical queue-enqueue kwargs for one resolved worker plan."""
+    return {
+        "job_timeout": dispatch.job_timeout,
+        "failure_ttl": dispatch.failure_ttl,
+        "result_ttl": dispatch.result_ttl,
+    }
 
 
 def _build_route(

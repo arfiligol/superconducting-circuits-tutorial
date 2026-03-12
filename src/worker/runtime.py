@@ -9,7 +9,6 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from rq import Queue, SimpleWorker
 from rq.timeouts import TimerDeathPenalty
@@ -24,7 +23,9 @@ from sc_core.execution import (
     build_task_running_mutation,
     build_task_start_payload,
     build_task_success_payload,
+    build_worker_audit_payload,
     build_worker_audit_summary,
+    build_worker_execution_provenance,
 )
 from sc_core.tasking import WorkerTaskName
 
@@ -48,56 +49,22 @@ def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _task_start_payload(
+def _worker_provenance(
     *,
     lane_name: LaneName,
     worker_task_name: WorkerTaskName,
-) -> dict[str, Any]:
-    """Return progress payload stored when a worker starts one task."""
-    return build_task_start_payload(
-        provenance=WorkerExecutionProvenance(
-            lane=lane_name,
-            worker_task_name=worker_task_name,
-            worker_pid=os.getpid(),
-            started_at=_utcnow().isoformat(),
-        ),
-    )
-
-
-def _task_success_payload(
-    *,
-    lane_name: LaneName,
-    worker_task_name: WorkerTaskName,
-    result: TaskExecutionResult,
-) -> dict[str, Any]:
-    """Return one completed-task summary payload."""
-    return build_task_success_payload(
-        provenance=WorkerExecutionProvenance(
-            lane=lane_name,
-            worker_task_name=worker_task_name,
-            worker_pid=os.getpid(),
-            completed_at=_utcnow().isoformat(),
-        ),
-        summary_payload=dict(result.result_summary_payload),
-        result_handle=result.result_handle(),
-    )
-
-
-def _task_error_payload(
-    *,
-    lane_name: LaneName,
-    worker_task_name: WorkerTaskName,
-    exc: Exception,
-) -> dict[str, Any]:
-    """Return one structured task failure payload."""
-    return build_task_failure_payload(
-        provenance=WorkerExecutionProvenance(
-            lane=lane_name,
-            worker_task_name=worker_task_name,
-            worker_pid=os.getpid(),
-        ),
-        exc_type=type(exc).__name__,
-        message=str(exc),
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+    crash_requested_at: datetime | None = None,
+) -> WorkerExecutionProvenance:
+    """Build canonical worker provenance for one runtime lifecycle event."""
+    return build_worker_execution_provenance(
+        lane=lane_name,
+        worker_task_name=worker_task_name,
+        worker_pid=os.getpid(),
+        started_at=started_at,
+        completed_at=completed_at,
+        crash_requested_at=crash_requested_at,
     )
 
 
@@ -107,8 +74,14 @@ def execute_managed_task(
     lane_name: LaneName,
     worker_task_name: WorkerTaskName,
     operation: Callable[[], TaskExecutionResult],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Run one managed worker operation and persist its lifecycle into TaskRecord."""
+    running_at = _utcnow()
+    running_provenance = _worker_provenance(
+        lane_name=lane_name,
+        worker_task_name=worker_task_name,
+        started_at=running_at,
+    )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         if task is None:
@@ -117,11 +90,8 @@ def execute_managed_task(
         uow.tasks.apply_lifecycle_mutation(
             task_id,
             build_task_running_mutation(
-                recorded_at=_utcnow(),
-                progress_payload=_task_start_payload(
-                    lane_name=lane_name,
-                    worker_task_name=worker_task_name,
-                ),
+                recorded_at=running_at,
+                progress_payload=build_task_start_payload(provenance=running_provenance),
             ),
         )
         uow.audit_logs.append_log(
@@ -134,17 +104,25 @@ def execute_managed_task(
                 worker_task_name=worker_task_name,
                 task_id=task_id,
             ),
-            payload={"lane": lane_name, "worker_pid": os.getpid()},
+            payload=build_worker_audit_payload(
+                phase="running",
+                provenance=running_provenance,
+            ),
         )
         uow.commit()
 
     try:
         result = operation()
     except Exception as exc:
-        failure_payload = _task_error_payload(
+        failed_at = _utcnow()
+        failure_provenance = _worker_provenance(
             lane_name=lane_name,
             worker_task_name=worker_task_name,
-            exc=exc,
+        )
+        failure_payload = build_task_failure_payload(
+            provenance=failure_provenance,
+            exc_type=type(exc).__name__,
+            message=str(exc),
         )
         with get_unit_of_work() as uow:
             task = uow.tasks.get_task(task_id)
@@ -152,7 +130,7 @@ def execute_managed_task(
             uow.tasks.apply_lifecycle_mutation(
                 task_id,
                 build_task_failed_mutation(
-                    recorded_at=_utcnow(),
+                    recorded_at=failed_at,
                     error_payload=failure_payload,
                 ),
             )
@@ -171,10 +149,16 @@ def execute_managed_task(
             uow.commit()
         return failure_payload
 
-    completed_payload = _task_success_payload(
+    completed_at = _utcnow()
+    completed_provenance = _worker_provenance(
         lane_name=lane_name,
         worker_task_name=worker_task_name,
-        result=result,
+        completed_at=completed_at,
+    )
+    completed_payload = build_task_success_payload(
+        provenance=completed_provenance,
+        summary_payload=dict(result.result_summary_payload),
+        result_handle=result.result_handle(),
     )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
@@ -182,7 +166,7 @@ def execute_managed_task(
         uow.tasks.apply_lifecycle_mutation(
             task_id,
             build_task_completed_mutation(
-                recorded_at=_utcnow(),
+                recorded_at=completed_at,
                 result_summary_payload=completed_payload,
                 result_handle=result.result_handle(),
             ),
@@ -210,6 +194,12 @@ def mark_task_running_before_crash(
     worker_task_name: WorkerTaskName,
 ) -> None:
     """Persist a running state immediately before an intentional worker crash."""
+    crash_requested_at = _utcnow()
+    crash_provenance = _worker_provenance(
+        lane_name=lane_name,
+        worker_task_name=worker_task_name,
+        crash_requested_at=crash_requested_at,
+    )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         if task is None:
@@ -218,15 +208,8 @@ def mark_task_running_before_crash(
         uow.tasks.apply_lifecycle_mutation(
             task_id,
             build_task_running_mutation(
-                recorded_at=_utcnow(),
-                progress_payload=build_task_crash_payload(
-                    provenance=WorkerExecutionProvenance(
-                        lane=lane_name,
-                        worker_task_name=worker_task_name,
-                        worker_pid=os.getpid(),
-                        crash_requested_at=_utcnow().isoformat(),
-                    )
-                )
+                recorded_at=crash_requested_at,
+                progress_payload=build_task_crash_payload(provenance=crash_provenance),
             ),
         )
         uow.audit_logs.append_log(
@@ -239,7 +222,10 @@ def mark_task_running_before_crash(
                 worker_task_name=worker_task_name,
                 task_id=task_id,
             ),
-            payload={"lane": lane_name, "worker_pid": os.getpid()},
+            payload=build_worker_audit_payload(
+                phase="crashing",
+                provenance=crash_provenance,
+            ),
         )
         uow.commit()
 

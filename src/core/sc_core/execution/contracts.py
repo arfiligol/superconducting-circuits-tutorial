@@ -115,6 +115,26 @@ class WorkerExecutionProvenance:
         return payload
 
 
+def build_worker_execution_provenance(
+    *,
+    lane: LaneName,
+    worker_task_name: WorkerTaskName,
+    worker_pid: int | None = None,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+    crash_requested_at: datetime | None = None,
+) -> WorkerExecutionProvenance:
+    """Build canonical worker provenance while normalizing timestamp encoding."""
+    return WorkerExecutionProvenance(
+        lane=lane,
+        worker_task_name=worker_task_name,
+        worker_pid=worker_pid,
+        started_at=_optional_isoformat(started_at),
+        completed_at=_optional_isoformat(completed_at),
+        crash_requested_at=_optional_isoformat(crash_requested_at),
+    )
+
+
 def build_task_start_payload(
     *,
     provenance: WorkerExecutionProvenance,
@@ -314,6 +334,23 @@ def build_task_crash_payload(
     }
 
 
+def build_worker_audit_payload(
+    *,
+    phase: ExecutionPhase,
+    provenance: WorkerExecutionProvenance,
+    result_handle: TaskResultHandle | None = None,
+) -> dict[str, object]:
+    """Build canonical audit payload metadata for one worker lifecycle event."""
+    payload: dict[str, object] = {
+        "contract_version": EXECUTION_CONTRACT_VERSION,
+        "phase": phase,
+        **provenance.to_payload(),
+    }
+    if result_handle is not None and not result_handle.is_empty():
+        payload["result_refs"] = result_handle.to_payload()
+    return payload
+
+
 def audit_action_for_phase(phase: ExecutionPhase) -> TaskAuditActionKind:
     """Map one execution phase to the canonical worker audit action kind."""
     if phase == "running":
@@ -353,6 +390,12 @@ def _optional_int(value: object) -> int | None:
         if text:
             return int(text)
     raise ValueError("Expected integer-compatible value.")
+
+
+def _optional_isoformat(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat()
 
 
 def _copy_payload(payload: Mapping[str, object] | None) -> dict[str, object] | None:
