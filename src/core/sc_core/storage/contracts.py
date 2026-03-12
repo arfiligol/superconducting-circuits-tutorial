@@ -47,6 +47,10 @@ class TraceResultLinkage:
             ),
         )
 
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, object]) -> TraceResultLinkage:
+        return cls.from_result_handle(TaskResultHandle.from_mapping(payload))
+
     def has_outputs(self) -> bool:
         return self.trace_batch is not None or self.analysis_run is not None
 
@@ -58,12 +62,90 @@ class TraceResultLinkage:
             handles.append(self.analysis_run)
         return tuple(handles)
 
+    def to_result_handle(self) -> TaskResultHandle:
+        return TaskResultHandle(
+            trace_batch_id=(
+                self.trace_batch.record_id if self.trace_batch is not None else None
+            ),
+            analysis_run_id=(
+                self.analysis_run.record_id if self.analysis_run is not None else None
+            ),
+        )
+
     def to_payload(self) -> dict[str, int]:
-        payload: dict[str, int] = {}
-        if self.trace_batch is not None:
-            payload["trace_batch_id"] = self.trace_batch.record_id
-        if self.analysis_run is not None:
-            payload["analysis_run_id"] = self.analysis_run.record_id
+        return self.to_result_handle().to_payload()
+
+
+@dataclass(frozen=True)
+class AnalysisRunProvenance:
+    """Canonical provenance view for characterization analysis-run persistence."""
+
+    analysis_id: str
+    analysis_label: str
+    run_id: str = ""
+    input_scope: str = ""
+    input_batch_ids: tuple[int, ...] = ()
+    input_trace_ids: tuple[int, ...] = ()
+    trace_mode_group: str = ""
+
+    @classmethod
+    def from_payloads(
+        cls,
+        *,
+        source_meta: Mapping[str, object],
+        config_snapshot: Mapping[str, object],
+    ) -> AnalysisRunProvenance:
+        input_batch_ids = _coerce_int_sequence(source_meta.get("input_batch_ids"))
+        if not input_batch_ids:
+            legacy_batch_id = _optional_int(source_meta.get("input_bundle_id"))
+            if legacy_batch_id is not None:
+                input_batch_ids = (legacy_batch_id,)
+
+        input_trace_ids = _coerce_int_sequence(source_meta.get("input_trace_ids"))
+        if not input_trace_ids:
+            input_trace_ids = _coerce_int_sequence(config_snapshot.get("input_trace_ids"))
+        if not input_trace_ids:
+            input_trace_ids = _coerce_int_sequence(config_snapshot.get("selected_trace_ids"))
+
+        trace_mode_group = _first_non_empty_str(
+            source_meta.get("trace_mode_group"),
+            config_snapshot.get("trace_mode_group"),
+            config_snapshot.get("selected_trace_mode_group"),
+        )
+
+        analysis_id = _require_str(source_meta.get("analysis_id"), field_name="analysis_id")
+        analysis_label = _first_non_empty_str(source_meta.get("analysis_label"), analysis_id)
+        if analysis_label is None:
+            raise ValueError("analysis_label is required.")
+
+        return cls(
+            analysis_id=analysis_id,
+            analysis_label=analysis_label,
+            run_id=_first_non_empty_str(source_meta.get("run_id")) or "",
+            input_scope=_first_non_empty_str(source_meta.get("input_scope")) or "",
+            input_batch_ids=input_batch_ids,
+            input_trace_ids=input_trace_ids,
+            trace_mode_group=trace_mode_group or "",
+        )
+
+    def to_source_meta_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "origin": "characterization",
+            "source_kind": "analysis",
+            "stage_kind": "analysis_run",
+            "analysis_id": self.analysis_id,
+            "analysis_label": self.analysis_label or self.analysis_id,
+            "input_batch_ids": [int(batch_id) for batch_id in self.input_batch_ids],
+            "input_trace_ids": [int(trace_id) for trace_id in self.input_trace_ids],
+        }
+        if self.input_batch_ids:
+            payload["input_bundle_id"] = int(self.input_batch_ids[0])
+        if self.run_id:
+            payload["run_id"] = self.run_id
+        if self.input_scope:
+            payload["input_scope"] = self.input_scope
+        if self.trace_mode_group:
+            payload["trace_mode_group"] = self.trace_mode_group
         return payload
 
 
@@ -235,6 +317,31 @@ def _coerce_int_tuple(value: object, *, field_name: str) -> tuple[int, ...]:
     if not isinstance(value, list) or not value:
         raise ValueError(f"TraceStoreLocator.{field_name} is required.")
     return tuple(_require_int(item, field_name=field_name) for item in value)
+
+
+def _coerce_int_sequence(value: object) -> tuple[int, ...]:
+    if not isinstance(value, list):
+        return ()
+    normalized: list[int] = []
+    for item in value:
+        if isinstance(item, bool):
+            normalized.append(int(item))
+            continue
+        if isinstance(item, int):
+            normalized.append(item)
+            continue
+        if isinstance(item, float):
+            normalized.append(int(item))
+            continue
+        if isinstance(item, str):
+            text = item.strip()
+            if not text:
+                continue
+            try:
+                normalized.append(int(text))
+            except ValueError:
+                continue
+    return tuple(normalized)
 
 
 def _require_int(value: object, *, field_name: str) -> int:

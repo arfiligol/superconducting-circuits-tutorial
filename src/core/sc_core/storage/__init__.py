@@ -2,6 +2,7 @@
 
 from sc_core.storage.contracts import (
     STORAGE_CONTRACT_VERSION,
+    AnalysisRunProvenance,
     StorageRecordHandle,
     StorageRecordKind,
     TraceBatchHandle,
@@ -28,6 +29,7 @@ __all__ = [
     "STORAGE_CONTRACT_VERSION",
     "TRACE_STORE_EVOLUTION_CONTRACT_VERSION",
     "TRACE_STORE_SCHEMA_BASELINE_VERSION",
+    "AnalysisRunProvenance",
     "StorageRecordHandle",
     "StorageRecordKind",
     "TraceBatchHandle",

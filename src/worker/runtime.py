@@ -169,17 +169,8 @@ def execute_managed_task(
         actor_id = task.actor_id if task is not None else None
         uow.tasks.mark_completed(
             task_id,
-            (
-                result_linkage.trace_batch.record_id
-                if result_linkage.trace_batch is not None
-                else None
-            ),
+            result_linkage,
             completed_payload,
-            analysis_run_id=(
-                result_linkage.analysis_run.record_id
-                if result_linkage.analysis_run is not None
-                else None
-            ),
         )
         uow.audit_logs.append_log(
             actor_id=actor_id,

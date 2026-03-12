@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -21,6 +24,13 @@ class TaskResultHandle:
 
     trace_batch_id: int | None = None
     analysis_run_id: int | None = None
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, object]) -> TaskResultHandle:
+        return cls(
+            trace_batch_id=_optional_int(payload.get("trace_batch_id")),
+            analysis_run_id=_optional_int(payload.get("analysis_run_id")),
+        )
 
     def is_empty(self) -> bool:
         return self.trace_batch_id is None and self.analysis_run_id is None
@@ -180,3 +190,17 @@ def build_worker_audit_summary(
     if phase == "failed":
         return f"Worker failed {worker_task_name} for task {task_id}"
     return f"Worker is about to crash while running {worker_task_name} for task {task_id}"
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("Expected integer-compatible value.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return int(text)
+    raise ValueError("Expected integer-compatible value.")

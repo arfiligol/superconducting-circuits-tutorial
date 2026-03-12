@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from sc_core.storage import TraceResultLinkage
 from sqlalchemy import desc, or_
 from sqlmodel import Session, col, select
 
@@ -92,17 +93,16 @@ class TaskRepository:
     def mark_completed(
         self,
         task_id: int,
-        trace_batch_id: int | None,
+        result_linkage: TraceResultLinkage,
         result_summary_payload: dict[str, Any],
-        *,
-        analysis_run_id: int | None = None,
     ) -> None:
         """Mark one task as completed and link its persisted outputs."""
         task = self._require_task(task_id)
         now = _utcnow()
+        result_handle = result_linkage.to_result_handle()
         task.status = "completed"
-        task.trace_batch_id = trace_batch_id
-        task.analysis_run_id = analysis_run_id
+        task.trace_batch_id = result_handle.trace_batch_id
+        task.analysis_run_id = result_handle.analysis_run_id
         task.result_summary_payload = dict(result_summary_payload)
         task.error_payload = {}
         task.completed_at = now
