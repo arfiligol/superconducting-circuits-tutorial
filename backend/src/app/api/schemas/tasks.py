@@ -17,6 +17,14 @@ class TaskProgressResponse(BaseModel):
     updated_at: str
 
 
+class TaskDispatchResponse(BaseModel):
+    dispatch_key: str
+    status: Literal["accepted", "running", "completed", "failed"]
+    submission_source: Literal["active_dataset", "explicit_dataset", "definition_only"]
+    accepted_at: str
+    last_updated_at: str
+
+
 class TaskResultRefsResponse(BaseModel):
     trace_batch_id: int | None
     analysis_run_id: int | None
@@ -47,6 +55,7 @@ class TaskDetailResponse(TaskSummaryResponse):
     worker_task_name: WorkerTaskName
     request_ready: bool
     submitted_from_active_dataset: bool
+    dispatch: TaskDispatchResponse
     progress: TaskProgressResponse
     result_refs: TaskResultRefsResponse
 

@@ -9,6 +9,7 @@ from src.app.api.presenters.storage import (
 )
 from src.app.api.schemas.tasks import (
     TaskDetailResponse,
+    TaskDispatchResponse,
     TaskMutationResponse,
     TaskProgressResponse,
     TaskResultRefsResponse,
@@ -118,6 +119,7 @@ def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
         worker_task_name=task.worker_task_name,
         request_ready=task.request_ready,
         submitted_from_active_dataset=task.submitted_from_active_dataset,
+        dispatch=_build_task_dispatch_response(task),
         progress=TaskProgressResponse(
             phase=task.progress.phase,
             percent_complete=task.progress.percent_complete,
@@ -137,4 +139,32 @@ def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
                 for handle in task.result_refs.result_handles
             ],
         ),
+    )
+
+
+def _build_task_dispatch_response(task: TaskDetail) -> TaskDispatchResponse:
+    dispatch = task.dispatch
+    if dispatch is None:
+        dispatch_status = "accepted" if task.status == "queued" else task.status
+        submission_source = (
+            "active_dataset"
+            if task.submitted_from_active_dataset
+            else "explicit_dataset"
+            if task.dataset_id is not None
+            else "definition_only"
+        )
+        return TaskDispatchResponse(
+            dispatch_key=f"dispatch:{task.task_id}:{task.worker_task_name}",
+            status=dispatch_status,
+            submission_source=submission_source,
+            accepted_at=task.submitted_at,
+            last_updated_at=task.progress.updated_at,
+        )
+
+    return TaskDispatchResponse(
+        dispatch_key=dispatch.dispatch_key,
+        status=dispatch.status,
+        submission_source=dispatch.submission_source,
+        accepted_at=dispatch.accepted_at,
+        last_updated_at=dispatch.last_updated_at,
     )

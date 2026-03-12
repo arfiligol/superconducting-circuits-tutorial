@@ -12,6 +12,8 @@ TaskLane = Literal["simulation", "characterization"]
 TaskStatus = Literal["queued", "running", "completed", "failed"]
 TaskQueueBackend = Literal["in_memory_scaffold"]
 TaskVisibilityScope = Literal["workspace", "owned"]
+TaskDispatchStatus = Literal["accepted", "running", "completed", "failed"]
+TaskSubmissionSource = Literal["active_dataset", "explicit_dataset", "definition_only"]
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,15 @@ class TaskSummary:
 
 
 @dataclass(frozen=True)
+class TaskDispatch:
+    dispatch_key: str
+    status: TaskDispatchStatus
+    submission_source: TaskSubmissionSource
+    accepted_at: str
+    last_updated_at: str
+
+
+@dataclass(frozen=True)
 class TaskDetail(TaskSummary):
     queue_backend: TaskQueueBackend
     worker_task_name: WorkerTaskName
@@ -67,6 +78,7 @@ class TaskDetail(TaskSummary):
     submitted_from_active_dataset: bool
     progress: TaskProgress
     result_refs: TaskResultRefs
+    dispatch: TaskDispatch | None = None
 
 
 @dataclass(frozen=True)

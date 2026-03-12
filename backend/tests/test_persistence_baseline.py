@@ -10,6 +10,7 @@ from src.app.infrastructure.persistence.database import build_sqlite_database_ur
 from src.app.infrastructure.persistence.models import (
     RewriteResultHandleRecord,
     RewriteStorageRecord,
+    RewriteTaskDispatchRecord,
     RewriteTaskRecord,
     RewriteTracePayloadRecord,
 )
@@ -36,6 +37,7 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
         "alembic_version",
         "rewrite_result_handles",
         "rewrite_storage_records",
+        "rewrite_task_dispatch_records",
         "rewrite_task_records",
         "rewrite_trace_payloads",
     ]
@@ -166,6 +168,16 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
                 progress_updated_at="2026-03-11 19:18:00",
             )
         )
+        session.add(
+            RewriteTaskDispatchRecord(
+                task_id=303,
+                dispatch_key="dispatch:303:post_processing_run_task",
+                status="completed",
+                submission_source="active_dataset",
+                accepted_at="2026-03-11 19:05:00",
+                last_updated_at="2026-03-11 19:18:00",
+            )
+        )
         session.commit()
 
         persisted_trace = session.scalar(
@@ -181,6 +193,9 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
         persisted_task = session.scalar(
             select(RewriteTaskRecord).where(RewriteTaskRecord.task_id == 303)
         )
+        persisted_dispatch = session.scalar(
+            select(RewriteTaskDispatchRecord).where(RewriteTaskDispatchRecord.task_id == 303)
+        )
 
     assert persisted_trace is not None
     assert persisted_trace.schema_version == REWRITE_TRACE_SCHEMA_VERSION
@@ -191,6 +206,9 @@ def test_alembic_upgrade_creates_rewrite_storage_tables_and_supports_round_trip(
     assert persisted_task is not None
     assert persisted_task.progress_phase == "completed"
     assert persisted_task.summary == "Fluxonium fit bundle was post-processed."
+    assert persisted_dispatch is not None
+    assert persisted_dispatch.dispatch_key == "dispatch:303:post_processing_run_task"
+    assert persisted_dispatch.status == "completed"
 
 
 def _build_alembic_config(database_path: Path) -> Config:

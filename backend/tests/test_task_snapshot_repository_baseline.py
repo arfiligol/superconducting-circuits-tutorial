@@ -6,8 +6,10 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sc_core.tasking import resolve_worker_task_route
+from sqlalchemy import delete
 from src.app.domain.tasks import TaskCreateDraft
 from src.app.infrastructure.persistence import (
+    RewriteTaskDispatchRecord,
     SqliteRewriteTaskSnapshotRepository,
     build_sqlite_database_url,
     create_metadata_session_factory,
@@ -27,6 +29,8 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     assert repository.has_tasks() is False
     persisted_seed = repository.save_task_snapshot(seeded_task)
     assert persisted_seed.task_id == seeded_task.task_id
+    assert persisted_seed.dispatch is not None
+    assert persisted_seed.dispatch.dispatch_key == "dispatch:303:post_processing_run_task"
     assert repository.has_tasks() is True
     assert repository.get_task(303) == persisted_seed
     assert repository.list_tasks() == (persisted_seed,)
@@ -56,6 +60,9 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
     )
     assert created.task_id == 304
     assert created.status == "queued"
+    assert created.dispatch is not None
+    assert created.dispatch.status == "accepted"
+    assert created.dispatch.submission_source == "active_dataset"
     assert created.progress.phase == "queued"
     assert created.result_refs.result_handles == ()
     assert repository.get_task(304) == created
@@ -76,9 +83,25 @@ def test_sqlite_task_snapshot_repository_round_trips_task_rows(tmp_path: Path) -
         )
     )
     assert updated.status == "failed"
+    assert updated.dispatch is not None
+    assert updated.dispatch.status == "failed"
     persisted_updated = repository.get_task(304)
     assert persisted_updated is not None
     assert persisted_updated.progress.summary == "Persisted failure summary."
+    assert persisted_updated.dispatch is not None
+    assert persisted_updated.dispatch.last_updated_at == "2026-03-12 11:05:00"
+
+    with create_metadata_session_factory(str(database_path))() as session:
+        session.execute(
+            delete(RewriteTaskDispatchRecord).where(RewriteTaskDispatchRecord.task_id == 304)
+        )
+        session.commit()
+
+    backfilled_dispatch = repository.get_task(304)
+    assert backfilled_dispatch is not None
+    assert backfilled_dispatch.dispatch is not None
+    assert backfilled_dispatch.dispatch.dispatch_key == "dispatch:304:characterization_run_task"
+    assert backfilled_dispatch.dispatch.status == "failed"
 
 
 def _upgrade_schema(database_path: Path) -> None:

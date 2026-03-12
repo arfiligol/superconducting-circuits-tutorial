@@ -132,3 +132,27 @@ class RewriteTaskRecord(RewriteMetadataBase):
         nullable=False,
         server_default=func.current_timestamp(),
     )
+
+
+class RewriteTaskDispatchRecord(RewriteMetadataBase):
+    __tablename__ = "rewrite_task_dispatch_records"
+    __table_args__ = (
+        Index("ix_rewrite_task_dispatch_records_task_id", "task_id", unique=True),
+        Index("ix_rewrite_task_dispatch_records_dispatch_key", "dispatch_key", unique=True),
+        Index("ix_rewrite_task_dispatch_records_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("rewrite_task_records.task_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dispatch_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    submission_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    last_updated_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        server_default=func.current_timestamp(),
+    )

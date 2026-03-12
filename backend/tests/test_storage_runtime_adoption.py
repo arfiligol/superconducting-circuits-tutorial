@@ -39,6 +39,9 @@ def test_runtime_task_submission_persists_pending_result_metadata() -> None:
     assert storage_repository.get_result_handle("task-result:306:primary") == (
         task.result_refs.result_handles[0]
     )
+    assert task.dispatch is not None
+    assert task.dispatch.status == "accepted"
+    assert task.dispatch.dispatch_key == "dispatch:306:characterization_run_task"
 
 
 def test_runtime_bootstrap_persists_seeded_trace_payload_and_materialized_handles() -> None:
@@ -69,6 +72,8 @@ def test_task_service_uses_persisted_task_repository_not_app_state_scaffold() ->
     assert persisted_task.result_refs.result_handles[0].handle_id == (
         "result:fluxonium-2025-031:fit-summary"
     )
+    assert persisted_task.dispatch is not None
+    assert persisted_task.dispatch.status == "completed"
 
 
 def test_runtime_reset_prefers_persisted_result_handle_over_seed_defaults() -> None:
@@ -152,6 +157,8 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     )
 
     assert updated_task.status == "running"
+    assert updated_task.dispatch is not None
+    assert updated_task.dispatch.status == "running"
     assert updated_task.progress.percent_complete == 35
     assert updated_task.summary == "Characterization task is running against persisted state."
 
@@ -160,6 +167,9 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     reloaded_task = get_task_service().get_task(submitted_task.task_id)
 
     assert reloaded_task.status == "running"
+    assert reloaded_task.dispatch is not None
+    assert reloaded_task.dispatch.status == "running"
+    assert reloaded_task.dispatch.last_updated_at == "2026-03-12 11:15:00"
     assert reloaded_task.progress.percent_complete == 35
     assert reloaded_task.progress.summary == "Characterization worker picked up the task."
 
@@ -232,6 +242,8 @@ def test_task_service_lifecycle_update_persists_completed_result_refs_across_res
     )
 
     assert completed_task.status == "completed"
+    assert completed_task.dispatch is not None
+    assert completed_task.dispatch.status == "completed"
     assert completed_task.result_refs.trace_batch_id == submitted_task.task_id
     assert completed_task.result_refs.result_handles[0].status == "materialized"
     assert completed_task.result_refs.trace_payload is not None
@@ -241,6 +253,12 @@ def test_task_service_lifecycle_update_persists_completed_result_refs_across_res
     reloaded_task = get_task_service().get_task(submitted_task.task_id)
 
     assert reloaded_task.status == "completed"
+    assert reloaded_task.dispatch is not None
+    assert reloaded_task.dispatch.dispatch_key == (
+        f"dispatch:{submitted_task.task_id}:characterization_run_task"
+    )
+    assert reloaded_task.dispatch.status == "completed"
+    assert reloaded_task.dispatch.submission_source == "active_dataset"
     assert reloaded_task.progress.phase == "completed"
     assert reloaded_task.result_refs.trace_batch_id == submitted_task.task_id
     assert reloaded_task.result_refs.result_handles[0].payload_locator == (
@@ -292,6 +310,8 @@ def test_runtime_reset_keeps_submitted_task_row_and_storage_refs() -> None:
 
     assert reloaded_task.task_id == submitted_task.task_id
     assert reloaded_task.status == "queued"
+    assert reloaded_task.dispatch is not None
+    assert reloaded_task.dispatch.status == "accepted"
     assert reloaded_task.dataset_id == "fluxonium-2025-031"
     assert reloaded_task.result_refs.result_handles == submitted_task.result_refs.result_handles
     assert get_rewrite_task_repository().get_task(submitted_task.task_id) is not None

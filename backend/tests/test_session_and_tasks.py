@@ -103,6 +103,13 @@ def test_get_task_returns_detail_payload() -> None:
     assert payload["worker_task_name"] == "post_processing_run_task"
     assert payload["visibility_scope"] == "owned"
     assert payload["request_ready"] is True
+    assert payload["dispatch"] == {
+        "dispatch_key": "dispatch:303:post_processing_run_task",
+        "status": "completed",
+        "submission_source": "active_dataset",
+        "accepted_at": "2026-03-11 19:05:00",
+        "last_updated_at": "2026-03-11 19:18:00",
+    }
     assert payload["result_refs"]["trace_batch_id"] == 88
     assert payload["result_refs"]["metadata_records"] == [
         {
@@ -183,6 +190,13 @@ def test_submit_characterization_task_uses_active_dataset() -> None:
     assert payload["task"]["worker_task_name"] == "characterization_run_task"
     assert payload["task"]["execution_mode"] == "run"
     assert payload["task"]["request_ready"] is True
+    assert payload["task"]["dispatch"] == {
+        "dispatch_key": "dispatch:306:characterization_run_task",
+        "status": "accepted",
+        "submission_source": "active_dataset",
+        "accepted_at": "2026-03-12 10:30:00",
+        "last_updated_at": "2026-03-12 10:30:00",
+    }
     assert payload["task"]["result_refs"]["trace_payload"] is None
     assert payload["task"]["result_refs"]["result_handles"] == [
         {
@@ -232,6 +246,13 @@ def test_submit_simulation_task_returns_queued_task_detail() -> None:
     assert payload["task"]["worker_task_name"] == "simulation_smoke_task"
     assert payload["task"]["execution_mode"] == "smoke"
     assert payload["task"]["request_ready"] is False
+    assert payload["task"]["dispatch"] == {
+        "dispatch_key": "dispatch:306:simulation_smoke_task",
+        "status": "accepted",
+        "submission_source": "active_dataset",
+        "accepted_at": "2026-03-12 10:30:00",
+        "last_updated_at": "2026-03-12 10:30:00",
+    }
     assert payload["task"]["result_refs"]["metadata_records"] == [
         {
             "backend": "sqlite_metadata",
@@ -265,6 +286,7 @@ def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
     assert reloaded_task["task_id"] == created_task["task_id"]
     assert reloaded_task["dataset_id"] == created_task["dataset_id"]
     assert reloaded_task["status"] == "queued"
+    assert reloaded_task["dispatch"] == created_task["dispatch"]
     assert reloaded_task["result_refs"]["result_handles"] == created_task["result_refs"][
         "result_handles"
     ]
@@ -294,6 +316,8 @@ def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
     payload = detail_response.json()
     assert payload["status"] == "failed"
     assert payload["summary"] == "Persisted task snapshot override"
+    assert payload["dispatch"]["status"] == "failed"
+    assert payload["dispatch"]["last_updated_at"] == "2026-03-12 11:05:00"
     assert payload["progress"]["phase"] == "failed"
     assert payload["progress"]["summary"] == "Persisted failure summary."
 
