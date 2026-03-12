@@ -17,7 +17,14 @@ from src.app.api.schemas.circuit_definitions import (
     CircuitDefinitionValidationSummaryResponse,
     ValidationNoticeResponse,
 )
-from src.app.api.schemas.datasets import DatasetSummaryResponse
+from src.app.api.schemas.datasets import (
+    DatasetDetailResponse,
+    DatasetMetadataUpdateRequest,
+    DatasetMetadataUpdateResponse,
+    DatasetMetricsResponse,
+    DatasetStorageResponse,
+    DatasetSummaryResponse,
+)
 from src.app.api.schemas.session import (
     ActiveDatasetResponse,
     SessionAuthResponse,
@@ -40,7 +47,10 @@ from src.app.domain.circuit_definitions import (
     CircuitDefinitionUpdate,
 )
 from src.app.domain.datasets import (
+    DatasetDetail,
     DatasetListQuery,
+    DatasetMetadataUpdate,
+    DatasetMetadataUpdateResult,
     DatasetSortBy,
     DatasetStatus,
     DatasetSummary,
@@ -102,6 +112,34 @@ def list_datasets(
             )
         )
     ]
+
+
+def get_dataset(dataset_id: str) -> DatasetDetailResponse:
+    return _build_dataset_detail_response(
+        _run_backend_call(lambda: get_dataset_service().get_dataset(dataset_id))
+    )
+
+
+def update_dataset_metadata(
+    dataset_id: str,
+    *,
+    device_type: str,
+    capabilities: tuple[str, ...],
+    source: str,
+) -> DatasetMetadataUpdateResponse:
+    update = _validated_dataset_metadata_update(
+        device_type=device_type,
+        capabilities=capabilities,
+        source=source,
+    )
+    return _build_dataset_metadata_update_response(
+        _run_backend_call(
+            lambda: get_dataset_service().update_dataset_metadata(
+                dataset_id,
+                update,
+            )
+        )
+    )
 
 
 def list_tasks(
@@ -269,6 +307,51 @@ def _build_dataset_summary_response(summary: DatasetSummary) -> DatasetSummaryRe
     return DatasetSummaryResponse.model_validate(summary.__dict__)
 
 
+def _build_dataset_detail_response(detail: DatasetDetail) -> DatasetDetailResponse:
+    return DatasetDetailResponse(
+        dataset_id=detail.dataset_id,
+        name=detail.name,
+        family=detail.family,
+        owner=detail.owner,
+        updated_at=detail.updated_at,
+        device_type=detail.device_type,
+        source=detail.source,
+        samples=detail.samples,
+        status=detail.status,
+        capability_count=len(detail.capabilities),
+        tag_count=len(detail.tags),
+        capabilities=list(detail.capabilities),
+        tags=list(detail.tags),
+        preview_columns=list(detail.preview_columns),
+        preview_rows=[list(row) for row in detail.preview_rows],
+        artifacts=list(detail.artifacts),
+        lineage=list(detail.lineage),
+        metrics=DatasetMetricsResponse(
+            capability_count=len(detail.capabilities),
+            tag_count=len(detail.tags),
+            preview_row_count=len(detail.preview_rows),
+            artifact_count=len(detail.artifacts),
+            lineage_depth=len(detail.lineage),
+        ),
+        storage=DatasetStorageResponse(
+            metadata_record=build_metadata_record_ref_response(detail.metadata_record),
+            primary_trace=build_trace_payload_ref_response(detail.primary_trace),
+            result_handles=[
+                build_result_handle_ref_response(handle) for handle in detail.result_handles
+            ],
+        ),
+    )
+
+
+def _build_dataset_metadata_update_response(
+    result: DatasetMetadataUpdateResult,
+) -> DatasetMetadataUpdateResponse:
+    return DatasetMetadataUpdateResponse(
+        dataset=_build_dataset_detail_response(result.dataset),
+        updated_fields=list(result.updated_fields),
+    )
+
+
 def _build_task_summary_response(task: TaskDetail) -> TaskSummaryResponse:
     return TaskSummaryResponse(
         task_id=task.task_id,
@@ -391,6 +474,28 @@ def _validated_circuit_definition_update(
     return CircuitDefinitionUpdate(
         name=payload.name,
         source_text=payload.source_text,
+    )
+
+
+def _validated_dataset_metadata_update(
+    *,
+    device_type: str,
+    capabilities: tuple[str, ...],
+    source: str,
+) -> DatasetMetadataUpdate:
+    try:
+        payload = DatasetMetadataUpdateRequest(
+            device_type=device_type,
+            capabilities=list(capabilities),
+            source=source,
+        )
+    except ValidationError as exc:
+        _raise_request_validation_error(exc)
+
+    return DatasetMetadataUpdate(
+        device_type=payload.device_type,
+        capabilities=tuple(payload.capabilities),
+        source=payload.source,
     )
 
 

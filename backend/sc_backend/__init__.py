@@ -4,7 +4,11 @@ from src.app.api.schemas.circuit_definitions import (
     CircuitDefinitionDetailResponse,
     CircuitDefinitionSummaryResponse,
 )
-from src.app.api.schemas.datasets import DatasetSummaryResponse
+from src.app.api.schemas.datasets import (
+    DatasetDetailResponse,
+    DatasetMetadataUpdateResponse,
+    DatasetSummaryResponse,
+)
 from src.app.api.schemas.errors import ApiErrorBodyResponse
 from src.app.api.schemas.session import SessionResponse
 from src.app.api.schemas.tasks import TaskDetailResponse, TaskSummaryResponse
@@ -17,6 +21,7 @@ from sc_backend.rewrite_cli import (
     create_circuit_definition,
     delete_circuit_definition,
     get_circuit_definition,
+    get_dataset,
     get_session,
     get_task,
     list_circuit_definitions,
@@ -26,6 +31,7 @@ from sc_backend.rewrite_cli import (
     set_active_dataset,
     submit_task,
     update_circuit_definition,
+    update_dataset_metadata,
 )
 
 __all__ = [
@@ -34,6 +40,8 @@ __all__ = [
     "CircuitDefinitionDetailResponse",
     "CircuitDefinitionSortBy",
     "CircuitDefinitionSummaryResponse",
+    "DatasetDetailResponse",
+    "DatasetMetadataUpdateResponse",
     "DatasetSortBy",
     "DatasetStatus",
     "DatasetSummaryResponse",
@@ -48,6 +56,7 @@ __all__ = [
     "create_circuit_definition",
     "delete_circuit_definition",
     "get_circuit_definition",
+    "get_dataset",
     "get_session",
     "get_task",
     "list_circuit_definitions",
@@ -57,4 +66,5 @@ __all__ = [
     "set_active_dataset",
     "submit_task",
     "update_circuit_definition",
+    "update_dataset_metadata",
 ]

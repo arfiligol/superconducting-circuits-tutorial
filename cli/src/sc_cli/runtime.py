@@ -4,6 +4,7 @@ from sc_backend import (
     create_circuit_definition,
     delete_circuit_definition,
     get_circuit_definition,
+    get_dataset,
     get_session,
     get_task,
     list_circuit_definitions,
@@ -13,12 +14,14 @@ from sc_backend import (
     set_active_dataset,
     submit_task,
     update_circuit_definition,
+    update_dataset_metadata,
 )
 
 __all__ = [
     "create_circuit_definition",
     "delete_circuit_definition",
     "get_circuit_definition",
+    "get_dataset",
     "get_session",
     "get_task",
     "list_circuit_definitions",
@@ -28,4 +31,5 @@ __all__ = [
     "set_active_dataset",
     "submit_task",
     "update_circuit_definition",
+    "update_dataset_metadata",
 ]

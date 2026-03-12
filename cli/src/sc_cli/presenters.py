@@ -9,6 +9,8 @@ from sc_backend import (
     ApiErrorBodyResponse,
     CircuitDefinitionDetailResponse,
     CircuitDefinitionSummaryResponse,
+    DatasetDetailResponse,
+    DatasetMetadataUpdateResponse,
     DatasetSummaryResponse,
     SessionResponse,
     TaskDetailResponse,
@@ -148,6 +150,76 @@ def render_dataset_summaries(
     return "\n".join(lines)
 
 
+def render_dataset_detail(
+    dataset: DatasetDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(dataset)
+    lines = [
+        f"dataset_id: {dataset.dataset_id}",
+        f"name: {dataset.name}",
+        f"family: {dataset.family}",
+        f"owner: {dataset.owner}",
+        f"status: {dataset.status}",
+        f"device_type: {dataset.device_type}",
+        f"source: {dataset.source}",
+        f"samples: {dataset.samples}",
+        f"updated_at: {dataset.updated_at}",
+        f"capability_count: {dataset.capability_count}",
+        f"tag_count: {dataset.tag_count}",
+        "capabilities:",
+    ]
+    lines.extend(f"- {capability}" for capability in dataset.capabilities)
+    lines.extend(["tags:"])
+    lines.extend(f"- {tag}" for tag in dataset.tags)
+    lines.extend(
+        [
+            (
+                "preview_columns: "
+                f"{', '.join(dataset.preview_columns) if dataset.preview_columns else '-'}"
+            ),
+            "preview_rows:",
+        ]
+    )
+    lines.extend(f"- {', '.join(row)}" for row in dataset.preview_rows)
+    lines.extend(["artifacts:"])
+    lines.extend(f"- {artifact}" for artifact in dataset.artifacts)
+    lines.extend(["lineage:"])
+    lines.extend(f"- {item}" for item in dataset.lineage)
+    lines.extend(
+        [
+            f"metrics_capability_count: {dataset.metrics.capability_count}",
+            f"metrics_tag_count: {dataset.metrics.tag_count}",
+            f"metrics_preview_row_count: {dataset.metrics.preview_row_count}",
+            f"metrics_artifact_count: {dataset.metrics.artifact_count}",
+            f"metrics_lineage_depth: {dataset.metrics.lineage_depth}",
+            f"storage_metadata_record_id: {dataset.storage.metadata_record.record_id}",
+            (f"storage_primary_trace_store_uri: {_render_primary_trace_store_uri(dataset)}"),
+            f"storage_result_handle_count: {len(dataset.storage.result_handles)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def render_dataset_metadata_update(
+    result: DatasetMetadataUpdateResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(result)
+    lines = [
+        (
+            "updated_fields: "
+            f"{', '.join(result.updated_fields) if result.updated_fields else '(none)'}"
+        ),
+        render_dataset_detail(result.dataset, output=OutputMode.TEXT),
+    ]
+    return "\n".join(lines)
+
+
 def render_task_summaries(
     tasks: list[TaskSummaryResponse],
     *,
@@ -273,6 +345,12 @@ def _render_bool(value: bool) -> str:
 
 def _render_list_line(label: str, parts: Iterable[str]) -> str:
     return f"- {label} | " + " | ".join(parts)
+
+
+def _render_primary_trace_store_uri(dataset: DatasetDetailResponse) -> str:
+    if dataset.storage.primary_trace is None:
+        return "-"
+    return dataset.storage.primary_trace.store_uri
 
 
 def _render_json_model(model: BaseModel) -> str:

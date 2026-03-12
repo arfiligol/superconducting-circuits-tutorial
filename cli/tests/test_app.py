@@ -393,6 +393,112 @@ def test_datasets_list_command_supports_json_output() -> None:
     assert '"dataset_id": "transmon-coupler-014"' in result.stdout
 
 
+def test_datasets_show_command_reads_one_dataset() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["datasets", "show", "fluxonium-2025-031"])
+
+    assert result.exit_code == 0
+    assert "dataset_id: fluxonium-2025-031" in result.stdout
+    assert "name: Fluxonium sweep 031" in result.stdout
+    assert "storage_metadata_record_id: dataset:fluxonium-2025-031" in result.stdout
+
+
+def test_datasets_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["datasets", "show", "transmon-coupler-014", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
+    assert '"device_type": "Transmon"' in result.stdout
+    assert '"storage": {' in result.stdout
+
+
+def test_datasets_set_metadata_command_updates_dataset_metadata() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "datasets",
+            "set-metadata",
+            "fluxonium-2025-031",
+            "--device-type",
+            "Fluxonium",
+            "--source",
+            "measured",
+            "--capability",
+            "sweep-ready",
+            "--capability",
+            "fit-ready",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "updated_fields: device_type, capabilities, source" in result.stdout
+    assert "device_type: Fluxonium" in result.stdout
+    assert "source: measured" in result.stdout
+    assert "- sweep-ready" in result.stdout
+    assert "- fit-ready" in result.stdout
+
+
+def test_datasets_set_metadata_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "datasets",
+            "set-metadata",
+            "transmon-coupler-014",
+            "--device-type",
+            "Transmon",
+            "--source",
+            "simulated",
+            "--capability",
+            "cross-resonance",
+            "--capability",
+            "detuning-scan",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"updated_fields": [' in result.stdout
+    assert '"source": "simulated"' in result.stdout
+    assert '"capabilities": [' in result.stdout
+    assert '"detuning-scan"' in result.stdout
+
+
+def test_datasets_set_metadata_command_uses_structured_validation_error() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "datasets",
+            "set-metadata",
+            "fluxonium-2025-031",
+            "--device-type",
+            "Fluxonium",
+            "--source",
+            "measured",
+            "--capability",
+            "duplicate-capability",
+            "--capability",
+            "duplicate-capability",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert (
+        "error: Request validation failed. [validation/request_validation_failed]" in result.output
+    )
+    assert "field_error: capabilities:" in result.output
+
+
 def test_tasks_list_command_reads_rewrite_task_state() -> None:
     runner = CliRunner()
 

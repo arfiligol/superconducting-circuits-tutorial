@@ -8,8 +8,12 @@ from sc_backend import BackendContractError, DatasetSortBy, DatasetStatus, SortO
 
 from sc_cli.errors import exit_for_backend_error
 from sc_cli.output import OutputMode, OutputOption
-from sc_cli.presenters import render_dataset_summaries
-from sc_cli.runtime import list_datasets
+from sc_cli.presenters import (
+    render_dataset_detail,
+    render_dataset_metadata_update,
+    render_dataset_summaries,
+)
+from sc_cli.runtime import get_dataset, list_datasets, update_dataset_metadata
 
 app = typer.Typer(help="Rewrite dataset helpers.", no_args_is_help=True)
 
@@ -62,3 +66,55 @@ def list_command(
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
     typer.echo(render_dataset_summaries(datasets, output=output))
+
+
+@app.command("show")
+def show_command(
+    dataset_id: Annotated[
+        str,
+        typer.Argument(help="Dataset id to inspect."),
+    ],
+    output: OutputOption = OutputMode.TEXT,
+) -> None:
+    """Show one dataset from the rewrite integration scaffold."""
+    try:
+        dataset = get_dataset(dataset_id)
+    except BackendContractError as error:
+        exit_for_backend_error(error, output=output)
+    typer.echo(render_dataset_detail(dataset, output=output))
+
+
+@app.command("set-metadata")
+def set_metadata_command(
+    dataset_id: Annotated[
+        str,
+        typer.Argument(help="Dataset id to update."),
+    ],
+    device_type: Annotated[
+        str,
+        typer.Option("--device-type", help="Device type metadata value."),
+    ],
+    source: Annotated[
+        str,
+        typer.Option("--source", help="Dataset source metadata value."),
+    ],
+    capabilities: Annotated[
+        list[str],
+        typer.Option(
+            "--capability",
+            help="Capability metadata value. Repeat to provide multiple capabilities.",
+        ),
+    ],
+    output: OutputOption = OutputMode.TEXT,
+) -> None:
+    """Update dataset metadata through the rewrite dataset scaffold."""
+    try:
+        result = update_dataset_metadata(
+            dataset_id,
+            device_type=device_type,
+            capabilities=tuple(capabilities),
+            source=source,
+        )
+    except BackendContractError as error:
+        exit_for_backend_error(error, output=output)
+    typer.echo(render_dataset_metadata_update(result, output=output))
