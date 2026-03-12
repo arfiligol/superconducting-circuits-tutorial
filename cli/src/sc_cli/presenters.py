@@ -1,8 +1,10 @@
 """Output formatting helpers for the CLI adapter layer."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
+from json import dumps
 from pathlib import Path
 
+from pydantic import BaseModel
 from sc_backend import (
     ApiErrorBodyResponse,
     CircuitDefinitionDetailResponse,
@@ -12,6 +14,8 @@ from sc_backend import (
     TaskSummaryResponse,
 )
 from sc_core import CircuitDefinitionInspection
+
+from sc_cli.output import OutputMode
 
 
 def render_preview_artifacts(artifacts: tuple[str, ...]) -> str:
@@ -36,7 +40,9 @@ def render_circuit_definition_inspection(
     return "\n".join(lines)
 
 
-def render_session(session: SessionResponse) -> str:
+def render_session(session: SessionResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(session)
     lines = [
         f"session_id: {session.session_id}",
         f"auth_state: {session.auth.state}",
@@ -76,7 +82,13 @@ def render_session(session: SessionResponse) -> str:
     return "\n".join(lines)
 
 
-def render_dataset_summaries(datasets: list[DatasetSummaryResponse]) -> str:
+def render_dataset_summaries(
+    datasets: list[DatasetSummaryResponse],
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_models(datasets)
     lines = [f"datasets: {len(datasets)}"]
     lines.extend(
         _render_list_line(
@@ -94,7 +106,13 @@ def render_dataset_summaries(datasets: list[DatasetSummaryResponse]) -> str:
     return "\n".join(lines)
 
 
-def render_task_summaries(tasks: list[TaskSummaryResponse]) -> str:
+def render_task_summaries(
+    tasks: list[TaskSummaryResponse],
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_models(tasks)
     lines = [f"tasks: {len(tasks)}"]
     lines.extend(
         _render_list_line(
@@ -115,7 +133,9 @@ def render_task_summaries(tasks: list[TaskSummaryResponse]) -> str:
     return "\n".join(lines)
 
 
-def render_task_detail(task: TaskDetailResponse) -> str:
+def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(task)
     trace_batch_id = task.result_refs.trace_batch_id
     analysis_run_id = task.result_refs.analysis_run_id
     return "\n".join(
@@ -172,7 +192,9 @@ def render_circuit_definition_detail(definition: CircuitDefinitionDetailResponse
     return "\n".join(lines)
 
 
-def render_api_error(error: ApiErrorBodyResponse) -> str:
+def render_api_error(error: ApiErrorBodyResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload({"error": error.model_dump(mode="json")})
     suffix = f" [{error.category}/{error.code}]"
     lines = [f"error: {error.message}{suffix}"]
     lines.extend(
@@ -188,3 +210,15 @@ def _render_bool(value: bool) -> str:
 
 def _render_list_line(label: str, parts: Iterable[str]) -> str:
     return f"- {label} | " + " | ".join(parts)
+
+
+def _render_json_model(model: BaseModel) -> str:
+    return model.model_dump_json(indent=2)
+
+
+def _render_json_models(models: Sequence[BaseModel]) -> str:
+    return _render_json_payload([model.model_dump(mode="json") for model in models])
+
+
+def _render_json_payload(payload: object) -> str:
+    return dumps(payload, indent=2)

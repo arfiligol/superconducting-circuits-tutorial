@@ -7,6 +7,7 @@ import typer
 from sc_backend import BackendContractError, DatasetSortBy, DatasetStatus, SortOrder
 
 from sc_cli.errors import exit_for_backend_error
+from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_dataset_summaries
 from sc_cli.runtime import list_datasets
 
@@ -48,6 +49,7 @@ def list_command(
         SortOrderOption,
         typer.Option("--sort-order", help="Sort direction."),
     ] = SortOrderOption.DESC,
+    output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """List datasets from the rewrite integration scaffold."""
     try:
@@ -58,5 +60,5 @@ def list_command(
             sort_order=cast(SortOrder, sort_order.value),
         )
     except BackendContractError as error:
-        exit_for_backend_error(error)
-    typer.echo(render_dataset_summaries(datasets))
+        exit_for_backend_error(error, output=output)
+    typer.echo(render_dataset_summaries(datasets, output=output))

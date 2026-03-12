@@ -1,6 +1,5 @@
 from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from sc_backend import ApiErrorBodyResponse, BackendContractError
@@ -77,6 +76,16 @@ def test_session_show_command_reads_rewrite_session_state() -> None:
     assert "default_task_scope: workspace" in result.stdout
 
 
+def test_session_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "show", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"session_id": "rewrite-local-session"' in result.stdout
+    assert '"workspace_id": "ws-device-lab"' in result.stdout
+
+
 def test_datasets_list_command_reads_rewrite_dataset_state() -> None:
     runner = CliRunner()
 
@@ -86,6 +95,16 @@ def test_datasets_list_command_reads_rewrite_dataset_state() -> None:
     assert "datasets: 2" in result.stdout
     assert "fluxonium-2025-031" in result.stdout
     assert "transmon-coupler-014" in result.stdout
+
+
+def test_datasets_list_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["datasets", "list", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"dataset_id": "fluxonium-2025-031"' in result.stdout
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
 
 
 def test_tasks_list_command_reads_rewrite_task_state() -> None:
@@ -100,9 +119,19 @@ def test_tasks_list_command_reads_rewrite_task_state() -> None:
     assert "#304" not in result.stdout
 
 
-def test_tasks_show_command_reads_one_task(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tasks_list_command_supports_json_output() -> None:
     runner = CliRunner()
-    monkeypatch.setattr(tasks, "get_task", lambda task_id: _task_detail_stub(task_id))
+
+    result = runner.invoke(app, ["tasks", "list", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 301' in result.stdout
+    assert '"task_id": 303' in result.stdout
+    assert '"task_id": 304' not in result.stdout
+
+
+def test_tasks_show_command_reads_one_task() -> None:
+    runner = CliRunner()
 
     result = runner.invoke(app, ["tasks", "show", "301"])
 
@@ -113,6 +142,17 @@ def test_tasks_show_command_reads_one_task(monkeypatch: pytest.MonkeyPatch) -> N
     assert "request_ready: true" in result.stdout
 
 
+def test_tasks_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["tasks", "show", "301", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 301' in result.stdout
+    assert '"metadata_records": []' in result.stdout
+    assert '"result_handles": []' in result.stdout
+
+
 def test_tasks_show_command_uses_structured_backend_error_message() -> None:
     runner = CliRunner()
 
@@ -120,6 +160,17 @@ def test_tasks_show_command_uses_structured_backend_error_message() -> None:
 
     assert result.exit_code == 2
     assert "error: Task 999 was not found. [not_found/task_not_found]" in result.output
+
+
+def test_tasks_show_command_uses_structured_backend_error_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["tasks", "show", "999", "--output", "json"])
+
+    assert result.exit_code == 2
+    assert '"error": {' in result.output
+    assert '"code": "task_not_found"' in result.output
+    assert '"category": "not_found"' in result.output
 
 
 def test_session_show_command_handles_backend_contract_errors(
@@ -179,36 +230,3 @@ def _backend_error(message: str) -> BackendContractError:
 
 def _raise_backend_error(message: str) -> None:
     raise _backend_error(message)
-
-
-def _task_detail_stub(task_id: int) -> SimpleNamespace:
-    return SimpleNamespace(
-        task_id=task_id,
-        kind="simulation",
-        lane="simulation",
-        execution_mode="run",
-        status="running",
-        submitted_at="2026-03-12 09:15:00",
-        owner_user_id="researcher-01",
-        owner_display_name="Rewrite Local User",
-        workspace_id="ws-device-lab",
-        workspace_slug="device-lab",
-        visibility_scope="workspace",
-        dataset_id="fluxonium-2025-031",
-        definition_id=18,
-        summary="Fluxonium parameter sweep is running.",
-        queue_backend="in_memory_scaffold",
-        worker_task_name="simulation_run_task",
-        request_ready=True,
-        submitted_from_active_dataset=True,
-        progress=SimpleNamespace(
-            phase="running",
-            percent_complete=55,
-            summary="simulation_run_task started in the simulation lane.",
-            updated_at="2026-03-12 09:22:00",
-        ),
-        result_refs=SimpleNamespace(
-            trace_batch_id=None,
-            analysis_run_id=None,
-        ),
-    )

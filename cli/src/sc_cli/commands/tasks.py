@@ -7,6 +7,7 @@ import typer
 from sc_backend import BackendContractError, TaskLane, TaskStatus, TaskVisibilityScope
 
 from sc_cli.errors import exit_for_backend_error
+from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_task_detail, render_task_summaries
 from sc_cli.runtime import get_task, list_tasks
 
@@ -52,6 +53,7 @@ def list_command(
         int,
         typer.Option("--limit", min=1, max=50, help="Maximum number of tasks to show."),
     ] = 20,
+    output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """List tasks from the rewrite integration scaffold."""
     try:
@@ -63,17 +65,18 @@ def list_command(
             limit=limit,
         )
     except BackendContractError as error:
-        exit_for_backend_error(error)
-    typer.echo(render_task_summaries(tasks))
+        exit_for_backend_error(error, output=output)
+    typer.echo(render_task_summaries(tasks, output=output))
 
 
 @app.command("show")
 def show_command(
     task_id: Annotated[int, typer.Argument(min=1, help="Task id to inspect.")],
+    output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """Show one task from the rewrite integration scaffold."""
     try:
         task = get_task(task_id)
     except BackendContractError as error:
-        exit_for_backend_error(error)
-    typer.echo(render_task_detail(task))
+        exit_for_backend_error(error, output=output)
+    typer.echo(render_task_detail(task, output=output))
