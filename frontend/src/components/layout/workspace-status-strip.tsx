@@ -7,6 +7,7 @@ import {
   useActiveDataset,
   useAppSession,
   useTaskQueue,
+  useActiveTask,
 } from "@/lib/app-state";
 import { ApiError } from "@/lib/api/client";
 
@@ -114,15 +115,21 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
   } = useActiveDataset();
   const {
     activeTasks,
-    latestTask,
     summary,
     status: taskQueueStatus,
     isTaskQueueLoading,
     isTaskQueueRefreshing,
     taskQueueError,
-    refreshIntervalMs,
     refreshTaskQueue,
   } = useTaskQueue();
+  const {
+    activeTaskDetail,
+    activeTaskError,
+    status: activeTaskStatus,
+    resolvedTaskId,
+    isActiveTaskLoading,
+    refreshActiveTask,
+  } = useActiveTask();
 
   const datasetLabel =
     activeDatasetStatus === "syncing-route" || isUpdatingActiveDataset
@@ -210,11 +217,15 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
             : `${summary.completedCount} completed · ${summary.failedCount} failed`;
   const taskDetail = taskQueueError
     ? getStatusErrorDetail(taskQueueError)
-    : activeTasks[0]
-      ? `Recovered #${activeTasks[0].taskId} · ${activeTasks[0].kind} · polling every ${Math.round(refreshIntervalMs / 1000)}s`
-      : latestTask
-        ? `Latest #${latestTask.taskId} · ${latestTask.kind} · ${latestTask.summary}`
-        : "No task history returned from GET /tasks";
+    : activeTaskError
+      ? `Failed to load detailed state for task #${resolvedTaskId}: ${getStatusErrorDetail(activeTaskError)}`
+      : isActiveTaskLoading
+        ? `Fetching task #${resolvedTaskId} details...`
+        : activeTaskStatus === "empty" || !activeTaskDetail
+          ? "No task history returned from GET /tasks"
+          : activeTaskDetail.status === "queued" || activeTaskDetail.status === "running"
+            ? `Recovered #${activeTaskDetail.taskId} · ${activeTaskDetail.progress.phase} · ${Math.round(activeTaskDetail.progress.percentComplete)}% · ${activeTaskDetail.progress.summary}`
+            : `Latest #${activeTaskDetail.taskId} · ${activeTaskDetail.status} · ${activeTaskDetail.summary}`;
 
   return (
     <div
@@ -240,10 +251,11 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
           <StatusActionButton
             label="Refresh task queue"
             icon={RefreshCw}
-            spinning={isTaskQueueRefreshing}
-            disabled={isTaskQueueLoading}
+            spinning={isTaskQueueRefreshing || isActiveTaskLoading}
+            disabled={isTaskQueueLoading || isActiveTaskLoading}
             onClick={() => {
               void refreshTaskQueue();
+              void refreshActiveTask();
             }}
           />
         }
