@@ -6,7 +6,7 @@ from sc_backend import ApiErrorBodyResponse, BackendContractError
 from typer.testing import CliRunner
 
 from sc_cli.app import app
-from sc_cli.commands import datasets, session, tasks
+from sc_cli.commands import datasets, session, simulation, tasks
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -620,6 +620,112 @@ def test_tasks_show_command_supports_json_output() -> None:
     assert '"result_handles": []' in result.stdout
 
 
+def test_simulation_show_command_reads_simulation_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["simulation", "show", "301"])
+
+    assert result.exit_code == 0
+    assert "task_id: 301" in result.stdout
+    assert "lane: simulation" in result.stdout
+    assert "kind: simulation" in result.stdout
+
+
+def test_simulation_show_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["simulation", "show", "301", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task_id": 301' in result.stdout
+    assert '"lane": "simulation"' in result.stdout
+
+
+def test_simulation_latest_command_reads_latest_simulation_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["simulation", "latest"])
+
+    assert result.exit_code == 0
+    assert "task_id: 301" in result.stdout
+    assert "lane: simulation" in result.stdout
+
+
+def test_simulation_latest_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app, ["simulation", "latest", "--status", "completed", "--output", "json"]
+    )
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"kind": "post_processing"' in result.stdout
+    assert '"lane": "simulation"' in result.stdout
+
+
+def test_simulation_submit_command_submits_simulation_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["simulation", "submit", "--definition-id", "18"])
+
+    assert result.exit_code == 0
+    assert "kind: simulation" in result.stdout
+    assert "lane: simulation" in result.stdout
+    assert "worker_task_name: simulation_smoke_task" in result.stdout
+
+
+def test_simulation_submit_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["simulation", "submit", "--definition-id", "18", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"kind": "simulation"' in result.stdout
+    assert '"lane": "simulation"' in result.stdout
+    assert '"definition_id": 18' in result.stdout
+
+
+def test_simulation_wait_command_returns_terminal_simulation_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["simulation", "wait", "303", "--interval", "0.1", "--timeout", "0.2"],
+    )
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "status: completed" in result.stdout
+    assert "lane: simulation" in result.stdout
+
+
+def test_simulation_wait_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["simulation", "wait", "303", "--interval", "0.1", "--timeout", "0.2", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"status": "completed"' in result.stdout
+    assert '"lane": "simulation"' in result.stdout
+
+
+def test_simulation_show_command_rejects_non_simulation_lane_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["simulation", "show", "302"])
+
+    assert result.exit_code == 1
+    assert "error: Task 302 is not part of the simulation lane." in result.output
+
+
 def test_tasks_submit_command_submits_simulation_task() -> None:
     runner = CliRunner()
 
@@ -768,6 +874,18 @@ def test_tasks_list_command_handles_backend_contract_errors(
 
     assert result.exit_code == 2
     assert "error: Task list failed. [validation/request_failed]" in result.output
+
+
+def test_simulation_wait_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(simulation, "get_task", lambda _: _raise_backend_error("Task read failed."))
+
+    result = runner.invoke(app, ["simulation", "wait", "301"])
+
+    assert result.exit_code == 2
+    assert "error: Task read failed. [validation/request_failed]" in result.output
 
 
 def _backend_error(message: str) -> BackendContractError:
