@@ -126,6 +126,78 @@ def render_session(session: SessionResponse, *, output: OutputMode = OutputMode.
     return "\n".join(lines)
 
 
+def render_session_identity(
+    session: SessionResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "session_id": session.session_id,
+                "auth": session.auth.model_dump(mode="json"),
+                "identity": (
+                    None if session.identity is None else session.identity.model_dump(mode="json")
+                ),
+            }
+        )
+    lines = [
+        f"session_id: {session.session_id}",
+        f"auth_state: {session.auth.state}",
+        f"auth_mode: {session.auth.mode}",
+        f"scopes: {', '.join(session.auth.scopes) if session.auth.scopes else '(none)'}",
+        f"can_submit_tasks: {_render_bool(session.auth.can_submit_tasks)}",
+        f"can_manage_datasets: {_render_bool(session.auth.can_manage_datasets)}",
+    ]
+    if session.identity is None:
+        lines.append("identity: none")
+    else:
+        lines.extend(
+            [
+                f"identity_user_id: {session.identity.user_id}",
+                f"identity_display_name: {session.identity.display_name}",
+                f"identity_email: {session.identity.email or '-'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_session_workspace(
+    session: SessionResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(session.workspace)
+    lines = [
+        f"workspace_id: {session.workspace.workspace_id}",
+        f"workspace_slug: {session.workspace.slug}",
+        f"workspace_display_name: {session.workspace.display_name}",
+        f"workspace_role: {session.workspace.role}",
+        f"default_task_scope: {session.workspace.default_task_scope}",
+    ]
+    lines.extend(_render_active_dataset_lines(session))
+    return "\n".join(lines)
+
+
+def render_session_active_dataset(
+    session: SessionResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "active_dataset": (
+                    None
+                    if session.workspace.active_dataset is None
+                    else session.workspace.active_dataset.model_dump(mode="json")
+                )
+            }
+        )
+    return "\n".join(_render_active_dataset_lines(session))
+
+
 def render_dataset_summaries(
     datasets: list[DatasetSummaryResponse],
     *,
@@ -351,6 +423,19 @@ def _render_primary_trace_store_uri(dataset: DatasetDetailResponse) -> str:
     if dataset.storage.primary_trace is None:
         return "-"
     return dataset.storage.primary_trace.store_uri
+
+
+def _render_active_dataset_lines(session: SessionResponse) -> list[str]:
+    if session.workspace.active_dataset is None:
+        return ["active_dataset: none"]
+    return [
+        f"active_dataset_id: {session.workspace.active_dataset.dataset_id}",
+        f"active_dataset_name: {session.workspace.active_dataset.name}",
+        f"active_dataset_family: {session.workspace.active_dataset.family}",
+        f"active_dataset_status: {session.workspace.active_dataset.status}",
+        f"active_dataset_owner: {session.workspace.active_dataset.owner}",
+        f"active_dataset_access_scope: {session.workspace.active_dataset.access_scope}",
+    ]
 
 
 def _render_json_model(model: BaseModel) -> str:

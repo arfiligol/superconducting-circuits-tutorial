@@ -337,6 +337,70 @@ def test_session_show_command_supports_json_output() -> None:
     assert '"workspace_id": "ws-device-lab"' in result.stdout
 
 
+def test_session_whoami_command_reads_identity_context() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "whoami"])
+
+    assert result.exit_code == 0
+    assert "identity_user_id: researcher-01" in result.stdout
+    assert "identity_display_name: Rewrite Local User" in result.stdout
+    assert "can_submit_tasks: true" in result.stdout
+
+
+def test_session_whoami_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "whoami", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"session_id": "rewrite-local-session"' in result.stdout
+    assert '"user_id": "researcher-01"' in result.stdout
+    assert '"can_manage_datasets": true' in result.stdout
+
+
+def test_session_workspace_command_reads_workspace_context() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "workspace"])
+
+    assert result.exit_code == 0
+    assert "workspace_id: ws-device-lab" in result.stdout
+    assert "workspace_display_name: Device Lab Workspace" in result.stdout
+    assert "active_dataset_id: fluxonium-2025-031" in result.stdout
+
+
+def test_session_workspace_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "workspace", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"workspace_id": "ws-device-lab"' in result.stdout
+    assert '"default_task_scope": "workspace"' in result.stdout
+    assert '"active_dataset": {' in result.stdout
+
+
+def test_session_active_dataset_command_reads_active_dataset_context() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "active-dataset"])
+
+    assert result.exit_code == 0
+    assert "active_dataset_id: fluxonium-2025-031" in result.stdout
+    assert "active_dataset_name: Fluxonium sweep 031" in result.stdout
+
+
+def test_session_active_dataset_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["session", "active-dataset", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"active_dataset": {' in result.stdout
+    assert '"dataset_id": "fluxonium-2025-031"' in result.stdout
+
+
 def test_session_set_active_dataset_command_updates_session_state() -> None:
     runner = CliRunner()
 
@@ -368,6 +432,17 @@ def test_session_set_active_dataset_command_supports_clearing_context() -> None:
 
     result = runner.invoke(app, ["session", "set-active-dataset", "--clear"])
 
+    assert result.exit_code == 0
+    assert "active_dataset: none" in result.stdout
+
+
+def test_session_active_dataset_command_reports_cleared_context() -> None:
+    runner = CliRunner()
+
+    clear_result = runner.invoke(app, ["session", "set-active-dataset", "--clear"])
+    result = runner.invoke(app, ["session", "active-dataset"])
+
+    assert clear_result.exit_code == 0
     assert result.exit_code == 0
     assert "active_dataset: none" in result.stdout
 

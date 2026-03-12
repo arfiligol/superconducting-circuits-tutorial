@@ -3,11 +3,16 @@
 from typing import Annotated
 
 import typer
-from sc_backend import BackendContractError
+from sc_backend import BackendContractError, SessionResponse
 
 from sc_cli.errors import exit_for_backend_error, exit_with_usage_error
 from sc_cli.output import OutputMode, OutputOption
-from sc_cli.presenters import render_session
+from sc_cli.presenters import (
+    render_session,
+    render_session_active_dataset,
+    render_session_identity,
+    render_session_workspace,
+)
 from sc_cli.runtime import get_session, set_active_dataset
 
 app = typer.Typer(help="Rewrite session helpers.", no_args_is_help=True)
@@ -16,11 +21,29 @@ app = typer.Typer(help="Rewrite session helpers.", no_args_is_help=True)
 @app.command("show")
 def show_command(output: OutputOption = OutputMode.TEXT) -> None:
     """Show the current rewrite session and workspace context."""
-    try:
-        session = get_session()
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
+    session = _get_session_or_exit(output)
     typer.echo(render_session(session, output=output))
+
+
+@app.command("whoami")
+def whoami_command(output: OutputOption = OutputMode.TEXT) -> None:
+    """Show the current session identity and auth context."""
+    session = _get_session_or_exit(output)
+    typer.echo(render_session_identity(session, output=output))
+
+
+@app.command("workspace")
+def workspace_command(output: OutputOption = OutputMode.TEXT) -> None:
+    """Show the current workspace context."""
+    session = _get_session_or_exit(output)
+    typer.echo(render_session_workspace(session, output=output))
+
+
+@app.command("active-dataset")
+def active_dataset_command(output: OutputOption = OutputMode.TEXT) -> None:
+    """Show the currently active dataset context."""
+    session = _get_session_or_exit(output)
+    typer.echo(render_session_active_dataset(session, output=output))
 
 
 @app.command("set-active-dataset")
@@ -47,3 +70,10 @@ def set_active_dataset_command(
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
     typer.echo(render_session(session, output=output))
+
+
+def _get_session_or_exit(output: OutputMode) -> SessionResponse:
+    try:
+        return get_session()
+    except BackendContractError as error:
+        exit_for_backend_error(error, output=output)
