@@ -7,7 +7,8 @@
     "build": "next build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:types": "../scripts/sync_api_types.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -27,6 +28,7 @@
     "@types/react-dom": "^19.2.2",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.1.6",
+    "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

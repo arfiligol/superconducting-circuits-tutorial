@@ -6,6 +6,7 @@
     "rewrite:check": "./scripts/rewrite_check.sh",
     "rewrite:build": "./scripts/rewrite_build.sh",
     "rewrite:dev": "./scripts/rewrite_start.sh",
-    "rewrite:stop": "./scripts/rewrite_stop.sh"
+    "rewrite:stop": "./scripts/rewrite_stop.sh",
+    "sync:types": "./scripts/sync_api_types.sh"
   }
 }
