@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from sc_core.storage import STORAGE_CONTRACT_VERSION, TraceStoreLocator
 from src.app.infrastructure.runtime import reset_runtime_state
 from src.app.main import app
 
@@ -55,19 +56,42 @@ def test_get_dataset_returns_detail_payload() -> None:
         "record_type": "dataset",
         "record_id": "dataset:fluxonium-2025-031",
         "version": 3,
+        "schema_version": "sqlite_metadata.v1",
     }
     assert payload["storage"]["primary_trace"] == {
+        "contract_version": STORAGE_CONTRACT_VERSION,
         "backend": "local_zarr",
+        "payload_role": "dataset_primary",
         "store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr",
         "store_uri": "trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
         "group_path": "trace_batches/88",
         "array_path": "signals/iq_real",
+        "dtype": "float64",
+        "shape": [184, 1024],
+        "chunk_shape": [16, 1024],
         "schema_version": "1.0",
     }
+    assert payload["storage"]["result_handles"][0]["contract_version"] == STORAGE_CONTRACT_VERSION
     assert payload["storage"]["result_handles"][0]["kind"] == "fit_summary"
+    assert payload["storage"]["result_handles"][0]["payload_role"] == "report_artifact"
     assert payload["storage"]["result_handles"][0]["payload_locator"] == (
         "artifacts/fit-summary.json"
     )
+    assert payload["storage"]["result_handles"][0]["provenance"] == {
+        "source_dataset_id": "fluxonium-2025-031",
+        "source_task_id": 303,
+        "trace_batch_record": {
+            "backend": "sqlite_metadata",
+            "record_type": "trace_batch",
+            "record_id": "trace_batch:88",
+            "version": 1,
+            "schema_version": "sqlite_metadata.v1",
+        },
+        "analysis_run_record": None,
+    }
+
+    locator = TraceStoreLocator.from_mapping(payload["storage"]["primary_trace"])
+    assert locator.to_payload()["contract_version"] == STORAGE_CONTRACT_VERSION
 
 
 def test_patch_dataset_metadata_updates_seeded_dataset() -> None:
@@ -89,6 +113,9 @@ def test_patch_dataset_metadata_updates_seeded_dataset() -> None:
     assert payload["dataset"]["metrics"]["capability_count"] == 2
     assert payload["dataset"]["storage"]["metadata_record"]["record_id"] == (
         "dataset:fluxonium-2025-031"
+    )
+    assert payload["dataset"]["storage"]["metadata_record"]["schema_version"] == (
+        "sqlite_metadata.v1"
     )
 
 

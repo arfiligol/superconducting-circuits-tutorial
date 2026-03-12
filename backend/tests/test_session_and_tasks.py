@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from sc_core.storage import STORAGE_CONTRACT_VERSION
 from src.app.infrastructure.runtime import reset_runtime_state
 from src.app.main import app
 
@@ -105,26 +106,49 @@ def test_get_task_returns_detail_payload() -> None:
             "record_type": "trace_batch",
             "record_id": "trace_batch:88",
             "version": 1,
+            "schema_version": "sqlite_metadata.v1",
         },
         {
             "backend": "sqlite_metadata",
             "record_type": "result_handle",
             "record_id": "result_handle:501",
             "version": 2,
+            "schema_version": "sqlite_metadata.v1",
         },
     ]
     assert payload["result_refs"]["trace_payload"] == {
+        "contract_version": STORAGE_CONTRACT_VERSION,
         "backend": "local_zarr",
+        "payload_role": "task_output",
         "store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr",
         "store_uri": "trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
         "group_path": "trace_batches/88",
         "array_path": "signals/iq_real",
+        "dtype": "float64",
+        "shape": [184, 1024],
+        "chunk_shape": [16, 1024],
         "schema_version": "1.0",
     }
     assert payload["result_refs"]["result_handles"][0]["handle_id"] == (
         "result:fluxonium-2025-031:fit-summary"
     )
+    assert payload["result_refs"]["result_handles"][0]["contract_version"] == (
+        STORAGE_CONTRACT_VERSION
+    )
+    assert payload["result_refs"]["result_handles"][0]["payload_role"] == "report_artifact"
     assert payload["result_refs"]["result_handles"][0]["provenance_task_id"] == 303
+    assert payload["result_refs"]["result_handles"][0]["provenance"] == {
+        "source_dataset_id": "fluxonium-2025-031",
+        "source_task_id": 303,
+        "trace_batch_record": {
+            "backend": "sqlite_metadata",
+            "record_type": "trace_batch",
+            "record_id": "trace_batch:88",
+            "version": 1,
+            "schema_version": "sqlite_metadata.v1",
+        },
+        "analysis_run_record": None,
+    }
 
 
 def test_get_task_returns_not_found_for_missing_task() -> None:
@@ -158,6 +182,7 @@ def test_submit_characterization_task_uses_active_dataset() -> None:
     assert payload["task"]["result_refs"]["trace_payload"] is None
     assert payload["task"]["result_refs"]["result_handles"] == [
         {
+            "contract_version": STORAGE_CONTRACT_VERSION,
             "handle_id": "task-result:306:primary",
             "kind": "characterization_report",
             "status": "pending",
@@ -167,11 +192,19 @@ def test_submit_characterization_task_uses_active_dataset() -> None:
                 "record_type": "result_handle",
                 "record_id": "result_handle:pending:306",
                 "version": 1,
+                "schema_version": "sqlite_metadata.v1",
             },
             "payload_backend": None,
             "payload_format": None,
+            "payload_role": None,
             "payload_locator": None,
             "provenance_task_id": 306,
+            "provenance": {
+                "source_dataset_id": "fluxonium-2025-031",
+                "source_task_id": 306,
+                "trace_batch_record": None,
+                "analysis_run_record": None,
+            },
         }
     ]
 
@@ -201,9 +234,13 @@ def test_submit_simulation_task_returns_queued_task_detail() -> None:
             "record_type": "result_handle",
             "record_id": "result_handle:pending:306",
             "version": 1,
+            "schema_version": "sqlite_metadata.v1",
         }
     ]
     assert payload["task"]["result_refs"]["result_handles"][0]["kind"] == "simulation_trace"
+    assert payload["task"]["result_refs"]["result_handles"][0]["contract_version"] == (
+        STORAGE_CONTRACT_VERSION
+    )
 
 
 def test_submit_simulation_task_requires_definition_id() -> None:

@@ -2,10 +2,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from src.app.api.schemas.storage import (
-    MetadataRecordRefResponse,
-    ResultHandleRefResponse,
-    TracePayloadRefResponse,
+from src.app.api.presenters.storage import (
+    build_metadata_record_ref_response,
+    build_result_handle_ref_response,
+    build_trace_payload_ref_response,
 )
 from src.app.api.schemas.tasks import (
     TaskDetailResponse,
@@ -15,7 +15,6 @@ from src.app.api.schemas.tasks import (
     TaskSubmissionRequest,
     TaskSummaryResponse,
 )
-from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 from src.app.domain.tasks import (
     TaskDetail,
     TaskLane,
@@ -129,55 +128,13 @@ def _build_task_detail_response(task: TaskDetail) -> TaskDetailResponse:
             trace_batch_id=task.result_refs.trace_batch_id,
             analysis_run_id=task.result_refs.analysis_run_id,
             metadata_records=[
-                _build_metadata_record_ref_response(record)
+                build_metadata_record_ref_response(record)
                 for record in task.result_refs.metadata_records
             ],
-            trace_payload=_build_trace_payload_ref_response(task.result_refs.trace_payload),
+            trace_payload=build_trace_payload_ref_response(task.result_refs.trace_payload),
             result_handles=[
-                _build_result_handle_ref_response(handle)
+                build_result_handle_ref_response(handle)
                 for handle in task.result_refs.result_handles
             ],
         ),
-    )
-
-
-def _build_metadata_record_ref_response(
-    record: MetadataRecordRef,
-) -> MetadataRecordRefResponse:
-    return MetadataRecordRefResponse(
-        backend=record.backend,
-        record_type=record.record_type,
-        record_id=record.record_id,
-        version=record.version,
-    )
-
-
-def _build_trace_payload_ref_response(
-    trace_payload: TracePayloadRef | None,
-) -> TracePayloadRefResponse | None:
-    if trace_payload is None:
-        return None
-    return TracePayloadRefResponse(
-        backend=trace_payload.backend,
-        store_key=trace_payload.store_key,
-        store_uri=trace_payload.store_uri,
-        group_path=trace_payload.group_path,
-        array_path=trace_payload.array_path,
-        schema_version=trace_payload.schema_version,
-    )
-
-
-def _build_result_handle_ref_response(
-    handle: ResultHandleRef,
-) -> ResultHandleRefResponse:
-    return ResultHandleRefResponse(
-        handle_id=handle.handle_id,
-        kind=handle.kind,
-        status=handle.status,
-        label=handle.label,
-        metadata_record=_build_metadata_record_ref_response(handle.metadata_record),
-        payload_backend=handle.payload_backend,
-        payload_format=handle.payload_format,
-        payload_locator=handle.payload_locator,
-        provenance_task_id=handle.provenance_task_id,
     )
