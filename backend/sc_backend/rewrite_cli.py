@@ -63,6 +63,12 @@ def get_session() -> SessionResponse:
     return _build_session_response(_run_backend_call(get_session_service().get_session))
 
 
+def set_active_dataset(dataset_id: str | None) -> SessionResponse:
+    return _build_session_response(
+        _run_backend_call(lambda: get_session_service().set_active_dataset(dataset_id))
+    )
+
+
 def list_datasets(
     *,
     family: str | None = None,

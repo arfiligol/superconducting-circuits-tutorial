@@ -16,6 +16,7 @@ from sc_backend.rewrite_cli import (
     list_datasets,
     list_tasks,
     reset_runtime_state,
+    set_active_dataset,
 )
 
 __all__ = [
@@ -38,4 +39,5 @@ __all__ = [
     "list_datasets",
     "list_tasks",
     "reset_runtime_state",
+    "set_active_dataset",
 ]
