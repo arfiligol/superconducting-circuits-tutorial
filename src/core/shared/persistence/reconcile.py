@@ -10,7 +10,7 @@ from typing import Final, cast
 from sc_core.execution import (
     STALE_TASK_TIMEOUT_ERROR_CODE,
     build_reconcile_batch_failed_event,
-    build_reconcile_stale_task_transition,
+    build_reconcile_stale_task_operation,
 )
 
 from core.shared.persistence.models import TraceBatchRecord
@@ -89,26 +89,23 @@ def _reconcile_summary_payload(*, reason: str, stale_before: datetime) -> dict[s
     }
 
 
-def _persist_task_reconcile_transition(
+def _persist_task_reconcile_operation(
     uow: SqliteUnitOfWork,
     *,
     task_id: int,
     recorded_at: datetime,
     stale_before: datetime,
 ) -> int | None:
-    transition = build_reconcile_stale_task_transition(
+    operation = build_reconcile_stale_task_operation(
         task_id=task_id,
         recorded_at=recorded_at,
         stale_before=stale_before,
     )
-    uow.tasks.apply_execution_transition(task_id, transition)
-    if transition.event_log is None:
+    uow.tasks.apply_execution_operation(operation)
+    log = uow.audit_logs.append_execution_operation(operation)
+    if log is None or log.id is None:
         return None
-    log = uow.audit_logs.append_execution_event(
-        actor_id=None,
-        event=transition.event_log,
-    )
-    return int(log.id) if log.id is not None else None
+    return int(log.id)
 
 
 def reconcile_stale_tasks_and_batches(
@@ -145,7 +142,7 @@ def reconcile_stale_tasks_and_batches(
                 )
                 failed_batch_ids.append(related_batch_id)
 
-        audit_log_id = _persist_task_reconcile_transition(
+        audit_log_id = _persist_task_reconcile_operation(
             uow,
             task_id=int(task.id),
             recorded_at=_utcnow(),

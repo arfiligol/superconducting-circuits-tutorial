@@ -7,6 +7,7 @@ from typing import Any, Protocol, TypedDict, runtime_checkable
 from sc_core.execution import (
     ExecutionEventLog,
     TaskCreationSpec,
+    TaskExecutionOperation,
     TaskExecutionTransition,
     TaskLifecycleMutation,
 )
@@ -69,6 +70,8 @@ class TaskPersistenceContract(Protocol):
         task_id: int,
         transition: TaskExecutionTransition,
     ) -> None: ...
+
+    def apply_execution_operation(self, operation: TaskExecutionOperation) -> None: ...
 
     def mark_running(self, task_id: int) -> None: ...
 
@@ -138,6 +141,11 @@ class AuditLogPersistenceContract(Protocol):
         actor_id: int | None,
         event: ExecutionEventLog,
     ) -> AuditLogRecord: ...
+
+    def append_execution_operation(
+        self,
+        operation: TaskExecutionOperation,
+    ) -> AuditLogRecord | None: ...
 
     def append_log(
         self,

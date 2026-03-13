@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import UTC, datetime
 
-from sc_core.execution import build_task_heartbeat_payload, build_task_heartbeat_transition
+from sc_core.execution import build_task_heartbeat_operation, build_task_heartbeat_payload
 
 from app.services.post_processing_batch_persistence import (
     mark_post_processing_batch_failed,
@@ -50,9 +50,9 @@ def _heartbeat_task(
         "warning": warning,
     }
     with get_unit_of_work() as uow:
-        uow.tasks.apply_execution_transition(
-            task_id,
-            build_task_heartbeat_transition(
+        uow.tasks.apply_execution_operation(
+            build_task_heartbeat_operation(
+                task_id=task_id,
                 recorded_at=recorded_at,
                 progress_payload=build_task_heartbeat_payload(
                     phase="running",
@@ -64,7 +64,7 @@ def _heartbeat_task(
                     details=details,
                     extra_payload=details,
                 ),
-            ),
+            )
         )
         uow.commit()
 

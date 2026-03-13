@@ -13,14 +13,14 @@ from datetime import UTC, datetime, timedelta
 from rq import Queue, SimpleWorker
 from rq.timeouts import TimerDeathPenalty
 from sc_core.execution import (
+    TaskExecutionOperation,
     TaskExecutionResult,
-    TaskExecutionTransition,
     WorkerExecutionContext,
-    build_worker_completed_transition,
-    build_worker_crashing_transition,
+    build_worker_completed_operation,
+    build_worker_crashing_operation,
     build_worker_execution_context,
-    build_worker_failed_transition,
-    build_worker_running_transition,
+    build_worker_failed_operation,
+    build_worker_running_operation,
 )
 from sc_core.tasking import WorkerTaskName
 
@@ -58,20 +58,11 @@ def _worker_execution_context(
     )
 
 
-def _persist_transition(
-    *,
-    task_id: int,
-    actor_id: int | None,
-    transition: TaskExecutionTransition,
-) -> None:
-    """Persist one shared orchestration transition and its optional audit record."""
+def _persist_execution_operation(operation: TaskExecutionOperation) -> None:
+    """Persist one shared orchestration operation and its optional audit record."""
     with get_unit_of_work() as uow:
-        uow.tasks.apply_execution_transition(task_id, transition)
-        if transition.event_log is not None:
-            uow.audit_logs.append_execution_event(
-                actor_id=actor_id,
-                event=transition.event_log,
-            )
+        uow.tasks.apply_execution_operation(operation)
+        uow.audit_logs.append_execution_operation(operation)
         uow.commit()
 
 
@@ -93,13 +84,12 @@ def execute_managed_task(
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-    _persist_transition(
-        task_id=task_id,
-        actor_id=actor_id,
-        transition=build_worker_running_transition(
+    _persist_execution_operation(
+        build_worker_running_operation(
             task_id=task_id,
             recorded_at=running_at,
             context=context,
+            actor_id=actor_id,
         ),
     )
 
@@ -110,36 +100,30 @@ def execute_managed_task(
         with get_unit_of_work() as uow:
             task = uow.tasks.get_task(task_id)
             actor_id = task.actor_id if task is not None else None
-        failed_transition = build_worker_failed_transition(
+        failed_operation = build_worker_failed_operation(
             task_id=task_id,
             recorded_at=failed_at,
             context=context,
             exc_type=type(exc).__name__,
             message=str(exc),
-        )
-        _persist_transition(
-            task_id=task_id,
             actor_id=actor_id,
-            transition=failed_transition,
         )
-        return dict(failed_transition.audit_payload or {})
+        _persist_execution_operation(failed_operation)
+        return dict(failed_operation.audit_payload or {})
 
     completed_at = _utcnow()
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         actor_id = task.actor_id if task is not None else None
-    completed_transition = build_worker_completed_transition(
+    completed_operation = build_worker_completed_operation(
         task_id=task_id,
         recorded_at=completed_at,
         context=context,
         result=result,
-    )
-    _persist_transition(
-        task_id=task_id,
         actor_id=actor_id,
-        transition=completed_transition,
     )
-    return dict(completed_transition.audit_payload or {})
+    _persist_execution_operation(completed_operation)
+    return dict(completed_operation.audit_payload or {})
 
 
 def mark_task_running_before_crash(
@@ -159,13 +143,12 @@ def mark_task_running_before_crash(
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-    _persist_transition(
-        task_id=task_id,
-        actor_id=actor_id,
-        transition=build_worker_crashing_transition(
+    _persist_execution_operation(
+        build_worker_crashing_operation(
             task_id=task_id,
             recorded_at=crash_requested_at,
             context=context,
+            actor_id=actor_id,
         ),
     )
 

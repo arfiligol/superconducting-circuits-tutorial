@@ -221,6 +221,31 @@ class TaskExecutionTransition:
 
 
 @dataclass(frozen=True)
+class TaskExecutionOperation:
+    """Canonical persisted-task operation combining identity and one transition."""
+
+    task_id: int
+    actor_id: int | None
+    transition: TaskExecutionTransition
+
+    @property
+    def event_log(self) -> ExecutionEventLog | None:
+        return self.transition.event_log
+
+    @property
+    def audit_action_kind(self) -> ExecutionEventKind | None:
+        return self.transition.audit_action_kind
+
+    @property
+    def audit_summary(self) -> str | None:
+        return self.transition.audit_summary
+
+    @property
+    def audit_payload(self) -> dict[str, object] | None:
+        return self.transition.audit_payload
+
+
+@dataclass(frozen=True)
 class WorkerExecutionContext:
     """Stable worker execution identity used across dispatch-adjacent lifecycle phases."""
 
@@ -383,6 +408,20 @@ def build_task_queued_transition(
     )
 
 
+def build_task_execution_operation(
+    *,
+    task_id: int,
+    transition: TaskExecutionTransition,
+    actor_id: int | None = None,
+) -> TaskExecutionOperation:
+    """Build the canonical persisted-task operation for one transition."""
+    return TaskExecutionOperation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=transition,
+    )
+
+
 def build_task_running_mutation(
     *,
     recorded_at: datetime,
@@ -447,6 +486,24 @@ def build_task_heartbeat_transition(
     )
 
 
+def build_task_heartbeat_operation(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    progress_payload: Mapping[str, object],
+    actor_id: int | None = None,
+) -> TaskExecutionOperation:
+    """Build the canonical persisted-task operation for one heartbeat update."""
+    return build_task_execution_operation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_task_heartbeat_transition(
+            recorded_at=recorded_at,
+            progress_payload=progress_payload,
+        ),
+    )
+
+
 def build_worker_running_transition(
     *,
     task_id: int,
@@ -476,6 +533,27 @@ def build_worker_running_transition(
             phase="running",
             provenance=provenance,
             recorded_at=recorded_at,
+        ),
+    )
+
+
+def build_worker_running_operation(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    actor_id: int | None = None,
+    stale_after_seconds: int = 300,
+) -> TaskExecutionOperation:
+    """Build the persisted-task operation for one worker-managed running transition."""
+    return build_task_execution_operation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_worker_running_transition(
+            task_id=task_id,
+            recorded_at=recorded_at,
+            context=context,
+            stale_after_seconds=stale_after_seconds,
         ),
     )
 
@@ -549,6 +627,27 @@ def build_worker_completed_transition(
     )
 
 
+def build_worker_completed_operation(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    result: TaskExecutionResult,
+    actor_id: int | None = None,
+) -> TaskExecutionOperation:
+    """Build the persisted-task operation for one worker-managed completion."""
+    return build_task_execution_operation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_worker_completed_transition(
+            task_id=task_id,
+            recorded_at=recorded_at,
+            context=context,
+            result=result,
+        ),
+    )
+
+
 def build_task_failed_mutation(
     *,
     recorded_at: datetime,
@@ -601,6 +700,29 @@ def build_worker_failed_transition(
             "message": message,
             "summary": error_payload["summary"],
         },
+    )
+
+
+def build_worker_failed_operation(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    exc_type: str,
+    message: str,
+    actor_id: int | None = None,
+) -> TaskExecutionOperation:
+    """Build the persisted-task operation for one worker-managed failure."""
+    return build_task_execution_operation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_worker_failed_transition(
+            task_id=task_id,
+            recorded_at=recorded_at,
+            context=context,
+            exc_type=exc_type,
+            message=message,
+        ),
     )
 
 
@@ -874,6 +996,25 @@ def build_reconcile_stale_task_transition(
     )
 
 
+def build_reconcile_stale_task_operation(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    stale_before: datetime,
+    actor_id: int | None = None,
+) -> TaskExecutionOperation:
+    """Build the persisted-task operation for one stale-task reconcile failure."""
+    return build_task_execution_operation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_reconcile_stale_task_transition(
+            task_id=task_id,
+            recorded_at=recorded_at,
+            stale_before=stale_before,
+        ),
+    )
+
+
 def build_reconcile_batch_failed_event(
     *,
     batch_id: int,
@@ -920,6 +1061,25 @@ def build_worker_crashing_transition(
             phase="crashing",
             provenance=provenance,
             recorded_at=recorded_at,
+        ),
+    )
+
+
+def build_worker_crashing_operation(
+    *,
+    task_id: int,
+    recorded_at: datetime,
+    context: WorkerExecutionContext,
+    actor_id: int | None = None,
+) -> TaskExecutionOperation:
+    """Build the persisted-task operation for one worker crash-prep transition."""
+    return build_task_execution_operation(
+        task_id=task_id,
+        actor_id=actor_id,
+        transition=build_worker_crashing_transition(
+            task_id=task_id,
+            recorded_at=recorded_at,
+            context=context,
         ),
     )
 

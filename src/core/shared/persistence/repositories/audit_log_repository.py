@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sc_core.execution import ExecutionEventLog
+from sc_core.execution import ExecutionEventLog, TaskExecutionOperation
 from sqlalchemy import desc
 from sqlmodel import Session, col, select
 
@@ -31,6 +31,18 @@ class AuditLogRepository:
             resource_id=event.resource_id,
             summary=event.summary,
             payload=event.payload,
+        )
+
+    def append_execution_operation(
+        self,
+        operation: TaskExecutionOperation,
+    ) -> AuditLogRecord | None:
+        """Append the audit event carried by one canonical persisted-task operation."""
+        if operation.event_log is None:
+            return None
+        return self.append_execution_event(
+            actor_id=operation.actor_id,
+            event=operation.event_log,
         )
 
     def append_log(
