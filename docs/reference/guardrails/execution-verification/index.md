@@ -27,6 +27,7 @@ updated_by: codex
 - [CI Gates](./ci-gates.md)
 - [Commit Standards](./commit-standards.md)
 - [Phase Gates](./phase-gates.md)
+- [Prompt Grading](./prompt-grading.md)
 
 ## Agent Rule { #agent-rule }
 
