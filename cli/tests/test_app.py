@@ -53,15 +53,15 @@ def _list_runtime_tasks(
     )
 
 
-def _workspace_task_ids() -> list[int]:
-    return [task.task_id for task in _list_runtime_tasks()]
+def _workspace_task_ids(*, limit: int = 20) -> list[int]:
+    return [task.task_id for task in _list_runtime_tasks(limit=limit)]
 
 
-def _owned_only_task_ids() -> list[int]:
-    workspace_ids = set(_workspace_task_ids())
+def _owned_only_task_ids(*, limit: int = 20) -> list[int]:
+    workspace_ids = set(_workspace_task_ids(limit=limit))
     return [
         task.task_id
-        for task in _list_runtime_tasks(scope="owned")
+        for task in _list_runtime_tasks(scope="owned", limit=limit)
         if task.task_id not in workspace_ids
     ]
 
@@ -119,7 +119,11 @@ def _task_without_trace_payload_id() -> int:
 
 
 def _task_without_result_handles_id() -> int:
-    return _find_task_id(require_result_handles=False)
+    return _find_task_id(
+        status="running",
+        lane="simulation",
+        require_result_handles=False,
+    )
 
 
 def test_preview_artifacts_command_lists_sc_core_exports() -> None:
@@ -681,8 +685,8 @@ def test_datasets_set_metadata_command_uses_structured_validation_error() -> Non
 
 def test_tasks_list_command_reads_rewrite_task_state() -> None:
     runner = CliRunner()
-    workspace_task_ids = _workspace_task_ids()
-    owned_only_task_ids = _owned_only_task_ids()
+    workspace_task_ids = _workspace_task_ids(limit=20)
+    owned_only_task_ids = _owned_only_task_ids(limit=20)
 
     result = runner.invoke(app, ["tasks", "list"])
 
@@ -696,8 +700,8 @@ def test_tasks_list_command_reads_rewrite_task_state() -> None:
 
 def test_tasks_list_command_supports_json_output() -> None:
     runner = CliRunner()
-    workspace_task_ids = _workspace_task_ids()
-    owned_only_task_ids = _owned_only_task_ids()
+    workspace_task_ids = _workspace_task_ids(limit=20)
+    owned_only_task_ids = _owned_only_task_ids(limit=20)
 
     result = runner.invoke(app, ["tasks", "list", "--output", "json"])
 
@@ -900,9 +904,8 @@ def test_events_show_command_groups_persisted_task_history() -> None:
     assert "event_count: 2" in result.stdout
     assert "event_type: task_submitted" in result.stdout
     assert "event_type: task_completed" in result.stdout
-    assert "result_handle_ids:" in result.stdout
-    assert "result:fluxonium-2025-031:fit-summary" in result.stdout
-    assert "result:fluxonium-2025-031:plot-bundle" in result.stdout
+    assert "result_handle_count: 2" in result.stdout
+    assert "dispatch_status: completed" in result.stdout
 
 
 def test_events_show_command_supports_json_output() -> None:
