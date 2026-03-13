@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from sc_core.execution import (
     TaskExecutionHistoryContext,
@@ -9,11 +9,24 @@ from sc_core.execution import (
     TaskExecutionHistoryMetadataValue,
     TaskResultHandle,
     build_task_execution_history,
+    build_task_execution_history_context,
     build_task_lifecycle_history_event,
     build_task_submission_history_event,
 )
 from sc_core.storage import TraceResultLinkage
-from sc_core.tasking import TaskExecutionMode, WorkerTaskName
+from sc_core.tasking import (
+    TaskDispatchRecord,
+    TaskExecutionMode,
+    TaskSubmissionSource,
+    WorkerTaskName,
+    build_task_dispatch_record,
+)
+from sc_core.tasking import (
+    TaskDispatchStatus as _TaskDispatchStatus,
+)
+from sc_core.tasking import (
+    task_submission_source_for as _task_submission_source_for,
+)
 
 from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 
@@ -22,12 +35,12 @@ TaskLane = Literal["simulation", "characterization"]
 TaskStatus = Literal["queued", "running", "completed", "failed"]
 TaskQueueBackend = Literal["in_memory_scaffold"]
 TaskVisibilityScope = Literal["workspace", "owned"]
-TaskDispatchStatus = Literal["accepted", "running", "completed", "failed"]
-TaskSubmissionSource = Literal["active_dataset", "explicit_dataset", "definition_only"]
 TaskEventType = TaskExecutionHistoryEventType
 TaskEventLevel = TaskExecutionHistoryLevel
 TaskEventMetadataValue = TaskExecutionHistoryMetadataValue
 TaskEventOrder = Literal["asc", "desc"]
+TaskDispatchStatus = _TaskDispatchStatus
+task_submission_source_for = _task_submission_source_for
 
 
 @dataclass(frozen=True)
@@ -75,15 +88,7 @@ class TaskSummary:
     summary: str
 
 
-@dataclass(frozen=True)
-class TaskDispatch:
-    dispatch_key: str
-    status: TaskDispatchStatus
-    submission_source: TaskSubmissionSource
-    accepted_at: str
-    last_updated_at: str
-
-
+TaskDispatch = TaskDispatchRecord
 TaskEvent = TaskExecutionHistoryEvent
 
 
@@ -161,24 +166,6 @@ class TaskLifecycleUpdate:
     dispatch: TaskDispatch | None = None
 
 
-def task_submission_source_for(
-    *,
-    submitted_from_active_dataset: bool,
-    dataset_id: str | None,
-) -> TaskSubmissionSource:
-    if submitted_from_active_dataset:
-        return "active_dataset"
-    if dataset_id is not None:
-        return "explicit_dataset"
-    return "definition_only"
-
-
-def task_dispatch_status_for(task_status: TaskStatus) -> TaskDispatchStatus:
-    if task_status == "queued":
-        return "accepted"
-    return task_status
-
-
 def build_task_dispatch(
     *,
     task_id: int,
@@ -191,38 +178,21 @@ def build_task_dispatch(
     submission_source: TaskSubmissionSource | None = None,
     current_dispatch: TaskDispatch | None = None,
 ) -> TaskDispatch:
-    return TaskDispatch(
-        dispatch_key=(
-            current_dispatch.dispatch_key
-            if current_dispatch is not None
-            else f"dispatch:{task_id}:{worker_task_name}"
-        ),
-        status=task_dispatch_status_for(task_status),
-        submission_source=(
-            current_dispatch.submission_source
-            if current_dispatch is not None
-            else submission_source
-            or task_submission_source_for(
-                submitted_from_active_dataset=submitted_from_active_dataset,
-                dataset_id=dataset_id,
-            )
-        ),
-        accepted_at=current_dispatch.accepted_at if current_dispatch is not None else accepted_at,
+    return build_task_dispatch_record(
+        task_id=task_id,
+        worker_task_name=cast(WorkerTaskName, worker_task_name),
+        task_status=task_status,
+        submitted_from_active_dataset=submitted_from_active_dataset,
+        dataset_id=dataset_id,
+        accepted_at=accepted_at,
         last_updated_at=last_updated_at,
+        submission_source=submission_source,
+        current_dispatch=current_dispatch,
     )
 
 
 def build_task_submission_event(task: TaskDetail) -> TaskEvent:
-    context = _build_task_history_context(task)
-    return build_task_submission_history_event(
-        submitted_at=context.submitted_at,
-        dispatch_status=context.dispatch_status,
-        dispatch_key=context.dispatch_key,
-        submission_source=context.submission_source,
-        worker_task_name=context.worker_task_name,
-        dataset_id=context.dataset_id,
-        definition_id=context.definition_id,
-    )
+    return build_task_submission_history_event(_build_task_history_context(task))
 
 
 def _build_task_history_context(task: TaskDetail) -> TaskExecutionHistoryContext:
@@ -236,14 +206,12 @@ def _build_task_history_context(task: TaskDetail) -> TaskExecutionHistoryContext
         last_updated_at=task.progress.updated_at,
         current_dispatch=task.dispatch,
     )
-    return TaskExecutionHistoryContext(
+    return build_task_execution_history_context(
         task_status=task.status,
         submitted_at=task.submitted_at,
         progress_updated_at=task.progress.updated_at,
         progress_percent_complete=task.progress.percent_complete,
-        dispatch_key=dispatch.dispatch_key,
-        dispatch_status=dispatch.status,
-        submission_source=dispatch.submission_source,
+        dispatch=dispatch,
         worker_task_name=task.worker_task_name,
         dataset_id=task.dataset_id,
         definition_id=task.definition_id,
@@ -254,16 +222,7 @@ def _build_task_history_context(task: TaskDetail) -> TaskExecutionHistoryContext
 
 
 def build_task_lifecycle_event(task: TaskDetail) -> TaskEvent | None:
-    context = _build_task_history_context(task)
-    return build_task_lifecycle_history_event(
-        task_status=context.task_status,
-        progress_updated_at=context.progress_updated_at,
-        progress_percent_complete=context.progress_percent_complete,
-        dispatch_status=context.dispatch_status,
-        dispatch_key=context.dispatch_key,
-        worker_task_name=context.worker_task_name,
-        result_handle_ids=context.result_handle_ids,
-    )
+    return build_task_lifecycle_history_event(_build_task_history_context(task))
 
 
 def build_task_event_history(task: TaskDetail) -> tuple[TaskEvent, ...]:

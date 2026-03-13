@@ -5,7 +5,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
-from sc_core.tasking import LaneName, WorkerTaskName
+from sc_core.tasking import (
+    LaneName,
+    TaskDispatchRecord,
+    WorkerTaskName,
+)
+from sc_core.tasking import (
+    TaskDispatchStatus as TaskExecutionHistoryDispatchStatus,
+)
+from sc_core.tasking import (
+    TaskSubmissionSource as TaskExecutionHistorySubmissionSource,
+)
 
 ExecutionPhase = Literal["running", "completed", "failed", "crashing"]
 TaskLifecycleStatus = Literal["queued", "running", "completed", "failed"]
@@ -25,12 +35,6 @@ TaskExecutionHistoryEventType = Literal[
     "task_failed",
 ]
 TaskExecutionHistoryLevel = Literal["info", "warning", "error"]
-TaskExecutionHistoryDispatchStatus = Literal["accepted", "running", "completed", "failed"]
-TaskExecutionHistorySubmissionSource = Literal[
-    "active_dataset",
-    "explicit_dataset",
-    "definition_only",
-]
 TaskAuditActionKind = Literal[
     "worker.task_started",
     "worker.task_completed",
@@ -171,13 +175,23 @@ class TaskExecutionHistoryContext:
     submitted_at: str
     progress_updated_at: str
     progress_percent_complete: int
-    dispatch_key: str
-    dispatch_status: TaskExecutionHistoryDispatchStatus
-    submission_source: TaskExecutionHistorySubmissionSource
+    dispatch: TaskDispatchRecord
     worker_task_name: WorkerTaskName
     dataset_id: str | None
     definition_id: int | None
     result_handle_ids: tuple[str, ...] = ()
+
+    @property
+    def dispatch_key(self) -> str:
+        return self.dispatch.dispatch_key
+
+    @property
+    def dispatch_status(self) -> TaskExecutionHistoryDispatchStatus:
+        return self.dispatch.status
+
+    @property
+    def submission_source(self) -> TaskExecutionHistorySubmissionSource:
+        return self.dispatch.submission_source
 
 
 @dataclass(frozen=True)
@@ -705,52 +719,64 @@ def coerce_task_execution_history_metadata(
 
 
 def build_task_submission_history_event(
-    *,
-    submitted_at: str,
-    dispatch_status: TaskExecutionHistoryDispatchStatus,
-    dispatch_key: str,
-    submission_source: TaskExecutionHistorySubmissionSource,
-    worker_task_name: WorkerTaskName,
-    dataset_id: str | None,
-    definition_id: int | None,
+    context: TaskExecutionHistoryContext,
 ) -> TaskExecutionHistoryEvent:
     """Build the canonical task-submission history entry."""
     return TaskExecutionHistoryEvent(
-        event_key=f"task_submitted:{submitted_at}",
+        event_key=f"task_submitted:{context.submitted_at}",
         event_type="task_submitted",
         level="info",
-        occurred_at=submitted_at,
+        occurred_at=context.submitted_at,
         message="Task submission accepted by rewrite runtime.",
         metadata={
             "task_status": "queued",
-            "dispatch_status": dispatch_status,
-            "dispatch_key": dispatch_key,
-            "submission_source": submission_source,
-            "worker_task_name": worker_task_name,
-            "dataset_id": dataset_id,
-            "definition_id": definition_id,
+            "dispatch_status": context.dispatch_status,
+            "dispatch_key": context.dispatch_key,
+            "submission_source": context.submission_source,
+            "worker_task_name": context.worker_task_name,
+            "dataset_id": context.dataset_id,
+            "definition_id": context.definition_id,
         },
     )
 
 
-def build_task_lifecycle_history_event(
+def build_task_execution_history_context(
     *,
     task_status: TaskLifecycleStatus,
+    submitted_at: str,
     progress_updated_at: str,
     progress_percent_complete: int,
-    dispatch_status: TaskExecutionHistoryDispatchStatus,
-    dispatch_key: str,
+    dispatch: TaskDispatchRecord,
     worker_task_name: WorkerTaskName,
+    dataset_id: str | None,
+    definition_id: int | None,
     result_handle_ids: Sequence[str] = (),
+) -> TaskExecutionHistoryContext:
+    """Build the canonical task-history context from one task snapshot."""
+    return TaskExecutionHistoryContext(
+        task_status=task_status,
+        submitted_at=submitted_at,
+        progress_updated_at=progress_updated_at,
+        progress_percent_complete=progress_percent_complete,
+        dispatch=dispatch,
+        worker_task_name=worker_task_name,
+        dataset_id=dataset_id,
+        definition_id=definition_id,
+        result_handle_ids=tuple(str(handle_id) for handle_id in result_handle_ids),
+    )
+
+
+def build_task_lifecycle_history_event(
+    context: TaskExecutionHistoryContext,
 ) -> TaskExecutionHistoryEvent | None:
     """Build one lifecycle history entry from the current persisted task state."""
-    if task_status == "queued":
+    if context.task_status == "queued":
         return None
-    if task_status == "running":
+    if context.task_status == "running":
         event_type: TaskExecutionHistoryEventType = "task_running"
         level: TaskExecutionHistoryLevel = "info"
         message = "Task entered the running state."
-    elif task_status == "completed":
+    elif context.task_status == "completed":
         event_type = "task_completed"
         level = "info"
         message = "Task completed and persisted result metadata."
@@ -759,18 +785,18 @@ def build_task_lifecycle_history_event(
         level = "error"
         message = "Task entered the failed state."
     return TaskExecutionHistoryEvent(
-        event_key=f"{event_type}:{progress_updated_at}",
+        event_key=f"{event_type}:{context.progress_updated_at}",
         event_type=event_type,
         level=level,
-        occurred_at=progress_updated_at,
+        occurred_at=context.progress_updated_at,
         message=message,
         metadata={
-            "task_status": task_status,
-            "dispatch_status": dispatch_status,
-            "dispatch_key": dispatch_key,
-            "progress_percent_complete": progress_percent_complete,
-            "worker_task_name": worker_task_name,
-            "result_handle_ids": [str(handle_id) for handle_id in result_handle_ids],
+            "task_status": context.task_status,
+            "dispatch_status": context.dispatch_status,
+            "dispatch_key": context.dispatch_key,
+            "progress_percent_complete": context.progress_percent_complete,
+            "worker_task_name": context.worker_task_name,
+            "result_handle_ids": list(context.result_handle_ids),
         },
     )
 
@@ -779,26 +805,8 @@ def build_task_execution_history(
     context: TaskExecutionHistoryContext,
 ) -> tuple[TaskExecutionHistoryEvent, ...]:
     """Build the canonical task-history list for one persisted task snapshot."""
-    events = [
-        build_task_submission_history_event(
-            submitted_at=context.submitted_at,
-            dispatch_status=context.dispatch_status,
-            dispatch_key=context.dispatch_key,
-            submission_source=context.submission_source,
-            worker_task_name=context.worker_task_name,
-            dataset_id=context.dataset_id,
-            definition_id=context.definition_id,
-        )
-    ]
-    lifecycle_event = build_task_lifecycle_history_event(
-        task_status=context.task_status,
-        progress_updated_at=context.progress_updated_at,
-        progress_percent_complete=context.progress_percent_complete,
-        dispatch_status=context.dispatch_status,
-        dispatch_key=context.dispatch_key,
-        worker_task_name=context.worker_task_name,
-        result_handle_ids=context.result_handle_ids,
-    )
+    events = [build_task_submission_history_event(context)]
+    lifecycle_event = build_task_lifecycle_history_event(context)
     if lifecycle_event is not None:
         events.append(lifecycle_event)
     return tuple(events)

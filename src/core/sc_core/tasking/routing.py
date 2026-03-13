@@ -5,6 +5,9 @@ from typing import Literal
 LaneName = Literal["simulation", "characterization"]
 TaskSubmissionKind = Literal["simulation", "post_processing", "characterization"]
 TaskExecutionMode = Literal["run", "smoke"]
+TaskDispatchStatus = Literal["accepted", "running", "completed", "failed"]
+TaskSubmissionSource = Literal["active_dataset", "explicit_dataset", "definition_only"]
+TaskDispatchLifecycleStatus = Literal["queued", "running", "completed", "failed"]
 TASKING_CONTRACT_VERSION = "sc_tasking.v1"
 WorkerTaskName = Literal[
     "simulation_run_task",
@@ -45,6 +48,17 @@ class WorkerDispatchPlan:
     job_timeout: int = -1
     failure_ttl: int = 86400
     result_ttl: int = 3600
+
+
+@dataclass(frozen=True)
+class TaskDispatchRecord:
+    """Canonical dispatch snapshot for one submitted task."""
+
+    dispatch_key: str
+    status: TaskDispatchStatus
+    submission_source: TaskSubmissionSource
+    accepted_at: str
+    last_updated_at: str
 
 
 def extract_parameters_payload(request_payload: Mapping[str, object] | None) -> dict[str, object]:
@@ -120,6 +134,60 @@ def build_worker_dispatch_plan(
         job_timeout=job_timeout,
         failure_ttl=failure_ttl,
         result_ttl=result_ttl,
+    )
+
+
+def task_submission_source_for(
+    *,
+    submitted_from_active_dataset: bool,
+    dataset_id: str | None,
+) -> TaskSubmissionSource:
+    """Resolve the canonical submission source for one task request."""
+    if submitted_from_active_dataset:
+        return "active_dataset"
+    if dataset_id is not None:
+        return "explicit_dataset"
+    return "definition_only"
+
+
+def task_dispatch_status_for(task_status: TaskDispatchLifecycleStatus) -> TaskDispatchStatus:
+    """Resolve the canonical dispatch status for one persisted task lifecycle status."""
+    if task_status == "queued":
+        return "accepted"
+    return task_status
+
+
+def build_task_dispatch_record(
+    *,
+    task_id: int,
+    worker_task_name: WorkerTaskName,
+    task_status: TaskDispatchLifecycleStatus,
+    submitted_from_active_dataset: bool,
+    dataset_id: str | None,
+    accepted_at: str,
+    last_updated_at: str,
+    submission_source: TaskSubmissionSource | None = None,
+    current_dispatch: TaskDispatchRecord | None = None,
+) -> TaskDispatchRecord:
+    """Build the canonical dispatch snapshot for one task detail/read model."""
+    return TaskDispatchRecord(
+        dispatch_key=(
+            current_dispatch.dispatch_key
+            if current_dispatch is not None
+            else f"dispatch:{task_id}:{worker_task_name}"
+        ),
+        status=task_dispatch_status_for(task_status),
+        submission_source=(
+            current_dispatch.submission_source
+            if current_dispatch is not None
+            else submission_source
+            or task_submission_source_for(
+                submitted_from_active_dataset=submitted_from_active_dataset,
+                dataset_id=dataset_id,
+            )
+        ),
+        accepted_at=current_dispatch.accepted_at if current_dispatch is not None else accepted_at,
+        last_updated_at=last_updated_at,
     )
 
 
