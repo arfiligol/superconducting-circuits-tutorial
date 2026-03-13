@@ -23,6 +23,17 @@ from app.features.characterization.query import (
     _completed_result_analysis_ids,
     _latest_completed_analysis_run_summaries,
 )
+from app.features.characterization.query.analysis_registry import list_dataset_analyses
+from app.features.characterization.query.capability import evaluate_analysis_capability_gating
+from app.features.characterization.query.trace_scope import (
+    CharacterizationTraceScopeUnitOfWork,
+    TraceSourceSummary,
+    count_scope_trace_records,
+    hydrate_trace_index_rows_with_provenance,
+    list_design_scope_source_summaries,
+    list_scope_compatible_trace_index_page,
+    list_scope_compatible_trace_source_summaries,
+)
 from app.features.characterization.recovery import build_recovery_state
 from app.features.characterization.state import (
     AnalysisRunAvailability,
@@ -39,18 +50,11 @@ from app.features.characterization.views import (
     _result_view_controls_row_classes,
     _with_test_id,
 )
-from app.ui.sections import section_card
-from app.ui.states import render_empty_state
-from app.features.characterization.query.analysis_registry import list_dataset_analyses
-from app.features.characterization.query.capability import evaluate_analysis_capability_gating
-from app.features.characterization.query.trace_scope import (
-    CharacterizationTraceScopeUnitOfWork,
-    TraceSourceSummary,
-    count_scope_trace_records,
-    hydrate_trace_index_rows_with_provenance,
-    list_design_scope_source_summaries,
-    list_scope_compatible_trace_index_page,
-    list_scope_compatible_trace_source_summaries,
+from app.features.characterization.views.result_artifacts import (
+    RESULT_CATEGORY_LABELS,
+    artifact_categories,
+    artifacts_in_category,
+    build_result_artifacts_for_analysis,
 )
 from app.services.characterization_runner import (
     SweepSupportDiagnostic,
@@ -61,12 +65,8 @@ from app.services.dataset_profile import (
     normalize_dataset_profile,
 )
 from app.services.execution_context import build_ui_use_case_context
-from app.features.characterization.views.result_artifacts import (
-    RESULT_CATEGORY_LABELS,
-    artifact_categories,
-    artifacts_in_category,
-    build_result_artifacts_for_analysis,
-)
+from app.ui.sections import section_card
+from app.ui.states import render_empty_state
 from core.analysis.domain import (
     ModeGroup,
     ParameterKey,
@@ -1054,15 +1054,11 @@ def _render_identify_mode(ds, method: str, params: list, bias_df):
 
                 try:
                     with get_unit_of_work() as uow:
-                        existing = (
-                            uow._session.query(ParameterDesignation)
-                            .filter_by(
-                                dataset_id=ds.id,
-                                designated_name=true_tag,
-                                source_analysis_type=method,
-                                source_parameter_name=source_select.value,
-                            )
-                            .first()
+                        existing = uow.designations.find_unique(
+                            dataset_id=int(ds.id),
+                            designated_name=true_tag,
+                            source_analysis_type=method,
+                            source_parameter_name=str(source_select.value),
                         )
 
                         if existing:
@@ -1078,7 +1074,7 @@ def _render_identify_mode(ds, method: str, params: list, bias_df):
                             source_analysis_type=method,
                             source_parameter_name=source_select.value,
                         )
-                        uow._session.add(desig)
+                        uow.designations.add(desig)
                         uow.commit()
                         ui.notify(
                             f"Successfully designated {source_select.value} as '{true_tag}'",

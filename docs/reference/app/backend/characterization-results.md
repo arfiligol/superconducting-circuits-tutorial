@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: Characterization analysis registry、run history、artifact manifest、artifact payload 與 identify/tagging 的 backend reference surface。
-version: v0.6.0
+version: v0.7.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -159,6 +159,23 @@ updated_by: team
 !!! warning "Cross-page Consistency"
     identify / tagging 不是只影響 Characterization 局部畫面。
     mutation 成功後，相關 dataset summary 必須能跨頁一致讀回。
+
+## Tagged Core Metrics Resolution Contract
+
+Dashboard 讀取 `Tagged Core Metrics` 時，必須用同一套 canonical resolution 規則將
+`ParameterDesignation` 對到 `DerivedParameter`，避免 UI/CLI 各自重複拼 SQL 導致結果漂移。
+
+| 項目 | 契約 |
+| :--- | :--- |
+| **Authority** | 由 persistence repository contract 負責 designation 與 derived parameter 查詢；UI/CLI 不得直接操作 ORM Session。 |
+| **Exact Match** | 先嘗試 `dataset_id + source_analysis_type + source_parameter_name` 的精確匹配。 |
+| **Compatibility Fallback** | 若 exact miss，允許 `source_parameter_name + "_b0"` fallback。 |
+| **Prefix Fallback** | 若仍 miss，最後允許同 `dataset_id + method` 下的 name prefix 首筆匹配。 |
+| **Tagging Uniqueness** | 同一 dataset 下，`designated_name + source_analysis_type + source_parameter_name` 不得重複。 |
+| **Rename Migration Safety** | 對 legacy 參數名做正規化改名時，若新 key 已存在，必須去重且保持 idempotent。 |
+
+!!! warning "Boundary Rule"
+    上述匹配與去重邏輯屬於 backend/persistence contract，不能散落在 page handler 或 CLI command 的 Session query 中。
 
 ---
 

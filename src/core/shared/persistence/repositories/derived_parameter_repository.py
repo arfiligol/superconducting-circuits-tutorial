@@ -23,6 +23,46 @@ class DerivedParameterRepository:
         self._session.add(param)
         return param
 
+    def get_by_dataset_and_name(self, dataset_id: int, name: str) -> DerivedParameter | None:
+        """Get the first parameter with exact dataset/name."""
+        statement = select(DerivedParameter).where(
+            DerivedParameter.dataset_id == dataset_id,
+            DerivedParameter.name == name,
+        )
+        return self._session.exec(statement).first()
+
+    def get_by_dataset_method_and_name(
+        self,
+        dataset_id: int,
+        method: str,
+        name: str,
+    ) -> DerivedParameter | None:
+        """Get the first parameter with exact dataset/method/name."""
+        statement = select(DerivedParameter).where(
+            DerivedParameter.dataset_id == dataset_id,
+            DerivedParameter.method == method,
+            DerivedParameter.name == name,
+        )
+        return self._session.exec(statement).first()
+
+    def get_first_by_dataset_method_name_prefix(
+        self,
+        dataset_id: int,
+        method: str,
+        name_prefix: str,
+    ) -> DerivedParameter | None:
+        """Get the first parameter by dataset/method and name prefix."""
+        statement = (
+            select(DerivedParameter)
+            .where(
+                DerivedParameter.dataset_id == dataset_id,
+                DerivedParameter.method == method,
+                cast(Any, DerivedParameter.name).like(f"{name_prefix}%"),
+            )
+            .order_by(cast(Any, DerivedParameter.id))
+        )
+        return self._session.exec(statement).first()
+
     def list_all(self) -> list[DerivedParameter]:
         """List all derived parameters."""
         statement = select(DerivedParameter).order_by(cast(Any, DerivedParameter.id))

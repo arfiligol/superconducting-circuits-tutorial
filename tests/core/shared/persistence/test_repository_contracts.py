@@ -104,3 +104,4 @@ def test_unit_of_work_exposes_task_auth_and_audit_contracts() -> None:
         assert uow.tasks.get_task(1) is None
         assert uow.users.get_by_id(1) is None
         assert uow.audit_logs.list_logs() == []
+        assert uow.designations.list_all() == []

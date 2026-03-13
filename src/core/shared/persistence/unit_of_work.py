@@ -11,6 +11,7 @@ from core.shared.persistence.repositories import (
     DataRecordRepository,
     DatasetRepository,
     DerivedParameterRepository,
+    ParameterDesignationRepository,
     ResultBundleRepository,
     TagRepository,
     TaskRepository,
@@ -44,6 +45,11 @@ class SqliteUnitOfWork:
     def derived_params(self) -> DerivedParameterRepository:
         """Access DerivedParameter repository."""
         return DerivedParameterRepository(self._session)
+
+    @property
+    def designations(self) -> ParameterDesignationRepository:
+        """Access ParameterDesignation repository."""
+        return ParameterDesignationRepository(self._session)
 
     @property
     def result_bundles(self) -> ResultBundleRepository:

@@ -402,10 +402,7 @@ def migrate_mode_key(
     ] = False,
 ) -> None:
     """Migrate resonance parameter keys to canonical mode_<N>_ghz format."""
-    from sqlmodel import select
-
     from core.shared.persistence import get_unit_of_work
-    from core.shared.persistence.models import DerivedParameter, ParameterDesignation
 
     canonical_re = re.compile(r"^mode_(\d+)_ghz(?:_b(\d+))?$")
     legacy_indexed_re = re.compile(r"^(?:mode_ghz|fr_ghz)_(\d+)(?:_b(\d+))?$")
@@ -431,7 +428,7 @@ def migrate_mode_key(
 
     with get_unit_of_work() as uow:
         params = uow.derived_params.list_all()
-        designations = list(uow._session.exec(select(ParameterDesignation)).all())
+        designations = uow.designations.list_all()
 
         renamed_params = 0
         removed_param_dupes = 0
@@ -443,12 +440,10 @@ def migrate_mode_key(
             if new_name == param.name:
                 continue
 
-            existing = uow._session.exec(
-                select(DerivedParameter).where(
-                    DerivedParameter.dataset_id == param.dataset_id,
-                    DerivedParameter.name == new_name,
-                )
-            ).first()
+            existing = uow.derived_params.get_by_dataset_and_name(
+                int(param.dataset_id),
+                new_name,
+            )
 
             if existing and existing.id != param.id:
                 removed_param_dupes += 1
@@ -459,33 +454,31 @@ def migrate_mode_key(
             renamed_params += 1
             if apply:
                 param.name = new_name
-                uow._session.add(param)
+                uow.derived_params.add(param)
 
         for designation in designations:
             new_source_name = normalize_mode_name(designation.source_parameter_name)
             if new_source_name == designation.source_parameter_name:
                 continue
 
-            duplicate = uow._session.exec(
-                select(ParameterDesignation).where(
-                    ParameterDesignation.dataset_id == designation.dataset_id,
-                    ParameterDesignation.designated_name == designation.designated_name,
-                    ParameterDesignation.source_analysis_type == designation.source_analysis_type,
-                    ParameterDesignation.source_parameter_name == new_source_name,
-                    ParameterDesignation.id != designation.id,
-                )
-            ).first()
+            duplicate = uow.designations.find_unique(
+                dataset_id=int(designation.dataset_id),
+                designated_name=str(designation.designated_name),
+                source_analysis_type=str(designation.source_analysis_type),
+                source_parameter_name=new_source_name,
+                exclude_id=int(designation.id) if designation.id is not None else None,
+            )
 
             if duplicate:
                 removed_designation_dupes += 1
                 if apply:
-                    uow._session.delete(designation)
+                    uow.designations.delete(designation)
                 continue
 
             renamed_designations += 1
             if apply:
                 designation.source_parameter_name = new_source_name
-                uow._session.add(designation)
+                uow.designations.add(designation)
 
         if apply:
             uow.commit()

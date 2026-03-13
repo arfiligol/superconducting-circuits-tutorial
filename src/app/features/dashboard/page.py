@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Mapping
-from typing import Any, cast
+from typing import Any
 
 from nicegui import app, run, ui
 
@@ -19,7 +19,6 @@ from app.services.dataset_profile import (
 )
 from app.ui.states import render_empty_state
 from core.shared.persistence import get_unit_of_work
-from core.shared.persistence.models import DerivedParameter, ParameterDesignation
 
 _DASHBOARD_DEVICE_TYPE_OPTIONS = device_type_option_labels()
 _DASHBOARD_CAPABILITY_OPTIONS = capability_option_labels()
@@ -99,45 +98,33 @@ def build_page() -> None:
                             ui.label("Dataset not found.").classes("text-danger")
                             return
 
-                        designations = (
-                            render_uow._session.query(ParameterDesignation)
-                            .filter_by(dataset_id=active_id)
-                            .all()
-                        )
+                        designations = render_uow.designations.list_by_dataset(int(active_id))
                         metric_cards: list[dict[str, str | bool]] = []
                         for desig in designations:
                             resolved_param = (
-                                render_uow._session.query(DerivedParameter)
-                                .filter_by(
-                                    dataset_id=active_id,
-                                    method=desig.source_analysis_type,
-                                    name=desig.source_parameter_name,
+                                render_uow.derived_params.get_by_dataset_method_and_name(
+                                    int(active_id),
+                                    str(desig.source_analysis_type),
+                                    str(desig.source_parameter_name),
                                 )
-                                .first()
                             )
 
                             if not resolved_param:
                                 resolved_param = (
-                                    render_uow._session.query(DerivedParameter)
-                                    .filter_by(
-                                        dataset_id=active_id,
-                                        method=desig.source_analysis_type,
-                                        name=f"{desig.source_parameter_name}_b0",
+                                    render_uow.derived_params.get_by_dataset_method_and_name(
+                                        int(active_id),
+                                        str(desig.source_analysis_type),
+                                        f"{desig.source_parameter_name}_b0",
                                     )
-                                    .first()
                                 )
 
                             if not resolved_param:
                                 resolved_param = (
-                                    render_uow._session.query(DerivedParameter)
-                                    .filter(
-                                        DerivedParameter.dataset_id == active_id,
-                                        DerivedParameter.method == desig.source_analysis_type,
-                                        cast(Any, DerivedParameter.name).like(
-                                            f"{desig.source_parameter_name}%"
-                                        ),
+                                    render_uow.derived_params.get_first_by_dataset_method_name_prefix(
+                                        int(active_id),
+                                        str(desig.source_analysis_type),
+                                        str(desig.source_parameter_name),
                                     )
-                                    .first()
                                 )
 
                             if resolved_param:

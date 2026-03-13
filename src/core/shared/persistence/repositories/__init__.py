@@ -30,6 +30,9 @@ from core.shared.persistence.repositories.dataset_repository import (
 from core.shared.persistence.repositories.derived_parameter_repository import (
     DerivedParameterRepository,
 )
+from core.shared.persistence.repositories.parameter_designation_repository import (
+    ParameterDesignationRepository,
+)
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 from core.shared.persistence.repositories.result_bundle_repository import (
     ResultBundleRepository,
@@ -51,6 +54,7 @@ __all__ = [
     "DatasetRepository",
     "DerivedParameterRepository",
     "DesignRepository",
+    "ParameterDesignationRepository",
     "ResultBundleAnalysisRunSummary",
     "ResultBundleCharacterizationContract",
     "ResultBundleDatasetSummaryContract",
