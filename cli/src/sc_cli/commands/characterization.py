@@ -1,16 +1,21 @@
 """Characterization-lane operator commands."""
 
 from enum import Enum
-from time import monotonic, sleep
 from typing import Annotated, cast
 
 import typer
 from sc_backend import BackendContractError, TaskDetailResponse, TaskStatus, TaskVisibilityScope
 
-from sc_cli.errors import exit_for_backend_error, exit_with_runtime_error
+from sc_cli.errors import exit_for_backend_error
 from sc_cli.output import OutputMode, OutputOption
-from sc_cli.presenters import render_task_detail
+from sc_cli.presenters import render_task_detail, render_task_inspection
 from sc_cli.runtime import get_task, list_tasks, submit_task
+from sc_cli.task_operator import (
+    TERMINAL_TASK_STATUSES,
+    get_lane_task_or_exit,
+    latest_lane_task_or_exit,
+    wait_for_task_or_exit,
+)
 
 app = typer.Typer(help="Operate on characterization-lane tasks.", no_args_is_help=True)
 
@@ -33,9 +38,6 @@ class WaitStatusOption(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-
-
-TERMINAL_TASK_STATUSES = {"completed", "failed"}
 
 
 @app.command("submit")
@@ -82,6 +84,19 @@ def show_command(
     typer.echo(render_task_detail(task, output=output))
 
 
+@app.command("inspect")
+def inspect_command(
+    task_id: Annotated[
+        int,
+        typer.Argument(min=1, help="Characterization-lane task id to inspect as an operator view."),
+    ],
+    output: OutputOption = OutputMode.TEXT,
+) -> None:
+    """Show one characterization-lane task with operator-oriented event/result summary."""
+    task = _get_characterization_task_or_exit(task_id=task_id, output=output)
+    typer.echo(render_task_inspection(task, output=output))
+
+
 @app.command("latest")
 def latest_command(
     status: Annotated[
@@ -99,19 +114,19 @@ def latest_command(
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """Show the newest task in the characterization lane."""
-    try:
-        tasks = list_tasks(
-            status=None if status is None else cast(TaskStatus, status.value),
-            lane="characterization",
-            scope=cast(TaskVisibilityScope, scope.value),
-            dataset_id=dataset_id,
-            limit=20,
-        )
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
-    if not tasks:
-        exit_with_runtime_error("No characterization-lane tasks matched the requested filters.")
-    task = _get_characterization_task_or_exit(task_id=tasks[0].task_id, output=output)
+    task = latest_lane_task_or_exit(
+        expected_lane="characterization",
+        lane_label="characterization",
+        output=output,
+        get_task_fn=get_task,
+        list_tasks_fn=list_tasks,
+        no_match_message="No characterization-lane tasks matched the requested filters.",
+        status=None if status is None else cast(TaskStatus, status.value),
+        lane="characterization",
+        scope=cast(TaskVisibilityScope, scope.value),
+        dataset_id=dataset_id,
+        limit=20,
+    )
     typer.echo(render_task_detail(task, output=output))
 
 
@@ -139,18 +154,20 @@ def wait_command(
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """Poll one characterization-lane task until it reaches the requested status."""
-    deadline = monotonic() + timeout
-    while True:
-        task = _get_characterization_task_or_exit(task_id=task_id, output=output)
-        if _has_reached_wait_target(task=task, until_status=until_status):
-            typer.echo(render_task_detail(task, output=output))
-            return
-        if monotonic() >= deadline:
-            exit_with_runtime_error(
-                "Timed out waiting for characterization-lane task "
-                f"{task_id} to reach {until_status.value}."
-            )
-        sleep(interval)
+    task = wait_for_task_or_exit(
+        load_task=lambda: _get_characterization_task_or_exit(task_id=task_id, output=output),
+        is_ready=lambda current_task: _has_reached_wait_target(
+            task=current_task,
+            until_status=until_status,
+        ),
+        timeout_message=(
+            "Timed out waiting for characterization-lane task "
+            f"{task_id} to reach {until_status.value}."
+        ),
+        interval=interval,
+        timeout=timeout,
+    )
+    typer.echo(render_task_detail(task, output=output))
 
 
 def _get_characterization_task_or_exit(
@@ -158,13 +175,13 @@ def _get_characterization_task_or_exit(
     task_id: int,
     output: OutputMode,
 ) -> TaskDetailResponse:
-    try:
-        task = get_task(task_id)
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
-    if task.lane != "characterization":
-        exit_with_runtime_error(f"Task {task_id} is not part of the characterization lane.")
-    return task
+    return get_lane_task_or_exit(
+        task_id=task_id,
+        lane="characterization",
+        lane_label="characterization",
+        output=output,
+        get_task_fn=get_task,
+    )
 
 
 def _has_reached_wait_target(

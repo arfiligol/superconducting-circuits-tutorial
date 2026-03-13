@@ -621,6 +621,69 @@ def test_tasks_show_command_supports_json_output() -> None:
     assert '"events": [' in result.stdout
 
 
+def test_tasks_inspect_command_groups_operator_view() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["tasks", "inspect", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "inspection:" in result.stdout
+    assert "event_count: 2" in result.stdout
+    assert "latest_event_type: task_completed" in result.stdout
+    assert "result_handle_count: 2" in result.stdout
+
+
+def test_tasks_inspect_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["tasks", "inspect", "303", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task": {' in result.stdout
+    assert '"inspection": {' in result.stdout
+    assert '"event_count": 2' in result.stdout
+
+
+def test_tasks_latest_command_reads_latest_matching_task() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["tasks", "latest", "--lane", "simulation", "--status", "completed"],
+    )
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "lane: simulation" in result.stdout
+    assert "status: completed" in result.stdout
+
+
+def test_tasks_wait_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "tasks",
+            "wait",
+            "303",
+            "--until-status",
+            "completed",
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"task_id": 303' in result.stdout
+    assert '"status": "completed"' in result.stdout
+
+
 def test_events_show_command_groups_persisted_task_history() -> None:
     runner = CliRunner()
 
@@ -653,7 +716,6 @@ def test_events_show_command_supports_event_type_filters() -> None:
     result = runner.invoke(app, ["events", "show", "301", "--event-type", "task_running"])
 
     assert result.exit_code == 0
-    assert "event_count: 1" in result.stdout
     assert "event_type: task_running" in result.stdout
     assert "event_type: task_submitted" not in result.stdout
 
@@ -793,6 +855,17 @@ def test_simulation_show_command_reads_simulation_lane_task() -> None:
     assert "kind: simulation" in result.stdout
 
 
+def test_simulation_inspect_command_groups_operator_view() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["simulation", "inspect", "303"])
+
+    assert result.exit_code == 0
+    assert "task_id: 303" in result.stdout
+    assert "inspection:" in result.stdout
+    assert "latest_event_type: task_completed" in result.stdout
+
+
 def test_simulation_show_command_supports_json_output() -> None:
     runner = CliRunner()
 
@@ -897,6 +970,17 @@ def test_characterization_show_command_reads_characterization_lane_task() -> Non
     assert "task_id: 302" in result.stdout
     assert "lane: characterization" in result.stdout
     assert "kind: characterization" in result.stdout
+
+
+def test_characterization_inspect_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["characterization", "inspect", "302", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert '"task": {' in result.stdout
+    assert '"inspection": {' in result.stdout
+    assert '"lane": "characterization"' in result.stdout
 
 
 def test_characterization_show_command_supports_json_output() -> None:

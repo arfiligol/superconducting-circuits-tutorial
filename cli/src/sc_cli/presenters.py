@@ -354,6 +354,46 @@ def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputM
     )
 
 
+def render_task_inspection(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    latest_event = task.events[-1] if task.events else None
+    inspection = {
+        "event_count": len(task.events),
+        "latest_event": None if latest_event is None else latest_event.model_dump(mode="json"),
+        "metadata_record_count": len(task.result_refs.metadata_records),
+        "result_handle_count": len(task.result_refs.result_handles),
+        "trace_payload_present": task.result_refs.trace_payload is not None,
+        "trace_batch_id": task.result_refs.trace_batch_id,
+        "analysis_run_id": task.result_refs.analysis_run_id,
+    }
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {"task": task.model_dump(mode="json"), "inspection": inspection}
+        )
+    lines = [
+        render_task_detail(task, output=OutputMode.TEXT),
+        "inspection:",
+        f"event_count: {inspection['event_count']}",
+        f"latest_event_type: {latest_event.event_type if latest_event is not None else '-'}",
+        f"latest_event_level: {latest_event.level if latest_event is not None else '-'}",
+        (
+            "latest_event_occurred_at: "
+            f"{latest_event.occurred_at if latest_event is not None else '-'}"
+        ),
+        f"metadata_record_count: {inspection['metadata_record_count']}",
+        f"result_handle_count: {inspection['result_handle_count']}",
+        f"trace_payload_present: {_render_bool(inspection['trace_payload_present'])}",
+        f"inspection_trace_batch_id: {_render_nullable(inspection['trace_batch_id'])}",
+        f"inspection_analysis_run_id: {_render_nullable(inspection['analysis_run_id'])}",
+    ]
+    if latest_event is not None:
+        lines.append(f"latest_event_message: {latest_event.message}")
+    return "\n".join(lines)
+
+
 def render_task_result_refs(
     task: TaskDetailResponse,
     *,
@@ -371,7 +411,6 @@ def render_task_result_refs(
         f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
         f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
         f"metadata_record_count: {len(task.result_refs.metadata_records)}",
-        f"result_handle_count: {len(task.result_refs.result_handles)}",
         "metadata_records:",
     ]
     lines.extend(_render_metadata_record_lines(task))
@@ -440,7 +479,6 @@ def render_task_result_handles(
         )
     lines = [
         *_build_task_result_context_lines(task),
-        f"result_handle_count: {len(task.result_refs.result_handles)}",
         "metadata_records:",
     ]
     lines.extend(_render_metadata_record_lines(task))
@@ -465,7 +503,6 @@ def render_task_event_history(
         )
     lines = [
         *_build_task_result_context_lines(task),
-        f"event_count: {len(events)}",
         "events:",
     ]
     for event in events:
@@ -572,10 +609,16 @@ def _build_task_result_context(task: TaskDetailResponse) -> dict[str, object]:
         "task_id": task.task_id,
         "kind": task.kind,
         "lane": task.lane,
+        "execution_mode": task.execution_mode,
         "status": task.status,
         "worker_task_name": task.worker_task_name,
         "dataset_id": task.dataset_id,
         "definition_id": task.definition_id,
+        "summary": task.summary,
+        "event_count": len(task.events),
+        "result_handle_count": len(task.result_refs.result_handles),
+        "trace_batch_id": task.result_refs.trace_batch_id,
+        "analysis_run_id": task.result_refs.analysis_run_id,
         "dispatch": task.dispatch.model_dump(mode="json"),
     }
 
@@ -585,13 +628,17 @@ def _build_task_result_context_lines(task: TaskDetailResponse) -> list[str]:
         f"task_id: {task.task_id}",
         f"kind: {task.kind}",
         f"lane: {task.lane}",
+        f"execution_mode: {task.execution_mode}",
         f"status: {task.status}",
         f"worker_task_name: {task.worker_task_name}",
         f"dataset_id: {task.dataset_id or '-'}",
         f"definition_id: {_render_nullable(task.definition_id)}",
+        f"summary: {task.summary}",
         f"dispatch_key: {task.dispatch.dispatch_key}",
         f"dispatch_status: {task.dispatch.status}",
         f"submission_source: {task.dispatch.submission_source}",
+        f"event_count: {len(task.events)}",
+        f"result_handle_count: {len(task.result_refs.result_handles)}",
     ]
 
 

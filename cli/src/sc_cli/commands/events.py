@@ -4,12 +4,13 @@ from enum import Enum
 from typing import Annotated
 
 import typer
-from sc_backend import BackendContractError, TaskDetailResponse, TaskEventResponse
+from sc_backend import TaskDetailResponse
 
-from sc_cli.errors import exit_for_backend_error, exit_with_runtime_error
+from sc_cli.errors import exit_with_runtime_error
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_task_event_history, render_task_latest_event
 from sc_cli.runtime import get_task
+from sc_cli.task_operator import get_task_or_exit, select_task_events
 
 app = typer.Typer(help="Inspect persisted task event history.", no_args_is_help=True)
 
@@ -46,7 +47,7 @@ def show_command(
 ) -> None:
     """Show persisted event history for one task."""
     task = _get_task_or_exit(task_id=task_id, output=output)
-    events = _select_events(
+    events = select_task_events(
         task,
         event_type=None if event_type is None else event_type.value,
         level=None if level is None else level.value,
@@ -74,7 +75,7 @@ def latest_command(
 ) -> None:
     """Show the newest persisted event for one task."""
     task = _get_task_or_exit(task_id=task_id, output=output)
-    events = _select_events(
+    events = select_task_events(
         task,
         event_type=None if event_type is None else event_type.value,
         level=None if level is None else level.value,
@@ -92,25 +93,4 @@ def _get_task_or_exit(
     task_id: int,
     output: OutputMode,
 ) -> TaskDetailResponse:
-    try:
-        return get_task(task_id)
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
-
-
-def _select_events(
-    task: TaskDetailResponse,
-    *,
-    event_type: str | None,
-    level: str | None,
-    limit: int | None,
-) -> list[TaskEventResponse]:
-    events = [
-        event
-        for event in task.events
-        if (event_type is None or event.event_type == event_type)
-        and (level is None or event.level == level)
-    ]
-    if limit is None:
-        return events
-    return events[-limit:]
+    return get_task_or_exit(task_id=task_id, output=output, get_task_fn=get_task)

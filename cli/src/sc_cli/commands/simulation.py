@@ -1,16 +1,21 @@
 """Simulation-lane operator commands."""
 
 from enum import Enum
-from time import monotonic, sleep
 from typing import Annotated, cast
 
 import typer
 from sc_backend import BackendContractError, TaskDetailResponse, TaskStatus, TaskVisibilityScope
 
-from sc_cli.errors import exit_for_backend_error, exit_with_runtime_error
+from sc_cli.errors import exit_for_backend_error
 from sc_cli.output import OutputMode, OutputOption
-from sc_cli.presenters import render_task_detail
+from sc_cli.presenters import render_task_detail, render_task_inspection
 from sc_cli.runtime import get_task, list_tasks, submit_task
+from sc_cli.task_operator import (
+    TERMINAL_TASK_STATUSES,
+    get_lane_task_or_exit,
+    latest_lane_task_or_exit,
+    wait_for_task_or_exit,
+)
 
 app = typer.Typer(help="Operate on simulation-lane tasks.", no_args_is_help=True)
 
@@ -25,9 +30,6 @@ class TaskStatusOption(str, Enum):
 class TaskScopeOption(str, Enum):
     WORKSPACE = "workspace"
     OWNED = "owned"
-
-
-TERMINAL_TASK_STATUSES = {"completed", "failed"}
 
 
 @app.command("submit")
@@ -72,6 +74,19 @@ def show_command(
     typer.echo(render_task_detail(task, output=output))
 
 
+@app.command("inspect")
+def inspect_command(
+    task_id: Annotated[
+        int,
+        typer.Argument(min=1, help="Simulation-lane task id to inspect as an operator view."),
+    ],
+    output: OutputOption = OutputMode.TEXT,
+) -> None:
+    """Show one simulation-lane task with operator-oriented event/result summary."""
+    task = _get_simulation_task_or_exit(task_id=task_id, output=output)
+    typer.echo(render_task_inspection(task, output=output))
+
+
 @app.command("latest")
 def latest_command(
     status: Annotated[
@@ -89,19 +104,19 @@ def latest_command(
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """Show the newest task in the simulation lane."""
-    try:
-        tasks = list_tasks(
-            status=None if status is None else cast(TaskStatus, status.value),
-            lane="simulation",
-            scope=cast(TaskVisibilityScope, scope.value),
-            dataset_id=dataset_id,
-            limit=20,
-        )
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
-    if not tasks:
-        exit_with_runtime_error("No simulation-lane tasks matched the requested filters.")
-    task = _get_simulation_task_or_exit(task_id=tasks[0].task_id, output=output)
+    task = latest_lane_task_or_exit(
+        expected_lane="simulation",
+        lane_label="simulation",
+        output=output,
+        get_task_fn=get_task,
+        list_tasks_fn=list_tasks,
+        no_match_message="No simulation-lane tasks matched the requested filters.",
+        status=None if status is None else cast(TaskStatus, status.value),
+        lane="simulation",
+        scope=cast(TaskVisibilityScope, scope.value),
+        dataset_id=dataset_id,
+        limit=20,
+    )
     typer.echo(render_task_detail(task, output=output))
 
 
@@ -119,17 +134,16 @@ def wait_command(
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
     """Poll one simulation-lane task until it reaches a terminal state or times out."""
-    deadline = monotonic() + timeout
-    while True:
-        task = _get_simulation_task_or_exit(task_id=task_id, output=output)
-        if task.status in TERMINAL_TASK_STATUSES:
-            typer.echo(render_task_detail(task, output=output))
-            return
-        if monotonic() >= deadline:
-            exit_with_runtime_error(
-                f"Timed out waiting for simulation-lane task {task_id} to reach a terminal state."
-            )
-        sleep(interval)
+    task = wait_for_task_or_exit(
+        load_task=lambda: _get_simulation_task_or_exit(task_id=task_id, output=output),
+        is_ready=lambda current_task: current_task.status in TERMINAL_TASK_STATUSES,
+        timeout_message=(
+            f"Timed out waiting for simulation-lane task {task_id} to reach a terminal state."
+        ),
+        interval=interval,
+        timeout=timeout,
+    )
+    typer.echo(render_task_detail(task, output=output))
 
 
 def _get_simulation_task_or_exit(
@@ -137,10 +151,10 @@ def _get_simulation_task_or_exit(
     task_id: int,
     output: OutputMode,
 ) -> TaskDetailResponse:
-    try:
-        task = get_task(task_id)
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
-    if task.lane != "simulation":
-        exit_with_runtime_error(f"Task {task_id} is not part of the simulation lane.")
-    return task
+    return get_lane_task_or_exit(
+        task_id=task_id,
+        lane="simulation",
+        lane_label="simulation",
+        output=output,
+        get_task_fn=get_task,
+    )

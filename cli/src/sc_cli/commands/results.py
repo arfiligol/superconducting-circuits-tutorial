@@ -3,9 +3,9 @@
 from typing import Annotated
 
 import typer
-from sc_backend import BackendContractError, TaskDetailResponse
+from sc_backend import TaskDetailResponse
 
-from sc_cli.errors import exit_for_backend_error, exit_with_runtime_error
+from sc_cli.errors import exit_with_runtime_error
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import (
     render_task_result_handles,
@@ -13,6 +13,7 @@ from sc_cli.presenters import (
     render_task_trace_payload,
 )
 from sc_cli.runtime import get_task
+from sc_cli.task_operator import get_task_or_exit
 
 app = typer.Typer(help="Inspect persisted task result references.", no_args_is_help=True)
 
@@ -56,7 +57,4 @@ def _get_task_or_exit(
     task_id: int,
     output: OutputMode,
 ) -> TaskDetailResponse:
-    try:
-        return get_task(task_id)
-    except BackendContractError as error:
-        exit_for_backend_error(error, output=output)
+    return get_task_or_exit(task_id=task_id, output=output, get_task_fn=get_task)
