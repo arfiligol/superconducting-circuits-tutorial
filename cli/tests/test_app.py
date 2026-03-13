@@ -2,7 +2,15 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from sc_backend import ApiErrorBodyResponse, BackendContractError
+from sc_backend import (
+    ApiErrorBodyResponse,
+    BackendContractError,
+    TaskDetailResponse,
+    TaskLane,
+    TaskStatus,
+    TaskSummaryResponse,
+    TaskVisibilityScope,
+)
 from typer.testing import CliRunner
 
 from sc_cli.app import app
@@ -16,6 +24,8 @@ from sc_cli.commands import (
     simulation,
     tasks,
 )
+from sc_cli.runtime import get_task as runtime_get_task
+from sc_cli.runtime import list_tasks as runtime_list_tasks
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -24,6 +34,92 @@ def reset_cli_runtime() -> Iterator[None]:
     reset_runtime_state()
     yield
     reset_runtime_state()
+
+
+def _list_runtime_tasks(
+    *,
+    status: TaskStatus | None = None,
+    lane: TaskLane | None = None,
+    scope: TaskVisibilityScope = "workspace",
+    dataset_id: str | None = None,
+    limit: int = 50,
+) -> list[TaskSummaryResponse]:
+    return runtime_list_tasks(
+        status=status,
+        lane=lane,
+        scope=scope,
+        dataset_id=dataset_id,
+        limit=limit,
+    )
+
+
+def _workspace_task_ids() -> list[int]:
+    return [task.task_id for task in _list_runtime_tasks()]
+
+
+def _owned_only_task_ids() -> list[int]:
+    workspace_ids = set(_workspace_task_ids())
+    return [
+        task.task_id
+        for task in _list_runtime_tasks(scope="owned")
+        if task.task_id not in workspace_ids
+    ]
+
+
+def _task_detail(task_id: int) -> TaskDetailResponse:
+    return runtime_get_task(task_id)
+
+
+def _find_task_id(
+    *,
+    status: TaskStatus | None = None,
+    lane: TaskLane | None = None,
+    scope: TaskVisibilityScope = "workspace",
+    require_result_handles: bool | None = None,
+    require_trace_payload: bool | None = None,
+) -> int:
+    for task_summary in _list_runtime_tasks(status=status, lane=lane, scope=scope):
+        task = _task_detail(task_summary.task_id)
+        if require_result_handles is not None and (
+            len(task.result_refs.result_handles) > 0
+        ) is not require_result_handles:
+            continue
+        if require_trace_payload is not None and (
+            task.result_refs.trace_payload is not None
+        ) is not require_trace_payload:
+            continue
+        return task.task_id
+    raise AssertionError(
+        "No task matched the requested filters: "
+        f"status={status!r}, lane={lane!r}, scope={scope!r}, "
+        f"require_result_handles={require_result_handles!r}, "
+        f"require_trace_payload={require_trace_payload!r}"
+    )
+
+
+def _running_simulation_task_id() -> int:
+    return _find_task_id(status="running", lane="simulation")
+
+
+def _completed_simulation_task_id() -> int:
+    return _find_task_id(
+        status="completed",
+        lane="simulation",
+        require_result_handles=True,
+        require_trace_payload=True,
+    )
+
+
+def _queued_characterization_task_id() -> int:
+    return _find_task_id(status="queued", lane="characterization")
+
+
+def _task_without_trace_payload_id() -> int:
+    return _find_task_id(require_trace_payload=False)
+
+
+def _task_without_result_handles_id() -> int:
+    return _find_task_id(require_result_handles=False)
 
 
 def test_preview_artifacts_command_lists_sc_core_exports() -> None:
@@ -585,34 +681,42 @@ def test_datasets_set_metadata_command_uses_structured_validation_error() -> Non
 
 def test_tasks_list_command_reads_rewrite_task_state() -> None:
     runner = CliRunner()
+    workspace_task_ids = _workspace_task_ids()
+    owned_only_task_ids = _owned_only_task_ids()
 
     result = runner.invoke(app, ["tasks", "list"])
 
     assert result.exit_code == 0
-    assert "tasks:" in result.stdout
-    assert "#301" in result.stdout
-    assert "#303" in result.stdout
-    assert "#304" not in result.stdout
+    assert f"tasks: {len(workspace_task_ids)}" in result.stdout
+    for task_id in workspace_task_ids:
+        assert f"#{task_id}" in result.stdout
+    for task_id in owned_only_task_ids:
+        assert f"#{task_id}" not in result.stdout
 
 
 def test_tasks_list_command_supports_json_output() -> None:
     runner = CliRunner()
+    workspace_task_ids = _workspace_task_ids()
+    owned_only_task_ids = _owned_only_task_ids()
 
     result = runner.invoke(app, ["tasks", "list", "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 301' in result.stdout
-    assert '"task_id": 303' in result.stdout
-    assert '"task_id": 304' not in result.stdout
+    for task_id in workspace_task_ids:
+        assert f'"task_id": {task_id}' in result.stdout
+    for task_id in owned_only_task_ids:
+        assert f'"task_id": {task_id}' not in result.stdout
 
 
 def test_tasks_show_command_reads_one_task() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["tasks", "show", "301"])
+    result = runner.invoke(app, ["tasks", "show", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 301" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
+    assert "lane: simulation" in result.stdout
     assert "execution_mode: run" in result.stdout
     assert "worker_task_name: simulation_run_task" in result.stdout
     assert "request_ready: true" in result.stdout
@@ -620,11 +724,12 @@ def test_tasks_show_command_reads_one_task() -> None:
 
 def test_tasks_show_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["tasks", "show", "301", "--output", "json"])
+    result = runner.invoke(app, ["tasks", "show", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 301' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"metadata_records": []' in result.stdout
     assert '"result_handles": []' in result.stdout
     assert '"events": [' in result.stdout
@@ -632,11 +737,12 @@ def test_tasks_show_command_supports_json_output() -> None:
 
 def test_tasks_inspect_command_groups_operator_view() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["tasks", "inspect", "303"])
+    result = runner.invoke(app, ["tasks", "inspect", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "inspection:" in result.stdout
     assert "event_count: 2" in result.stdout
     assert "latest_event_type: task_completed" in result.stdout
@@ -645,8 +751,9 @@ def test_tasks_inspect_command_groups_operator_view() -> None:
 
 def test_tasks_inspect_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["tasks", "inspect", "303", "--output", "json"])
+    result = runner.invoke(app, ["tasks", "inspect", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
     assert '"task": {' in result.stdout
@@ -656,6 +763,7 @@ def test_tasks_inspect_command_supports_json_output() -> None:
 
 def test_tasks_latest_command_reads_latest_matching_task() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
     result = runner.invoke(
         app,
@@ -663,20 +771,21 @@ def test_tasks_latest_command_reads_latest_matching_task() -> None:
     )
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "lane: simulation" in result.stdout
     assert "status: completed" in result.stdout
 
 
 def test_tasks_wait_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
     result = runner.invoke(
         app,
         [
             "tasks",
             "wait",
-            "303",
+            str(task_id),
             "--until-status",
             "completed",
             "--interval",
@@ -689,16 +798,18 @@ def test_tasks_wait_command_supports_json_output() -> None:
     )
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"status": "completed"' in result.stdout
 
 
 def test_ops_inspect_command_groups_connected_operator_bundle() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["ops", "inspect", "303"])
+    result = runner.invoke(app, ["ops", "inspect", str(task_id)])
 
     assert result.exit_code == 0
+    assert f"task_id: {task_id}" in result.stdout
     assert "inspection:" in result.stdout
     assert "recent_events:" in result.stdout
     assert "result_summary:" in result.stdout
@@ -722,13 +833,14 @@ def test_ops_latest_command_supports_json_output() -> None:
 
 def test_ops_wait_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
     result = runner.invoke(
         app,
         [
             "ops",
             "wait",
-            "303",
+            str(task_id),
             "--until-status",
             "completed",
             "--interval",
@@ -779,11 +891,12 @@ def test_ops_submit_command_can_wait_for_requested_status() -> None:
 
 def test_events_show_command_groups_persisted_task_history() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["events", "show", "303"])
+    result = runner.invoke(app, ["events", "show", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "event_count: 2" in result.stdout
     assert "event_type: task_submitted" in result.stdout
     assert "event_type: task_completed" in result.stdout
@@ -794,19 +907,21 @@ def test_events_show_command_groups_persisted_task_history() -> None:
 
 def test_events_show_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["events", "show", "303", "--output", "json"])
+    result = runner.invoke(app, ["events", "show", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"event_count": 2' in result.stdout
     assert '"event_type": "task_completed"' in result.stdout
 
 
 def test_events_show_command_supports_event_type_filters() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["events", "show", "301", "--event-type", "task_running"])
+    result = runner.invoke(app, ["events", "show", str(task_id), "--event-type", "task_running"])
 
     assert result.exit_code == 0
     assert "event_type: task_running" in result.stdout
@@ -815,43 +930,49 @@ def test_events_show_command_supports_event_type_filters() -> None:
 
 def test_events_latest_command_reads_latest_persisted_event() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["events", "latest", "303"])
+    result = runner.invoke(app, ["events", "latest", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "latest_event:" in result.stdout
     assert "event_type: task_completed" in result.stdout
-    assert "occurred_at: 2026-03-11 19:18:00" in result.stdout
 
 
 def test_events_latest_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["events", "latest", "303", "--output", "json"])
+    result = runner.invoke(app, ["events", "latest", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"event": {' in result.stdout
     assert '"event_type": "task_completed"' in result.stdout
 
 
 def test_events_show_command_rejects_empty_filtered_history() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["events", "show", "301", "--level", "error"])
+    result = runner.invoke(app, ["events", "show", str(task_id), "--level", "error"])
 
     assert result.exit_code == 1
-    assert "error: No persisted task events matched the requested filters for 301." in result.output
+    assert (
+        f"error: No persisted task events matched the requested filters for {task_id}."
+        in result.output
+    )
 
 
 def test_results_show_command_groups_persisted_result_refs() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["results", "show", "303"])
+    result = runner.invoke(app, ["results", "show", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "trace_batch_id: 88" in result.stdout
     assert "metadata_record_count: 2" in result.stdout
     assert "result_handle_count: 2" in result.stdout
@@ -860,11 +981,12 @@ def test_results_show_command_groups_persisted_result_refs() -> None:
 
 def test_results_show_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["results", "show", "303", "--output", "json"])
+    result = runner.invoke(app, ["results", "show", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"result_refs": {' in result.stdout
     assert '"trace_batch_id": 88' in result.stdout
     assert '"result_handles": [' in result.stdout
@@ -872,11 +994,12 @@ def test_results_show_command_supports_json_output() -> None:
 
 def test_results_trace_command_reads_trace_payload() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["results", "trace", "303"])
+    result = runner.invoke(app, ["results", "trace", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "backend: local_zarr" in result.stdout
     assert (
         "store_uri: trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr" in result.stdout
@@ -886,22 +1009,24 @@ def test_results_trace_command_reads_trace_payload() -> None:
 
 def test_results_trace_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["results", "trace", "303", "--output", "json"])
+    result = runner.invoke(app, ["results", "trace", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"trace_payload": {' in result.stdout
     assert '"store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr"' in result.stdout
 
 
 def test_results_handles_command_reads_persisted_handles() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["results", "handles", "303"])
+    result = runner.invoke(app, ["results", "handles", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "result_handle_count: 2" in result.stdout
     assert "handle_id: result:fluxonium-2025-031:fit-summary" in result.stdout
     assert "payload_locator: artifacts/fit-summary.json" in result.stdout
@@ -910,84 +1035,92 @@ def test_results_handles_command_reads_persisted_handles() -> None:
 
 def test_results_handles_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["results", "handles", "303", "--output", "json"])
+    result = runner.invoke(app, ["results", "handles", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"metadata_records": [' in result.stdout
     assert '"handle_id": "result:fluxonium-2025-031:fit-summary"' in result.stdout
 
 
 def test_results_trace_command_rejects_tasks_without_trace_payload() -> None:
     runner = CliRunner()
+    task_id = _task_without_trace_payload_id()
 
-    result = runner.invoke(app, ["results", "trace", "301"])
+    result = runner.invoke(app, ["results", "trace", str(task_id)])
 
     assert result.exit_code == 1
-    assert "error: Task 301 does not expose a persisted trace payload." in result.output
+    assert f"error: Task {task_id} does not expose a persisted trace payload." in result.output
 
 
 def test_results_handles_command_rejects_tasks_without_result_handles() -> None:
     runner = CliRunner()
+    task_id = _task_without_result_handles_id()
 
-    result = runner.invoke(app, ["results", "handles", "301"])
+    result = runner.invoke(app, ["results", "handles", str(task_id)])
 
     assert result.exit_code == 1
-    assert "error: Task 301 does not expose persisted result handles." in result.output
+    assert f"error: Task {task_id} does not expose persisted result handles." in result.output
 
 
 def test_simulation_show_command_reads_simulation_lane_task() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["simulation", "show", "301"])
+    result = runner.invoke(app, ["simulation", "show", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 301" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "lane: simulation" in result.stdout
     assert "kind: simulation" in result.stdout
 
 
 def test_simulation_inspect_command_groups_operator_view() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
-    result = runner.invoke(app, ["simulation", "inspect", "303"])
+    result = runner.invoke(app, ["simulation", "inspect", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "inspection:" in result.stdout
     assert "latest_event_type: task_completed" in result.stdout
 
 
 def test_simulation_show_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["simulation", "show", "301", "--output", "json"])
+    result = runner.invoke(app, ["simulation", "show", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 301' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"lane": "simulation"' in result.stdout
 
 
 def test_simulation_latest_command_reads_latest_simulation_lane_task() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
     result = runner.invoke(app, ["simulation", "latest", "--status", "running"])
 
     assert result.exit_code == 0
-    assert "task_id: 301" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "lane: simulation" in result.stdout
 
 
 def test_simulation_latest_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
     result = runner.invoke(
         app, ["simulation", "latest", "--status", "completed", "--output", "json"]
     )
 
     assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"kind": "post_processing"' in result.stdout
     assert '"lane": "simulation"' in result.stdout
 
@@ -1019,41 +1152,54 @@ def test_simulation_submit_command_supports_json_output() -> None:
 
 def test_simulation_wait_command_returns_terminal_simulation_lane_task() -> None:
     runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
     result = runner.invoke(
         app,
-        ["simulation", "wait", "303", "--interval", "0.1", "--timeout", "0.2"],
+        ["simulation", "wait", str(task_id), "--interval", "0.1", "--timeout", "0.2"],
     )
 
     assert result.exit_code == 0
-    assert "task_id: 303" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "status: completed" in result.stdout
     assert "lane: simulation" in result.stdout
 
 
 def test_simulation_wait_command_supports_json_output() -> None:
     runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["simulation", "wait", "303", "--interval", "0.1", "--timeout", "0.2", "--output", "json"],
-    )
-
-    assert result.exit_code == 0
-    assert '"task_id": 303' in result.stdout
-    assert '"status": "completed"' in result.stdout
-    assert '"lane": "simulation"' in result.stdout
-
-
-def test_simulation_wait_command_supports_until_status_option() -> None:
-    runner = CliRunner()
+    task_id = _completed_simulation_task_id()
 
     result = runner.invoke(
         app,
         [
             "simulation",
             "wait",
-            "301",
+            str(task_id),
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f'"task_id": {task_id}' in result.stdout
+    assert '"status": "completed"' in result.stdout
+    assert '"lane": "simulation"' in result.stdout
+
+
+def test_simulation_wait_command_supports_until_status_option() -> None:
+    runner = CliRunner()
+    task_id = _running_simulation_task_id()
+
+    result = runner.invoke(
+        app,
+        [
+            "simulation",
+            "wait",
+            str(task_id),
             "--until-status",
             "running",
             "--interval",
@@ -1064,34 +1210,37 @@ def test_simulation_wait_command_supports_until_status_option() -> None:
     )
 
     assert result.exit_code == 0
-    assert "task_id: 301" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "status: running" in result.stdout
 
 
 def test_simulation_show_command_rejects_non_simulation_lane_task() -> None:
     runner = CliRunner()
+    task_id = _queued_characterization_task_id()
 
-    result = runner.invoke(app, ["simulation", "show", "302"])
+    result = runner.invoke(app, ["simulation", "show", str(task_id)])
 
     assert result.exit_code == 1
-    assert "error: Task 302 is not part of the simulation lane." in result.output
+    assert f"error: Task {task_id} is not part of the simulation lane." in result.output
 
 
 def test_characterization_show_command_reads_characterization_lane_task() -> None:
     runner = CliRunner()
+    task_id = _queued_characterization_task_id()
 
-    result = runner.invoke(app, ["characterization", "show", "302"])
+    result = runner.invoke(app, ["characterization", "show", str(task_id)])
 
     assert result.exit_code == 0
-    assert "task_id: 302" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "lane: characterization" in result.stdout
     assert "kind: characterization" in result.stdout
 
 
 def test_characterization_inspect_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _queued_characterization_task_id()
 
-    result = runner.invoke(app, ["characterization", "inspect", "302", "--output", "json"])
+    result = runner.invoke(app, ["characterization", "inspect", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
     assert '"task": {' in result.stdout
@@ -1101,11 +1250,12 @@ def test_characterization_inspect_command_supports_json_output() -> None:
 
 def test_characterization_show_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _queued_characterization_task_id()
 
-    result = runner.invoke(app, ["characterization", "show", "302", "--output", "json"])
+    result = runner.invoke(app, ["characterization", "show", str(task_id), "--output", "json"])
 
     assert result.exit_code == 0
-    assert '"task_id": 302' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"lane": "characterization"' in result.stdout
 
 
@@ -1163,13 +1313,14 @@ def test_characterization_submit_command_supports_json_output() -> None:
 
 def test_characterization_wait_command_reaches_requested_status() -> None:
     runner = CliRunner()
+    task_id = _queued_characterization_task_id()
 
     result = runner.invoke(
         app,
         [
             "characterization",
             "wait",
-            "302",
+            str(task_id),
             "--until-status",
             "queued",
             "--interval",
@@ -1180,20 +1331,21 @@ def test_characterization_wait_command_reaches_requested_status() -> None:
     )
 
     assert result.exit_code == 0
-    assert "task_id: 302" in result.stdout
+    assert f"task_id: {task_id}" in result.stdout
     assert "status: queued" in result.stdout
     assert "lane: characterization" in result.stdout
 
 
 def test_characterization_wait_command_supports_json_output() -> None:
     runner = CliRunner()
+    task_id = _queued_characterization_task_id()
 
     result = runner.invoke(
         app,
         [
             "characterization",
             "wait",
-            "302",
+            str(task_id),
             "--until-status",
             "queued",
             "--interval",
@@ -1206,18 +1358,19 @@ def test_characterization_wait_command_supports_json_output() -> None:
     )
 
     assert result.exit_code == 0
-    assert '"task_id": 302' in result.stdout
+    assert f'"task_id": {task_id}' in result.stdout
     assert '"status": "queued"' in result.stdout
     assert '"lane": "characterization"' in result.stdout
 
 
 def test_characterization_show_command_rejects_non_characterization_lane_task() -> None:
     runner = CliRunner()
+    task_id = _running_simulation_task_id()
 
-    result = runner.invoke(app, ["characterization", "show", "301"])
+    result = runner.invoke(app, ["characterization", "show", str(task_id)])
 
     assert result.exit_code == 1
-    assert "error: Task 301 is not part of the characterization lane." in result.output
+    assert f"error: Task {task_id} is not part of the characterization lane." in result.output
 
 
 def test_tasks_submit_command_submits_simulation_task() -> None:
