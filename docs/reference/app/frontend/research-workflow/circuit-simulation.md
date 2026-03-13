@@ -14,7 +14,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: "/circuit-simulation 的 canonical definition 選擇、simulation setup、task submission、attached-task review 與 post-processing 契約"
-version: v0.18.0
+version: v0.19.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -36,6 +36,15 @@ updated_by: team
 !!! tip "Shared Surfaces"
     本頁使用 shared [Header](../shared-shell/header.md)、[Sidebar](../shared-shell/sidebar.md) 與 [Task Management](../shared-workflow/task-management.md)。
     `Tasks Queue` 與 `Worker Status` 由 Header 提供；本頁只負責本次附加任務的細部執行與結果檢閱。
+
+## Shell Context Requirements
+
+| Context | Requirement |
+|---|---|
+| active workspace | definition 可見性、task queue 與 worker summary 都受其限制 |
+| active dataset | submit simulation task 前必須已解析到有效 active dataset，除非明確定義該 lane 可 dataset-null |
+| active definition | 必須屬於目前 active workspace 且對 session 可見 |
+| attached task | 若 workspace switch 後不再可見，必須解除附著並提示 |
 
 ## Workflow Topology
 
@@ -92,6 +101,8 @@ graph TD
     | definition detail | definition service | ✅ |
     | task detail & events | task execution surface | ✅ |
     | result refs | persisted output | ✅ |
+    | active workspace / dataset | session surface | ✅ |
+    | capability flags | session surface | ✅ |
 
 === "狀態復原"
     | 場景 | 預期行為 |
@@ -102,6 +113,15 @@ graph TD
 !!! warning "PTC 適用範圍"
     **S-parameters** 永遠顯示 solver 原始值；**PTC** 補償機制僅允許施作於 **Y/Z** 路徑。
 
+## Permission And Gating
+
+| Concern | Rule |
+|---|---|
+| Submit task | 依 `can_submit_tasks` 與 definition / dataset visibility 決定 |
+| Attach / cancel / terminate / retry | 依 shared [Task Management](../shared-workflow/task-management.md) 與 backend `allowed_actions` 決定 |
+| No active dataset | 顯示 clear blocking state，不得假設 page-local dataset 足以代替 session context |
+| Workspace switch during run | 不停止已存在 task，但本頁若失去可見性需解除附著 |
+
 ## 互動流程
 
 ??? example "流程 A: 提交新任務"
@@ -109,6 +129,11 @@ graph TD
     2. 點擊 `Run Simulation` → 建立 persisted task。
     3. Header `Tasks Queue` 立即出現新 row 與 worker summary 更新。
     4. 右側面板自動 Attach 到該 task，並顯示 `PENDING` 狀態。
+
+??? example "流程 A2: Workspace 切換後"
+    1. Header 切換 active workspace。
+    2. 本頁重驗 definition 與 active dataset。
+    3. 若舊 attached task 不再可見，右側面板改為 detached state，並要求重新選擇 definition / task。
 
 ??? tip "流程 B: 結果交互"
     1. 當 task 狀態變為 terminal，Result Panel 載入 persisted result summary。

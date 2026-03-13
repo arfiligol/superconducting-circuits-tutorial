@@ -43,6 +43,16 @@ updated_by: team
 | Worker Status Summary | 在 queue trigger 旁顯示 processor health 摘要 |
 | Right Cluster | page-local context chips 與 user menu trigger |
 
+## Global Context Order
+
+| Order | Control | Why it comes first |
+|---|---|---|
+| 1 | `Active Workspace` | 決定 dataset list、queue visibility 與 capability context |
+| 2 | `Active Dataset` | 決定 workflow pages 的預設 dataset scope |
+| 3 | `Tasks Queue` | 顯示目前 workspace 中的 shared task activity |
+| 4 | worker status summary | 是 queue 與 runtime 的摘要，不高於 queue 本身 |
+| 5 | user menu | identity、settings、appearance 與 sign out |
+
 ## Global Controls
 
 === "Active Workspace Trigger"
@@ -53,6 +63,7 @@ updated_by: team
     | expand behavior | 點擊後展開 workspace switcher，只列出目前 user memberships |
     | propagation | 切換後必須同步更新 active dataset、queue visibility、role / capabilities |
     | unsafe-context handling | 若切換造成 attached task 或 active dataset 不再可見，Header 必須觸發清理或重選流程 |
+    | dirty-state handling | 若目前頁存在 dirty draft，Header 先顯示 confirm，再送出 switch mutation |
 
 === "Active Dataset Trigger"
 
@@ -61,6 +72,7 @@ updated_by: team
     | dataset chip / button | 直接顯示目前 active dataset 名稱與狀態 |
     | expand behavior | 點擊後展開 dataset switcher，僅列出 active workspace 中可見的 datasets，並支援 search 與 select |
     | propagation | 切換後必須同步更新 Dashboard、Raw Data、Simulation、Characterization |
+    | no-dataset state | 若目前 workspace 尚無可用 dataset，trigger 必須顯示 clear empty state 與 next step |
 
 === "Tasks Queue Trigger"
 
@@ -70,6 +82,7 @@ updated_by: team
     | expanded panel | 展示 queue rows、worker summary、filter (`Workspace` / `Mine`) |
     | worker summary | 展開後必須可看到各 lane 的 `healthy / busy / degraded / draining / offline` 摘要 |
     | row action entry | 每列至少支援 `Attach`，並依權限顯示 `Cancel` / `Terminate` / `Retry` |
+    | default ordering | active tasks 優先，之後按 `updated_at desc` 顯示最近 terminal tasks |
 
 === "User Menu"
 
@@ -90,6 +103,15 @@ updated_by: team
 | `Schemdraw` | linked schema、render state |
 | `Circuit Simulation` | active dataset、active definition、attached task summary |
 | `Characterization` | active dataset / design、attached task summary |
+
+## Context Switching Outcomes
+
+| Switch | Header must do |
+|---|---|
+| workspace changed | 重新繫結 active dataset、刷新 queue、更新 role 與 user menu capabilities |
+| dataset changed | 更新 dataset chip，通知 workflow pages 重讀 dataset-bound state |
+| workspace caused task detachment | 顯示 detached notice，並將 queue panel 保持可重新 attach |
+| invite accepted in another workspace | 顯示 `Switch to workspace` CTA，而非無提示地切換 |
 
 ## Delivery Rules
 

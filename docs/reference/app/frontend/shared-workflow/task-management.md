@@ -13,7 +13,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: Frontend shared header task queue、task attachment、worker summary、control actions 與 refresh recovery contract
-version: v0.3.0
+version: v0.4.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -60,6 +60,18 @@ updated_by: team
 | `Attach` action | 明確將 page body 切到指定 persisted task |
 | `Cancel` / `Terminate` / `Retry` actions | 依 task 狀態與使用者權限顯示 |
 | result availability | 表示是否已有 persisted result 可供 handoff |
+| `next_cursor` / `prev_cursor` | 若 queue panel 支援延伸瀏覽 recent rows，應使用 cursor-based meta |
+
+## Queue Filters And Ordering
+
+| Concern | Baseline |
+|---|---|
+| Primary filters | `Workspace`, `Mine` |
+| Default filter | `Workspace`；若目前 session 無 workspace-level task visibility，退回 `Mine` |
+| Ordering | active tasks first，之後 `updated_at desc` |
+| Terminal retention in panel | 保留最近 terminal tasks，避免 queue 只剩 active rows |
+| Search | 以 `summary`、`task_id`、owner 顯示名做輕量搜尋 |
+| Authority | filter availability 與 row actions 以 backend `allowed_actions` 與 session capabilities 為準 |
 
 ## Worker Summary Contract
 
@@ -96,6 +108,30 @@ updated_by: team
 | `Terminal / No Result` | task 已終止，但沒有可讀取的 result surface |
 | `Terminal / Result Ready` | task 已終止，且已可切換到 persisted result surface |
 
+## Live Update Baseline
+
+| Situation | Baseline behavior |
+|---|---|
+| queue panel open | 定期重抓 queue rows 與 worker summary |
+| queue panel closed | 只維持 badge / worker summary 的低頻更新 |
+| after control action | 立即重新抓取對應 task row 與 summary |
+| after workspace switch | 停止舊 queue 更新，改抓新 workspace queue |
+| after refresh / reconnect | 若存在 attached `task_id`，先抓 task detail，再同步 queue summary |
+
+!!! tip "Latest Backend State Wins"
+    queue row、worker summary、allowed actions 與 attached task 都以最新 backend 回應為準。
+    frontend 可以做 optimistic affordance，但不得在 backend 已拒絕後繼續保留舊 action state。
+
+## Permission Resolution
+
+| Concern | Rule |
+|---|---|
+| `Attach` | 只要 task 對目前 session 可見，就應允許 |
+| `Cancel` | 依 `can_cancel_own_tasks` 或 `can_cancel_workspace_tasks` 決定 |
+| `Terminate` | 依 `can_terminate_workspace_tasks` 決定，不由 frontend 猜測 |
+| `Retry` | 依 ownership 與 backend 回傳 `allowed_actions` 決定 |
+| Filter visibility | `Workspace` / `Mine` 的可用性由 session capability summary 決定 |
+
 ## Interaction Rules
 
 === "Submit And Attach"
@@ -131,6 +167,12 @@ updated_by: team
     2. queue rows 改為新 workspace 中可見的 persisted tasks
     3. 若目前 attached task 不再可見，前端必須解除附著並提示原因
     4. 之後再依新 workspace 重新選擇 dataset / task
+
+=== "Active Dataset Switch"
+
+    1. Header 切換 active dataset
+    2. queue 保持同一 workspace 邊界，但 page body 重新計算 dataset-bound panels
+    3. 若 attached task 與新 dataset 顯著不一致，頁面必須提示 `context mismatch`，但不應直接篡改 persisted task
 
 ## Page Variants
 

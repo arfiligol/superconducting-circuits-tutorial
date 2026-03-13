@@ -13,9 +13,9 @@ route: /raw-data
 status: draft
 owner: docs-team
 audience: team
-scope: "/raw-data 的 design list、trace preview、filtering、pagination 與 summary-only browse contract"
-version: v0.5.0
-last_updated: 2026-03-13
+scope: "/raw-data 的 design list、trace preview、filtering、cursor-based browse 與 summary-only browse contract"
+version: v0.6.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
@@ -36,7 +36,7 @@ updated_by: team
 ## 核心職責
 
 === "負責事項"
-    *   **Design 管理**: 瀏覽、搜尋、排序與分頁管理 Raw Data Designs。
+    *   **Design 管理**: 瀏覽、搜尋、排序與 cursor-based browse Raw Data Designs。
     *   **Trace 索引**: 依名稱、類型、表現形式 (Representation) 過濾 Traces。
     *   **狀態判斷**: 顯示 Design-level 的 Read-only Summary 與對比就緒度 (Compare Readiness)。
     *   **預覽入口**: 提供單筆 Trace 的內容預覽。
@@ -67,7 +67,7 @@ graph TD
     
     subgraph Browser_Workflow
         Main --> H_Design[Design Control & Table]
-        H_Design --> Pagination[Design Pagination]
+        H_Design --> Pagination[Design Browse Controls]
         Main --> H_Summary[Selected Design Summary]
         H_Summary --> H_Trace[Trace Filter & Preview Table]
         H_Trace --> H_Preview[Trace Detail Preview]
@@ -82,6 +82,7 @@ graph TD
 | **C2** | Design Summary | 中間層 | 顯示目前 Design 的 Compare Readiness 與 Provenance。 |
 | **C3** | Trace Preview Table | 下半部 | 顯示選中 Design 的 Trace Metadata (ID, Type, Repr 等)。 |
 | **C4** | Detail Preview | 最底部 | **僅在選定單筆 Trace 後**，才透過專用路徑抓取數據預覽。 |
+| **C5** | Browse Controls | Table 附近 | 以前後 cursor 驅動 design / trace list 段落切換。 |
 
 ---
 

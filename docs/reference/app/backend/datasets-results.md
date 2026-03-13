@@ -10,8 +10,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: Backend dataset、trace、result 與 provenance reference surface。
-version: v0.6.0
-last_updated: 2026-03-13
+version: v0.7.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
@@ -68,6 +68,16 @@ updated_by: team
     - 儲存由 dashboard 編輯後的最新 profile。
     - 同一 session 內立即反映異動。
 
+    payload baseline：
+
+    | Field | Meaning |
+    |---|---|
+    | `dataset_id` | active dataset identity |
+    | `device_type` | dataset profile device type |
+    | `capabilities[]` | dataset capability labels |
+    | `source` | `manual`, `inferred`, `imported` 等 profile source |
+    | `updated_at` | profile freshness |
+
 === "Tagged Core Metrics Summary"
 
     Dashboard 顯示的 `Tagged Core Metrics` 屬於唯讀摘要 surface，backend 至少必須提供：
@@ -79,6 +89,14 @@ updated_by: team
     | `source_parameter` | 來源參數 |
     | `designated_metric` | 對應度量 |
     | `tagged_at` | 標記時間 |
+
+## Dataset Activation Pairing
+
+| Concern | Rule |
+|---|---|
+| Dataset browse | 只列出對 active workspace 可見的 datasets / designs |
+| Profile write | 必須對應 active dataset，不接受 page-local 假資料集 |
+| Tagged metrics summary | 隨 active dataset 切換而一起切換 |
 
 !!! warning "Summary-first Browse"
     design list path 只能提供 **summary-safe** 欄位。
@@ -95,6 +113,78 @@ updated_by: team
 !!! tip "Read / Write Split"
     `Tagged Core Metrics` 的讀取摘要屬於本頁 surface。
     實際的 identify / tagging mutation 則由 [Characterization Results](characterization-results.md) 定義。
+
+## Request / Response Examples
+
+!!! example "Dataset profile read"
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "dataset_id": "ds_xy_001",
+        "device_type": "Unspecified",
+        "capabilities": [],
+        "source": "inferred",
+        "updated_at": "2026-03-14T10:20:00Z"
+      }
+    }
+    ```
+
+!!! example "Dataset profile update"
+    Request:
+    ```json
+    {
+      "dataset_id": "ds_xy_001",
+      "device_type": "transmon",
+      "capabilities": ["characterization", "simulation_review"]
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "dataset_id": "ds_xy_001",
+        "device_type": "transmon",
+        "capabilities": ["characterization", "simulation_review"],
+        "source": "manual",
+        "updated_at": "2026-03-14T10:22:00Z"
+      }
+    }
+    ```
+
+!!! example "Tagged core metrics summary"
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "dataset_id": "ds_xy_001",
+        "metrics": [
+          {
+            "metric_id": "metric_mode_1_frequency",
+            "label": "Mode 1 Frequency",
+            "source_parameter": "L_q",
+            "designated_metric": "mode_1_frequency",
+            "tagged_at": "2026-03-14T10:24:00Z"
+          }
+        ]
+      }
+    }
+    ```
+
+## Error Code Contract
+
+| Code | Category | When it applies |
+|---|---|---|
+| `dataset_not_found` | `not_found` | dataset 不存在 |
+| `dataset_not_visible_in_workspace` | `permission_denied` | dataset 不屬於或不可見於 active workspace |
+| `dataset_profile_update_denied` | `permission_denied` | session 無 dataset metadata write 權限 |
+| `dataset_profile_invalid` | `validation_error` | device type 或 capability payload 不符合 contract |
+| `trace_not_found` | `not_found` | trace detail 指向不存在 trace |
+| `trace_payload_not_ready` | `task_not_ready` | trace / result payload 尚未準備好 |
 
 ---
 

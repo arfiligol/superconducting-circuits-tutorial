@@ -56,7 +56,7 @@ updated_by: team
 
     | Page | Core focus | Authority pair |
     |---|---|---|
-    | [Schemas](definition/schemas.md) | circuit schema catalog、search、sort、pagination | [Backend / Circuit Definitions](../backend/circuit-definitions.md) |
+    | [Schemas](definition/schemas.md) | circuit schema catalog、search、sort、cursor-based browse | [Backend / Circuit Definitions](../backend/circuit-definitions.md) |
     | [Schema Editor](definition/schema-editor.md) | canonical source editing、auto-format、persisted validation、quick reference hints | [Backend / Circuit Definitions](../backend/circuit-definitions.md) |
 
 === "Research Workflow"

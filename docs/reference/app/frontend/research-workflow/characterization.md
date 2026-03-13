@@ -14,7 +14,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: "/characterization 的 design scope、run analysis、attached task、run history、result view 與 identify mode 契約"
-version: v0.13.0
+version: v0.14.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -34,6 +34,14 @@ updated_by: team
 !!! tip "Shared Surfaces"
     本頁使用 shared [Header](../shared-shell/header.md)、[Sidebar](../shared-shell/sidebar.md) 與 [Task Management](../shared-workflow/task-management.md)。
     `Tasks Queue` 與 worker status 由 Header 提供；`Run History` 是 characterization-specific artifact surface，不取代 shared task queue / attach semantics。
+
+## Shell Context Requirements
+
+| Context | Requirement |
+|---|---|
+| active workspace | design list、trace visibility、run history 與 queue 都受其限制 |
+| active dataset | design scope 必須來自 active dataset；本頁不得自行擁有另一份 dataset authority |
+| attached task | 只要 task 對目前 session 仍可見，就可從 queue 或 refresh recovery 重建 |
 
 ## 核心職責
 
@@ -90,11 +98,25 @@ graph LR
     Design Profile 僅作為推薦參考。
     analysis 是否可執行的最終判定權在於 compatible traces 的存在與否。
 
+## Permission And Gating
+
+| Concern | Rule |
+|---|---|
+| Submit analysis task | 依 `can_submit_tasks` 與 selected trace compatibility 決定 |
+| Queue row actions | 依 backend `allowed_actions` 顯示，不由頁面自行推導 |
+| No active dataset | 不允許進入正常 design selection 流；顯示空 shell guidance |
+| Workspace switch | design scope、trace table、run history 與 attached task 都必須重驗 |
+
 ## 數據持續性與運行時規則
 
 * **Task Attachment**: Run 啟動後，Header queue 必須立即出現該 task，且頁面自動附加到對應任務並顯示日誌。
 * **Result Persistence**: 結果檢閱僅依賴持久化 artifacts，刷新頁面後必須能精確還原視圖。
 * **非重複計算**: 切換 Table / Plot 或類別時，僅改變呈現方式，不重跑分析。
+
+??? example "Workspace / Dataset Rebinding"
+    1. Header 切換 active workspace 或 active dataset。
+    2. 本頁重新抓取 design scope、compatible traces 與 run history。
+    3. 若目前 attached task 或 selected design 不再有效，頁面必須明確清除並提示原因。
 
 !!! warning "Run History 不是 Queue"
     使用者若要重新附著到正在執行或剛完成的 task，應從 Header `Tasks Queue` 進入。

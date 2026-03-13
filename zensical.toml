@@ -117,6 +117,8 @@ nav = [
         { "Identity & Workspace Model" = "reference/app/shared/identity-workspace-model.md" },
         { "Resource Ownership & Visibility" = "reference/app/shared/resource-ownership-and-visibility.md" },
         { "Authentication & Authorization" = "reference/app/shared/authentication-and-authorization.md" },
+        { "Response & Error Contract" = "reference/app/shared/response-and-error-contract.md" },
+        { "Outbound Email Delivery" = "reference/app/shared/outbound-email-delivery.md" },
         { "Task Runtime & Processors" = "reference/app/shared/task-runtime-and-processors.md" },
         { "Audit Logging" = "reference/app/shared/audit-logging.md" },
       ] },

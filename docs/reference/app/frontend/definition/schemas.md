@@ -14,22 +14,26 @@ route: /schemas
 status: draft
 owner: docs-team
 audience: team
-scope: "/schemas 頁面的 circuit schema catalog、搜尋/排序/分頁，以及建立/開啟/刪除契約"
-version: v0.4.0
-last_updated: 2026-03-13
+scope: "/schemas 頁面的 circuit schema catalog、搜尋/排序/cursor-based browse，以及建立/開啟/刪除契約"
+version: v0.6.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Schemas
 
-本頁定義 Circuit Schema catalog 的瀏覽、搜尋、排序、建立、開啟與刪除契約。
+本頁定義 Circuit Schema catalog 的瀏覽、搜尋、排序、cursor-based browse、建立、開啟與刪除契約。
 
 !!! info "Page Frame"
-    本頁負責 schema catalog、搜尋 / 排序 / 分頁、建立、刪除與開啟 editor。
+    本頁負責 schema catalog、搜尋 / 排序 / cursor-based browse、建立、刪除與開啟 editor。
     source 編輯、preview render 與 simulation execution 不屬於本頁責任。
 
 !!! tip "Shared Shell"
     本頁位於 shared [Header](../shared-shell/header.md) / [Sidebar](../shared-shell/sidebar.md) shell 中，但本頁本身不擁有 dataset 或 task context authority。
+
+!!! info "Workspace-scoped catalog"
+    Schema catalog 只列出目前 `Active Workspace` 中可見的 definitions。
+    `private` schema 只對 owner、workspace owner 與 admin 可見；`workspace` schema 才是共同清單的一部分。
 
 ---
 
@@ -51,7 +55,7 @@ graph LR
     H[Page Header] --> Actions[Primary Actions]
     Actions --> Filters[Search & Sort Bars]
     Filters --> List[Schema List Container]
-    List --> Paging[Pagination & Status]
+    List --> Paging[Browse Status]
 ```
 
 ### 關鍵組件清單 (Components)
@@ -61,7 +65,7 @@ graph LR
 | **C1** | New Circuit Button | 位於頂部，為主要行動按鈕。 | 導向至 Schema 建立流程。 |
 | **C2** | Filter Bar | 提供名稱搜尋、欄位排序與方向選擇。 | 觸發列表重新查詢。 |
 | **C3** | Schema Item Row | 列表核心，顯示 `name`, `created_at`。 | 支援開啟、編輯與刪除。 |
-| **C4** | Pagination | 位於底部，控制頁碼與筆數。 | 驅動分段載入，同步更新總數。 |
+| **C4** | Browse Controls | 位於底部，控制 cursor-based 的前後段瀏覽。 | 驅動分段載入，同步更新總數與 cursor 狀態。 |
 
 ---
 
@@ -71,8 +75,11 @@ graph LR
     | 資料 | 來源 | 必要性 | 用途 |
     | :--- | :--- | :---: | :--- |
     | schema summary list | definition summary service | ✅ | 渲染各列摘要。 |
-    | total items count | definition summary service | ✅ | 計算分頁與顯示總筆數。 |
+    | total items count | definition summary service | ✅ | 顯示總筆數與 browse summary。 |
+    | cursor meta | definition summary service | ✅ | 驅動前後段瀏覽。 |
     | search & sort params | UI State | ✅ | 控制過濾與排序行為。 |
+    | active workspace | session surface | ✅ | 限定 catalog 可見範圍。 |
+    | capability flags | session surface | ✅ | 決定是否顯示 create / delete affordance。 |
 
 === "頁面狀態 (States)"
     | 狀態 | 說明 |
@@ -85,6 +92,16 @@ graph LR
 !!! warning "邊界約束"
     Schema Catalog **禁止**在列表階段預載完整的 Definition Payload。其詳細內容應僅在 Editor 或 Detail 流中按需讀取。
 
+## Workspace And Permission Rules
+
+| Concern | Rule |
+|---|---|
+| Catalog scope | 僅查詢目前 active workspace 可見的 definitions |
+| Create permission | 只有具 `can_manage_definitions` 的 session 才能建立 |
+| Delete permission | 由 backend capability 與 ownership 決定；frontend 不自行猜測 |
+| Default creation scope | 新建 schema 預設屬於 current active workspace，且預設 `private` |
+| Workspace switch | 切換 workspace 後，catalog 必須重查；若目前 editor 目標不再可見，不得假裝仍存在於清單 |
+
 ---
 
 ## 互動流程 (Interaction Flow)
@@ -93,14 +110,19 @@ graph LR
     1.  點擊 `New Circuit` → 導向 Editor 建立新檔。
     2.  點擊 `Edit` 或 Row → 導向 Editor 並帶入選定 `schema_id`。
 
+=== "Workspace Rebinding"
+    1. Header 切換 active workspace。
+    2. 本頁清除舊列表結果並重查新 workspace 的 definition summaries。
+    3. 若目前 search/sort/cursor 不再適用，至少清除 cursor 並保留可重用的 filter。
+
 === "搜尋與排序 (Search/Sort)"
     1.  更新搜尋框或排序選項。
-    2.  重置 `current_page = 1`。
+    2.  清除目前 cursor。
     3.  根據新條件刷新列表視圖。
 
 === "刪除流程 (Delete)"
     1.  點擊 `Delete` → 觸發二次確認視窗。
-    2.  成功刪除後，刷新列表並進行頁碼校正 (如有必要)。
+    2.  成功刪除後，刷新列表並重新校正 cursor 視圖 (如有必要)。
 
 ---
 

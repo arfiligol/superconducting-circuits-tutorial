@@ -10,7 +10,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: Backend task queue read model、control actions、worker summary、event history 與 result attachment surface
-version: v0.7.0
+version: v0.9.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -52,6 +52,28 @@ task submit response 至少必須提供：
 | `owner_user_id` | task owner |
 | `dataset_id` / `definition_id` / design context | 與 page context 相關的 binding |
 
+## Submission Payload Families
+
+=== "Simulation Submit"
+
+    | Field | Meaning |
+    |---|---|
+    | `dataset_id` | active dataset |
+    | `definition_id` | selected canonical definition |
+    | `task_kind` | simulation lane task |
+    | `setup` | frequency sweep、solver、sources、PTC 等設定 |
+    | `post_processing_plan` | optional，若同時聲明後處理需求 |
+
+=== "Characterization Submit"
+
+    | Field | Meaning |
+    |---|---|
+    | `dataset_id` | active dataset |
+    | `design_id` | current design scope |
+    | `analysis_id` | selected analysis kind |
+    | `selected_trace_ids[]` | 明確輸入 trace selection |
+    | `analysis_config` | optional analysis-specific config |
+
 ## Shared Task Lifecycle
 
 !!! warning "Primary Recovery Key"
@@ -90,6 +112,26 @@ Header queue rows 至少必須能讀到：
 | `result_availability` | terminal 後是否有 persisted result |
 | `allowed_actions` | 當前使用者可見的 row actions |
 
+## Queue Query Contract
+
+| Input | Baseline |
+|---|---|
+| `scope_filter` | `workspace`, `mine` |
+| `status_filter` | `active`, `recent`, `all` |
+| `lane_filter` | optional |
+| `search_query` | optional，對 `summary`、owner display name、`task_id` 生效 |
+| `limit` | optional，回應筆數上限 |
+| `after` / `before` | optional，cursor-based 瀏覽位置 |
+| `sort` | fixed baseline: active first, then `updated_at desc` |
+
+| Output | Meaning |
+|---|---|
+| `rows[]` | 目前 filter 下的 queue rows |
+| `worker_summary[]` | lane-scoped processor summary |
+| `meta.generated_at` | queue read model 產生時間 |
+| `meta.next_cursor` / `meta.prev_cursor` | cursor-based browse meta |
+| `meta.filter_echo` | backend 實際採用的 filter / scope |
+
 ## Control Actions
 
 | Action | Input | Immediate response rule | Terminal rule |
@@ -97,6 +139,16 @@ Header queue rows 至少必須能讀到：
 | `cancel` | `task_id` | 立即把 task 標成 `cancellation_requested` 或等價 control state | 最終由 runtime 決定 `cancelled` |
 | `terminate` | `task_id` | 立即把 task 標成 `termination_requested` | 最終由 runtime 決定 `terminated` |
 | `retry` | `task_id` | 建立新 task 並回傳新 `task_id`，保留 lineage | 舊 task 不被覆寫 |
+
+## Action Permission Echo
+
+| Field | Meaning |
+|---|---|
+| `allowed_actions.attach` | 是否允許 attach |
+| `allowed_actions.cancel` | 是否允許 graceful cancel |
+| `allowed_actions.terminate` | 是否允許 force terminate |
+| `allowed_actions.retry` | 是否允許 retry |
+| `rejection_reason` | action 被拒時的穩定 machine-readable reason |
 
 !!! tip "Immediate Control Echo"
     使用者在 Header queue 點擊 `Cancel` 或 `Terminate` 後，backend 必須立即回寫 control-request state。
@@ -122,6 +174,7 @@ Header queue rows 至少必須能讀到：
 | Queue consistency | active task status 與 worker summary 不得互相矛盾 |
 | Lane visibility | queue 至少能辨識 task 所屬 lane |
 | Control permissions | `allowed_actions` 必須依 [Authentication & Authorization](../shared/authentication-and-authorization.md) 計算 |
+| Workspace boundary | queue query 不得跨出 active workspace，除非明確是 admin-scoped governance surface |
 
 ## Delivery Rules
 
@@ -132,6 +185,108 @@ Header queue rows 至少必須能讀到：
 | Detail is attach-ready | simulation / characterization 必須能以 `task_id` 重新附加 |
 | Result handoff is explicit | task terminal 後要能分辨 `result ready` 與 `no result` |
 | Control actions are auditable | `cancel` / `terminate` / `retry` 必須可進入 audit trail |
+
+## Request / Response Examples
+
+!!! example "Submit simulation task"
+    Request:
+    ```json
+    {
+      "dataset_id": "ds_xy_001",
+      "definition_id": "def_lc_12",
+      "task_kind": "simulation",
+      "setup": {
+        "frequency_sweep": {
+          "start_ghz": 1.0,
+          "stop_ghz": 8.0,
+          "points": 401
+        },
+        "solver": {
+          "nmod": 6,
+          "npump": 3
+        }
+      }
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "task_id": "task_501",
+        "task_kind": "simulation",
+        "lane": "simulation",
+        "status": "queued",
+        "visibility_scope": "private",
+        "owner_user_id": "user_12",
+        "dataset_id": "ds_xy_001",
+        "definition_id": "def_lc_12"
+      }
+    }
+    ```
+
+!!! example "Queue query"
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "rows": [
+          {
+            "task_id": "task_501",
+            "summary": "Simulation · LC Resonator",
+            "status": "running",
+            "lane": "simulation",
+            "task_kind": "simulation",
+            "owner_display_name": "Ari",
+            "visibility_scope": "workspace",
+            "updated_at": "2026-03-14T10:12:00Z",
+            "result_availability": "pending",
+            "allowed_actions": {
+              "attach": true,
+              "cancel": true,
+              "terminate": false,
+              "retry": false
+            }
+          }
+        ],
+        "worker_summary": [
+          {
+            "lane": "simulation",
+            "healthy_processors": 1,
+            "busy_processors": 1,
+            "degraded_processors": 0,
+            "draining_processors": 0,
+            "offline_processors": 0
+          }
+        ]
+      },
+      "meta": {
+        "generated_at": "2026-03-14T10:12:00Z",
+        "next_cursor": "task_498",
+        "prev_cursor": null,
+        "has_more": true,
+        "filter_echo": {
+          "scope_filter": "workspace",
+          "status_filter": "active"
+        }
+      }
+    }
+    ```
+
+## Error Code Contract
+
+| Code | Category | When it applies |
+|---|---|---|
+| `active_dataset_required` | `validation_error` | submit payload 缺 dataset context |
+| `task_submit_denied` | `permission_denied` | session 無 submit 權限 |
+| `task_not_found` | `not_found` | 指定 task 不存在 |
+| `task_not_visible` | `permission_denied` | task 不在目前 active workspace visibility 內 |
+| `task_not_cancellable` | `conflict` | task 狀態不允許 cancel |
+| `task_not_terminable` | `conflict` | task 狀態不允許 terminate |
+| `task_already_terminal` | `conflict` | retry / control 對 terminal task 不適用 |
+| `task_retry_denied` | `permission_denied` | retry 不符合 ownership 或 capability 規則 |
 
 ## Related
 

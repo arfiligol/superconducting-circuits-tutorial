@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: Circuit definition catalog、detail、mutation 與 persisted inspection read model 的 backend reference surface。
-version: v0.3.0
-last_updated: 2026-03-13
+version: v0.5.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
@@ -51,8 +51,21 @@ updated_by: team
     | :--- | :--- |
     | **搜尋** | 關鍵字查找 |
     | **排序** | 按日期、名稱或其他屬性排序 |
-    | **分頁** | 大量資料的分段載入 |
+    | **Browse** | 以 cursor-based 方式分段載入大量資料 |
     | **Metadata** | 僅包含 summary-safe 的元資料 |
+
+    catalog request / response baseline：
+
+    | Field | Meaning |
+    |---|---|
+    | `workspace_id` | 由 active session context 決定，不由 frontend 任意跨 workspace 指定 |
+    | `search_query` | optional |
+    | `sort_by` / `sort_order` | optional |
+    | `limit` | optional |
+    | `after` / `before` | optional，cursor-based browse 位置 |
+    | `rows[]` | `definition_id`, `name`, `created_at`, `visibility_scope`, `owner_display_name`, `allowed_actions` |
+    | `meta.next_cursor` / `meta.prev_cursor` | cursor-based browse meta |
+    | `total_count` | 總數摘要 |
 
 === "Detail"
 
@@ -65,6 +78,15 @@ updated_by: team
     | **Validation** | validation notices, validation summary |
     | **Result** | normalized output, preview artifacts summary |
 
+    detail response 另須至少包含：
+
+    | Field | Meaning |
+    |---|---|
+    | `definition_id` | persisted identity |
+    | `workspace_id` / `visibility_scope` | shared visibility boundary |
+    | `allowed_actions` | `update`, `delete`, `publish`, `clone` 等 |
+    | `updated_at` | concurrency / freshness summary |
+
 === "Mutation"
 
     backend 必須支援標準的 CRUD 操作：
@@ -72,6 +94,25 @@ updated_by: team
     1. **Create**: 建立新 definition
     2. **Update**: 更新既有 definition
     3. **Delete**: 刪除既有 definition
+
+    mutation payload baseline：
+
+    | Mutation | Required fields |
+    |---|---|
+    | `create` | `name`, `source_text`, optional `visibility_scope` |
+    | `update` | `definition_id`, `source_text`, optional `name`, optional concurrency token |
+    | `delete` | `definition_id` |
+    | `publish_to_workspace` | `definition_id` |
+    | `clone_private_copy` | `definition_id`, optional `name` |
+
+## Workspace And Visibility Rules
+
+| Rule | Meaning |
+|---|---|
+| One workspace per definition | persisted definition 只屬於一個 workspace |
+| Default create scope | 新建 definition 預設在 current active workspace 且 `private` |
+| Visibility filtering | catalog / detail 僅回傳對目前 session 可見的 definitions |
+| Publish is explicit | `private -> workspace` 只能由明確 mutation 觸發 |
 
 !!! warning "Catalog is Summary-only"
     definition catalog **不得**把完整 definition payload 當成列表回應的一部分。
@@ -98,6 +139,72 @@ updated_by: team
 | **Derived Preview** | normalized output 與 preview artifacts 是 read model，不可反向寫回 source。 |
 | **Mutation Refresh** | create / update / delete 後，catalog 與 detail 都必須可重新讀回一致結果。 |
 | **Reuse** | 同一 definition detail 必須可供 schema editor、schemdraw、circuit simulation 共用。 |
+
+## Request / Response Examples
+
+!!! example "Catalog list"
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "rows": [
+          {
+            "definition_id": "def_lc_12",
+            "name": "Series LC Resonator",
+            "created_at": "2026-03-14T09:20:00Z",
+            "visibility_scope": "private",
+            "owner_display_name": "Ari",
+            "allowed_actions": {
+              "update": true,
+              "delete": true,
+              "publish": true,
+              "clone": true
+            }
+          }
+        ],
+        "total_count": 1
+      }
+    }
+    ```
+
+!!! example "Update definition"
+    Request:
+    ```json
+    {
+      "definition_id": "def_lc_12",
+      "source_text": "{...canonical source...}",
+      "name": "Series LC Resonator",
+      "concurrency_token": "etag_4"
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "definition_id": "def_lc_12",
+        "workspace_id": "ws_lab_a",
+        "visibility_scope": "private",
+        "updated_at": "2026-03-14T10:15:00Z",
+        "validation_summary": {
+          "status": "valid",
+          "notice_count": 0
+        }
+      }
+    }
+    ```
+
+## Error Code Contract
+
+| Code | Category | When it applies |
+|---|---|---|
+| `definition_not_found` | `not_found` | 目標 definition 不存在 |
+| `definition_not_visible` | `permission_denied` | definition 對目前 session 不可見 |
+| `definition_source_invalid` | `validation_error` | source text 無法通過 validation |
+| `definition_conflict` | `conflict` | concurrency token 或 persisted version 衝突 |
+| `definition_delete_blocked` | `conflict` | definition 目前不能被刪除 |
 
 ---
 

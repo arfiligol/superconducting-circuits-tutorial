@@ -11,7 +11,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: Schemdraw render service 的 three-step flow、request/response、diagnostics 與 authoritative syntax/live preview 契約
-version: v0.4.0
+version: v0.5.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -61,6 +61,15 @@ updated_by: team
 | `request_id` | `string` | required | single render request identity |
 | `render_mode` | `string` | optional | `debounced` or `manual` |
 
+linked schema object baseline：
+
+| Field | Meaning |
+|---|---|
+| `definition_id` | persisted definition identity |
+| `workspace_id` | visibility boundary summary |
+| `name` | display label |
+| `source_hash` | optional freshness hint |
+
 ## Validation Layers
 
 | Layer | Meaning |
@@ -83,6 +92,7 @@ updated_by: team
 | `cursor_position` | `object | null` | optional | pen cursor / pointer metadata |
 | `probe_points` | `array` | optional | probe point metadata |
 | `render_time_ms` | `number | null` | optional | render latency |
+| `preview_metadata` | `object | null` | optional | SVG 尺寸、viewBox、backend preview summary |
 
 ## Diagnostics Item
 
@@ -95,6 +105,15 @@ updated_by: team
 | `blocking` | 是否阻止 render |
 | `line` / `column` | 若可定位，回傳 source location |
 
+## Backend Guardrails
+
+| Rule | Meaning |
+|---|---|
+| Linked schema visibility check | backend 必須拒絕目前 session 不可見的 linked schema |
+| No implicit task creation | render request 不能靜默建立 persisted task |
+| No implicit save | render request 不會保存 source / relation config |
+| Controlled runtime only | backend 僅允許受控 entrypoint 與受限 import boundary |
+
 ## Delivery Rules
 
 | Rule | Meaning |
@@ -103,6 +122,76 @@ updated_by: team
 | No implicit persistence | source、relation config、SVG 都不能被默默保存 |
 | Latest-only safe | response 必須帶 `request_id` 與 `document_version`，讓 frontend 丟棄 stale result |
 | Cancellation is best-effort | 新 request 來時可嘗試取消舊 render |
+
+## Request / Response Examples
+
+!!! example "Render request"
+    Request:
+    ```json
+    {
+      "source_text": "import schemdraw\n\ndef build_drawing(relation):\n    ...",
+      "relation_config": {
+        "tag": "draft",
+        "labels": {
+          "P1": "input"
+        }
+      },
+      "linked_schema": {
+        "definition_id": "def_lc_12",
+        "workspace_id": "ws_lab_a",
+        "name": "Series LC Resonator"
+      },
+      "document_version": 14,
+      "request_id": "req_sdraw_14",
+      "render_mode": "debounced"
+    }
+    ```
+
+!!! example "Syntax error response"
+    ```json
+    {
+      "ok": false,
+      "error": {
+        "code": "schemdraw_syntax_error",
+        "category": "validation_error",
+        "message": "The Schemdraw source cannot be parsed.",
+        "retryable": false,
+        "details": {
+          "line": 12,
+          "column": 8
+        },
+        "debug_ref": "req_sdraw_14"
+      }
+    }
+    ```
+
+!!! example "Rendered response"
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "request_id": "req_sdraw_14",
+        "document_version": 14,
+        "status": "rendered",
+        "svg": "<svg>...</svg>",
+        "diagnostics": [],
+        "preview_metadata": {
+          "width": 1200,
+          "height": 640,
+          "view_box": "0 0 1200 640"
+        }
+      }
+    }
+    ```
+
+## Error Code Contract
+
+| Code | Category | When it applies |
+|---|---|---|
+| `schemdraw_relation_invalid` | `validation_error` | relation config 不符合 contract |
+| `schemdraw_linked_schema_not_visible` | `permission_denied` | linked schema 對目前 session 不可見 |
+| `schemdraw_syntax_error` | `validation_error` | Python source parse 失敗 |
+| `schemdraw_runtime_error` | `task_execution_failed` | controlled render 執行失敗 |
 
 ## Related
 

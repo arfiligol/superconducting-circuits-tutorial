@@ -10,7 +10,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: Backend session、workspace membership、active workspace、user summary、capability exposure 與 active dataset authority surface
-version: v0.7.0
+version: v0.8.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -65,6 +65,125 @@ backend session surface 至少必須提供：
 | Switch mutates session | active workspace switch 是 session mutation，不是純 frontend state |
 | Dataset rebinding is required | workspace 切換後，active dataset 必須重新驗證或重選 |
 | Queue rebinding is required | workspace 切換後，queue visibility 與 allowed actions 必須同步更新 |
+
+## Mutation Surfaces
+
+| Mutation | Responsibility |
+|---|---|
+| `switch_active_workspace(workspace_id)` | 變更 session active workspace，回傳新 session envelope 與 rebind outcome |
+| `activate_dataset(dataset_id | null)` | 設定 active dataset，並驗證該 dataset 對目前 active workspace 可見 |
+| `accept_workspace_invitation(invite_token)` | 驗證 invite、建立 membership，並回傳 post-accept context suggestion |
+| `leave_workspace(workspace_id)` | 讓目前使用者主動退出 membership，並重新繫結 session context |
+
+## Workspace Switch Response
+
+| Field | Meaning |
+|---|---|
+| `workspace.id` / `name` / `role` | 新的 active workspace |
+| `active_dataset_resolution` | `preserved`, `rebound`, `cleared` |
+| `active_dataset` | 重新繫結後的 dataset summary，或 `null` |
+| `detached_task_ids[]` | 因 visibility 失效而解除附著的 task ids |
+| `capabilities` | 新 workspace 下的 capability summary |
+| `memberships[]` | 供 Header 重新渲染 switcher |
+
+## Active Dataset Activation Rules
+
+| Rule | Meaning |
+|---|---|
+| Must belong to active workspace | dataset 若不屬於或不可見於 active workspace，mutation 必須被拒絕 |
+| Explicit clear allowed | 允許把 active dataset 設為 `null`，供空 workspace 或等待手動選取使用 |
+| Session-wide propagation | mutation 成功後，所有 page consumers 看到同一 active dataset |
+| Rejection must explain why | 至少區分 `not_found`、`not_visible_in_workspace`、`archived` 等原因 |
+
+## Invitation Acceptance Surface
+
+| Field | Meaning |
+|---|---|
+| `invite.status` | `accepted`, `revoked`, `expired`, `rejected_account_mismatch` |
+| `workspace` | 受邀 workspace summary |
+| `membership.role` | 新 membership role |
+| `switch_available` | 若目前已有其他 active workspace，提示 frontend 顯示切換 CTA |
+| `recommended_next_action` | `switch_workspace`, `stay_current`, `reopen_invite` 等 |
+
+## Request / Response Examples
+
+!!! example "Switch active workspace"
+    Request:
+    ```json
+    {
+      "workspace_id": "ws_lab_a"
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "workspace": {
+          "id": "ws_lab_a",
+          "name": "Lab A",
+          "role": "member"
+        },
+        "active_dataset_resolution": "rebound",
+        "active_dataset": {
+          "id": "ds_xy_001",
+          "name": "FloatingQubitWithXYLine Post 0308_1819"
+        },
+        "detached_task_ids": ["task_402"],
+        "capabilities": {
+          "can_switch_workspace": true,
+          "can_switch_dataset": true,
+          "can_submit_tasks": true
+        }
+      },
+      "meta": {
+        "memberships_count": 3
+      }
+    }
+    ```
+
+!!! example "Accept workspace invitation"
+    Request:
+    ```json
+    {
+      "invite_token": "inv_4d7c8f"
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "invite": {
+          "status": "accepted"
+        },
+        "workspace": {
+          "id": "ws_lab_b",
+          "name": "Lab B"
+        },
+        "membership": {
+          "role": "viewer"
+        },
+        "switch_available": true,
+        "recommended_next_action": "switch_workspace"
+      }
+    }
+    ```
+
+## Error Code Contract
+
+| Code | Category | When it applies |
+|---|---|---|
+| `auth_required` | `auth_required` | session 無效或未登入 |
+| `workspace_membership_required` | `permission_denied` | 目標 workspace 不屬於目前 memberships |
+| `dataset_not_visible_in_workspace` | `permission_denied` | activate dataset 指向不可見 dataset |
+| `dataset_archived` | `conflict` | active dataset 已 archive，不能作為 current context |
+| `workspace_invite_expired` | `conflict` | invite token 已過期 |
+| `workspace_invite_revoked` | `conflict` | invite 已撤銷 |
+| `workspace_invite_account_mismatch` | `permission_denied` | invite email 與目前帳號不符 |
+| `context_rebind_required` | `conflict` | session 切換後需重新選 dataset / task |
 
 ## Capability Flags
 

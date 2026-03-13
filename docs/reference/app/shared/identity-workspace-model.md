@@ -10,8 +10,8 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: user / session / workspace / role / active workspace / active dataset / task visibility 的 app 共享模型
-version: v0.1.0
+scope: user / session / workspace / role / active workspace / active dataset / task visibility 與 active-context switching 的 app 共享模型
+version: v0.2.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -60,6 +60,18 @@ updated_by: team
     | Visibility is backend-enforced | queue visibility 不能只靠前端過濾 |
     | Cross-workspace sharing is explicit | 跨 workspace 應用 export/import 或 future publish/copy，不做多重掛載 |
 
+## Active Context Ordering
+
+| Context | Owner | Priority |
+|---|---|---|
+| `Active Workspace` | session | 最高 |
+| `Active Dataset` | session | 次高 |
+| `Attached Task` | page + persisted task state | 受前兩者約束 |
+| page-local filters / selections | page-local UI state | 最低 |
+
+!!! warning "Active Workspace Rebinds Everything Below It"
+    一旦 `Active Workspace` 切換，`Active Dataset`、queue visibility、attached task validity 與 capability summary 都必須重新驗證。
+
 ## Relationship Model
 
 ```mermaid
@@ -74,6 +86,44 @@ flowchart LR
     Workspace --> ResourceScope["Resource Ownership"]
     Capabilities --> Shell["Header / User Menu / Queue Controls"]
 ```
+
+## Workspace Switch Sequence
+
+| Step | Required behavior |
+|---|---|
+| 1. User picks workspace | 只能從 membership list 中選擇 |
+| 2. Frontend checks unsafe local state | 若目前頁存在 dirty draft 或 destructive context change，先顯示確認 |
+| 3. Backend mutates session | active workspace 變更為新值 |
+| 4. Session rebinds active dataset | 依 dataset activation 規則決定 `preserved`、`rebound` 或 `cleared` |
+| 5. Queue visibility refreshes | Header queue 改為新 workspace 中可見的 tasks |
+| 6. Attached task is revalidated | 若 task 不再可見，必須解除附著並提示 |
+| 7. Pages consume new shell context | Dashboard / Raw Data / Simulation / Characterization 看到同一組新 context |
+
+## Active Dataset Activation
+
+| Rule | Meaning |
+|---|---|
+| Dataset activation is session mutation | 不是 page-local state |
+| Dataset must be visible in active workspace | 不允許指向其他 workspace 的 dataset |
+| Activation may be explicit or resolved | 來自 user 主動切換，或 workspace switch 後的 rebinding |
+
+## Dataset Resolution Order
+
+workspace switch 之後，session 應按以下順序決定新的 `Active Dataset`：
+
+1. 使用者在 target workspace 的 last active dataset，且目前仍可見。
+2. workspace 明確設定的 default dataset。
+3. target workspace 中最近更新且可見的 dataset。
+4. 若沒有任何可用 dataset，active dataset 設為 `null`，由 Header 要求使用者手動選擇。
+
+## Switch Outcomes
+
+| Outcome | Meaning |
+|---|---|
+| `preserved` | 原本 active dataset 在新 context 中仍有效 |
+| `rebound` | 系統依 resolution order 指到另一筆 dataset |
+| `cleared` | 無可用 dataset，等待手動選取 |
+| `detached_task` | 既有 attached task 因 workspace / visibility 變更而失效 |
 
 ## Related
 

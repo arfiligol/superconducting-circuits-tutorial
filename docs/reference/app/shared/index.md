@@ -35,6 +35,8 @@ updated_by: team
 | [Identity & Workspace Model](identity-workspace-model.md) | user、session、active workspace、active dataset 的最小模型 |
 | [Resource Ownership & Visibility](resource-ownership-and-visibility.md) | dataset / schema / task / result 的 workspace ownership 與 sharing rules |
 | [Authentication & Authorization](authentication-and-authorization.md) | workspace membership、capabilities、queue permissions |
+| [Response & Error Contract](response-and-error-contract.md) | success / error envelope、common error families、frontend display contract |
+| [Outbound Email Delivery](outbound-email-delivery.md) | workspace invitation 的 SMTP baseline 與 mail delivery contract |
 | [Task Runtime & Processors](task-runtime-and-processors.md) | worker / processor status、task state machine、cancel / terminate |
 | [Audit Logging](audit-logging.md) | actor-centric audit trail 與 separate audit store |
 

@@ -15,7 +15,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: "/circuit-schemdraw 的 linked schema、relation config、live editor、backend syntax check 與 live preview 契約"
-version: v0.5.0
+version: v0.6.0
 last_updated: 2026-03-14
 updated_by: team
 ---
@@ -32,6 +32,10 @@ updated_by: team
     本頁可以有本地 syntax highlighting、cursor helpers 與 basic editor cues；
     但正式的 syntax check、runtime validation 與 SVG live preview authority 必須來自 backend render service。
 
+!!! tip "Not a task workflow"
+    Schemdraw preview 不走 shared task queue。
+    它是 request/response 型的 editor-assist surface，不應與 Simulation / Characterization 的 persisted task lifecycle 混在一起。
+
 ## Purpose
 
 | Responsibility | Meaning |
@@ -40,6 +44,14 @@ updated_by: team
 | Relation config editing | 編輯 relation JSON 作為 schema metadata / labels / probe context |
 | Linked schema context | 可選地附加 canonical schema metadata |
 | Backend validation & preview | 將 source snapshot 送往 backend，回收 diagnostics 與 SVG |
+
+## Shell Context Requirements
+
+| Context | Requirement |
+|---|---|
+| active workspace | linked schema search 與 render authorization 必須受目前 active workspace 限定 |
+| active dataset | 非必要；本頁不以 active dataset 作為 primary authority |
+| linked schema | 若提供 linked schema，必須是目前 active workspace 中可見的 persisted definition |
 
 ## Layout Structure
 
@@ -75,6 +87,15 @@ flowchart TD
 3. **Validate and render on backend**
    backend 進行 syntax validation、entrypoint validation、controlled render execution，最後回傳 diagnostics 與 SVG。
 
+## Backend Assist Rules
+
+| Concern | Rule |
+|---|---|
+| Syntax check | authoritative parser / runtime validation 在 backend |
+| Diagnostics mapping | backend diagnostics 應帶 line / column，供 editor inline 呈現 |
+| Stale result | request 發出後，舊 preview 保留但標成 stale |
+| Response authority | frontend 只根據最新 `request_id` / `document_version` 套用結果 |
+
 ## Frontend Rules
 
 | Rule | Meaning |
@@ -102,6 +123,14 @@ flowchart TD
 | `Rendered` | 最新 SVG 已可用 |
 | `Syntax Error` | backend 判定 source 無法 parse 或不符合 entrypoint contract |
 | `Runtime Error` | syntax 正常，但 render execution 失敗 |
+
+## Context Mismatch Rules
+
+| Situation | Required behavior |
+|---|---|
+| linked schema 在 workspace switch 後不可見 | 清除 linked schema 並提示使用者重新選擇 |
+| relation config 與 backend schema contract 不符 | diagnostics 顯示為 blocking，不更新 preview |
+| manual render during stale response race | 只保留最新 response；舊回應直接丟棄 |
 
 ## Authority Pair
 
