@@ -4,70 +4,87 @@ aliases:
   - "sc circuit-definition CLI Reference"
 tags:
   - diataxis/reference
-  - status/draft
   - audience/user
+  - sot/true
   - topic/cli
   - topic/circuit-definition
+status: stable
 owner: docs-team
 audience: user
-scope: `sc circuit-definition` 檢查本地 netlist draft 與已持久化 definition 的指令。
-version: v0.1.0
-last_updated: 2026-03-12
-updated_by: codex
+scope: "`sc circuit-definition` 檢查本地 netlist draft 與已持久化 definition 的指令。"
+version: v0.2.0
+last_updated: 2026-03-13
+updated_by: team
+title: sc circuit-definition
 ---
 
 # sc circuit-definition
 
-用 `sc_core` 檢查本地 circuit definition draft，或讀取 backend 中已持久化的 circuit definition。
+用 `sc_core` 檢查 canonical circuit-definition source，或操作 backend 中已持久化的 definition catalog。
 
-## Usage
+!!! info "Command Role"
+    這組命令一半對應 `sc_core` canonical inspection，一半對應 backend persisted definition authority。
+    因此它同時連到 [Python Core](../core/python-core.md) 與 [Backend / Circuit Definitions](../app/backend/circuit-definitions.md)。
 
-```bash
-uv run sc circuit-definition inspect <SOURCE_FILE>
-uv run sc circuit-definition inspect --definition-id <ID>
-```
+!!! warning "Critical Mutation Rules"
+    - `inspect` 必須在 `SOURCE_FILE` 與 `--definition-id` 之間二選一。
+    - `delete` 必須加 `--yes` 才會執行。
 
-## Arguments
+## Command Map
 
-| Argument | Description |
-|---|---|
-| `SOURCE_FILE` | 要檢查的本地 circuit-definition 檔案 |
+=== "Browse"
 
-## Options
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `list` | persisted definition catalog | `--search`, `--sort-by`, `--sort-order` |
 
-| Option | Description | Default |
+=== "Inspect"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `inspect` | 本地 source inspection 或 persisted definition detail | `SOURCE_FILE` 或 `--definition-id` |
+
+=== "Persist"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `create` | 將本地 source 持久化為 definition | `SOURCE_FILE`, `--name` |
+    | `update` | 更新 persisted definition | `DEFINITION_ID`, `SOURCE_FILE`, `--name` |
+    | `delete` | 刪除 persisted definition | `DEFINITION_ID`, `--yes` |
+
+## Shared Option
+
+| Option | Values | Notes |
 |---|---|---|
-| `--definition-id INTEGER` | 改為檢查 backend 中已持久化的 definition | `None` |
+| `--output` | `text`, `json` | 所有 subcommands 皆支援 |
 
-## Examples
+## Browse Filters
 
-**檢查本地 YAML draft**
+| Option | Values | Default |
+|---|---|---|
+| `--search` | case-insensitive name substring | `None` |
+| `--sort-by` | `created_at`, `name`, `element_count` | `created_at` |
+| `--sort-order` | `asc`, `desc` | `desc` |
 
-```bash
-uv run sc circuit-definition inspect ./drafts/demo.yaml
-```
+!!! example "Common Usage"
+    ```bash
+    uv run sc circuit-definition list --search LC
+    uv run sc circuit-definition inspect ./drafts/demo.yaml
+    uv run sc circuit-definition inspect --definition-id 18
+    uv run sc circuit-definition create ./drafts/demo.yaml --name "Demo LC"
+    uv run sc circuit-definition update 18 ./drafts/demo.yaml --name "Demo LC v2"
+    uv run sc circuit-definition delete 18 --yes
+    ```
 
-**查看 id 18 的 persisted definition**
+## Authority Pairing
 
-```bash
-uv run sc circuit-definition inspect --definition-id 18
-```
+| Concern | Authority |
+|---|---|
+| canonical inspection / preview artifact semantics | [Core / Python Core](../core/python-core.md) |
+| persisted definition catalog / CRUD | [Backend / Circuit Definitions](../app/backend/circuit-definitions.md) |
 
-## Notes
+## Related
 
-!!! warning "二選一"
-    `SOURCE_FILE` 與 `--definition-id` 必須二選一，不能同時提供，也不能同時省略。
-
-## CLI Help
-
-```text
-Usage: sc circuit-definition [OPTIONS] COMMAND [ARGS]...
-
- Inspect canonical circuit-definition inputs via sc_core.
-
-Options:
-  -h, --help  Show this message and exit.
-
-Commands:
-  inspect  Inspect a draft file through sc_core or a persisted rewrite definition by id.
-```
+- [CLI Options](index.md)
+- [Python Core](../core/python-core.md)
+- [Backend / Circuit Definitions](../app/backend/circuit-definitions.md)

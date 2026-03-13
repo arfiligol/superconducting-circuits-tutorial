@@ -4,52 +4,71 @@ aliases:
   - "sc session CLI Reference"
 tags:
   - diataxis/reference
-  - status/draft
   - audience/user
+  - sot/true
   - topic/cli
   - topic/session
+status: stable
 owner: docs-team
 audience: user
-scope: `sc session` session 與 workspace context 查詢指令。
-version: v0.1.0
-last_updated: 2026-03-12
-updated_by: codex
+scope: "`sc session` session 與 workspace context 查詢指令。"
+version: v0.2.0
+last_updated: 2026-03-13
+updated_by: team
+title: sc session
 ---
 
 # sc session
 
-顯示目前 rewrite session、identity 與 workspace context。
+顯示或更新目前 rewrite session、workspace 與 active dataset context。
 
-## Usage
+!!! info "Command Role"
+    `sc session` 是 CLI 取得 session scope 的正式入口。
+    其他接受 `--dataset-id` 的命令若省略該參數，通常會回退到這裡定義的 active dataset。
 
-```bash
-uv run sc session show
-```
+!!! warning "Mutation Rule"
+    `set-active-dataset` 必須二選一：
+    提供 `DATASET_ID`，或使用 `--clear` 清除 active dataset。
 
-## Commands
+## Command Map
 
-| Command | Description |
+=== "Read"
+
+    | Subcommand | Focus |
+    |---|---|
+    | `show` | session、workspace、active dataset 的完整 snapshot |
+    | `whoami` | 目前 session identity 與 auth context |
+    | `workspace` | workspace scope 與可見性上下文 |
+    | `active-dataset` | 目前 active dataset context |
+
+=== "Mutate"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `set-active-dataset` | 更新目前 session 的 active dataset | `DATASET_ID` 或 `--clear` |
+
+## Shared Option
+
+| Option | Values | Notes |
+|---|---|---|
+| `--output` | `text`, `json` | 所有 subcommands 皆支援 |
+
+!!! example "Common Usage"
+    ```bash
+    uv run sc session show
+    uv run sc session active-dataset
+    uv run sc session set-active-dataset DATASET-001
+    uv run sc session set-active-dataset --clear
+    ```
+
+## Backend Pair
+
+| Concern | Authority |
 |---|---|
-| `show` | 顯示 session id、auth mode、workspace 與 active dataset |
+| session identity / workspace scope | [Backend / Session & Workspace](../app/backend/session-workspace.md) |
+| active dataset fallback | [Backend / Session & Workspace](../app/backend/session-workspace.md) |
 
-## Examples
+## Related
 
-**查看目前 session**
-
-```bash
-uv run sc session show
-```
-
-## CLI Help
-
-```text
-Usage: sc session [OPTIONS] COMMAND [ARGS]...
-
- Inspect rewrite session state.
-
-Options:
-  -h, --help  Show this message and exit.
-
-Commands:
-  show  Show the current rewrite session and workspace context.
-```
+- [CLI Options](index.md)
+- [Backend / Session & Workspace](../app/backend/session-workspace.md)

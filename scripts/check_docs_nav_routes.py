@@ -7,6 +7,7 @@ import argparse
 import tomllib
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlparse
 
 DEFAULT_CONFIGS = ("zensical.toml",)
 
@@ -26,13 +27,14 @@ def _iter_nav_markdown_paths(node: Any) -> list[str]:
     return paths
 
 
-def _load_config(config_path: Path) -> tuple[list[str], Path]:
+def _load_config(config_path: Path) -> tuple[list[str], Path, str]:
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     project = data.get("project", {})
     nav = project.get("nav", [])
     site_dir = Path(str(project.get("site_dir", "docs/site")))
+    site_prefix = urlparse(str(project.get("site_url", ""))).path.strip("/")
     paths = sorted(set(_iter_nav_markdown_paths(nav)))
-    return paths, site_dir
+    return paths, site_dir, site_prefix
 
 
 def _expected_built_html_path(relative_md_path: str, *, site_dir: Path) -> Path:
@@ -66,6 +68,27 @@ def _check_built(config_path: Path, *, nav_paths: list[str], site_dir: Path) -> 
         if not expected.exists():
             missing.append(
                 f"[BUILT] {config_path.name}: missing '{expected.as_posix()}' "
+                f"(from nav '{relative_md_path}')"
+            )
+    return missing
+
+
+def _check_built_prefixed(
+    config_path: Path,
+    *,
+    nav_paths: list[str],
+    site_dir: Path,
+    site_prefix: str,
+) -> list[str]:
+    if not site_prefix:
+        return []
+    missing: list[str] = []
+    prefixed_site_dir = site_dir / site_prefix
+    for relative_md_path in nav_paths:
+        expected = _expected_built_html_path(relative_md_path, site_dir=prefixed_site_dir)
+        if not expected.exists():
+            missing.append(
+                f"[BUILT-PREFIXED] {config_path.name}: missing '{expected.as_posix()}' "
                 f"(from nav '{relative_md_path}')"
             )
     return missing
@@ -106,11 +129,19 @@ def main() -> int:
         if not config_path.exists():
             errors.append(f"[CONFIG] Missing config file: {config_path.as_posix()}")
             continue
-        nav_paths, site_dir = _load_config(config_path)
+        nav_paths, site_dir, site_prefix = _load_config(config_path)
         if check_source:
             errors.extend(_check_source(config_path, nav_paths=nav_paths))
         if check_built:
             errors.extend(_check_built(config_path, nav_paths=nav_paths, site_dir=site_dir))
+            errors.extend(
+                _check_built_prefixed(
+                    config_path,
+                    nav_paths=nav_paths,
+                    site_dir=site_dir,
+                    site_prefix=site_prefix,
+                )
+            )
 
     if errors:
         print("Docs nav route validation failed:")

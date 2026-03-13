@@ -83,10 +83,10 @@ src/core/sc_core/
 2. `sc_core` 不得依賴 backend / frontend / CLI / desktop
 3. adapter 層應將自己的 transport/persistence 狀態映射到 `sc_core` contracts
 
-## Legacy Migration Rule
+## Incremental Migration Rule
 
-既有 `src/core/` legacy modules 不應一次全部重寫。
-遷移原則是：
+既有 `src/core/` 模組不應一次全部重寫。
+調整原則是：
 
 - 先抽出最穩定、最 canonical 的 contract 與 helper
 - 再逐步讓 backend / worker / CLI adopt

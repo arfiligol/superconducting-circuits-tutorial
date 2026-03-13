@@ -28,6 +28,6 @@ updated_by: codex
 
 ## Related
 
-- [Schema Editor UI](../reference/ui/schema-editor.md)
-- [Circuit Simulation UI](../reference/ui/circuit-simulation.md)
+- [Schema Editor UI](../reference/app/frontend/definition/schema-editor.md)
+- [Circuit Simulation UI](../reference/app/frontend/research-workflow/circuit-simulation.md)
 - [Analysis Result Data Contract](../reference/data-formats/analysis-result.md)

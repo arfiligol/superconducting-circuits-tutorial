@@ -111,9 +111,9 @@ Clean Architecture 在這個專案的作用，就是把這三種錯誤隔開。
 ## Read With Reference
 
 - 頁面邊界：
-  [Schema Editor](../../../reference/ui/schema-editor.md)、
-  [Circuit Simulation](../../../reference/ui/circuit-simulation.md)、
-  [Characterization](../../../reference/ui/characterization.md)
+  [Schema Editor](../../../reference/app/frontend/definition/schema-editor.md)、
+  [Circuit Simulation](../../../reference/app/frontend/research-workflow/circuit-simulation.md)、
+  [Characterization](../../../reference/app/frontend/research-workflow/characterization.md)
 - 資料 authority 與 provenance：
   [Data Storage](../data-storage.md)、
   [Dataset Record Schema](../../../reference/data-formats/dataset-record.md)、

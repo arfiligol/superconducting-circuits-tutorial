@@ -1,7 +1,7 @@
 ---
 aliases:
   - "Superconducting Circuits: Simulation & Analysis"
-  - "超導電路模擬與分析教學"
+  - "超導量子電路平台"
 tags:
   - diataxis/reference
   - audience/user
@@ -10,7 +10,7 @@ tags:
 status: stable
 owner: team
 audience: user
-scope: "超導電路教學首頁與任務導覽"
+scope: "超導量子電路平台首頁與任務導覽"
 version: v1.1.3
 last_updated: 2026-02-11
 updated_by: team

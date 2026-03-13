@@ -3,27 +3,34 @@ aliases:
 - Reference
 - 技術參考
 tags:
+- diataxis/reference
 - audience/team
+- sot/true
+- topic/documentation
 status: draft
 owner: docs-team
 audience: team
-scope: 技術規格索引，涵蓋 architecture、CLI、UI、data formats 與開發規範
-version: v0.3.0
-last_updated: 2026-03-12
-updated_by: codex
+scope: 技術規格索引，涵蓋 architecture、app、CLI、core、data formats 與開發規範
+version: v0.4.0
+last_updated: 2026-03-13
+updated_by: team
 ---
 
 # Reference
 
-技術規格參考，完整且精確。
+本區是平台的規格表。
+
+凡是寫在 `Reference` 的定義，都是程式碼、CLI、UI、backend 與核心能力需要對齊的 SoT。
 
 ## Categories
 
 - [Architecture Reference](architecture/index.md) - migration 契約、身份/工作空間、task semantics、parity matrix
-- [CLI Reference](cli/index.md) - 命令列工具
-- [UI Reference](ui/index.md) - 使用者介面規格與控制項
+- [App Frontend](app/frontend/index.md) - Frontend app surface 規格，對齊 Workspace / Definition / Research Workflow
+- [CLI Options](cli/index.md) - 命令列如何調用 core 與 backend-facing capability
+- [Core](core/index.md) - Python core、Julia wrapper、Julia core 與 Julia plotting
 - [Data Formats](data-formats/index.md) - 數據格式與 Schema
-- [Guardrails](guardrails/index.md) - 開發規範與指引，類型檢查、程式風格、數據處理規則。
+- [Guardrails](guardrails/index.md) - 開發規範與指引，類型檢查、程式風格、數據處理規則
+- [Contributors](contributors.md) - 貢獻者名錄與文件引用依據
 
 ## Related
 

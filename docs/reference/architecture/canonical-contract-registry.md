@@ -11,9 +11,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: "列出 migration 期間每個 canonical contract 的 owner、SoT、adapter 與測試責任"
-version: v0.1.0
-last_updated: 2026-03-12
-updated_by: codex
+version: v0.3.0
+last_updated: 2026-03-13
+updated_by: team
 ---
 
 # Canonical Contract Registry
@@ -30,8 +30,9 @@ updated_by: codex
 | Trace / Result / Provenance Contract | backend + `sc_core` | `docs/reference/data-formats/dataset-record.md`, `docs/reference/data-formats/analysis-result.md` | backend tracestore + future `sc_core.traces` | backend, frontend, CLI, worker | versioned persisted contract | persistence / provenance linkage tests |
 | Task Submission / Status / Result | backend + `sc_core` | `docs/reference/architecture/task-semantics.md` | `src/core/sc_core/tasking/`, backend task APIs | backend, frontend, CLI, worker | task ids immutable; retry creates new task | task lifecycle / attach / retry tests |
 | Session / Workspace Context | backend | `docs/reference/architecture/identity-workspace-model.md` | backend session APIs | frontend, CLI, worker visibility filters | lockstep migration branch; semantics must stay stable | auth/session / active dataset tests |
+| Schemdraw Render Contract | backend + frontend | `docs/reference/app/backend/schemdraw-render.md`, `docs/reference/app/frontend/research-workflow/schemdraw.md` | backend render API + frontend schemdraw workspace | frontend | additive-first; diagnostics codes stable once published | contract / render / diagnostics tests |
 | CLI Machine-readable Output | CLI + `sc_core` | `docs/reference/cli/index.md` and command docs | `cli/src/sc_cli/` presenters | CLI, automation, future scripting | changes must be documented as contract changes | CLI behavior / output tests |
-| UI Workflow Contract | frontend + backend | `docs/reference/ui/*.md` | frontend features + backend APIs | frontend only | route/workflow changes update parity matrix | integration / recovery tests |
+| UI Workflow Contract | frontend + backend | `docs/reference/app/frontend/**/*.md` | frontend features + backend APIs | frontend only | route/workflow changes update parity matrix | integration / recovery tests |
 
 ## Rules
 

@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: "定義 migration 過程中 reference docs、shared core、adapter、legacy behavior 的裁決順序"
-version: v1.1.0
-last_updated: 2026-03-12
-updated_by: codex
+version: v1.2.0
+last_updated: 2026-03-13
+updated_by: team
 ---
 
 # Source of Truth Order
@@ -24,7 +24,7 @@ updated_by: codex
 
 若同一能力的描述彼此衝突，應依下列順序裁決：
 
-1. `docs/reference/data-formats/*`、`docs/reference/ui/*`、`docs/reference/cli/*`
+1. `docs/reference/data-formats/*`、`docs/reference/app/frontend/**/*`、`docs/reference/cli/*`
 2. `docs/reference/architecture/*` 與後續的 contract registry / migration parity 文件
 3. `src/core/sc_core/*` 的 canonical implementation
 4. `backend/`、`frontend/`、`cli/`、`desktop/` adapters
@@ -33,7 +33,7 @@ updated_by: codex
 ## Scope Boundaries
 
 - `docs/reference/data-formats/*`：資料格式、schema version、欄位語意
-- `docs/reference/ui/*`：使用者可見 workflow、頁面行為、recovery parity
+- `docs/reference/app/frontend/**/*`：使用者可見 workflow、頁面行為、recovery parity
 - `docs/reference/cli/*`：命令名稱、主要參數、輸出契約
 - `docs/reference/architecture/*`：identity/workspace、task semantics、parity matrix、contract registry
 - `src/core/sc_core/*`：canonical invariants、validators、shared transforms、task routing helpers
@@ -78,7 +78,7 @@ updated_by: codex
 ```markdown
 ## Source of Truth Order
 - Resolve conflicts in this order:
-    1. `docs/reference/data-formats/*`, `docs/reference/ui/*`, `docs/reference/cli/*`
+    1. `docs/reference/data-formats/*`, `docs/reference/app/frontend/**/*`, `docs/reference/cli/*`
     2. `docs/reference/architecture/*` and migration contract/parity specs
     3. `src/core/sc_core/*`
     4. `backend/`, `frontend/`, `cli/`, `desktop/` adapters

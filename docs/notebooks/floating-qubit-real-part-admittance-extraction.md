@@ -12,9 +12,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: Floating qubit 的 differential driving-point admittance 提取流程（PTC -> CT -> Kron）
-version: v0.3.0
-last_updated: 2026-03-05
-updated_by: docs-team
+version: v0.4.0
+last_updated: 2026-03-13
+updated_by: team
 ---
 
 # 提取 Floating Qubit 看出去的 Real Part Admittance
@@ -37,7 +37,7 @@ updated_by: docs-team
 
 本頁完全採用下列文件定義，不自行發明新語意：
 
-- [Circuit Simulation Reference（Post Processing / CT / Kron / PTC / HFSS Comparable）](../reference/ui/circuit-simulation/)
+- [Circuit Simulation Reference（Post Processing / CT / Kron / PTC）](../reference/app/frontend/research-workflow/circuit-simulation/)
 - [Schur Complement 與 Kron Reduction（Explanation）](../explanation/physics/schur-complement-kron-reduction/)
 - [Analysis Result Data Format（HFSS comparable 欄位語意）](../reference/data-formats/analysis-result/)
 - [Physics Symbol Glossary（符號對照）](../explanation/physics/symbol-glossary/)
@@ -157,7 +157,7 @@ Y_red = Y_bb - Y_bi * Y_ii^{-1} * Y_ib
 
 參考：
 
-- [HFSS Comparable 語意標記](../reference/ui/circuit-simulation/#hfss-comparable)
+- [Circuit Simulation Reference](../reference/app/frontend/research-workflow/circuit-simulation/)
 - [Analysis Result 欄位語意（`hfss_comparable` / reason）](../reference/data-formats/analysis-result/)
 
 ---

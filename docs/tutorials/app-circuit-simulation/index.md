@@ -29,4 +29,4 @@ updated_by: codex
 ## Related
 
 - [Simulation Workflow](../simulation-workflow.md)
-- [Circuit Simulation UI Reference](../../reference/ui/circuit-simulation.md)
+- [Circuit Simulation UI Reference](../../reference/app/frontend/research-workflow/circuit-simulation.md)

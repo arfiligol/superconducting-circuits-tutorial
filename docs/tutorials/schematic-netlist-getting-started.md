@@ -29,5 +29,5 @@ updated_by: codex
 ## Related
 
 - [Circuit Netlist Format](../reference/data-formats/circuit-netlist.md)
-- [Schema Editor UI](../reference/ui/schema-editor.md)
+- [Schema Editor UI](../reference/app/frontend/definition/schema-editor.md)
 - [From Netlist to Simulation](schematic-netlist-simulation.md)

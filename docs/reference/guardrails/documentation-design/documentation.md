@@ -10,10 +10,10 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "文件設計規範索引：Standards / Style / Maintenance"
-version: v0.7.0
-last_updated: 2026-03-12
-updated_by: codex
+scope: "文件設計規範索引：Standards / Macro Style / Micro Style / Maintenance / Domain Extensions"
+version: v1.2.0
+last_updated: 2026-03-13
+updated_by: team
 ---
 
 # Documentation Design
@@ -27,9 +27,36 @@ updated_by: codex
 | 規範 | 說明 | Agent Rule |
 |------|------|------------|
 | [Standards](standards.md) | Diataxis + Frontmatter + 核心規則 | [#agent-rule](standards.md#agent-rule) |
-| [Style](style.md) | 語氣/風格 + 視覺元素（Admonitions/Tabs/Mermaid） | [#agent-rule](style.md#agent-rule) |
+| [Macro Style / Information Layout](information-layout.md) | 頁面資訊分層、視覺節奏、overview/index 編排 | [#agent-rule](information-layout.md#agent-rule) |
+| [Micro Style / Writing & Visual Elements](style.md) | 語氣、段落寫法與 Admonitions/Tabs/Mermaid 等元件使用 | [#agent-rule](style.md#agent-rule) |
 | [Maintenance](maintenance.md) | 單語來源樹 + Frontmatter 更新 + Zensical 檢查 | [#agent-rule](maintenance.md#agent-rule) |
 | [Explanation Physics](explanation-physics.md) | Explanation/Physics 教學定位、章節骨架與跨文件引用規則 | [#agent-rule](explanation-physics.md#agent-rule) |
+| [Page Reference Specs](page-reference-specs.md) | App frontend pages 技術文件的固定骨架、命名與驗收規則 | [#agent-rule](page-reference-specs.md#agent-rule) |
+
+---
+
+## 層級分工
+
+| 規範 | 負責什麼 | 不負責什麼 |
+|------|----------|------------|
+| Standards | 文件分類、metadata、核心約束 | 頁面編排、語氣細節 |
+| Macro Style / Information Layout | 宏觀頁面編排、overview/index 規則、閱讀節奏 | 用字選擇、元件語法細節 |
+| Micro Style / Writing & Visual Elements | 語氣、段落寫法、Admonitions/Tabs/Mermaid 等元件使用 | Diataxis 邊界、build 維護流程 |
+| Maintenance | 單語來源樹、frontmatter 更新、build/check 流程 | 文件內容本身的結構設計 |
+| Page Reference Specs | App frontend page 規格的固定骨架與驗收方式 | 其他類型文件的通用編排 |
+
+---
+
+## Domain Extensions
+
+這一層收錄和特定文件領域強相關的補充規範。它們不是 `Documentation Design` 的基礎規則，但會在特定內容類型中提供更細的寫法。
+
+| 規範 | 用途 |
+|------|------|
+| [Page Reference Specs](page-reference-specs.md) | App frontend pages 的固定骨架、命名與驗收方式 |
+| [Explanation Physics](explanation-physics.md) | Physics explanation 的敘事骨架、引用與邊界 |
+| [Circuit Diagrams](../../../how-to/contributing/circuit-diagrams.md) | Schemdraw → SVG 的圖表寫作與輸出流程 |
+| [CLI Docs Automation](../../../how-to/contributing/cli-docs-automation.md) | CLI 文件頁的自動化與同步流程 |
 
 ---
 
@@ -54,6 +81,8 @@ updated_by: codex
   - [Circuit Diagram Guide](../../../how-to/contributing/circuit-diagrams.md)（Schemdraw → SVG）
 - CLI 文件：
   - [CLI Docs Automation](../../../how-to/contributing/cli-docs-automation.md)
+- App page specs：
+  - [Page Reference Specs](./page-reference-specs.md)
 
 ---
 
@@ -62,9 +91,11 @@ updated_by: codex
 ```markdown
 ## Documentation Design
 - **Standards**: Diataxis + Frontmatter/Tags + 核心規則（見 `standards.md`）
-- **Style**: 語氣/風格 + 視覺元素（Admonitions/Tabs/Mermaid）（見 `style.md`）
+- **Macro Style / Information Layout**: 宏觀頁面編排、視覺節奏、overview/index 規則（見 `information-layout.md`）
+- **Micro Style / Writing & Visual Elements**: 語氣、段落寫法與視覺元素使用（見 `style.md`）
 - **Maintenance**: 單語來源樹 + Frontmatter 更新 + Zensical 檢查（見 `maintenance.md`）
 - **Explanation Physics**: 教學定位、章節骨架、跨文件引用規範（見 `explanation-physics.md`）
+- **Page Reference Specs**: App frontend page 技術文件的固定骨架、命名、引用與驗收規範（見 `page-reference-specs.md`）
 - **Architecture Term**: 本專案文件架構的正式名稱是 `Native zh-TW Build`
 - 詳細規範請以各子文件為準。
 ```

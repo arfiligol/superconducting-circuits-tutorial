@@ -4,67 +4,81 @@ aliases:
   - "sc datasets CLI Reference"
 tags:
   - diataxis/reference
-  - status/draft
   - audience/user
+  - sot/true
   - topic/cli
   - topic/dataset
+status: stable
 owner: docs-team
 audience: user
-scope: `sc datasets` dataset catalog 查詢指令。
-version: v0.1.0
-last_updated: 2026-03-12
-updated_by: codex
+scope: "`sc datasets` dataset catalog 查詢指令。"
+version: v0.2.0
+last_updated: 2026-03-13
+updated_by: team
+title: sc datasets
 ---
 
 # sc datasets
 
-查詢 rewrite dataset catalog。
+查詢 dataset catalog、單筆 dataset detail，並更新 dataset metadata。
 
-## Usage
+!!! info "Command Role"
+    `sc datasets` 是 CLI 對 dataset catalog 的正式入口。
+    它對應 backend dataset authority，不負責 trace selection、analysis run 或 simulation execution。
 
-```bash
-uv run sc datasets list [OPTIONS]
-```
+!!! warning "Metadata Mutation"
+    `set-metadata` 會直接送出 `device_type`、`source` 與 `capabilities` metadata。
+    若要提供多個 capability，必須重複使用 `--capability`。
 
-## Options
+## Command Map
 
-| Option | Description | Default |
+=== "Browse"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `list` | dataset catalog | `--family`, `--status`, `--sort-by`, `--sort-order` |
+    | `show` | 單筆 dataset detail | `DATASET_ID` |
+
+=== "Mutate"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `set-metadata` | 更新 dataset metadata | `DATASET_ID`, `--device-type`, `--source`, repeated `--capability` |
+
+## Shared Option
+
+| Option | Values | Notes |
 |---|---|---|
-| `--family TEXT` | 依 dataset family 過濾 | `None` |
-| `--status [Ready|Queued|Review]` | 依 dataset status 過濾 | `None` |
-| `--sort-by [updated_at|name|samples]` | 排序欄位 | `updated_at` |
-| `--sort-order [asc|desc]` | 排序方向 | `desc` |
+| `--output` | `text`, `json` | 所有 subcommands 皆支援 |
 
-## Examples
+## `list` Filters
 
-**列出所有 datasets**
+| Option | Values | Default |
+|---|---|---|
+| `--family` | free text | `None` |
+| `--status` | `Ready`, `Queued`, `Review` | `None` |
+| `--sort-by` | `updated_at`, `name`, `samples` | `updated_at` |
+| `--sort-order` | `asc`, `desc` | `desc` |
 
-```bash
-uv run sc datasets list
-```
+!!! example "Common Usage"
+    ```bash
+    uv run sc datasets list
+    uv run sc datasets show DATASET-001
+    uv run sc datasets set-metadata DATASET-001 \
+      --device-type FloatingQubit \
+      --source inferred \
+      --capability characterization \
+      --capability simulation
+    ```
 
-**只看 Fluxonium family**
+## Backend Pair
 
-```bash
-uv run sc datasets list --family Fluxonium
-```
+| Concern | Authority |
+|---|---|
+| dataset catalog / detail | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
+| dataset metadata mutation | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
 
-**依 sample 數量升冪排序**
+## Related
 
-```bash
-uv run sc datasets list --sort-by samples --sort-order asc
-```
-
-## CLI Help
-
-```text
-Usage: sc datasets [OPTIONS] COMMAND [ARGS]...
-
- Inspect rewrite dataset state.
-
-Options:
-  -h, --help  Show this message and exit.
-
-Commands:
-  list  List datasets from the rewrite integration scaffold.
-```
+- [CLI Options](index.md)
+- [Backend / Datasets & Results](../app/backend/datasets-results.md)

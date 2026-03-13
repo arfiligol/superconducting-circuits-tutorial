@@ -4,78 +4,98 @@ aliases:
   - "sc tasks CLI Reference"
 tags:
   - diataxis/reference
-  - status/draft
   - audience/user
+  - sot/true
   - topic/cli
   - topic/tasks
+status: stable
 owner: docs-team
 audience: user
-scope: `sc tasks` task list 與 detail 查詢指令。
-version: v0.1.0
-last_updated: 2026-03-12
-updated_by: codex
+scope: "`sc tasks` task list 與 detail 查詢指令。"
+version: v0.2.0
+last_updated: 2026-03-13
+updated_by: team
+title: sc tasks
 ---
 
 # sc tasks
 
-查詢 rewrite task queue 的可見任務與單筆 detail。
+查詢 generic task contract，並對任務做 submit、latest、wait 等操作。
 
-## Usage
+!!! info "Command Role"
+    `sc tasks` 是 generic task surface。
+    `sc simulation` 與 `sc characterization` 只是 lane-specific wrappers；底層仍依賴同一組 task semantics。
 
-```bash
-uv run sc tasks list [OPTIONS]
-uv run sc tasks show <TASK_ID>
-```
+!!! warning "Primary Recovery Key"
+    `task_id` 是 attach、inspect、wait 的 primary key。
+    `dataset_id` 與 `definition_id` 只能當輔助查詢條件，不可取代 `task_id`。
 
-## Commands
+## Command Map
 
-### `list`
+=== "Browse"
 
-| Option | Description | Default |
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `list` | task list | `--status`, `--lane`, `--scope`, `--dataset-id`, `--limit` |
+    | `latest` | 取符合條件的最新 task | `--status`, `--lane`, `--scope`, `--dataset-id` |
+
+=== "Inspect"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `show` | 單筆 task detail | `TASK_ID` |
+    | `inspect` | operator-oriented detail，含 event / result summary | `TASK_ID` |
+
+=== "Operate"
+
+    | Subcommand | Focus | Key inputs |
+    |---|---|---|
+    | `wait` | 輪詢到指定狀態 | `TASK_ID`, `--until-status`, `--interval`, `--timeout` |
+    | `submit` | 送出 generic task | `KIND`, `--dataset-id`, `--definition-id`, `--summary` |
+
+## Shared Option
+
+| Option | Values | Notes |
 |---|---|---|
-| `--status [queued|running|completed|failed]` | 依 task status 過濾 | `None` |
-| `--lane [simulation|characterization]` | 依 task lane 過濾 | `None` |
-| `--scope [workspace|owned]` | task visibility scope | `workspace` |
-| `--dataset-id TEXT` | 依 dataset id 過濾 | `None` |
-| `--limit INTEGER` | 顯示筆數上限 | `20` |
+| `--output` | `text`, `json` | 所有 subcommands 皆支援 |
 
-### `show`
+## `list` / `latest` Filters
 
-| Argument | Description |
+| Option | Values | Default |
+|---|---|---|
+| `--status` | `queued`, `running`, `completed`, `failed` | `None` |
+| `--lane` | `simulation`, `characterization` | `None` |
+| `--scope` | `workspace`, `owned` | `workspace` |
+| `--dataset-id` | free text | `None` |
+| `--limit` | `1..50` | `20` (`list` only) |
+
+## `submit` Kind
+
+| Value | Meaning |
 |---|---|
-| `TASK_ID` | 要查詢的 task id |
+| `simulation` | definition-driven simulation task |
+| `post_processing` | post-processing task |
+| `characterization` | dataset-driven characterization task |
 
-## Examples
+!!! example "Common Usage"
+    ```bash
+    uv run sc tasks list --lane simulation --status running
+    uv run sc tasks show 306
+    uv run sc tasks inspect 306
+    uv run sc tasks submit simulation --definition-id 18 --dataset-id DATASET-001
+    uv run sc tasks wait 306 --until-status terminal
+    ```
 
-**列出目前可見任務**
+## Authority Pairing
 
-```bash
-uv run sc tasks list
-```
+| Concern | Authority |
+|---|---|
+| task lifecycle、wait semantics、result attachment | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
+| canonical task semantics | [Architecture / Task Semantics](../architecture/task-semantics.md) |
 
-**只看 simulation lane**
+## Related
 
-```bash
-uv run sc tasks list --lane simulation
-```
-
-**查看單筆 task detail**
-
-```bash
-uv run sc tasks show 301
-```
-
-## CLI Help
-
-```text
-Usage: sc tasks [OPTIONS] COMMAND [ARGS]...
-
- Inspect rewrite task state.
-
-Options:
-  -h, --help  Show this message and exit.
-
-Commands:
-  list  List tasks from the rewrite integration scaffold.
-  show  Show one task from the rewrite integration scaffold.
-```
+- [sc events](sc-events.md)
+- [sc results](sc-results.md)
+- [sc simulation](sc-simulation.md)
+- [sc characterization](sc-characterization.md)

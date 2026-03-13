@@ -116,5 +116,5 @@ updated_by: codex
 ## Related
 
 - [Dataset Record Schema](dataset-record.md)
-- [Characterization](../ui/characterization.md)
-- [Circuit Simulation UI](../ui/circuit-simulation.md) - Simulation sweep/post-process provenance 邊界
+- [Characterization](../app/frontend/research-workflow/characterization.md)
+- [Circuit Simulation UI](../app/frontend/research-workflow/circuit-simulation.md) - Simulation sweep/post-process provenance 邊界
