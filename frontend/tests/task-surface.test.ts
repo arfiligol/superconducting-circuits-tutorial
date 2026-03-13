@@ -200,4 +200,8 @@ describe("shared task surface helpers", () => {
       pending: [task.resultRefs.resultHandles[1]],
     });
   });
+
+  it("treats an unattached task as having no trace payload", () => {
+    expect(summarizeTaskResultSurface(undefined).hasTracePayload).toBe(false);
+  });
 });

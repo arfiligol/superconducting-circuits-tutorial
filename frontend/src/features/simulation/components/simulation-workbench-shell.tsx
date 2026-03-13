@@ -6,7 +6,6 @@ import {
   FileCode2,
   LoaderCircle,
   Play,
-  RefreshCcw,
   Search,
   WandSparkles,
   Waypoints,
@@ -29,8 +28,12 @@ import {
   type SimulationTaskStatusFilter,
 } from "@/features/simulation/lib/workflow";
 import {
+  ResearchTaskQueuePanel,
+  ResearchWorkflowHero,
+  ResearchWorkflowOverviewPanel,
+} from "@/features/shared/components/research-workflow-panels";
+import {
   SurfacePanel,
-  SurfaceStat,
   SurfaceTag,
   cx,
 } from "@/features/shared/components/surface-kit";
@@ -41,6 +44,8 @@ import {
   TaskResultPanel,
 } from "@/features/shared/components/task-workflow-panels";
 import { ApiError } from "@/lib/api/client";
+import { summarizeTaskEventHistory } from "@/lib/task-event-history";
+import { summarizeResearchWorkflowSurface } from "@/lib/research-workflow-surface";
 import {
   resolveTaskConnectionState,
   resolveTaskRecoveryNotice,
@@ -57,6 +62,25 @@ type SimulationRequestValues = z.infer<typeof simulationRequestSchema>;
 const defaultRequestValues: SimulationRequestValues = {
   summaryNote: "",
 };
+
+const simulationTaskScopeOptions = [
+  { label: "Current definition", value: "definition" },
+  { label: "Active dataset", value: "dataset" },
+  { label: "All simulation tasks", value: "all" },
+] as const satisfies readonly Readonly<{
+  label: string;
+  value: SimulationTaskScope;
+}>[];
+
+const simulationTaskStatusOptions = [
+  { label: "All statuses", value: "all" },
+  { label: "Queued or running", value: "active" },
+  { label: "Completed", value: "completed" },
+  { label: "Failed", value: "failed" },
+] as const satisfies readonly Readonly<{
+  label: string;
+  value: SimulationTaskStatusFilter;
+}>[];
 
 function buildSimulationSearchHref(
   pathname: string,
@@ -320,6 +344,13 @@ export function SimulationWorkbenchShell() {
   );
   const taskLifecycleSummary = summarizeTaskLifecycle(activeTask);
   const taskResultSummary = summarizeTaskResultSurface(activeTask);
+  const eventHistorySummary = summarizeTaskEventHistory(activeTask);
+  const workflowSurfaceSummary = summarizeResearchWorkflowSurface({
+    connectionState: taskConnectionState,
+    lifecycleSummary: taskLifecycleSummary,
+    eventHistorySummary,
+    resultSummary: taskResultSummary,
+  });
   const normalizedPreview = buildNormalizedOutputPreview(
     activeDefinition?.normalized_output ?? "{\n  \"circuit\": \"pending\"\n}",
   );
@@ -395,56 +426,48 @@ export function SimulationWorkbenchShell() {
 
   return (
     <div className="space-y-8">
-      <section className="space-y-6">
-        <div>
-          <h1 className="text-[2.05rem] font-semibold tracking-tight text-foreground">
-            Circuit Simulation
-          </h1>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            Attach a canonical definition, submit persisted simulation work, and reattach to the
-            latest task and result refs without relying on page-local placeholder state.
-          </p>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(180px,0.3fr)_minmax(180px,0.3fr)_minmax(180px,0.3fr)]">
-          <div className="rounded-[1rem] border border-border bg-card px-4 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
-            <div className="flex flex-wrap items-center gap-2 text-[11px]">
-              <SurfaceTag tone="primary">
-                {selectedDefinitionSummary?.name ?? "Definition pending"}
-              </SurfaceTag>
-              <SurfaceTag
-                tone={
-                  activeDatasetState.activeDataset
-                    ? "success"
-                    : activeDatasetState.status === "error"
-                      ? "warning"
-                      : "default"
-                }
-              >
-                {activeDatasetState.activeDataset?.name ?? "Dataset not attached"}
-              </SurfaceTag>
-              {resolvedTaskId !== null ? (
-                <SurfaceTag tone={taskConnectionState.isAttached ? "success" : "warning"}>
-                  Task #{resolvedTaskId}
-                </SurfaceTag>
-              ) : null}
-              <SurfaceTag tone={taskLifecycleSummary.tone}>
-                {taskLifecycleSummary.statusLabel}
-              </SurfaceTag>
-              {taskConnectionState.isFollowingLatest ? (
-                <SurfaceTag tone="success">Following latest queue task</SurfaceTag>
-              ) : null}
-            </div>
-            <p className="mt-3 text-sm text-muted-foreground">
-              Workspace submit authority:{" "}
-              {session?.canSubmitTasks ? "available" : "disabled for this session"}.
-            </p>
-          </div>
-          <SurfaceStat label="Simulation Tasks" value={String(taskSummary.total)} />
-          <SurfaceStat label="Active" value={String(taskSummary.activeCount)} tone="primary" />
-          <SurfaceStat label="Result-backed" value={String(taskSummary.resultBackedCount)} />
-        </div>
-      </section>
+      <ResearchWorkflowHero
+        eyebrow="Research Workflow"
+        title="Circuit Simulation"
+        description="Attach a canonical definition, submit persisted simulation work, and reattach to task, event, and result state without falling back to page-local placeholders."
+        contextTags={[
+          {
+            label: selectedDefinitionSummary?.name ?? "Definition pending",
+            tone: "primary",
+          },
+          {
+            label: activeDatasetState.activeDataset?.name ?? "Dataset not attached",
+            tone: activeDatasetState.activeDataset
+              ? "success"
+              : activeDatasetState.status === "error"
+                ? "warning"
+                : "default",
+          },
+          ...(resolvedTaskId !== null
+            ? [
+                {
+                  label: `Task #${resolvedTaskId}`,
+                  tone: taskConnectionState.isAttached ? "success" : "warning",
+                } as const,
+              ]
+            : []),
+          {
+            label: taskLifecycleSummary.statusLabel,
+            tone: taskLifecycleSummary.tone,
+          },
+          ...(taskConnectionState.isFollowingLatest
+            ? [{ label: "Following latest queue task", tone: "success" as const }]
+            : []),
+        ]}
+        submitAuthorityLabel={`Workspace submit authority: ${
+          session?.canSubmitTasks ? "available" : "disabled for this session"
+        }.`}
+        stats={[
+          { label: "Simulation Tasks", value: String(taskSummary.total) },
+          { label: "Active", value: String(taskSummary.activeCount), tone: "primary" },
+          { label: "Result-backed", value: String(taskSummary.resultBackedCount) },
+        ]}
+      />
 
       {definitionsError ? (
         <div className="rounded-[1rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
@@ -642,101 +665,62 @@ export function SimulationWorkbenchShell() {
             </form>
           </SurfacePanel>
 
-          <SurfacePanel
+          <ResearchTaskQueuePanel
             title="Simulation Task Queue"
-            description="Inspect recent simulation and post-processing tasks, then attach a task into the right-hand detail surface."
+            description="Inspect recent simulation and post-processing tasks, then attach a task into the shared research workflow surface."
+            searchValue={taskQuery}
+            onSearchChange={setTaskQuery}
+            searchPlaceholder="Find by task id, summary, or dataset"
+            scopeValue={taskScope}
+            onScopeChange={(value) => {
+              setTaskScope(value as SimulationTaskScope);
+            }}
+            scopeOptions={simulationTaskScopeOptions}
+            statusValue={taskStatusFilter}
+            onStatusChange={(value) => {
+              setTaskStatusFilter(value as SimulationTaskStatusFilter);
+            }}
+            statusOptions={simulationTaskStatusOptions}
+            summaryLabel={`Showing ${filteredTasks.length} of ${simulationTasks.length} simulation tasks`}
+            summaryTags={[
+              ...(taskConnectionState.mode === "explicit" && resolvedTaskId !== null
+                ? [{ label: `Locked to task #${resolvedTaskId}`, tone: "warning" as const }]
+                : []),
+              ...(taskConnectionState.isFollowingLatest && taskConnectionState.latestTaskId !== null
+                ? [
+                    {
+                      label: `Following latest #${taskConnectionState.latestTaskId}`,
+                      tone: "success" as const,
+                    },
+                  ]
+                : []),
+            ]}
+            isRefreshing={isRefreshingWorkflow}
+            onRefresh={() => {
+              void handleRefreshWorkflow();
+            }}
+            isEmpty={filteredTasks.length === 0}
+            emptyMessage="No simulation tasks match the current filters."
           >
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
-              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  <Search className="h-3.5 w-3.5" />
-                  Search
-                </span>
-                <input
-                  value={taskQuery}
-                  onChange={(event) => {
-                    setTaskQuery(event.target.value);
-                  }}
-                  placeholder="Find by task id, summary, or dataset"
-                  className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                />
-              </label>
-
-              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 block text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Scope
-                </span>
-                <select
-                  value={taskScope}
-                  onChange={(event) => {
-                    setTaskScope(event.target.value as SimulationTaskScope);
-                  }}
-                  className="w-full bg-transparent text-sm text-foreground outline-none"
-                >
-                  <option value="definition">Current definition</option>
-                  <option value="dataset">Active dataset</option>
-                  <option value="all">All simulation tasks</option>
-                </select>
-              </label>
-
-              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 block text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Status
-                </span>
-                <select
-                  value={taskStatusFilter}
-                  onChange={(event) => {
-                    setTaskStatusFilter(event.target.value as SimulationTaskStatusFilter);
-                  }}
-                  className="w-full bg-transparent text-sm text-foreground outline-none"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="active">Queued or running</option>
-                  <option value="completed">Completed</option>
-                  <option value="failed">Failed</option>
-                </select>
-              </label>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-[0.9rem] border border-border bg-surface px-4 py-3 text-xs text-muted-foreground">
-              <span>
-                Showing {filteredTasks.length} of {simulationTasks.length} simulation tasks
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  void handleRefreshWorkflow();
+            {filteredTasks.map((task) => (
+              <TaskCard
+                key={task.taskId}
+                isSelected={task.taskId === resolvedTaskId}
+                onSelect={(taskId) => {
+                  replaceSearchState({ taskId: String(taskId) });
                 }}
-                disabled={isRefreshingWorkflow}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5 text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RefreshCcw className={cx("h-3.5 w-3.5", isRefreshingWorkflow && "animate-spin")} />
-                Refresh
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {filteredTasks.map((task) => (
-                <TaskCard
-                  key={task.taskId}
-                  isSelected={task.taskId === resolvedTaskId}
-                  onSelect={(taskId) => {
-                    replaceSearchState({ taskId: String(taskId) });
-                  }}
-                  task={task}
-                />
-              ))}
-            </div>
-
-            {filteredTasks.length === 0 ? (
-              <div className="mt-4 rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-5 text-sm text-muted-foreground">
-                No simulation tasks match the current filters.
-              </div>
-            ) : null}
-          </SurfacePanel>
+                task={task}
+              />
+            ))}
+          </ResearchTaskQueuePanel>
         </div>
 
         <div className="space-y-4">
+          <ResearchWorkflowOverviewPanel
+            summary={workflowSurfaceSummary}
+            narrative={eventHistoryNarrative}
+          />
+
           <TaskAttachmentPanel
             task={activeTask}
             connectionState={taskConnectionState}

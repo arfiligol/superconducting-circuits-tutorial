@@ -314,7 +314,7 @@ export function summarizeTaskResultSurface(
     resultHandleCount: handles.length,
     materializedHandleCount: handles.filter((handle) => handle.status === "materialized").length,
     pendingHandleCount: handles.filter((handle) => handle.status !== "materialized").length,
-    hasTracePayload: task?.resultRefs.tracePayload !== null,
+    hasTracePayload: task?.resultRefs.tracePayload != null,
     traceBatchId: task?.resultRefs.traceBatchId ?? null,
     analysisRunId: task?.resultRefs.analysisRunId ?? null,
     handleKindCounts: [...countsByKind.entries()]
