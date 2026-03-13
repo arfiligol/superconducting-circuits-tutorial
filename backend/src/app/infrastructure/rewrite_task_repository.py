@@ -8,6 +8,7 @@ from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
     TaskEvent,
+    TaskHistoryView,
     TaskLifecycleUpdate,
     TaskResultRefs,
 )
@@ -79,8 +80,22 @@ class PersistedRewriteTaskRepository:
             return None
         return self._hydrate_task(task)
 
+    def get_task_history_view(self, task_id: int) -> TaskHistoryView | None:
+        task = self.get_task(task_id)
+        if task is None:
+            return None
+        latest_event = task.events[-1] if len(task.events) > 0 else None
+        return TaskHistoryView(
+            task=task,
+            event_count=len(task.events),
+            latest_event=latest_event,
+        )
+
     def list_task_events(self, task_id: int) -> tuple[TaskEvent, ...]:
-        return self._task_snapshot_repository.list_task_events(task_id)
+        history = self.get_task_history_view(task_id)
+        if history is None:
+            return ()
+        return history.task.events
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         task_snapshot = self._task_snapshot_repository.create_task(draft)

@@ -14,6 +14,7 @@ from src.app.domain.tasks import (
     TaskCreateDraft,
     TaskDetail,
     TaskEvent,
+    TaskHistoryView,
     TaskLifecycleUpdate,
     TaskProgress,
     TaskResultRefs,
@@ -115,6 +116,17 @@ class InMemoryRewriteAppStateRepository:
         if task is None:
             return ()
         return task.events
+
+    def get_task_history_view(self, task_id: int) -> TaskHistoryView | None:
+        task = self.get_task(task_id)
+        if task is None:
+            return None
+        latest_event = task.events[-1] if len(task.events) > 0 else None
+        return TaskHistoryView(
+            task=task,
+            event_count=len(task.events),
+            latest_event=latest_event,
+        )
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
         if self._task_snapshot_repository is not None:

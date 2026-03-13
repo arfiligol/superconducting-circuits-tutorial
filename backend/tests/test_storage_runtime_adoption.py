@@ -100,6 +100,7 @@ def test_runtime_bootstrap_persists_seeded_trace_payload_and_materialized_handle
 def test_task_service_uses_persisted_task_repository_not_app_state_scaffold() -> None:
     app_state_repository = get_rewrite_app_state_repository()
     persisted_task = get_task_service().get_task(303)
+    persisted_history = get_rewrite_task_repository().get_task_history_view(303)
 
     assert app_state_repository.list_tasks() == []
     assert app_state_repository.get_task(303) is None
@@ -109,6 +110,10 @@ def test_task_service_uses_persisted_task_repository_not_app_state_scaffold() ->
     )
     assert persisted_task.dispatch is not None
     assert persisted_task.dispatch.status == "completed"
+    assert persisted_history is not None
+    assert persisted_history.event_count == 2
+    assert persisted_history.latest_event is not None
+    assert persisted_history.latest_event.event_type == "task_completed"
 
 
 def test_runtime_reset_prefers_persisted_result_handle_over_seed_defaults() -> None:
@@ -259,6 +264,13 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     assert history.latest_event.event_type == "task_running"
     assert history.task.dispatch is not None
     assert history.latest_event.metadata["dispatch_key"] == history.task.dispatch.dispatch_key
+
+    repository_history = get_rewrite_task_repository().get_task_history_view(
+        submitted_task.task_id
+    )
+    assert repository_history is not None
+    assert repository_history.latest_event is not None
+    assert repository_history.latest_event.event_type == "task_running"
 
 
 def test_service_read_reconciles_stale_dispatch_snapshot_to_task_lifecycle() -> None:
