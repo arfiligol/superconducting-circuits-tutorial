@@ -3,7 +3,18 @@
     if (!pathname.endsWith(".md")) {
       return pathname;
     }
-    return pathname.slice(0, -3).replace(/\/?$/, "/");
+
+    var normalized = pathname.slice(0, -3);
+
+    if (normalized === "index" || normalized === "/index") {
+      return "/";
+    }
+
+    if (normalized.endsWith("/index")) {
+      return normalized.slice(0, -6).replace(/\/?$/, "/");
+    }
+
+    return normalized.replace(/\/?$/, "/");
   }
 
   // Redirect direct .md visits to canonical directory routes.
@@ -11,7 +22,7 @@
     var targetPath = normalizeMdPath(window.location.pathname);
     if (targetPath !== window.location.pathname) {
       window.location.replace(
-        targetPath + window.location.search + window.location.hash
+        targetPath + window.location.search + window.location.hash,
       );
       return;
     }
@@ -21,7 +32,11 @@
   var links = document.querySelectorAll("a[href]");
   links.forEach(function (anchor) {
     var rawHref = anchor.getAttribute("href");
-    if (!rawHref || rawHref.startsWith("mailto:") || rawHref.startsWith("tel:")) {
+    if (
+      !rawHref ||
+      rawHref.startsWith("mailto:") ||
+      rawHref.startsWith("tel:")
+    ) {
       return;
     }
     try {
