@@ -209,7 +209,7 @@ rules:
     activation_mode: model_decision
     description: Apply when editing docs, frontmatter, or documentation structure.
     triggers: ["docs", "documentation", "frontmatter", "diataxis"]
-    touched_paths: ["docs/**", "zensical.toml", "zensical.en.toml"]
+    touched_paths: ["docs/**", "zensical.toml"]
 
   - id: documentation-style
     file: documentation-design/style.md
@@ -218,7 +218,7 @@ rules:
     activation_mode: model_decision
     description: Apply when editing documentation style, tone, or visual presentation rules.
     triggers: ["docs", "documentation", "style", "admonition", "tabs", "mermaid"]
-    touched_paths: ["docs/**", "zensical.toml", "zensical.en.toml"]
+    touched_paths: ["docs/**", "zensical.toml"]
 
   - id: documentation-information-layout
     file: documentation-design/information-layout.md
@@ -227,4 +227,4 @@ rules:
     activation_mode: model_decision
     description: Apply when editing overview pages, documentation page maps, or macro-level documentation layout under Style.
     triggers: ["docs", "documentation", "overview", "index", "page map", "layout", "readability"]
-    touched_paths: ["docs/**", "zensical.toml", "zensical.en.toml"]
+    touched_paths: ["docs/**", "zensical.toml"]

@@ -40,9 +40,6 @@ jobs:
       - name: Build zh-TW docs
         run: uv run --group dev zensical build -f zensical.toml
 
-      - name: Build English docs
-        run: uv run --group dev zensical build -f zensical.en.toml
-
       - name: Build static docs site
         run: ./scripts/build_docs_sites.sh
 
