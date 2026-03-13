@@ -11,8 +11,8 @@ status: draft
 owner: docs-team
 audience: team
 scope: 技術規格索引，涵蓋 architecture、app、CLI、core、data formats 與開發規範
-version: v0.4.0
-last_updated: 2026-03-13
+version: v0.6.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
@@ -24,13 +24,17 @@ updated_by: team
 
 ## Categories
 
-- [Architecture Reference](architecture/index.md) - migration 契約、身份/工作空間、task semantics、parity matrix
-- [App Frontend](app/frontend/index.md) - Frontend app surface 規格，對齊 Workspace / Definition / Research Workflow
-- [CLI Options](cli/index.md) - 命令列如何調用 core 與 backend-facing capability
-- [Core](core/index.md) - Python core、Julia wrapper、Julia core 與 Julia plotting
-- [Data Formats](data-formats/index.md) - 數據格式與 Schema
-- [Guardrails](guardrails/index.md) - 開發規範與指引，類型檢查、程式風格、數據處理規則
-- [Contributors](contributors.md) - 貢獻者名錄與文件引用依據
+| 類別 | 核心聚焦 |
+|---|---|
+| [Architecture Reference](architecture/index.md) | cross-layer registry、owner boundary 與 parity 對齊 |
+| [App / Shared](app/shared/index.md) | workspace collaboration、auth、task runtime、audit logging 等 app-shared semantics |
+| [App / Frontend](app/frontend/index.md) | shared shell、definition pages、research workflows |
+| [App / Backend](app/backend/index.md) | frontend 與 shared app model 依賴的 backend authority surfaces |
+| [CLI Options](cli/index.md) | standalone-first CLI、local runtime 與 command surface |
+| [Core](core/index.md) | Python core、Julia wrapper、Julia core 與 Julia plotting |
+| [Data Formats](data-formats/index.md) | 數據格式、record schema 與 canonical payload rules |
+| [Guardrails](guardrails/index.md) | workspace 開發規範、文件規範與執行驗證規則 |
+| [Contributors](contributors.md) | 貢獻者名錄與文件引用依據 |
 
 ## Related
 

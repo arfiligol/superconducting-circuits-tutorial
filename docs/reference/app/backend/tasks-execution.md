@@ -9,90 +9,134 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Backend task、execution runtime、event history 與 result attachment reference surface。
-version: v0.5.0
-last_updated: 2026-03-13
+scope: Backend task queue read model、control actions、worker summary、event history 與 result attachment surface
+version: v0.7.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Tasks & Execution
 
-本頁定義 simulation / characterization workflow 依賴的 generic task surface。
+本頁定義 shared task management、simulation 與 characterization 依賴的 backend task surface。
 
 !!! info "Surface Boundary"
-    本頁負責 task submission、status、event history、result attachment 與 recovery attach。
-    analysis-specific result artifact 不屬於本頁責任。
+    本頁負責 task submission、queue read model、task detail、control actions、event history、result attachment 與 worker summary pairing。
+    analysis-specific artifact layout 不屬於本頁責任。
 
-!!! tip "Primary Consumers"
-    主要消費者是 [Circuit Simulation](../frontend/research-workflow/circuit-simulation.md) 與 [Characterization](../frontend/research-workflow/characterization.md)。
+!!! warning "Queue Is A Backend-owned Read Model"
+    Header `Tasks Queue` 不是 frontend 自行組裝的列表。
+    queue rows、control-action availability、worker summary 與 persisted lifecycle 都必須由 backend authority 提供。
 
----
+## Coverage
 
-## 涵蓋範圍 (Coverage)
+| Surface | Meaning |
+|---|---|
+| Task submission | 建立新 persisted task，回傳可 attach 的 `task_id` |
+| Queue read model | 供 Header queue 直接消費的 summary rows |
+| Task detail | 附加後可供 page body 重建 execution context |
+| Control actions | `cancel`, `terminate`, `retry` 等 lifecycle mutations |
+| Event history | append-only task events |
+| Result attachment | 透過 `result_ref` 連到 persisted result surface |
 
-| Surface | 說明 |
-| :--- | :--- |
-| **Task Submission & Status** | 任務提交與狀態追蹤 |
-| **Execution Runtime Metadata** | 執行環境元資料 |
-| **Persisted Event History** | 持久化事件歷史 |
-| **Result Attachment** | 結果附件與復原掛載 |
+## Submission Contract
 
----
+task submit response 至少必須提供：
 
-## Surface Contracts
+| Field | Meaning |
+|---|---|
+| `task_id` | persisted primary key |
+| `task_kind` | simulation / characterization / processing 等 |
+| `lane` | workflow lane |
+| `status` | 初始 lifecycle status |
+| `visibility_scope` | `workspace` / `owned` |
+| `owner_user_id` | task owner |
+| `dataset_id` / `definition_id` / design context | 與 page context 相關的 binding |
 
-=== "Submission"
+## Shared Task Lifecycle
 
-    task submit response 至少必須提供：
+!!! warning "Primary Recovery Key"
+    `task_id` 是 attach、inspect、wait、refresh recovery 的 primary key。
+    `dataset_id`、`definition_id`、design labels 只能當輔助索引。
 
-    | 欄位 | 說明 |
-    | :--- | :--- |
-    | `task_id` | 任務唯一識別 |
-    | `task_kind` | 任務種類 |
-    | `status` | 初始狀態 |
-    | `identity` | lane / owner / workspace-bound identity |
+```text
+queued
+-> dispatching
+-> running
+-> completed | failed
 
-=== "Event History"
+running
+-> cancellation_requested
+-> cancelling
+-> cancelled
 
-    backend 必須提供以下資訊以確保執行過程透明：
+running | cancelling
+-> termination_requested
+-> terminated
+```
 
-    * **Task Detail**: 任務詳細規格
-    * **Task Events**: 執行過程中的離散事件
-    * **Execution Metadata**: append-oriented 的執行元資料
+## Queue Read Model
 
-=== "Result Attachment"
+Header queue rows 至少必須能讀到：
 
-    task detail 至少必須能表示：
+| Field | Meaning |
+|---|---|
+| `task_id` | attach / inspect / recover key |
+| `summary` | 人類可讀的 task label |
+| `status` | queue row 狀態 |
+| `lane` / `task_kind` | workflow lane summary |
+| `owner_display_name` | 多使用者 queue 辨識 |
+| `visibility_scope` | queue filter 與共享語意 |
+| `updated_at` | 排序與最近活動 |
+| `result_availability` | terminal 後是否有 persisted result |
+| `allowed_actions` | 當前使用者可見的 row actions |
 
-    | 屬性 | 說明 |
-    | :--- | :--- |
-    | **Terminal Status** | 終止狀態識別 |
-    | **Result Ref** | 結果引用標記 (`result_ref`) |
-    | **Persistence State** | 是否有 persisted result / artifact 可供後續頁面讀取 |
+## Control Actions
 
-!!! warning "Task is the Execution Authority"
-    simulation 與 characterization workflow 的執行狀態必須以 **persisted task state** 為準。
-    frontend refresh 後不得退回 page-local memory state。
+| Action | Input | Immediate response rule | Terminal rule |
+|---|---|---|---|
+| `cancel` | `task_id` | 立即把 task 標成 `cancellation_requested` 或等價 control state | 最終由 runtime 決定 `cancelled` |
+| `terminate` | `task_id` | 立即把 task 標成 `termination_requested` | 最終由 runtime 決定 `terminated` |
+| `retry` | `task_id` | 建立新 task 並回傳新 `task_id`，保留 lineage | 舊 task 不被覆寫 |
 
-!!! tip "Recovery-first Event Model"
-    event history 需要能在 refresh / reconnect 後重新讀回，不可依賴單次 live session 或頁面局部狀態。
+!!! tip "Immediate Control Echo"
+    使用者在 Header queue 點擊 `Cancel` 或 `Terminate` 後，backend 必須立即回寫 control-request state。
+    UI 不應等待 worker 真正結束後才顯示該動作已被接受。
 
----
+## Task Detail & Events
+
+| Surface | Required meaning |
+|---|---|
+| task detail | 附加後重建 page body 所需的完整 persisted state |
+| task events | append-only lifecycle and execution events |
+| execution metadata | worker / processor / result refs / runtime-safe metadata |
+| result attachment | terminal task 如何連到 persisted result |
+
+## Worker Summary Pairing
+
+!!! info "Header Worker Status"
+    Header queue trigger 旁的 worker status，不應由本頁單獨硬編。
+    但 backend task surface 必須能把 queue 與 [Task Runtime & Processors](../shared/task-runtime-and-processors.md) 的 processor summary 對齊。
+
+| Concern | Rule |
+|---|---|
+| Queue consistency | active task status 與 worker summary 不得互相矛盾 |
+| Lane visibility | queue 至少能辨識 task 所屬 lane |
+| Control permissions | `allowed_actions` 必須依 [Authentication & Authorization](../shared/authentication-and-authorization.md) 計算 |
 
 ## Delivery Rules
 
-| 項目 | 規則 |
-| :--- | :--- |
-| **Refresh Recovery** | frontend refresh 後必須能以 persisted task detail 重建目前執行狀態。 |
-| **Attach Latest Support** | surface 必須允許 workflow 重新附著到既有任務，而不是強迫重新送出。 |
-| **Terminal Result Handoff** | 進入 terminal state 後，result ref 與 persisted artifact state 必須可供後續頁面讀取。 |
-| **No Page-local Authority** | page-local memory 可做暫時顯示，但不得凌駕 persisted task state。 |
-
----
+| Rule | Meaning |
+|---|---|
+| Persisted state wins | refresh / reconnect 後以 persisted task state 重建 |
+| Queue is globally consumable | Header 在任何頁都能消費同一份 queue read model |
+| Detail is attach-ready | simulation / characterization 必須能以 `task_id` 重新附加 |
+| Result handoff is explicit | task terminal 後要能分辨 `result ready` 與 `no result` |
+| Control actions are auditable | `cancel` / `terminate` / `retry` 必須可進入 audit trail |
 
 ## Related
 
-- [Circuit Simulation](../frontend/research-workflow/circuit-simulation.md)
-- [Characterization](../frontend/research-workflow/characterization.md)
-- [Task Semantics](../../architecture/task-semantics.md)
-- [Canonical Contract Registry](../../architecture/canonical-contract-registry.md)
+* [Task Management](../frontend/shared-workflow/task-management.md)
+* [Header](../frontend/shared-shell/header.md)
+* [Shared / Authentication & Authorization](../shared/authentication-and-authorization.md)
+* [Shared / Task Runtime & Processors](../shared/task-runtime-and-processors.md)
+* [Shared / Audit Logging](../shared/audit-logging.md)

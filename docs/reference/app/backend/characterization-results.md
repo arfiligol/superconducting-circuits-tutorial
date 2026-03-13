@@ -140,4 +140,3 @@ updated_by: team
 - [Characterization](../frontend/research-workflow/characterization.md)
 - [Tasks & Execution](tasks-execution.md)
 - [Analysis Result Schema](../../data-formats/analysis-result.md)
-- [Task Semantics](../../architecture/task-semantics.md)

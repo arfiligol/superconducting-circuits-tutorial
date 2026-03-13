@@ -9,82 +9,53 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Backend app reference 索引，收錄 frontend 與 CLI 依賴的 backend reference surface。
-version: v0.6.0
-last_updated: 2026-03-13
+scope: Backend app reference 索引，收錄 frontend 與 app-shared model 依賴的 backend authority surfaces
+version: v0.7.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Backend Reference
 
-本區收錄 backend app layer 的可查詢規格，描述 frontend、CLI 與 backend service layer 在對齊時所依賴的 reference surface。
+本區收錄 backend app layer 的可查詢規格，描述 frontend 與 app-shared model 對齊時所依賴的 authority surfaces。
 
 !!! info "How To Read Backend App Docs"
-    先讀 `Foundation` 釐清 session、definition、dataset 等共用 authority，再讀 `Workflow` 了解 task、render、analysis result 這些流程型 surface。
+    先看 `Foundation` 找資料與身份 authority，再看 `Workflow` 找 execution、render、analysis result surfaces。
+    workspace collaboration、auth、worker runtime 與 audit logging 等跨頁規則，則由 [Shared App Model](../shared/index.md) 定義。
 
-!!! tip "Read With Frontend Reference"
-    Backend reference 不描述頁面排版，而是定義 app surfaces。
-    最穩定的閱讀方式是將本頁與 [Frontend Reference](../frontend/index.md) 對照著看。
-
-!!! warning "Boundary"
-    本區定義的是 backend authority surface，不是 API tutorial，也不是頁面互動說明。
-    若你要看的是使用者如何操作頁面，請先回到 frontend page specs。
-
----
+!!! tip "Read With Frontend And Shared App Model"
+    Backend reference 定義 app surface，不負責頁面 layout，也不重複定義 shared collaboration model。
+    最穩定的閱讀方式是把本頁和 [Frontend Reference](../frontend/index.md) 與 [Shared App Model](../shared/index.md) 對照著看。
 
 ## Surface Map
 
 === "Foundation"
 
-    | Surface | 主要消費者 | 核心聚焦 |
+    | Surface | Primary consumers | Core focus |
     |---|---|---|
-    | [Session & Workspace](session-workspace.md) | Dashboard, Raw Data Browser, Circuit Simulation | active dataset、workspace scope、capability exposure |
-    | [Circuit Definitions](circuit-definitions.md) | Schemas, Schema Editor, Schemdraw, Circuit Simulation | definition catalog、detail、mutation、persisted preview |
-    | [Datasets & Results](datasets-results.md) | Dashboard, Raw Data Browser, Characterization, Circuit Simulation | design browse、trace preview、dataset profile、tagged metrics summary、result handles |
+    | [Session & Workspace](session-workspace.md) | Header, Dashboard, Raw Data Browser, Task Management | session、workspace、user summary、active dataset、capabilities |
+    | [Circuit Definitions](circuit-definitions.md) | Schemas, Schema Editor, Schemdraw, Circuit Simulation | catalog、detail、mutation、persisted preview |
+    | [Datasets & Results](datasets-results.md) | Dashboard, Raw Data Browser, Characterization, Circuit Simulation | dataset profile、trace preview、tagged metrics summary、result handles |
 
 === "Workflow"
 
-    | Surface | 主要消費者 | 核心聚焦 |
+    | Surface | Primary consumers | Core focus |
     |---|---|---|
-    | [Tasks & Execution](tasks-execution.md) | Circuit Simulation, Characterization | task submission、status、event history、result attachment |
-    | [Schemdraw Render](schemdraw-render.md) | Schemdraw | debounced render request、diagnostics、SVG response |
-    | [Characterization Results](characterization-results.md) | Characterization, Dashboard | run history、artifact manifest、artifact payload、identify/tagging |
+    | [Tasks & Execution](tasks-execution.md) | Header, Task Management, Circuit Simulation, Characterization | queue read model、control actions、task detail、events、result attachment |
+    | [Schemdraw Render](schemdraw-render.md) | Schemdraw | snapshot render、diagnostics、SVG response |
+    | [Characterization Results](characterization-results.md) | Characterization, Dashboard | run history、artifact manifest、identify/tagging |
 
----
+## Shared Pairing
 
-## Frontend Pairing
-
-| Frontend page | Backend authority |
-|---|---|
-| [Dashboard](../frontend/workspace/dashboard.md) | [Session & Workspace](session-workspace.md), [Datasets & Results](datasets-results.md), [Characterization Results](characterization-results.md) |
-| [Raw Data Browser](../frontend/workspace/raw-data-browser.md) | [Datasets & Results](datasets-results.md) |
-| [Schemas](../frontend/definition/schemas.md) | [Circuit Definitions](circuit-definitions.md) |
-| [Schema Editor](../frontend/definition/schema-editor.md) | [Circuit Definitions](circuit-definitions.md) |
-| [Schemdraw](../frontend/research-workflow/schemdraw.md) | [Circuit Definitions](circuit-definitions.md), [Schemdraw Render](schemdraw-render.md) |
-| [Circuit Simulation](../frontend/research-workflow/circuit-simulation.md) | [Circuit Definitions](circuit-definitions.md), [Tasks & Execution](tasks-execution.md), [Datasets & Results](datasets-results.md) |
-| [Characterization](../frontend/research-workflow/characterization.md) | [Datasets & Results](datasets-results.md), [Tasks & Execution](tasks-execution.md), [Characterization Results](characterization-results.md) |
-
-!!! success "Current App Coverage"
-    目前 frontend reference 中已存在的頁面，都能在 backend reference 找到對應的 authority surface。
-    新增 app workflow 時，應先補這個 pairing，再補頁面細節。
-
----
-
-## Consumer Questions
-
-| 想回答的問題 | 應優先查看 |
-|---|---|
-| 目前 active dataset 與 workspace scope 從哪裡來？ | [Session & Workspace](session-workspace.md) |
-| definition catalog 與 persisted preview 由哪個 surface 提供？ | [Circuit Definitions](circuit-definitions.md) |
-| raw trace summary、detail payload 與 dataset profile 誰負責？ | [Datasets & Results](datasets-results.md) |
-| task lifecycle、event history 與 result attachment 怎麼定義？ | [Tasks & Execution](tasks-execution.md) |
-| Schemdraw live render 的 request / response contract 是什麼？ | [Schemdraw Render](schemdraw-render.md) |
-| characterization run history、artifact 與 tagging 誰負責？ | [Characterization Results](characterization-results.md) |
-
----
+| Concern | Backend surface | Shared authority |
+|---|---|---|
+| session role / capability / user menu visibility | [Session & Workspace](session-workspace.md) | [Authentication & Authorization](../shared/authentication-and-authorization.md) |
+| queue actions / worker summary / lifecycle control | [Tasks & Execution](tasks-execution.md) | [Task Runtime & Processors](../shared/task-runtime-and-processors.md) |
+| privileged task controls / audit trail | [Tasks & Execution](tasks-execution.md) | [Audit Logging](../shared/audit-logging.md) |
+| resource visibility / workspace binding | [Session & Workspace](session-workspace.md), [Tasks & Execution](tasks-execution.md) | [Resource Ownership & Visibility](../shared/resource-ownership-and-visibility.md) |
 
 ## Related
 
-- [Frontend Reference](../../app/frontend/index.md)
-- [CLI Options](../../cli/index.md)
-- [Architecture Reference](../../architecture/index.md)
+* [Frontend Reference](../frontend/index.md)
+* [Shared App Model](../shared/index.md)
+* [Architecture Reference](../../architecture/index.md)

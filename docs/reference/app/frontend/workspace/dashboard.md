@@ -26,6 +26,10 @@ updated_by: team
     本頁負責 active dataset 選擇、dataset metadata 編輯、tagged core metrics 摘要與後續操作指引。
     raw data browse、analysis execution、simulation execution 不屬於本頁責任。
 
+!!! tip "Shared Shell"
+    本頁使用 shared [Header](../shared-shell/header.md) 與 [Sidebar](../shared-shell/sidebar.md)。
+    active dataset context 必須與 shell-level session state 一致。
+
 ---
 
 ## 核心職責
@@ -135,6 +139,8 @@ flowchart TD
 ## 相關參考
 
 *   [Raw Data Browser](raw-data-browser.md)
+*   [Header](../shared-shell/header.md)
+*   [Sidebar](../shared-shell/sidebar.md)
 *   [Circuit Simulation](../research-workflow/circuit-simulation.md)
 *   [Backend: Session & Workspace](../../backend/session-workspace.md)
 *   [Backend: Datasets & Results](../../backend/datasets-results.md)

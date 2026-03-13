@@ -61,8 +61,8 @@ updated_by: codex
 - [Source of Truth Order](../project-basics/source-of-truth-order.md)
 - [Contract Versioning](../code-quality/contract-versioning.md)
 - [Error Handling](../code-quality/error-handling.md)
-- [Identity / Workspace Minimal Model](../../architecture/identity-workspace-model.md)
-- [Task Semantics](../../architecture/task-semantics.md)
+- [Identity & Workspace Model](../../app/shared/identity-workspace-model.md)
+- [App / Backend / Tasks & Execution](../../app/backend/tasks-execution.md)
 - [Parity Matrix](../../architecture/parity-matrix.md)
 - [Canonical Contract Registry](../../architecture/canonical-contract-registry.md)
 

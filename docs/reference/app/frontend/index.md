@@ -12,70 +12,76 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Frontend app reference 索引，涵蓋 workspace、definition 與 research workflow surfaces
-version: v0.11.0
-last_updated: 2026-03-13
+scope: Frontend app reference 索引，涵蓋 shared shell、shared workflow、workspace、definition 與 research workflow surfaces
+version: v0.13.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Frontend Reference
 
-本區收錄 frontend app layer 的可查詢規格，涵蓋工作空間、定義與研究流程之介面契約。
+本區收錄 frontend app layer 的可查詢規格，涵蓋 shared shell、shared workflow、workspace、definition 與 research workflow surfaces。
 
 !!! info "How To Read Frontend App Docs"
-    先讀 `Workspace` 取得 dataset 與 design 上下文，再讀 `Definition` 理解 canonical circuit definition，最後讀 `Research Workflow` 對齊 task-driven workflows。
+    先讀 shared surfaces 了解 global context 與 shared workflow，再讀各 page specs。
+    若你要問的是 layout、control action、權限或 result handoff，先確認它是不是 shared surface，而不是直接埋在單頁裡。
 
-!!! warning "IA Note"
-    `Workspace`、`Definition`、`Research Workflow` 是文件分組，不是獨立頁面。
+!!! warning "IA Groups Are Not Pages"
+    `Shared Shell`、`Shared Workflow`、`Workspace`、`Definition`、`Research Workflow` 是資訊架構分組，不是可點的實作頁。
     本頁只列真正存在的 frontend reference pages。
-
----
 
 ## Page Map
 
+=== "Shared Shell"
+
+    | Page | Core focus | Authority pair |
+    |---|---|---|
+    | [Header](shared-shell/header.md) | global context、active workspace、active dataset、tasks queue trigger、worker summary、user menu | [App / Shared / Identity & Workspace Model](../shared/identity-workspace-model.md), [Backend / Session & Workspace](../backend/session-workspace.md), [Backend / Tasks & Execution](../backend/tasks-execution.md), [App / Shared / Authentication & Authorization](../shared/authentication-and-authorization.md), [App / Shared / Task Runtime & Processors](../shared/task-runtime-and-processors.md) |
+    | [Sidebar](shared-shell/sidebar.md) | primary navigation、route grouping、responsive shell behavior | [Backend / Session & Workspace](../backend/session-workspace.md) |
+
+=== "Shared Workflow"
+
+    | Page | Core focus | Authority pair |
+    |---|---|---|
+    | [Task Management](shared-workflow/task-management.md) | header queue、attach、cancel、terminate、retry、refresh recovery | [Backend / Tasks & Execution](../backend/tasks-execution.md), [App / Shared / Resource Ownership & Visibility](../shared/resource-ownership-and-visibility.md), [App / Shared / Authentication & Authorization](../shared/authentication-and-authorization.md), [App / Shared / Task Runtime & Processors](../shared/task-runtime-and-processors.md), [App / Shared / Audit Logging](../shared/audit-logging.md) |
+
 === "Workspace"
 
-    | 頁面 | 核心聚焦 | Backend Pair |
+    | Page | Core focus | Authority pair |
     |---|---|---|
-    | [Dashboard](workspace/dashboard.md) | Active dataset、dataset profile、tagged core metrics summary | [Session & Workspace](../backend/session-workspace.md), [Datasets & Results](../backend/datasets-results.md), [Characterization Results](../backend/characterization-results.md) |
-    | [Raw Data Browser](workspace/raw-data-browser.md) | Design list、trace preview、compare readiness、summary-only browse | [Datasets & Results](../backend/datasets-results.md) |
+    | [Dashboard](workspace/dashboard.md) | active dataset、dataset metadata、tagged core metrics summary | [Backend / Session & Workspace](../backend/session-workspace.md), [Backend / Datasets & Results](../backend/datasets-results.md), [Backend / Characterization Results](../backend/characterization-results.md) |
+    | [Raw Data Browser](workspace/raw-data-browser.md) | design list、trace preview、compare readiness、summary-only browse | [Backend / Datasets & Results](../backend/datasets-results.md) |
 
 === "Definition"
 
-    | 頁面 | 核心聚焦 | Backend Pair |
+    | Page | Core focus | Authority pair |
     |---|---|---|
-    | [Schemas](definition/schemas.md) | Circuit schema catalog、搜尋 / 排序 / 分頁 | [Circuit Definitions](../backend/circuit-definitions.md) |
-    | [Schema Editor](definition/schema-editor.md) | Canonical source 編輯、persisted validation、normalized preview | [Circuit Definitions](../backend/circuit-definitions.md) |
+    | [Schemas](definition/schemas.md) | circuit schema catalog、search、sort、pagination | [Backend / Circuit Definitions](../backend/circuit-definitions.md) |
+    | [Schema Editor](definition/schema-editor.md) | canonical source editing、auto-format、persisted validation、quick reference hints | [Backend / Circuit Definitions](../backend/circuit-definitions.md) |
 
 === "Research Workflow"
 
-    | 頁面 | 核心聚焦 | Backend Pair |
+    | Page | Core focus | Authority pair |
     |---|---|---|
-    | [Schemdraw](research-workflow/schemdraw.md) | Linked schema、relation config、live Python editor、SVG preview | [Schemdraw Render](../backend/schemdraw-render.md), [Circuit Definitions](../backend/circuit-definitions.md) |
-    | [Circuit Simulation](research-workflow/circuit-simulation.md) | Canonical definition、simulation setup、task queue、result surface、recovery | [Circuit Definitions](../backend/circuit-definitions.md), [Tasks & Execution](../backend/tasks-execution.md), [Datasets & Results](../backend/datasets-results.md) |
-    | [Characterization](research-workflow/characterization.md) | Run analysis、trace selection、run history、result view、identify mode | [Datasets & Results](../backend/datasets-results.md), [Tasks & Execution](../backend/tasks-execution.md), [Characterization Results](../backend/characterization-results.md) |
-
----
+    | [Schemdraw](research-workflow/schemdraw.md) | linked schema、relation config、live editor、backend-owned syntax/live preview | [Backend / Schemdraw Render](../backend/schemdraw-render.md), [Backend / Circuit Definitions](../backend/circuit-definitions.md) |
+    | [Circuit Simulation](research-workflow/circuit-simulation.md) | definition-bound run setup、task attach、result handoff、shared queue | [Backend / Circuit Definitions](../backend/circuit-definitions.md), [Backend / Tasks & Execution](../backend/tasks-execution.md), [Backend / Datasets & Results](../backend/datasets-results.md) |
+    | [Characterization](research-workflow/characterization.md) | design scope、run analysis、task attach、run history、result view | [Backend / Datasets & Results](../backend/datasets-results.md), [Backend / Tasks & Execution](../backend/tasks-execution.md), [Backend / Characterization Results](../backend/characterization-results.md) |
 
 ## Surface Pairing
 
-| 關心的問題 | Frontend 會去哪裡找 | Backend authority |
+| Question | Frontend surface | Authority |
 |---|---|---|
-| Active dataset 與 workspace scope | Workspace pages | [Session & Workspace](../backend/session-workspace.md) |
-| Dataset profile、trace summary、preview payload | Dashboard / Raw Data Browser / Characterization | [Datasets & Results](../backend/datasets-results.md) |
-| Circuit definition catalog 與 persisted preview | Schemas / Schema Editor / Schemdraw / Circuit Simulation | [Circuit Definitions](../backend/circuit-definitions.md) |
-| Task lifecycle、event history、result attachment | Circuit Simulation / Characterization | [Tasks & Execution](../backend/tasks-execution.md) |
-| Schemdraw live render | Schemdraw | [Schemdraw Render](../backend/schemdraw-render.md) |
-| Analysis artifact 與 tagging | Characterization / Dashboard | [Characterization Results](../backend/characterization-results.md) |
+| 哪裡切換 active workspace、active dataset、打開 task queue、看 worker 狀態、開 user menu？ | [Header](shared-shell/header.md) | [Identity & Workspace Model](../shared/identity-workspace-model.md), [Session & Workspace](../backend/session-workspace.md), [Tasks & Execution](../backend/tasks-execution.md), [Authentication & Authorization](../shared/authentication-and-authorization.md), [Task Runtime & Processors](../shared/task-runtime-and-processors.md) |
+| 哪裡看 shared task queue 與管理 actions？ | [Task Management](shared-workflow/task-management.md) | [Tasks & Execution](../backend/tasks-execution.md), [Resource Ownership & Visibility](../shared/resource-ownership-and-visibility.md), [Authentication & Authorization](../shared/authentication-and-authorization.md), [Task Runtime & Processors](../shared/task-runtime-and-processors.md), [Audit Logging](../shared/audit-logging.md) |
+| 哪裡編輯 schema 並取得可讀 hints？ | [Schema Editor](definition/schema-editor.md) | [Circuit Definitions](../backend/circuit-definitions.md), [Circuit Netlist](../../data-formats/circuit-netlist.md) |
+| 哪裡做 schemdraw live preview？ | [Schemdraw](research-workflow/schemdraw.md) | [Schemdraw Render](../backend/schemdraw-render.md) |
 
 !!! success "Coverage Rule"
-    每個 frontend page 都必須能在 backend reference 找到對應 surface。
-    若新增 frontend workflow 卻無法在上表找到 backend authority，代表 App docs 尚未完整。
-
----
+    每個 frontend workflow 都必須能在 backend 或 app-shared reference 找到 authority。
+    如果 page spec 需要靠猜測補齊 queue、auth、runtime 或 audit，代表 SoT 還不完整。
 
 ## Related
 
-- [Reference](../../index.md)
-- [Backend Reference](../backend/index.md)
-- [CLI Options](../../cli/index.md)
+* [Backend Reference](../backend/index.md)
+* [Shared App Model](../shared/index.md)
+* [Architecture Reference](../../architecture/index.md)

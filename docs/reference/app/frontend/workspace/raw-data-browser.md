@@ -27,6 +27,10 @@ updated_by: team
     本頁負責 design list、trace filtering、compare readiness 與單筆 trace preview。
     raw data upload、dataset metadata 編輯、analysis execution 不屬於本頁責任。
 
+!!! tip "Shared Shell"
+    本頁使用 shared [Header](../shared-shell/header.md) 與 [Sidebar](../shared-shell/sidebar.md)。
+    selected design context 是 page-local，但 active dataset context 仍由 shared shell 提供。
+
 ---
 
 ## 核心職責
@@ -133,6 +137,8 @@ graph TD
 ## 相關參考
 
 *   [Dashboard](dashboard.md)
+*   [Header](../shared-shell/header.md)
+*   [Sidebar](../shared-shell/sidebar.md)
 *   [Backend: Datasets & Results](../../backend/datasets-results.md)
 *   [Record Schema](../../../data-formats/dataset-record.md)
 *   [Characterization](../research-workflow/characterization.md)

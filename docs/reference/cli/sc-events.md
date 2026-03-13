@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc events` persisted task event history 查詢指令。"
+scope: "`sc events` standalone CLI local run event history 查詢指令。"
 version: v0.1.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,11 +20,11 @@ title: sc events
 
 # sc events
 
-查詢 persisted task event history。
+查詢 local persisted run event history。
 
 !!! info "Command Role"
-    `sc events` 只看已持久化的 event rows。
-    它不是 live log stream，也不會自行推導不存在於 backend 的執行事件。
+    `sc events` 只看 local event store 中已持久化的 event rows。
+    它不是 live log stream，也不會自行推導不存在於 local registry 的執行事件。
 
 ## Command Map
 
@@ -54,13 +54,14 @@ title: sc events
     uv run sc events latest 306 --level error
     ```
 
-## Backend Pair
+## Standalone Pair
 
 | Concern | Authority |
 |---|---|
-| persisted task event history | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
+| local persisted run event history | [Standalone Runtime](standalone-runtime.md) |
 
 ## Related
 
 - [sc tasks](sc-tasks.md)
 - [sc results](sc-results.md)
+- [Standalone Runtime](standalone-runtime.md)

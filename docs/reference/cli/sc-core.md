@@ -24,7 +24,7 @@ title: sc core
 
 !!! info "Command Role"
     `sc core` 不是 workflow command group。
-    這組命令用來確認 CLI 目前看得到哪些 `sc_core` contract surface，適合做 boundary proof 與 automation smoke check。
+    這組命令用來確認 standalone CLI 目前看得到哪些 `sc_core` contract surface，適合做 boundary proof 與 automation smoke check。
 
 !!! warning "Output Contract"
     `sc core preview-artifacts` 目前只提供 text output。

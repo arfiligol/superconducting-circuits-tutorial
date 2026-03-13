@@ -108,16 +108,27 @@ nav = [
   { "Reference" = [
     { "Architecture" = [
       { "Overview" = "reference/architecture/index.md" },
-      { "Circuit Netlist Core" = "reference/architecture/schematic-netlist-core.md" },
-      { "Core Blueprint" = "reference/architecture/core-blueprint.md" },
-      { "Identity / Workspace Minimal Model" = "reference/architecture/identity-workspace-model.md" },
-      { "Task Semantics" = "reference/architecture/task-semantics.md" },
-      { "Parity Matrix" = "reference/architecture/parity-matrix.md" },
       { "Canonical Contract Registry" = "reference/architecture/canonical-contract-registry.md" },
+      { "Parity Matrix" = "reference/architecture/parity-matrix.md" },
     ] },
     { "App" = [
+      { "Shared" = [
+        { "Overview" = "reference/app/shared/index.md" },
+        { "Identity & Workspace Model" = "reference/app/shared/identity-workspace-model.md" },
+        { "Resource Ownership & Visibility" = "reference/app/shared/resource-ownership-and-visibility.md" },
+        { "Authentication & Authorization" = "reference/app/shared/authentication-and-authorization.md" },
+        { "Task Runtime & Processors" = "reference/app/shared/task-runtime-and-processors.md" },
+        { "Audit Logging" = "reference/app/shared/audit-logging.md" },
+      ] },
       { "Frontend" = [
         { "Overview" = "reference/app/frontend/index.md" },
+        { "Shared Shell" = [
+          { "Header" = "reference/app/frontend/shared-shell/header.md" },
+          { "Sidebar" = "reference/app/frontend/shared-shell/sidebar.md" },
+        ] },
+        { "Shared Workflow" = [
+          { "Task Management" = "reference/app/frontend/shared-workflow/task-management.md" },
+        ] },
         { "Workspace" = [
           { "Dashboard" = "reference/app/frontend/workspace/dashboard.md" },
           { "Raw Data Browser" = "reference/app/frontend/workspace/raw-data-browser.md" },
@@ -144,6 +155,7 @@ nav = [
     ] },
     { "CLI Options" = [
       { "Overview" = "reference/cli/index.md" },
+      { "Standalone Runtime" = "reference/cli/standalone-runtime.md" },
       { "sc core" = "reference/cli/sc-core.md" },
       { "sc session" = "reference/cli/sc-session.md" },
       { "sc datasets" = "reference/cli/sc-datasets.md" },

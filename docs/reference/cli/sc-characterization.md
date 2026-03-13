@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc characterization` characterization-lane task 操作指令。"
+scope: "`sc characterization` standalone CLI characterization-lane local run 操作指令。"
 version: v0.1.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,14 +20,14 @@ title: sc characterization
 
 # sc characterization
 
-操作 characterization lane 上的 task。
+操作 characterization lane 上的 local run。
 
 !!! info "Lane Wrapper"
-    `sc characterization` 是 generic task contract 的 lane-specific wrapper。
-    它保留 generic task 的 inspect / latest / wait semantics，但會自動限制在 `characterization` lane。
+    `sc characterization` 是 generic local run contract 的 lane-specific wrapper。
+    它保留 generic local run 的 inspect / latest / wait semantics，但會自動限制在 `characterization` lane。
 
 !!! tip "Dataset Fallback"
-    `submit` 的 `--dataset-id` 若省略，會回退到目前 session 的 active dataset。
+    `submit` 的 `--dataset-id` 若省略，會回退到目前 local session 的 active dataset。
 
 ## Command Map
 
@@ -68,14 +68,15 @@ title: sc characterization
     uv run sc characterization wait 412 --until-status terminal
     ```
 
-## Authority Pairing
+## Standalone Pairing
 
 | Concern | Authority |
 |---|---|
-| characterization-lane task lifecycle | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
-| characterization result authority | [Backend / Characterization Results](../app/backend/characterization-results.md) |
+| characterization-lane local run lifecycle | [Standalone Runtime](standalone-runtime.md) |
+| characterization result payload | [Data Formats / Analysis Result](../data-formats/analysis-result.md) |
 
 ## Related
 
 - [sc tasks](sc-tasks.md)
 - [sc ops](sc-ops.md)
+- [Standalone Runtime](standalone-runtime.md)

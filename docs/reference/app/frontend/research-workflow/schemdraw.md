@@ -14,117 +14,115 @@ route: /circuit-schemdraw
 status: draft
 owner: docs-team
 audience: team
-scope: "/circuit-schemdraw 的 linked schema、relation config、live Python editor、backend render、SVG preview 與 diagnostics 契約"
-version: v0.4.0
-last_updated: 2026-03-13
+scope: "/circuit-schemdraw 的 linked schema、relation config、live editor、backend syntax check 與 live preview 契約"
+version: v0.5.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Schemdraw
 
-本頁定義 Schemdraw workspace 的 live Python editor、relation config、backend render 與 SVG preview 契約。
+本頁定義 Schemdraw workspace 的 editor、relation config、backend syntax check 與 live preview 契約。
 
 !!! info "Page Frame"
-    本頁負責 linked schema 選取、relation config 編輯、live code feedback、backend render 與 preview diagnostics。
-    canonical definition 寫回、simulation task 建立與 result persistence 不屬於本頁責任。
+    Frontend 只負責編輯 source、編輯 relation config、送出 render request、顯示 diagnostics 與 SVG preview。
+    authoritative syntax validation、controlled execution 與 render result 組裝由 backend 擁有。
 
----
+!!! warning "Backend Owns Live Preview"
+    本頁可以有本地 syntax highlighting、cursor helpers 與 basic editor cues；
+    但正式的 syntax check、runtime validation 與 SVG live preview authority 必須來自 backend render service。
 
-## 核心職責
+## Purpose
 
-=== "撰寫與配置"
-    *   **Python Editor**: 撰寫 Schemdraw Python 代碼。
-    *   **Context Linking**: 選項式連結一個 Canonical Circuit Definition。
-    *   **Relation Mapping**: 編輯 Relation Config JSON 以定義 Probe 或標註行為。
+| Responsibility | Meaning |
+|---|---|
+| Python source editing | 使用者在 code editor 中撰寫 Schemdraw Python source |
+| Relation config editing | 編輯 relation JSON 作為 schema metadata / labels / probe context |
+| Linked schema context | 可選地附加 canonical schema metadata |
+| Backend validation & preview | 將 source snapshot 送往 backend，回收 diagnostics 與 SVG |
 
-=== "渲染與預覽"
-    *   **Backend Render**: 觸發後端渲染服務取得 SVG。
-    *   **Live Preview**: 顯示 SVG 預覽、縮放與平移。
-    *   **Diagnostics**: 顯示語法 (Syntax)、驗證 (Validation) 與執行時期 (Runtime) 錯誤。
-
----
-
-## UI 區態預覽
-
-### 工作區佈局 (Layout)
+## Layout Structure
 
 ```mermaid
-graph TD
-    Header[Workspace Header] --> Row[Context Row: Schema Selector]
-    Row --> Workspace[Two-Column Workspace]
-    
-    subgraph Left_Column["配置區 (Left)"]
-        LC1[Relation Config Editor]
-        LC2[Render Diagnostics]
-    end
-    
-    subgraph Right_Column["主要作業區 (Right)"]
-        RC1[Python Source Editor]
-        RC2[Live Preview Panel]
-        RC3[Preview Controls & Status]
-    end
-    
-    Workspace --> Left_Column
-    Workspace --> Right_Column
+flowchart TD
+    Header["Workspace Header"] --> ContextRow["Linked Schema + Render Status"]
+    ContextRow --> Workspace["Two-column Workspace"]
+    Workspace --> Left["Relation Config + Diagnostics"]
+    Workspace --> Right["Python Editor + Preview Panel"]
+    Right --> PreviewControls["Zoom / Fit / Render Controls"]
 ```
 
-### 關鍵組件清單 (Components)
+## Component Inventory
 
-| ID | 組件 | 作用 | 關鍵行為 |
-| :--- | :--- | :--- | :--- |
-| **C1** | Linked Schema Selector | Workspace Header | 選擇要附加的元數據背景電路。 |
-| **C2** | Python Source Editor | Right Col | 提供代碼編輯與本地語法檢查。 |
-| **C3** | Live Preview Panel | Right Col | 展示最新的渲染結果，支援 `Zoom` 與 `Fit`。 |
-| **C4** | Relation Editor | Left Col | 編輯 JSON 組態，驅動渲染中的實體識別。 |
-| **C5** | Diagnostics Panel | Left Col | 集中顯示所有層級的錯誤與警告。 |
+| ID | Component | Required behavior |
+|---|---|---|
+| `C1` | Linked Schema Selector | 選擇可附加的 schema metadata context |
+| `C2` | Relation Config Editor | 編輯 JSON relation config |
+| `C3` | Python Source Editor | 編輯 Schemdraw Python source |
+| `C4` | Render Controls | 至少包含 `Render Now`、`Reset Template` |
+| `C5` | Diagnostics Panel | 顯示 backend diagnostics 與 render status |
+| `C6` | SVG Preview Panel | 顯示最新成功 render 的 SVG 與 preview metadata |
 
----
+## Three-step Processing Flow
 
-## 數據與服務契約 (Contract)
+!!! tip "正式流程"
+    Schemdraw live preview 應被視為三步驟流程，而不是單一 editor 小技巧。
 
-=== "渲染請求 (Request)"
-    | 欄位 | 必要性 | 說明 |
-    | :--- | :---: | :--- |
-    | `source_text` | ✅ | Schemdraw Python source。 |
-    | `relation_config` | ✅ | JSON Object。 |
-    | `linked_schema` | ⚠️ | 可選的微縮元數據快照。 |
-    | `document_version` | ✅ | 自增版本號，用於解決 Race Condition。 |
+1. **Edit locally**
+   前端更新 Python source、relation config、linked schema context。
+2. **Send snapshot**
+   停止輸入後以 debounce 方式送出 request snapshot；手動點擊 `Render Now` 可跳過 debounce。
+3. **Validate and render on backend**
+   backend 進行 syntax validation、entrypoint validation、controlled render execution，最後回傳 diagnostics 與 SVG。
 
-=== "渲染回應 (Response)"
-    | 欄位 | 說明 |
-    | :--- | :--- |
-    | `status` | `rendered` / `syntax_error` / `runtime_error` 等。 |
-    | `svg` | 渲染成功的圖形標籤。 |
-    | `diagnostics` | 結構化的錯誤集合。 |
-    | `cursor_position` | 圖筆 (Pen) 最後的座標。 |
+## Frontend Rules
 
-!!! tip "Latest-only 原則"
-    前端僅會採用與目前 `document_version` 指向一致或更新的渲染結果。若較舊的結果延遲抵達，將被直接丟棄，以確保預覽不回溯。
+| Rule | Meaning |
+|---|---|
+| Local cues are lightweight | editor 可做 syntax highlighting、indent guides、cursor hints |
+| Preview becomes stale on edit | 任何 source / relation 變動都應把 preview 標為 `Stale` |
+| Latest-only apply | 前端只採用最新 `document_version` / `request_id` 的 response |
+| No implicit persistence | 本頁不保存 schema source、不保存 render draft |
 
----
+??? example "Edit-to-preview behavior"
+    1. 使用者修改 Python source。
+    2. editor 立即顯示本地 cue，preview 狀態轉為 `Stale`。
+    3. debounce 後送出 render request。
+    4. backend 回傳 `rendered` / `syntax_error` / `runtime_error`。
+    5. 前端更新 diagnostics；只有成功時替換 SVG。
 
-## 互動規則 (Interaction Rules)
+## Runtime States
 
-??? info "編輯與渲染流 (Edit-to-Render)"
-    1.  **代碼變更**: 立即觸發本地 Syntax 檢查，Preview 標記為 `Stale`。
-    2.  **Debounce**: 停止輸入後的短延遲自動向後端發送 Render Request。
-    3.  **手動干預**: 點擊 `Render Now` 立即強制重新整理。
+| State | Meaning |
+|---|---|
+| `Editing` | editor 內容變動中 |
+| `Stale Preview` | 當前 SVG 仍是舊版本 |
+| `Validating` | backend 正在做 syntax / request / relation validation |
+| `Rendering` | backend 正在 controlled render |
+| `Rendered` | 最新 SVG 已可用 |
+| `Syntax Error` | backend 判定 source 無法 parse 或不符合 entrypoint contract |
+| `Runtime Error` | syntax 正常，但 render execution 失敗 |
 
-??? warning "Canonical Boundary"
-    在此工作區所作的世界性修改 (Schemdraw Code, Relation JSON) **不得隱式儲存**至 Canonical 定義中。
+## Authority Pair
 
----
+| Concern | Authority |
+|---|---|
+| linked schema metadata | [Backend / Circuit Definitions](../../backend/circuit-definitions.md) |
+| render transport / diagnostics / SVG envelope | [Backend / Schemdraw Render](../../backend/schemdraw-render.md) |
+| shell context | [Header](../shared-shell/header.md), [Sidebar](../shared-shell/sidebar.md) |
 
-## 運行時註記 (Runtime Notes)
+## Acceptance Checklist
 
-*   **本地反饋優先**: 編輯器必須在 backend 響應前，先根據本地 linter 提供回饋。
-*   **請求取消**: 當新 Request 發出時，應盡量 Cancel 尚未完成的舊請求。
-*   **Stale 緩衝**: 在新結果返回前，保留舊的 SVG 預覽並覆蓋一層微透的「過時」提示。
+!!! success "Implementation-ready outcome"
+    * [ ] frontend 只負責 source / relation 編輯與 response 呈現
+    * [ ] backend 擁有 authoritative syntax check 與 live preview
+    * [ ] three-step flow 已明確：edit -> send snapshot -> backend validate/render
+    * [ ] stale preview 與 latest-only apply 有正式定義
+    * [ ] page 不會把 preview workflow誤寫成 task queue 或 persistence workflow
 
----
+## Related
 
-## 相關參考
-
-*   [Schema editor](../definition/schema-editor.md)
-*   [Backend: Schemdraw Render](../../backend/schemdraw-render.md)
-*   [Circuit Simulation](circuit-simulation.md)
+* [Backend / Schemdraw Render](../../backend/schemdraw-render.md)
+* [Schema Editor](../definition/schema-editor.md)
+* [Header](../shared-shell/header.md)
+* [Sidebar](../shared-shell/sidebar.md)

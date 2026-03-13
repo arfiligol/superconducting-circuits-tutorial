@@ -11,7 +11,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CircuitDefinition Netlist 規格：components-first、topology、optional parameters"
-version: v1.3.0
+version: v1.4.0
 last_updated: 2026-03-06
 updated_by: codex
 ---
@@ -20,6 +20,10 @@ updated_by: codex
 
 `CircuitDefinition` 是 UI Schema Editor 與模擬流程共用的 netlist 格式。
 本專案採 **components-first** 模型：`components` 是主作者介面，`parameters` 是可選進階區塊。
+
+!!! info "Single Pipeline"
+    Schema preview、expanded preview 與 simulation configuration 必須使用同一條 source-to-expanded netlist pipeline。
+    netlist 的跨頁共享語意由本頁定義，不另在 Architecture 建立平行 SoT。
 
 ## Structure
 

@@ -28,6 +28,9 @@ updated_by: team
     本頁負責 schema catalog、搜尋 / 排序 / 分頁、建立、刪除與開啟 editor。
     source 編輯、preview render 與 simulation execution 不屬於本頁責任。
 
+!!! tip "Shared Shell"
+    本頁位於 shared [Header](../shared-shell/header.md) / [Sidebar](../shared-shell/sidebar.md) shell 中，但本頁本身不擁有 dataset 或 task context authority。
+
 ---
 
 ## 使用者目標 (User Goals)
@@ -113,6 +116,8 @@ graph LR
 ## 相關參考
 
 *   [Schema Editor](schema-editor.md)
+*   [Header](../shared-shell/header.md)
+*   [Sidebar](../shared-shell/sidebar.md)
 *   [Circuit Simulation](../research-workflow/circuit-simulation.md)
 *   [Backend: Circuit Definitions](../../backend/circuit-definitions.md)
 *   [Record Format: Circuit Netlist](../../data-formats/circuit-netlist.md)

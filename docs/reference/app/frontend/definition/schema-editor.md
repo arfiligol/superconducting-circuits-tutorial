@@ -14,123 +14,139 @@ route: /circuit-definition-editor
 status: draft
 owner: docs-team
 audience: team
-scope: "/circuit-definition-editor 的 active schema 編輯、persisted validation preview、normalized output 與刪除/儲存契約"
-version: v0.4.0
-last_updated: 2026-03-13
+scope: "/circuit-definition-editor 的 source 編輯、auto-format、persisted preview 與 netlist quick reference 契約"
+version: v0.5.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Schema Editor
 
-本頁負責單一 Active Circuit Schema 的編輯、預覽與持久化管理流程。
+本頁定義單一 active circuit schema 的編輯、格式整理、持久化與 persisted preview 契約。
 
 !!! info "Page Frame"
-    本頁負責 active schema source 編輯、format / save / delete、persisted validation preview 與 normalized output 檢視。
-    schema list browse、simulation execution 與 characterization run 不屬於本頁責任。
+    本頁負責 canonical source 編輯、`Format` / `Save` / `Delete`、persisted validation preview、normalized output 與 schema authoring hints。
+    schema list browse、simulation execution、characterization analysis 與 schemdraw render 不屬於本頁責任。
 
----
+!!! tip "Shared Shell"
+    本頁位於 shared [Header](../shared-shell/header.md) / [Sidebar](../shared-shell/sidebar.md) shell 中。
+    page body 可顯示 active schema 與 dirty state，但不得接管 global dataset、task queue 或 user menu。
 
-## 核心職責
+## Purpose
 
-=== "編輯與管理"
-    *   **Source Form**: 編輯電路定義、修改 Schema 名稱。
-    *   **代碼整理**: 支援 Definition Source 的格式化 (Format)。
-    *   **生命週期**: 執行建立 (New)、儲存 (Save) 與刪除 (Delete) 模式。
-    *   **工作流切換**: 在 Editor 內直接切換不同的 Active Schema。
+| Responsibility | Meaning |
+|---|---|
+| Source editing | 直接編輯 canonical circuit netlist source |
+| Auto-format | 將 source 整理成 canonical formatting，不隱式儲存 |
+| Persisted preview | 顯示最後一次成功儲存後的 validation、expanded preview、normalized output |
+| Authoring guidance | 以可掃讀的 quick reference 提示可用元件、unit 與 topology 規則 |
 
-=== "預覽與驗證"
-    *   **Validation Feedback**: 檢視由後端最後一次儲存後產生的驗證回饋。
-    *   **Derived Output**: 檢視正規化後的輸出 (Normalized Output) 與展開預覽 (Expanded Preview)。
-    *   **Artifact Summary**: 檢視關聯的預覽產物列表。
-
----
-
-## 使用者目標 (User Goals)
-
-1.  **快速啟用**: 隨時切換或建立新的 Definition。
-2.  **精確編輯**: 透過代碼編輯器修改物理網表與名稱。
-3.  **即時回饋**: 確認最新的 Persisted Validation 是否符合規格。
-4.  **下游審查**: 判斷 Schema 是否已準備好交給 Simulation 或後續分析。
-
----
-
-## UI 配置與 組件清單
-
-### 佈局結構 (Layout Hierarchy)
+## Layout Structure
 
 ```mermaid
-graph TD
-    Header[Page Header] --> Layout[Editor Layout]
-    Layout --> Rail[Definition Catalog Rail]
-    Layout --> Main[Active Editor Area]
-    
-    subgraph Main
-        Editor[Source Editor Section]
-        Preview[Validation & Preview Section]
-        Output[Normalized Output View]
-    end
+flowchart TD
+    Header["Workspace Header"] --> Body["Editor Body"]
+    Body --> Rail["Schema Catalog Rail"]
+    Body --> Main["Editor Main Column"]
+    Main --> Editor["Source Editor + Action Bar"]
+    Main --> Hints["Circuit Netlist Quick Reference"]
+    Main --> Preview["Persisted Validation / Expanded Preview / Normalized Output"]
 ```
 
-### 組件清單 (Components)
+## Component Inventory
 
-| ID | 組件名稱 | 類型 | 功能 |
-| :--- | :--- | :--- | :--- |
-| **C1** | Catalog Rail | Sidebar Rail | 無縫切換 Active Schema，不離開編輯工作流。 |
-| **C2** | Source Editor | Monaco/CodeMirror | 編輯 Canonical Source Form，支援語法高亮。 |
-| **C3** | Action Bar | Buttons | 提供 `Save`, `Format`, `Discard`, `Delete` 操作。 |
-| **C4** | Preview Panel | Data View | 顯示最後一次成功儲存後的驗證通知與結果。 |
-| **C5** | Normalized View | Read-only Code | 顯示後端派生的正規化輸出，禁止反向寫回。 |
+| ID | Component | Required behavior |
+|---|---|---|
+| `C1` | Catalog Rail | 在不離開 editor workflow 的情況下切換 active schema |
+| `C2` | Source Editor | 編輯 canonical source；需有 syntax highlighting、line numbers、dirty state |
+| `C3` | Action Bar | 至少包含 `Format`、`Save`、`Discard`、`Delete` |
+| `C4` | Persisted Preview Panel | 顯示 validation notices、expanded preview、normalized output |
+| `C5` | Circuit Netlist Quick Reference | 以 table 或 tabs 呈現 component、unit、topology hint |
 
----
+## Formatting Contract
 
-## 資料與狀態契約
+!!! warning "Auto-format Is Required"
+    Code editor 必須支援明確的 auto-format 行為。
+    使用者至少要能透過 `Format` 按鈕與 `Cmd/Ctrl + Shift + F` 觸發格式整理。
 
-=== "數據依賴 (Data Dependencies)"
-    | 資料名稱 | 來源 | 必要性 | 用途 |
-    | :--- | :--- | :---: | :--- |
-    | definition detail | definition service | ✅ | 填充 Editor 與 Preview 區塊。 |
-    | validation notices | persisted detail | ✅ | 顯示警告 (Warnings) 與檢查項目。 |
-    | mutation result | definition mutation | ✅ | 儲存後刷新數據與清單。 |
+| Rule | Meaning |
+|---|---|
+| Explicit action only | `Format` 可以整理 source，但不得隱式觸發 `Save` |
+| Canonical shape | 格式化後的 source 應對齊 canonical netlist form，避免 page-local style fork |
+| Dirty remains meaningful | `Format` 若改動 source，仍視為未儲存修改，直到 `Save` 成功 |
+| Failure feedback | formatter 失敗時，必須給出明確 diagnostics，不可靜默忽略 |
 
-=== "頁面狀態 (States)"
-    | 狀態 | 說明 |
-    | :--- | :--- |
-    | `Dirty` | 偵測到未儲存修改，Preview 區塊應提示其內容已與 Editor 不同步。 |
-    | `Saving` | 正執行持久化操作，暫時停用編輯器。 |
-    | `Persisted` | Editor 與 Preview 處於同步狀態。 |
+??? example "Expected edit flow"
+    1. 使用者修改 source。
+    2. 點擊 `Format` 或使用快捷鍵。
+    3. editor source 被重排為 canonical style。
+    4. dirty state 仍保留。
+    5. 只有點擊 `Save` 後，persisted preview 才更新。
+
+## Circuit Netlist Quick Reference
+
+!!! info "Authoring Hint Surface"
+    本頁必須直接顯示可掃讀的 hint table。
+    使用者不應被迫跳離 editor 才知道元件前綴、單位與 topology 規則。
+
+### Component & Unit Table
+
+| Component | Prefix | Allowed Units | Example | Hint |
+|---|---|---|---|---|
+| Port | `P*` | `-` | `("P1", "1", "0", 1)` | port index 使用整數 |
+| Resistor | `R*` | `Ohm`, `kOhm`, `MOhm` | `("R1", "1", "0", "R1")` | 常見 shunt 為 `50 Ohm` |
+| Inductor | `L*` | `H`, `mH`, `uH`, `nH`, `pH` | `("L1", "1", "2", "L1")` | 與 `Lj*` 分開 |
+| Capacitor | `C*` | `F`, `mF`, `uF`, `nF`, `pF`, `fF` | `("C1", "1", "2", "C1")` | 共享參數請用 `value_ref` |
+| Josephson Junction | `Lj*` | `H`, `mH`, `uH`, `nH`, `pH` | `("Lj1", "2", "0", "Lj1")` | junction symbol 由 preview 顯示 |
+| Mutual Coupling | `K*` | project-specific | `("K1", "L1", "L2", "K1")` | topology 第 2/3 欄是 inductor name |
+
+### Authoring Rules
+
+| Rule | Meaning |
+|---|---|
+| `components` first | 元件定義必須先存在，`topology` 再引用元件名稱 |
+| Ground token | 地只允許字串 `0` |
+| Topology references names | 非 Port 元件在 topology 中應引用 component name |
+| Hints are reference-only | quick reference 幫助撰寫，但 canonical truth 仍以 [Circuit Netlist](../../../data-formats/circuit-netlist.md) 為準 |
+
+## Data & State Contract
+
+=== "Read model"
+
+    | Data | Source | Why it matters |
+    |---|---|---|
+    | definition detail | definition service | 填充 editor 與 page identity |
+    | validation notices | persisted definition detail | 顯示 save 後的 validation result |
+    | expanded preview | persisted preview payload | 讓使用者檢查 repeat-expansion 後結果 |
+    | normalized output | persisted preview payload | 顯示後端派生 canonical output |
+
+=== "Page states"
+
+    | State | Meaning |
+    |---|---|
+    | `Dirty` | editor source 與 persisted preview 已脫鉤 |
+    | `Formatting` | formatter 執行中 |
+    | `Saving` | save mutation 執行中 |
+    | `Persisted` | editor 與 persisted preview 對齊 |
 
 !!! warning "Persisted Preview Boundary"
-    `Validation Notices` 與 `Normalized Output` 必須綁定最後一次成功儲存的狀態。
-    **未儲存的修改不得直接覆寫預覽面板**，應明確標示當前內容仍為舊版本。
+    `Validation Notices`、`Expanded Preview` 與 `Normalized Output` 必須綁定最後一次成功儲存的版本。
+    未儲存內容不能直接覆寫 preview authority。
 
----
+## Acceptance Checklist
 
-## 互動流程 (Interaction Flow)
+!!! success "Implementation-ready outcome"
+    * [ ] editor 有 `Format` 按鈕與 `Cmd/Ctrl + Shift + F`
+    * [ ] `Format` 不會隱式 `Save`
+    * [ ] dirty / formatting / saving / persisted 狀態可辨識
+    * [ ] page body 顯示 `Circuit Netlist Quick Reference`
+    * [ ] quick reference 至少含 component / units / topology rules
+    * [ ] persisted preview 與未儲存 draft 明確分離
 
-??? info "流程 A: 編輯與還原 (Edit / Discard)"
-    1.  修改內容後，`is_dirty` 變為 True。
-    2.  點擊 `Discard` 可還原至最後一次 persisted 版本。
-    3.  點擊 `Format` 僅整理排版，**不觸發**隱式儲存。
+## Related
 
-??? tip "流程 B: 儲存與同步 (Save / Sync)"
-    1.  點擊 `Save` → 觸發後端持久化流程。
-    2.  成功後，Preview 區域立即更新為最新的後端派生結果。
-    3.  重置 `is_dirty` 為 False。
-
----
-
-## 視覺與響應規範 (Visual Rules)
-
-*   **分欄明確**: Catalog Rail 與 Active Editor 必須清楚分開，避免資訊混淆。
-*   **預覽分離**: 預覽區 (Read-only) 與 編輯區 (Editable) 應有顯著的視覺差異。
-*   **Dirty 狀態顯著**: 未儲存修改必須在標題或側邊有明確的視覺提示。
-*   **語氣一致**: 驗證通知應使用明確的色彩 (Ready: Green, Warning: Amber, Error: Red)。
-
----
-
-## 相關參考
-
-*   [Schemas List](schemas.md)
-*   [Circuit Simulation Workflow](../research-workflow/circuit-simulation.md)
-*   [Backend: Circuit Definitions](../../backend/circuit-definitions.md)
-*   [Architecture: Schema Editor Formatting](../../../explanation/architecture/design-decisions/schema-editor-formatting.md)
+* [Schemas](schemas.md)
+* [Circuit Netlist](../../../data-formats/circuit-netlist.md)
+* [Backend / Circuit Definitions](../../backend/circuit-definitions.md)
+* [Header](../shared-shell/header.md)
+* [Sidebar](../shared-shell/sidebar.md)

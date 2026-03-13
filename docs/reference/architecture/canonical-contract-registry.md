@@ -7,36 +7,50 @@ tags:
   - audience/team
   - sot/true
   - topic/architecture
-status: draft
+status: stable
 owner: docs-team
 audience: team
-scope: "列出 migration 期間每個 canonical contract 的 owner、SoT、adapter 與測試責任"
-version: v0.3.0
-last_updated: 2026-03-13
+scope: 系統目前 published canonical contracts 的 owner、SoT 與主要消費者
+version: v0.7.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
 # Canonical Contract Registry
 
-本文件定義 migration 期間哪些 contract 是 canonical surface，以及它們由誰維護。
-若某個 Contributor Agent 不確定規則歸屬，先查這份註冊表。
+本文件列出目前整個平台的 published canonical contracts，以及每一組 contract 的 owner、SoT 與主要消費者。
+
+!!! info "Read With App / CLI / Core"
+    如果你已經知道自己在看哪一個 page、shared app model、CLI surface 或 core runtime，請直接回到對應的 App、CLI 或 Core reference。
+    本頁的用途是先判定 contract 到底歸誰管。
+
+!!! warning "Registry Rule"
+    若一個 public workflow、machine-readable payload 或 shared runtime behavior 已被其他層使用，就必須在本表有對應 row。
+    找不到 row，代表 architecture-level ownership 尚未寫清楚。
 
 ## Registry
 
-| Contract | Owner | Source of Truth | Primary Code Surface | Adapters Using It | Compatibility Rule | Minimum Tests |
-| --- | --- | --- | --- | --- | --- | --- |
-| Circuit Definition / Netlist | `sc_core` | `docs/reference/data-formats/circuit-netlist.md` | `src/core/sc_core/circuit_definitions/` | backend, frontend, CLI, worker | additive-first; persisted definitions need fallback | validator / normalization / API contract tests |
-| Dataset Metadata Contract | backend + `sc_core` | `docs/reference/data-formats/dataset-record.md` | backend persistence + future `sc_core.datasets` | backend, frontend, CLI | persisted rows require read-compat or migration | repository / API / CLI inspect tests |
-| Trace / Result / Provenance Contract | backend + `sc_core` | `docs/reference/data-formats/dataset-record.md`, `docs/reference/data-formats/analysis-result.md` | backend tracestore + future `sc_core.traces` | backend, frontend, CLI, worker | versioned persisted contract | persistence / provenance linkage tests |
-| Task Submission / Status / Result | backend + `sc_core` | `docs/reference/architecture/task-semantics.md` | `src/core/sc_core/tasking/`, backend task APIs | backend, frontend, CLI, worker | task ids immutable; retry creates new task | task lifecycle / attach / retry tests |
-| Session / Workspace Context | backend | `docs/reference/architecture/identity-workspace-model.md` | backend session APIs | frontend, CLI, worker visibility filters | lockstep migration branch; semantics must stay stable | auth/session / active dataset tests |
-| Schemdraw Render Contract | backend + frontend | `docs/reference/app/backend/schemdraw-render.md`, `docs/reference/app/frontend/research-workflow/schemdraw.md` | backend render API + frontend schemdraw workspace | frontend | additive-first; diagnostics codes stable once published | contract / render / diagnostics tests |
-| CLI Machine-readable Output | CLI + `sc_core` | `docs/reference/cli/index.md` and command docs | `cli/src/sc_cli/` presenters | CLI, automation, future scripting | changes must be documented as contract changes | CLI behavior / output tests |
-| UI Workflow Contract | frontend + backend | `docs/reference/app/frontend/**/*.md` | frontend features + backend APIs | frontend only | route/workflow changes update parity matrix | integration / recovery tests |
+| Contract | Canonical owner | Source of truth | Primary consumers | Compatibility rule |
+|---|---|---|---|---|
+| Circuit Definition / Netlist | `sc_core` | [Data Formats / Circuit Netlist](../data-formats/circuit-netlist.md) | backend, CLI, definition workflows, simulation workflows | additive-first；persisted definitions 需維持 read compatibility |
+| App Session / Workspace Context | app/shared + backend | [App / Shared / Identity & Workspace Model](../app/shared/identity-workspace-model.md), [App / Backend / Session & Workspace](../app/backend/session-workspace.md) | frontend shell, workspace pages | active dataset / workspace semantics 必須跨頁一致 |
+| App Resource Ownership / Visibility | app/shared + backend | [App / Shared / Resource Ownership & Visibility](../app/shared/resource-ownership-and-visibility.md), [App / Backend / Session & Workspace](../app/backend/session-workspace.md) | datasets, definitions, tasks, results, audit logging | 每筆 resource 只屬於一個 workspace |
+| App Authentication / Authorization Context | app/shared + backend | [App / Shared / Authentication & Authorization](../app/shared/authentication-and-authorization.md) | Header user menu, task queue controls, backend session surface, admin surfaces | role / capability flags 一旦 published 必須保持可解讀 |
+| Dataset Metadata / Dataset Profile | backend + `sc_core` | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md), [App / Backend / Datasets & Results](../app/backend/datasets-results.md) | dashboard, raw data browser, characterization, CLI datasets | mutation 與 read model 必須維持相容 |
+| Trace / Result / Provenance | backend + `sc_core` | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md), [Data Formats / Analysis Result](../data-formats/analysis-result.md) | raw data browser, characterization, worker, CLI results | persisted result / provenance contract 必須 version-aware |
+| App Task Submission / Status / Result | app/backend + app/shared + `sc_core` | [App / Backend / Tasks & Execution](../app/backend/tasks-execution.md), [App / Shared / Task Runtime & Processors](../app/shared/task-runtime-and-processors.md) | simulation, characterization, worker | `task_id` immutable；retry 預設新 task |
+| App Processor Runtime Status | app/shared + backend adapter | [App / Shared / Task Runtime & Processors](../app/shared/task-runtime-and-processors.md) | Header worker summary, queue controls, runtime operators | health summary 需由 runtime heartbeat 派生 |
+| UI Shell Context | frontend + backend | [App / Frontend / Header](../app/frontend/shared-shell/header.md), [App / Frontend / Sidebar](../app/frontend/shared-shell/sidebar.md), [App / Backend / Session & Workspace](../app/backend/session-workspace.md) | all frontend pages | shell 顯示的 dataset / task / user context 不得分叉 |
+| UI Task Management Workflow | frontend + backend | [App / Frontend / Task Management](../app/frontend/shared-workflow/task-management.md), [App / Backend / Tasks & Execution](../app/backend/tasks-execution.md) | simulation, characterization | queue / attach / control / recovery 必須依 persisted task state |
+| Schemdraw Render Contract | backend + frontend | [App / Backend / Schemdraw Render](../app/backend/schemdraw-render.md), [App / Frontend / Schemdraw](../app/frontend/research-workflow/schemdraw.md) | schemdraw page | diagnostics code 一旦 published 應保持穩定 |
+| App Audit Log Contract | app/shared + backend adapters | [App / Shared / Audit Logging](../app/shared/audit-logging.md) | admins, task governance, runtime control review | append-only；不得與 app DB 綁在同一個 operational store |
+| CLI Local Runtime Context | CLI + `sc_core` | [CLI / Standalone Runtime](../cli/standalone-runtime.md), [CLI Options](../cli/index.md) | CLI, automation | CLI 不依賴 shared workspace / auth / queue semantics |
+| CLI Machine-readable Output | CLI + `sc_core` | [CLI Options](../cli/index.md) | CLI, automation | machine-readable changes 必須視為 contract change |
 
-## Rules
+## Related
 
-- 若 contract 有多個 owner，必須明確區分 canonical owner 與 adapter owner
-- 若 primary code surface 與 Source of Truth 衝突，以 Source of Truth 為準
-- 任何 breaking 變更都必須同步更新本表
-- 若 contract 尚未有穩定 primary code surface，必須在 `Notes` 或相關 issue 中補上遷移計畫
+* [Parity Matrix](parity-matrix.md)
+* [App / Shared](../app/shared/index.md)
+* [App / Frontend](../app/frontend/index.md)
+* [App / Backend](../app/backend/index.md)
+* [CLI Options](../cli/index.md)

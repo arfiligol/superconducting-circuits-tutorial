@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc results` persisted task result-reference 查詢指令。"
+scope: "`sc results` standalone CLI local result-reference 查詢指令。"
 version: v0.1.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,11 +20,11 @@ title: sc results
 
 # sc results
 
-查詢 persisted task result references、trace payload refs 與 result handles。
+查詢 local persisted result references、trace payload refs 與 result handles。
 
 !!! info "Command Role"
-    `sc results` 顯示的是 persisted result surface，而不是 UI in-memory state。
-    它適合確認 task 結束後是否真的已綁定 trace payload 或 result handles。
+    `sc results` 顯示的是 local persisted result surface，而不是 terminal in-memory state。
+    它適合確認 local run 結束後是否真的已綁定 trace payload 或 result handles。
 
 !!! warning "Absent Result State"
     `trace` 與 `handles` 只在對應 payload 已存在時成功。
@@ -51,14 +51,15 @@ title: sc results
     uv run sc results handles 306
     ```
 
-## Backend Pair
+## Standalone Pair
 
 | Concern | Authority |
 |---|---|
-| task result attachment | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
-| trace payload / result handle semantics | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
+| local result attachment | [Standalone Runtime](standalone-runtime.md) |
+| trace payload / result handle semantics | [Data Formats / Analysis Result](../data-formats/analysis-result.md) |
 
 ## Related
 
 - [sc tasks](sc-tasks.md)
 - [sc events](sc-events.md)
+- [Standalone Runtime](standalone-runtime.md)

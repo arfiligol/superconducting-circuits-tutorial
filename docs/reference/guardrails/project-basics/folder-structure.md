@@ -73,7 +73,7 @@ superconducting-circuits-tutorial/
 ## Related Blueprints
 
 - backend 的責任分層與模組邊界，參見 [Backend Architecture](./backend-architecture.md)
-- shared core 的 canonical contract 與 adoption roadmap，參見 [Core Blueprint](../../architecture/core-blueprint.md)
+- shared core 的 canonical contract 與 adopter boundary，參見 [Core Reference](../../core/index.md)
 
 ## Dependency Direction
 

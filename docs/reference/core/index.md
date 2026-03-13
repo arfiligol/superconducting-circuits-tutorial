@@ -10,7 +10,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: Core reference 索引，條列平台核心能力與 Python/Julia 邊界。
-version: v0.3.0
+version: v0.4.0
 last_updated: 2026-03-13
 updated_by: team
 ---
@@ -25,6 +25,14 @@ updated_by: team
 !!! warning "Boundary"
     `Core` 不等於整個 app。
     session、HTTP transport、CLI presenter、UI state 都不屬於本區；本區只記錄核心計算、canonical contract 與 bridge boundary。
+
+## Ownership Rules
+
+| Rule | Meaning |
+|---|---|
+| `sc_core` owns canonical Python contracts | backend、worker、CLI 都是 adopter，不是 owner |
+| App surfaces stay outside Core | HTTP schemas、session authority、frontend state 不屬於 Core |
+| Julia bridge is still Core-adjacent | Python↔Julia adapter 屬於 core runtime 邊界，但不等於整個 app owner |
 
 ## Page Map
 
@@ -62,6 +70,5 @@ updated_by: team
 
 ## Related
 
-- [Architecture / Core Blueprint](../architecture/core-blueprint.md)
 - [Architecture / Canonical Contract Registry](../architecture/canonical-contract-registry.md)
 - [CLI Options](../cli/index.md)

@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc ops` 研究操作 bundle 指令。"
+scope: "`sc ops` standalone CLI operator bundle 指令。"
 version: v0.1.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,14 +20,14 @@ title: sc ops
 
 # sc ops
 
-以 connected operator bundle 的角度查看與操作 task。
+以 connected operator bundle 的角度查看與操作 local run。
 
 !!! info "Command Role"
-    `sc ops` 不代表一套新的 backend workflow。
-    它是把 task、recent events、result attachment 收斂成較適合操作人員的 bundle view。
+    `sc ops` 不代表一套新的 workflow engine。
+    它是把 local run、recent events、result attachment 收斂成較適合操作人員的 bundle view。
 
 !!! warning "Bundle Boundary"
-    `sc ops` 呈現的是既有 persisted task state 的組合視圖。
+    `sc ops` 呈現的是既有 local persisted state 的組合視圖。
     若需要單獨查 event history 或 result refs，仍應回到 [sc events](sc-events.md) 與 [sc results](sc-results.md)。
 
 ## Command Map
@@ -62,15 +62,16 @@ title: sc ops
     uv run sc ops submit simulation --definition-id 18 --wait
     ```
 
-## Authority Pairing
+## Standalone Pairing
 
 | Concern | Authority |
 |---|---|
-| task / event / result bundle source | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
-| result attachment semantics | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
+| task / event / result bundle source | [Standalone Runtime](standalone-runtime.md) |
+| result attachment semantics | [Data Formats / Analysis Result](../data-formats/analysis-result.md) |
 
 ## Related
 
 - [sc tasks](sc-tasks.md)
 - [sc events](sc-events.md)
 - [sc results](sc-results.md)
+- [Standalone Runtime](standalone-runtime.md)

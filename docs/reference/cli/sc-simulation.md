@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc simulation` simulation-lane task 操作指令。"
+scope: "`sc simulation` standalone CLI simulation-lane local run 操作指令。"
 version: v0.1.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,15 +20,19 @@ title: sc simulation
 
 # sc simulation
 
-操作 simulation lane 上的 task。
+操作 simulation lane 上的 local run。
 
 !!! info "Lane Wrapper"
-    `sc simulation` 是 generic task contract 的 lane-specific wrapper。
-    它保留 `show / inspect / latest / wait` 這些 task behaviors，但會自動限制在 `simulation` lane。
+    `sc simulation` 是 generic local run contract 的 lane-specific wrapper。
+    它保留 `show / inspect / latest / wait` 這些 behaviors，但會自動限制在 `simulation` lane。
 
 !!! warning "Submit Requirement"
     `submit` 必須提供 `--definition-id`。
-    `dataset_id` 可以顯式提供，或回退到目前 session 的 active dataset。
+    `dataset_id` 可以顯式提供，或回退到目前 local session 的 active dataset。
+
+!!! tip "Execution ownership"
+    `submit` 代表直接啟動本地 simulation 工作。
+    這個工作由目前 terminal session 或 local child process 擁有，不經過 shared queue。
 
 ## Command Map
 
@@ -69,14 +73,15 @@ title: sc simulation
     uv run sc simulation wait 306 --until-status terminal
     ```
 
-## Authority Pairing
+## Standalone Pairing
 
 | Concern | Authority |
 |---|---|
-| simulation-lane task lifecycle | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
-| definition requirement for submit | [Backend / Circuit Definitions](../app/backend/circuit-definitions.md) |
+| simulation-lane local run lifecycle | [Standalone Runtime](standalone-runtime.md) |
+| definition requirement for submit | [sc circuit-definition](sc-circuit-definition.md), [Core / Python Core](../core/python-core.md) |
 
 ## Related
 
 - [sc tasks](sc-tasks.md)
 - [sc ops](sc-ops.md)
+- [Standalone Runtime](standalone-runtime.md)

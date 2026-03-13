@@ -10,7 +10,7 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: 目前正式支援的 `sc` 命令列介面，說明 CLI 如何調用 core 與 backend-facing capability。
+scope: 目前正式支援的 standalone-first `sc` 命令列介面，說明 CLI 如何以 local runtime 與 `sc_core` 實踐研究 workflow。
 version: v0.4.0
 last_updated: 2026-03-13
 updated_by: team
@@ -18,10 +18,15 @@ updated_by: team
 
 # CLI Options
 
-本區收錄 `sc` 的正式 command surface，以及 CLI 如何以 shared core 與 backend authority 實踐研究 workflow。
+本區收錄 `sc` 的正式 command surface，以及 standalone-first CLI 如何以 local runtime、`sc_core` 與 canonical data formats 實踐研究 workflow。
 
 !!! info "How To Read CLI Docs"
-    先讀 `Session`、`Datasets`、`Circuit Definition` 取得目前工作上下文，再讀 `Tasks`、`Events`、`Results` 查 persisted state，最後讀 `Simulation`、`Characterization`、`Ops` 了解 workflow-level 操作。
+    先讀 [Standalone Runtime](standalone-runtime.md) 了解 local execution model，
+    再讀 `Session`、`Datasets`、`Circuit Definition` 取得目前工作上下文，接著讀 `Tasks`、`Events`、`Results` 查 local persisted state，最後讀 `Simulation`、`Characterization`、`Ops` 了解 workflow-level 操作。
+
+!!! tip "Service-backed mode is out of scope"
+    目前 CLI reference 只定義 standalone-first CLI。
+    多使用者 app 的 auth、shared queue、shared workspace 與 audit semantics 由 `App` reference 擁有，不由 CLI 直接消費。
 
 !!! warning "Published Surface Rule"
     只要 command group 已由 `cli/src/sc_cli/app.py` 掛進 root `sc`，本區就必須有對應 reference page。
@@ -29,29 +34,30 @@ updated_by: team
 
 ## Command Map
 
-=== "Foundation"
+=== "Local Runtime"
 
     | Command | 核心聚焦 | Authority Pair |
     |---|---|---|
-    | [sc session](sc-session.md) | session、workspace、active dataset context | [Backend / Session & Workspace](../app/backend/session-workspace.md) |
-    | [sc datasets](sc-datasets.md) | dataset catalog、dataset detail、metadata mutation | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
-    | [sc circuit-definition](sc-circuit-definition.md) | canonical definition inspection、persisted definition CRUD | [Backend / Circuit Definitions](../app/backend/circuit-definitions.md), [Core / Python Core](../core/python-core.md) |
+    | [Standalone Runtime](standalone-runtime.md) | local profile、local workspace、active dataset、local run registry | [Core / Python Core](../core/python-core.md), [Data Formats](../data-formats/index.md) |
+    | [sc session](sc-session.md) | local context、active dataset fallback、workspace root | [Standalone Runtime](standalone-runtime.md) |
+    | [sc datasets](sc-datasets.md) | local dataset catalog、dataset detail、metadata mutation | [Standalone Runtime](standalone-runtime.md), [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md) |
+    | [sc circuit-definition](sc-circuit-definition.md) | canonical definition inspection、local definition catalog CRUD | [Standalone Runtime](standalone-runtime.md), [Core / Python Core](../core/python-core.md), [Data Formats / Circuit Netlist](../data-formats/circuit-netlist.md) |
 
-=== "Inspection"
+=== "Run Registry"
 
     | Command | 核心聚焦 | Authority Pair |
     |---|---|---|
-    | [sc tasks](sc-tasks.md) | generic task list、detail、submit、wait | [Backend / Tasks & Execution](../app/backend/tasks-execution.md), [Architecture / Task Semantics](../architecture/task-semantics.md) |
-    | [sc events](sc-events.md) | persisted task event history | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
-    | [sc results](sc-results.md) | persisted result refs、trace payload、result handles | [Backend / Datasets & Results](../app/backend/datasets-results.md), [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
+    | [sc tasks](sc-tasks.md) | local run list、detail、submit、wait | [Standalone Runtime](standalone-runtime.md) |
+    | [sc events](sc-events.md) | local persisted run event history | [Standalone Runtime](standalone-runtime.md) |
+    | [sc results](sc-results.md) | local persisted result refs、trace payload、result handles | [Standalone Runtime](standalone-runtime.md), [Data Formats / Analysis Result](../data-formats/analysis-result.md) |
+    | [sc ops](sc-ops.md) | local operator bundle over task / event / result surfaces | [Standalone Runtime](standalone-runtime.md) |
 
 === "Workflow"
 
     | Command | 核心聚焦 | Authority Pair |
     |---|---|---|
-    | [sc simulation](sc-simulation.md) | simulation-lane submit / inspect / wait | [Backend / Tasks & Execution](../app/backend/tasks-execution.md), [Backend / Circuit Definitions](../app/backend/circuit-definitions.md) |
-    | [sc characterization](sc-characterization.md) | characterization-lane submit / inspect / wait | [Backend / Tasks & Execution](../app/backend/tasks-execution.md), [Backend / Characterization Results](../app/backend/characterization-results.md) |
-    | [sc ops](sc-ops.md) | connected operator bundle across task, event, result surfaces | [Backend / Tasks & Execution](../app/backend/tasks-execution.md), [Backend / Datasets & Results](../app/backend/datasets-results.md) |
+    | [sc simulation](sc-simulation.md) | simulation-lane local execution / inspect / wait | [Standalone Runtime](standalone-runtime.md), [Core / Python Core](../core/python-core.md) |
+    | [sc characterization](sc-characterization.md) | characterization-lane local execution / inspect / wait | [Standalone Runtime](standalone-runtime.md), [Data Formats / Analysis Result](../data-formats/analysis-result.md) |
 
 === "Core Boundary"
 
@@ -64,8 +70,9 @@ updated_by: team
 | Concern | CLI Rule | SoT |
 |---|---|---|
 | Machine-readable output | 多數 operational subcommands 支援 `--output text|json`。目前 `sc core preview-artifacts` 仍為 text-only。 | [Canonical Contract Registry](../architecture/canonical-contract-registry.md) |
-| Task lifecycle | `task_id` 是 attach / wait / inspect 的 primary key。lane-specific commands 只是在 generic task contract 上加 lane filter。 | [Task Semantics](../architecture/task-semantics.md) |
-| Session context | 若命令接受 `--dataset-id`，省略時可回退到目前 active dataset。 | [Backend / Session & Workspace](../app/backend/session-workspace.md) |
+| Local runtime context | active dataset、local workspace 與 local run registry 由 standalone runtime 擁有，不依賴 app session。 | [Standalone Runtime](standalone-runtime.md) |
+| Run lifecycle | `task_id` 是 inspect / wait / result lookup 的 primary key。lane-specific commands 只是在 local run registry 上加 lane filter。 | [Standalone Runtime](standalone-runtime.md), [sc tasks](sc-tasks.md) |
+| Data compatibility | local dataset / result / definition payload 仍需遵守 shared data formats。 | [Data Formats](../data-formats/index.md) |
 | Circuit-definition inspection | 本地 source inspection 由 `sc_core` canonical inspection surface 決定，而不是 CLI 自行解析。 | [Core / Python Core](../core/python-core.md) |
 
 !!! example "Root Command"
@@ -77,6 +84,7 @@ updated_by: team
 
 ## Related
 
+- [Standalone Runtime](standalone-runtime.md) - local execution 與 local run registry
 - [Core Reference](../core/index.md) - 核心能力與 Python/Julia 邊界
-- [Backend Reference](../app/backend/index.md) - backend-facing reference surface
+- [Data Formats](../data-formats/index.md) - 共享 payload 與 schema rules
 - [How-to Guides](../../how-to/index.md) - 操作指南

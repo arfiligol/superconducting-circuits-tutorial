@@ -10,7 +10,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: Python core 能力、共享 contract 與 orchestration-facing reference surface。
-version: v0.3.0
+version: v0.4.0
 last_updated: 2026-03-13
 updated_by: team
 ---
@@ -71,13 +71,13 @@ updated_by: team
 | Worker dispatch / runtime | `tasking`, `execution`, `storage` |
 | CLI | `circuit_definitions`, `tasking`, `execution` |
 
-## Architecture Pair
+## Ownership Boundary
 
 | Concern | SoT |
 |---|---|
-| ownership boundary | [Core Blueprint](../architecture/core-blueprint.md) |
+| ownership boundary | [Core Reference](index.md) |
 | canonical contract ownership | [Canonical Contract Registry](../architecture/canonical-contract-registry.md) |
-| task lifecycle semantics | [Task Semantics](../architecture/task-semantics.md) |
+| task lifecycle semantics | [App / Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
 
 ## Related
 

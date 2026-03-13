@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc tasks` task list 與 detail 查詢指令。"
+scope: "`sc tasks` standalone CLI local run registry 查詢與操作指令。"
 version: v0.2.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,11 +20,15 @@ title: sc tasks
 
 # sc tasks
 
-查詢 generic task contract，並對任務做 submit、latest、wait 等操作。
+查詢 local run registry，並對任務做 submit、latest、wait 等操作。
 
 !!! info "Command Role"
-    `sc tasks` 是 generic task surface。
-    `sc simulation` 與 `sc characterization` 只是 lane-specific wrappers；底層仍依賴同一組 task semantics。
+    `sc tasks` 是 standalone CLI 的 generic local run surface。
+    `sc simulation` 與 `sc characterization` 只是 lane-specific wrappers；底層仍依賴同一組 local run semantics。
+
+!!! warning "No Shared Queue"
+    `sc tasks` 看的是 local run registry，不是 multi-user shared queue。
+    任何列表、latest、wait 與 inspect 操作都只對 local persisted state 生效。
 
 !!! warning "Primary Recovery Key"
     `task_id` 是 attach、inspect、wait 的 primary key。
@@ -36,8 +40,8 @@ title: sc tasks
 
     | Subcommand | Focus | Key inputs |
     |---|---|---|
-    | `list` | task list | `--status`, `--lane`, `--scope`, `--dataset-id`, `--limit` |
-    | `latest` | 取符合條件的最新 task | `--status`, `--lane`, `--scope`, `--dataset-id` |
+    | `list` | local run list | `--status`, `--lane`, `--dataset-id`, `--limit` |
+    | `latest` | 取符合條件的最新 local run | `--status`, `--lane`, `--dataset-id` |
 
 === "Inspect"
 
@@ -51,7 +55,7 @@ title: sc tasks
     | Subcommand | Focus | Key inputs |
     |---|---|---|
     | `wait` | 輪詢到指定狀態 | `TASK_ID`, `--until-status`, `--interval`, `--timeout` |
-    | `submit` | 送出 generic task | `KIND`, `--dataset-id`, `--definition-id`, `--summary` |
+    | `submit` | 建立 local run record 並啟動工作 | `KIND`, `--dataset-id`, `--definition-id`, `--summary` |
 
 ## Shared Option
 
@@ -65,7 +69,6 @@ title: sc tasks
 |---|---|---|
 | `--status` | `queued`, `running`, `completed`, `failed` | `None` |
 | `--lane` | `simulation`, `characterization` | `None` |
-| `--scope` | `workspace`, `owned` | `workspace` |
 | `--dataset-id` | free text | `None` |
 | `--limit` | `1..50` | `20` (`list` only) |
 
@@ -86,12 +89,16 @@ title: sc tasks
     uv run sc tasks wait 306 --until-status terminal
     ```
 
-## Authority Pairing
+!!! tip "Direct execution model"
+    `submit` 在 standalone CLI 中代表直接啟動本地工作。
+    實作可以在目前 terminal process 或 local child process 執行，但結果必須回寫到同一份 local run registry。
+
+## Standalone Pairing
 
 | Concern | Authority |
 |---|---|
-| task lifecycle、wait semantics、result attachment | [Backend / Tasks & Execution](../app/backend/tasks-execution.md) |
-| canonical task semantics | [Architecture / Task Semantics](../architecture/task-semantics.md) |
+| local run lifecycle、wait semantics、result attachment | [Standalone Runtime](standalone-runtime.md) |
+| canonical simulation / characterization execution inputs | [Core / Python Core](../core/python-core.md) |
 
 ## Related
 
@@ -99,3 +106,4 @@ title: sc tasks
 - [sc results](sc-results.md)
 - [sc simulation](sc-simulation.md)
 - [sc characterization](sc-characterization.md)
+- [Standalone Runtime](standalone-runtime.md)

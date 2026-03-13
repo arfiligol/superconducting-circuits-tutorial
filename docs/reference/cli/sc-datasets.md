@@ -11,7 +11,7 @@ tags:
 status: stable
 owner: docs-team
 audience: user
-scope: "`sc datasets` dataset catalog 查詢指令。"
+scope: "`sc datasets` standalone CLI local dataset catalog 查詢與 metadata mutation 指令。"
 version: v0.2.0
 last_updated: 2026-03-13
 updated_by: team
@@ -20,11 +20,14 @@ title: sc datasets
 
 # sc datasets
 
-查詢 dataset catalog、單筆 dataset detail，並更新 dataset metadata。
+查詢 local dataset catalog、單筆 dataset detail，並更新 local dataset metadata。
 
 !!! info "Command Role"
-    `sc datasets` 是 CLI 對 dataset catalog 的正式入口。
-    它對應 backend dataset authority，不負責 trace selection、analysis run 或 simulation execution。
+    `sc datasets` 是 CLI 對 local dataset catalog 的正式入口。
+    它不負責 trace selection、analysis run 或 simulation execution。
+
+!!! tip "Format compatibility"
+    standalone CLI 雖然使用 local dataset catalog，但 dataset metadata 與 trace-related payload 仍需遵守 shared data-format contracts。
 
 !!! warning "Metadata Mutation"
     `set-metadata` 會直接送出 `device_type`、`source` 與 `capabilities` metadata。
@@ -71,14 +74,15 @@ title: sc datasets
       --capability simulation
     ```
 
-## Backend Pair
+## Standalone Pair
 
 | Concern | Authority |
 |---|---|
-| dataset catalog / detail | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
-| dataset metadata mutation | [Backend / Datasets & Results](../app/backend/datasets-results.md) |
+| local dataset catalog / detail | [Standalone Runtime](standalone-runtime.md) |
+| dataset metadata contract | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md) |
 
 ## Related
 
 - [CLI Options](index.md)
-- [Backend / Datasets & Results](../app/backend/datasets-results.md)
+- [Standalone Runtime](standalone-runtime.md)
+- [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md)

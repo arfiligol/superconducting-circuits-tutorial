@@ -68,8 +68,8 @@ updated_by: team
 
 本文件不單獨生效。若發生跨層衝突，應一併檢查：
 
-- [Task Semantics](../../architecture/task-semantics.md)
-- [Identity / Workspace Minimal Model](../../architecture/identity-workspace-model.md)
+- [App / Backend / Tasks & Execution](../../app/backend/tasks-execution.md)
+- [Identity & Workspace Model](../../app/shared/identity-workspace-model.md)
 - [Parity Matrix](../../architecture/parity-matrix.md)
 - [Canonical Contract Registry](../../architecture/canonical-contract-registry.md)
 
