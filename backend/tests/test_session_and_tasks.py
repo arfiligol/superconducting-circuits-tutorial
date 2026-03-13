@@ -1,8 +1,11 @@
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sc_core.storage import STORAGE_CONTRACT_VERSION
-from src.app.domain.tasks import TaskLifecycleUpdate
+from src.app.domain.tasks import TaskLifecycleUpdate, TaskSubmissionDraft
 from src.app.infrastructure.runtime import (
+    get_task_execution_runtime,
     get_task_service,
     reset_runtime_state,
 )
@@ -196,6 +199,35 @@ def test_get_task_returns_detail_payload() -> None:
         },
         "analysis_run_record": None,
     }
+
+
+def test_get_task_detail_reflects_execution_runtime_event_metadata() -> None:
+    task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary="Execution runtime route proof.",
+        )
+    )
+
+    get_task_execution_runtime().start_task(
+        task.task_id,
+        recorded_at=datetime(2026, 3, 12, 13, 0, 0),
+        worker_pid=4747,
+        stale_after_seconds=240,
+    )
+
+    response = client.get(f"/tasks/{task.task_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "running"
+    assert payload["dispatch"]["status"] == "running"
+    assert payload["events"][-1]["event_type"] == "task_running"
+    assert payload["events"][-1]["metadata"]["audit_action"] == "worker.task_started"
+    assert payload["events"][-1]["metadata"]["worker_pid"] == 4747
+    assert payload["events"][-1]["metadata"]["stale_after_seconds"] == 240
 
 
 def test_get_task_returns_not_found_for_missing_task() -> None:

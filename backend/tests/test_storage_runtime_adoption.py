@@ -1,7 +1,8 @@
 from dataclasses import replace
+from datetime import datetime
 
 import pytest
-from sc_core.execution import TaskResultHandle
+from sc_core.execution import TaskExecutionResult, TaskResultHandle
 from sqlalchemy import update
 from src.app.domain.tasks import (
     TaskEventHistoryQuery,
@@ -18,6 +19,7 @@ from src.app.infrastructure.runtime import (
     get_rewrite_app_state_repository,
     get_rewrite_task_repository,
     get_storage_metadata_repository,
+    get_task_execution_runtime,
     get_task_service,
     get_task_snapshot_repository,
     reset_runtime_state,
@@ -271,6 +273,175 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
     assert repository_history is not None
     assert repository_history.latest_event is not None
     assert repository_history.latest_event.event_type == "task_running"
+
+
+def test_execution_runtime_persists_start_heartbeat_and_completion_across_reset() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary="Execution runtime characterization proof.",
+        )
+    )
+    runtime = get_task_execution_runtime()
+
+    started_task = runtime.start_task(
+        submitted_task.task_id,
+        recorded_at=datetime(2026, 3, 12, 12, 0, 0),
+        worker_pid=4242,
+        stale_after_seconds=180,
+    )
+    heartbeat_task = runtime.heartbeat_task(
+        submitted_task.task_id,
+        recorded_at=datetime(2026, 3, 12, 12, 5, 0),
+        summary="Characterization worker is sweeping the next resonance window.",
+        percent_complete=60,
+        stage_label="characterization_run_task",
+        current_step=3,
+        total_steps=5,
+    )
+    trace_batch_record = build_metadata_record_ref(
+        "trace_batch",
+        f"trace_batch:{submitted_task.task_id}",
+        version=1,
+    )
+    result_handle_record = build_metadata_record_ref(
+        "result_handle",
+        f"result_handle:{submitted_task.task_id}",
+        version=2,
+    )
+    result_refs = TaskResultRefs(
+        result_handle=TaskResultHandle(trace_batch_id=submitted_task.task_id),
+        metadata_records=(trace_batch_record, result_handle_record),
+        trace_payload=build_trace_payload_ref(
+            payload_role="task_output",
+            store_key=f"tasks/{submitted_task.task_id}/trace-batch.zarr",
+            store_uri=f"trace_store/tasks/{submitted_task.task_id}/trace-batch.zarr",
+            group_path=f"tasks/{submitted_task.task_id}/trace_batch",
+            array_path="signals/iq_real",
+            dtype="float64",
+            shape=(64, 1024),
+            chunk_shape=(16, 1024),
+        ),
+        result_handles=(
+            build_result_handle_ref(
+                handle_id=f"task-result:{submitted_task.task_id}:primary",
+                kind="characterization_report",
+                status="materialized",
+                label="Materialized characterization report",
+                metadata_record=result_handle_record,
+                payload_backend="json_artifact",
+                payload_format="json",
+                payload_role="report_artifact",
+                payload_locator=(
+                    f"artifacts/tasks/{submitted_task.task_id}/characterization-report.json"
+                ),
+                provenance_task_id=submitted_task.task_id,
+                provenance=build_result_provenance_ref(
+                    source_dataset_id=submitted_task.dataset_id,
+                    source_task_id=submitted_task.task_id,
+                    trace_batch_record=trace_batch_record,
+                ),
+            ),
+        ),
+    )
+    completed_task = runtime.complete_task(
+        submitted_task.task_id,
+        recorded_at=datetime(2026, 3, 12, 12, 12, 0),
+        result=TaskExecutionResult(
+            result_summary_payload={"artifact_label": "characterization-report"},
+            trace_batch_id=submitted_task.task_id,
+        ),
+        result_refs=result_refs,
+    )
+
+    assert started_task.status == "running"
+    assert started_task.events[-1].metadata["audit_action"] == "worker.task_started"
+    assert started_task.events[-1].metadata["worker_pid"] == 4242
+    assert heartbeat_task.progress.percent_complete == 60
+    assert heartbeat_task.events[-1].metadata["current_step"] == 3
+    assert heartbeat_task.events[-1].metadata["total_steps"] == 5
+    assert completed_task.status == "completed"
+    assert completed_task.dispatch is not None
+    assert completed_task.dispatch.status == "completed"
+    assert completed_task.events[-1].event_type == "task_completed"
+    assert completed_task.events[-1].metadata["audit_action"] == "worker.task_completed"
+    assert completed_task.events[-1].metadata["trace_batch_id"] == submitted_task.task_id
+    assert [event.event_type for event in completed_task.events] == [
+        "task_submitted",
+        "task_running",
+        "task_running",
+        "task_completed",
+    ]
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(submitted_task.task_id)
+
+    assert reloaded_task.status == "completed"
+    assert reloaded_task.dispatch is not None
+    assert reloaded_task.dispatch.status == "completed"
+    assert reloaded_task.progress.summary == (
+        "characterization_run_task completed in the characterization lane."
+    )
+    assert reloaded_task.result_refs.trace_batch_id == submitted_task.task_id
+    assert reloaded_task.result_refs.result_handles[0].status == "materialized"
+    assert [event.event_type for event in reloaded_task.events] == [
+        "task_submitted",
+        "task_running",
+        "task_running",
+        "task_completed",
+    ]
+    assert reloaded_task.events[1].metadata["stale_after_seconds"] == 180
+    assert reloaded_task.events[1].metadata["worker_pid"] == 4242
+    assert reloaded_task.events[2].metadata["current_step"] == 3
+    assert reloaded_task.events[3].metadata["audit_action"] == "worker.task_completed"
+    assert reloaded_task.events[3].metadata["trace_batch_id"] == submitted_task.task_id
+
+
+def test_execution_runtime_reconcile_marks_running_task_failed_with_safe_metadata() -> None:
+    submitted_task = get_task_service().submit_task(
+        TaskSubmissionDraft(
+            kind="characterization",
+            dataset_id=None,
+            definition_id=None,
+            summary=None,
+        )
+    )
+    runtime = get_task_execution_runtime()
+    runtime.start_task(
+        submitted_task.task_id,
+        recorded_at=datetime(2026, 3, 12, 12, 20, 0),
+        worker_pid=5252,
+    )
+
+    reconciled_task = runtime.reconcile_stale_task(
+        submitted_task.task_id,
+        recorded_at=datetime(2026, 3, 12, 12, 30, 0),
+        stale_before=datetime(2026, 3, 12, 12, 25, 0),
+    )
+
+    assert reconciled_task.status == "failed"
+    assert reconciled_task.dispatch is not None
+    assert reconciled_task.dispatch.status == "failed"
+    assert reconciled_task.events[-1].event_type == "task_failed"
+    assert reconciled_task.events[-1].metadata["audit_action"] == "reconcile.task_failed"
+    assert reconciled_task.events[-1].metadata["error_code"] == "stale_task_timeout"
+    assert "message" not in reconciled_task.events[-1].metadata
+
+    reset_runtime_state()
+
+    reloaded_history = get_task_service().get_task_history(
+        submitted_task.task_id,
+        TaskEventHistoryQuery(order="desc", limit=4),
+    )
+
+    assert reloaded_history.task.status == "failed"
+    assert reloaded_history.latest_event is not None
+    assert reloaded_history.latest_event.event_type == "task_failed"
+    assert reloaded_history.latest_event.metadata["audit_action"] == "reconcile.task_failed"
+    assert reloaded_history.latest_event.metadata["stale_before"] == "2026-03-12T12:25:00"
 
 
 def test_service_read_reconciles_stale_dispatch_snapshot_to_task_lifecycle() -> None:

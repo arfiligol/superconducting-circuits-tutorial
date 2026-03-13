@@ -8,6 +8,7 @@ from src.app.infrastructure.persistence import (
 )
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
+from src.app.infrastructure.rewrite_execution_runtime import RewriteExecutionRuntime
 from src.app.infrastructure.rewrite_task_repository import PersistedRewriteTaskRepository
 from src.app.services.circuit_definition_service import CircuitDefinitionService
 from src.app.services.dataset_service import DatasetService
@@ -91,6 +92,14 @@ def get_task_service() -> TaskService:
     )
 
 
+@lru_cache(maxsize=1)
+def get_task_execution_runtime() -> RewriteExecutionRuntime:
+    return RewriteExecutionRuntime(
+        task_service=get_task_service(),
+        task_repository=get_rewrite_task_repository(),
+    )
+
+
 def reset_runtime_state() -> None:
     get_settings.cache_clear()
     get_rewrite_catalog_repository.cache_clear()
@@ -102,3 +111,4 @@ def reset_runtime_state() -> None:
     get_circuit_definition_service.cache_clear()
     get_session_service.cache_clear()
     get_task_service.cache_clear()
+    get_task_execution_runtime.cache_clear()

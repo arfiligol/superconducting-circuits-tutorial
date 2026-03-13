@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import Protocol
 
@@ -55,6 +56,13 @@ class TaskSnapshotRepository(Protocol):
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail: ...
 
     def save_task_snapshot(self, task: TaskDetail) -> TaskDetail: ...
+
+    def merge_task_event_metadata(
+        self,
+        task_id: int,
+        event_key: str,
+        metadata: Mapping[str, object],
+    ) -> None: ...
 
 
 class PersistedRewriteTaskRepository:
@@ -136,6 +144,18 @@ class PersistedRewriteTaskRepository:
             self._persist_result_refs(update.result_refs)
 
         return self._hydrate_task(replace(persisted_snapshot, result_refs=effective_result_refs))
+
+    def merge_task_event_metadata(
+        self,
+        task_id: int,
+        event_key: str,
+        metadata: Mapping[str, object],
+    ) -> None:
+        self._task_snapshot_repository.merge_task_event_metadata(
+            task_id,
+            event_key,
+            metadata,
+        )
 
     def _ensure_seed_task_snapshots(self) -> None:
         if self._task_snapshot_repository.has_tasks():

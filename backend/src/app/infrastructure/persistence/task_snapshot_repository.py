@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
 from sc_core.tasking import TaskExecutionMode, WorkerTaskName
@@ -203,6 +204,32 @@ class SqliteRewriteTaskSnapshotRepository:
             session.refresh(row)
             session.refresh(dispatch_row)
             return _to_task_detail(row, dispatch_row, event_rows, result_refs=task.result_refs)
+
+    def merge_task_event_metadata(
+        self,
+        task_id: int,
+        event_key: str,
+        metadata: Mapping[str, object],
+    ) -> None:
+        with self._session_factory() as session:
+            row = session.scalar(
+                select(RewriteTaskEventRecord).where(
+                    RewriteTaskEventRecord.task_id == task_id,
+                    RewriteTaskEventRecord.event_key == event_key,
+                )
+            )
+            if row is None:
+                return
+            merged_metadata = dict(row.metadata_json)
+            changed = False
+            for key, value in metadata.items():
+                if merged_metadata.get(key) != value:
+                    merged_metadata[key] = value
+                    changed = True
+            if not changed:
+                return
+            row.metadata_json = merged_metadata
+            session.commit()
 
 
 def _upsert_dispatch_row(
