@@ -1,6 +1,5 @@
 """Characterization-lane operator commands."""
 
-from enum import Enum
 from typing import Annotated, cast
 
 import typer
@@ -11,33 +10,16 @@ from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_task_detail, render_task_inspection
 from sc_cli.runtime import get_task, list_tasks, submit_task
 from sc_cli.task_operator import (
-    TERMINAL_TASK_STATUSES,
+    TaskScopeOption,
+    TaskStatusOption,
+    WaitStatusOption,
     get_lane_task_or_exit,
+    has_reached_wait_target,
     latest_lane_task_or_exit,
     wait_for_task_or_exit,
 )
 
 app = typer.Typer(help="Operate on characterization-lane tasks.", no_args_is_help=True)
-
-
-class TaskStatusOption(str, Enum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class TaskScopeOption(str, Enum):
-    WORKSPACE = "workspace"
-    OWNED = "owned"
-
-
-class WaitStatusOption(str, Enum):
-    TERMINAL = "terminal"
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 @app.command("submit")
@@ -189,6 +171,4 @@ def _has_reached_wait_target(
     task: TaskDetailResponse,
     until_status: WaitStatusOption,
 ) -> bool:
-    if until_status is WaitStatusOption.TERMINAL:
-        return task.status in TERMINAL_TASK_STATUSES
-    return task.status == until_status.value
+    return has_reached_wait_target(task=task, until_status=until_status)

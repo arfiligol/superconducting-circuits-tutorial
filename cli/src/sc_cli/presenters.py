@@ -394,6 +394,77 @@ def render_task_inspection(
     return "\n".join(lines)
 
 
+def render_task_operations_bundle(
+    task: TaskDetailResponse,
+    *,
+    recent_event_limit: int = 3,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    recent_events = task.events[-recent_event_limit:]
+    result_summary = {
+        "trace_batch_id": task.result_refs.trace_batch_id,
+        "analysis_run_id": task.result_refs.analysis_run_id,
+        "metadata_record_count": len(task.result_refs.metadata_records),
+        "result_handle_count": len(task.result_refs.result_handles),
+        "trace_payload_present": task.result_refs.trace_payload is not None,
+        "result_handle_ids": [handle.handle_id for handle in task.result_refs.result_handles],
+    }
+    latest_event = task.events[-1] if task.events else None
+    inspection = {
+        "event_count": len(task.events),
+        "latest_event": None if latest_event is None else latest_event.model_dump(mode="json"),
+        "metadata_record_count": result_summary["metadata_record_count"],
+        "result_handle_count": result_summary["result_handle_count"],
+        "trace_payload_present": result_summary["trace_payload_present"],
+        "trace_batch_id": result_summary["trace_batch_id"],
+        "analysis_run_id": result_summary["analysis_run_id"],
+    }
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": task.model_dump(mode="json"),
+                "inspection": inspection,
+                "recent_events": [event.model_dump(mode="json") for event in recent_events],
+                "result_summary": result_summary,
+            }
+        )
+    lines = [
+        render_task_inspection(task, output=OutputMode.TEXT),
+        "recent_events:",
+    ]
+    if not recent_events:
+        lines.append("- none")
+    else:
+        for event in recent_events:
+            lines.append(
+                _render_list_line(
+                    event.occurred_at,
+                    (
+                        f"type={event.event_type}",
+                        f"level={event.level}",
+                        f"message={event.message}",
+                    ),
+                )
+            )
+    lines.extend(
+        [
+            "result_summary:",
+            f"trace_batch_id: {_render_nullable(result_summary['trace_batch_id'])}",
+            f"analysis_run_id: {_render_nullable(result_summary['analysis_run_id'])}",
+            f"metadata_record_count: {result_summary['metadata_record_count']}",
+            f"result_handle_count: {result_summary['result_handle_count']}",
+            f"trace_payload_present: {_render_bool(result_summary['trace_payload_present'])}",
+            "result_handle_ids: "
+            + (
+                ", ".join(result_summary["result_handle_ids"])
+                if result_summary["result_handle_ids"]
+                else "-"
+            ),
+        ]
+    )
+    return "\n".join(lines)
+
+
 def render_task_result_refs(
     task: TaskDetailResponse,
     *,

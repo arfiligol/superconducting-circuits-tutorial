@@ -1,6 +1,5 @@
 """Simulation-lane operator commands."""
 
-from enum import Enum
 from typing import Annotated, cast
 
 import typer
@@ -11,25 +10,16 @@ from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_task_detail, render_task_inspection
 from sc_cli.runtime import get_task, list_tasks, submit_task
 from sc_cli.task_operator import (
-    TERMINAL_TASK_STATUSES,
+    TaskScopeOption,
+    TaskStatusOption,
+    WaitStatusOption,
     get_lane_task_or_exit,
+    has_reached_wait_target,
     latest_lane_task_or_exit,
     wait_for_task_or_exit,
 )
 
 app = typer.Typer(help="Operate on simulation-lane tasks.", no_args_is_help=True)
-
-
-class TaskStatusOption(str, Enum):
-    QUEUED = "queued"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-class TaskScopeOption(str, Enum):
-    WORKSPACE = "workspace"
-    OWNED = "owned"
 
 
 @app.command("submit")
@@ -123,6 +113,13 @@ def latest_command(
 @app.command("wait")
 def wait_command(
     task_id: Annotated[int, typer.Argument(min=1, help="Simulation-lane task id to follow.")],
+    until_status: Annotated[
+        WaitStatusOption,
+        typer.Option(
+            "--until-status",
+            help="Task status to wait for. Use terminal to wait for completed/failed.",
+        ),
+    ] = WaitStatusOption.TERMINAL,
     interval: Annotated[
         float,
         typer.Option("--interval", min=0.1, help="Polling interval in seconds."),
@@ -133,12 +130,15 @@ def wait_command(
     ] = 30.0,
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
-    """Poll one simulation-lane task until it reaches a terminal state or times out."""
+    """Poll one simulation-lane task until it reaches the requested status."""
     task = wait_for_task_or_exit(
         load_task=lambda: _get_simulation_task_or_exit(task_id=task_id, output=output),
-        is_ready=lambda current_task: current_task.status in TERMINAL_TASK_STATUSES,
+        is_ready=lambda current_task: has_reached_wait_target(
+            task=current_task,
+            until_status=until_status,
+        ),
         timeout_message=(
-            f"Timed out waiting for simulation-lane task {task_id} to reach a terminal state."
+            f"Timed out waiting for simulation-lane task {task_id} to reach {until_status.value}."
         ),
         interval=interval,
         timeout=timeout,

@@ -6,7 +6,16 @@ from sc_backend import ApiErrorBodyResponse, BackendContractError
 from typer.testing import CliRunner
 
 from sc_cli.app import app
-from sc_cli.commands import characterization, datasets, events, results, session, simulation, tasks
+from sc_cli.commands import (
+    characterization,
+    datasets,
+    events,
+    ops,
+    results,
+    session,
+    simulation,
+    tasks,
+)
 from sc_cli.runtime import reset_runtime_state
 
 
@@ -684,6 +693,90 @@ def test_tasks_wait_command_supports_json_output() -> None:
     assert '"status": "completed"' in result.stdout
 
 
+def test_ops_inspect_command_groups_connected_operator_bundle() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["ops", "inspect", "303"])
+
+    assert result.exit_code == 0
+    assert "inspection:" in result.stdout
+    assert "recent_events:" in result.stdout
+    assert "result_summary:" in result.stdout
+    assert "result_handle_ids: result:fluxonium-2025-031:fit-summary" in result.stdout
+
+
+def test_ops_latest_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["ops", "latest", "--lane", "simulation", "--status", "completed", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"task": {' in result.stdout
+    assert '"inspection": {' in result.stdout
+    assert '"recent_events": [' in result.stdout
+    assert '"result_summary": {' in result.stdout
+
+
+def test_ops_wait_command_supports_json_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ops",
+            "wait",
+            "303",
+            "--until-status",
+            "completed",
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"task": {' in result.stdout
+    assert '"recent_events": [' in result.stdout
+    assert '"event_type": "task_completed"' in result.stdout
+
+
+def test_ops_submit_command_can_wait_for_requested_status() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ops",
+            "submit",
+            "characterization",
+            "--dataset-id",
+            "transmon-coupler-014",
+            "--wait",
+            "--until-status",
+            "queued",
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"task": {' in result.stdout
+    assert '"kind": "characterization"' in result.stdout
+    assert '"status": "queued"' in result.stdout
+    assert '"recent_events": [' in result.stdout
+    assert '"result_summary": {' in result.stdout
+
+
 def test_events_show_command_groups_persisted_task_history() -> None:
     runner = CliRunner()
 
@@ -950,6 +1043,29 @@ def test_simulation_wait_command_supports_json_output() -> None:
     assert '"task_id": 303' in result.stdout
     assert '"status": "completed"' in result.stdout
     assert '"lane": "simulation"' in result.stdout
+
+
+def test_simulation_wait_command_supports_until_status_option() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "simulation",
+            "wait",
+            "301",
+            "--until-status",
+            "running",
+            "--interval",
+            "0.1",
+            "--timeout",
+            "0.2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "task_id: 301" in result.stdout
+    assert "status: running" in result.stdout
 
 
 def test_simulation_show_command_rejects_non_simulation_lane_task() -> None:
@@ -1301,6 +1417,18 @@ def test_events_show_command_handles_backend_contract_errors(
     monkeypatch.setattr(events, "get_task", lambda _: _raise_backend_error("Task read failed."))
 
     result = runner.invoke(app, ["events", "show", "303"])
+
+    assert result.exit_code == 2
+    assert "error: Task read failed. [validation/request_failed]" in result.output
+
+
+def test_ops_inspect_command_handles_backend_contract_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr(ops, "get_task", lambda _: _raise_backend_error("Task read failed."))
+
+    result = runner.invoke(app, ["ops", "inspect", "303"])
 
     assert result.exit_code == 2
     assert "error: Task read failed. [validation/request_failed]" in result.output

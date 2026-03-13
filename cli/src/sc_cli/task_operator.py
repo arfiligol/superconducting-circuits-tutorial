@@ -1,6 +1,7 @@
 """Shared task-operator helpers for CLI command families."""
 
 from collections.abc import Callable
+from enum import Enum
 from time import monotonic, sleep
 
 from sc_backend import (
@@ -14,6 +15,26 @@ from sc_cli.errors import exit_for_backend_error, exit_with_runtime_error
 from sc_cli.output import OutputMode
 
 TERMINAL_TASK_STATUSES = {"completed", "failed"}
+
+
+class TaskStatusOption(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class TaskScopeOption(str, Enum):
+    WORKSPACE = "workspace"
+    OWNED = "owned"
+
+
+class WaitStatusOption(str, Enum):
+    TERMINAL = "terminal"
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 def get_task_or_exit(
@@ -106,6 +127,16 @@ def wait_for_task_or_exit(
         if monotonic() >= deadline:
             exit_with_runtime_error(timeout_message)
         sleep(interval)
+
+
+def has_reached_wait_target(
+    *,
+    task: TaskDetailResponse,
+    until_status: WaitStatusOption,
+) -> bool:
+    if until_status is WaitStatusOption.TERMINAL:
+        return task.status in TERMINAL_TASK_STATUSES
+    return task.status == until_status.value
 
 
 def select_task_events(
