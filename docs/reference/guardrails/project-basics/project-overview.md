@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite branch 的產品使命、功能範疇、desktop 支援與 migration 方向。
-version: v2.1.0
-last_updated: 2026-03-11
-updated_by: docs-team
+version: v2.2.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Project Overview
@@ -31,6 +31,43 @@ updated_by: docs-team
 - Circuit Simulation
 - Characterization & Analysis
 - CLI Available
+
+## Product Goals
+
+本產品的核心目標不是單純重寫 UI，而是建立一個可維護、可擴張、可追蹤的超導電路研究工作平台。
+
+- 以單一 canonical circuit definition 串起 UI、CLI、模擬、schemdraw 與分析流程
+- 讓研究者能在同一套系統中完成電路定義、模擬、characterization、資料管理、任務追蹤與結果回看
+- 讓既有 NiceGUI、CLI、core script 與資料檔案中的能力收斂到一致的 contract 與 execution model
+
+## Research Workflow Goals
+
+本專案必須支援下列研究工作流，而不是只提供零散工具：
+
+- 撰寫與驗證 circuit definition / netlist
+- 從 circuit definition 驅動 schemdraw、simulation 與 characterization
+- 管理 dataset / trace / analysis result / derived parameters / provenance
+- 讓結果可被保存、追溯、重新 attach、重新分析與比較
+
+## Data And Provenance Goals
+
+本專案的資料面目標是把 metadata、trace payload 與結果關聯清楚切開，同時保持可重建性。
+
+- metadata 由資料庫管理
+- numeric payload 與 trace 由 TraceStore 管理
+- 任一 simulation / post-process / characterization 結果都必須可追到 dataset、trace、task 與 provenance
+- frontend 不得成為 canonical computation state 的唯一持有者
+
+## System Success Criteria
+
+整體重構完成時，至少要同時成立：
+
+- legacy NiceGUI 與既有 CLI 能做到的事，在新系統中都能做到
+- backend 可獨立提供 auth / CRUD / task / TraceStore / execution contracts
+- `sc_core` 成為 canonical contracts 與共享計算邏輯的中心
+- frontend 只保留 draft state / interaction state / view state，不保存 canonical computation state
+- Electron 只作為 desktop shell，不改變系統邊界
+- task / dataset / result 可在 refresh、reconnect、重開後重新 attach 與重建
 
 ## Scope
 
@@ -93,5 +130,9 @@ updated_by: docs-team
     - scientific accuracy
     - reproducible workflows
     - one canonical definition feeding UI, API, CLI, simulation, and schemdraw
+- **Product goals**:
+    - support circuit definition, simulation, characterization, data management, task tracking, and result recovery in one platform
+    - keep metadata, trace payloads, and provenance contracts explicit and reconstructible
+    - ensure frontend holds draft/view state only, while canonical computation state stays in backend/core/storage contracts
 - **Audience**: researchers, students, and developers working on superconducting-circuit simulation and analysis workflows.
 ```

@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
+from sc_core.execution import (
+    ExecutionEventLog,
+    TaskCreationSpec,
+    TaskExecutionOperation,
+    TaskExecutionTransition,
+    TaskLifecycleMutation,
+)
+from sc_core.storage import TraceResultLinkage
+
 from core.shared.persistence.models import AnalysisRunRecord, AuditLogRecord, TaskRecord, UserRecord
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
@@ -39,6 +48,8 @@ class AnalysisRunPersistenceContract(Protocol):
 class TaskPersistenceContract(Protocol):
     """Task lifecycle persistence API for persisted orchestration flows."""
 
+    def create_task_from_spec(self, spec: TaskCreationSpec) -> TaskRecord: ...
+
     def create_task(
         self,
         task_kind: str,
@@ -52,6 +63,16 @@ class TaskPersistenceContract(Protocol):
         analysis_run_id: int | None = None,
     ) -> TaskRecord: ...
 
+    def apply_lifecycle_mutation(self, task_id: int, mutation: TaskLifecycleMutation) -> None: ...
+
+    def apply_execution_transition(
+        self,
+        task_id: int,
+        transition: TaskExecutionTransition,
+    ) -> None: ...
+
+    def apply_execution_operation(self, operation: TaskExecutionOperation) -> None: ...
+
     def mark_running(self, task_id: int) -> None: ...
 
     def heartbeat(self, task_id: int, progress_payload: dict[str, Any]) -> None: ...
@@ -59,7 +80,7 @@ class TaskPersistenceContract(Protocol):
     def mark_completed(
         self,
         task_id: int,
-        trace_batch_id: int | None,
+        result_linkage: TraceResultLinkage | int | None,
         result_summary_payload: dict[str, Any],
         *,
         analysis_run_id: int | None = None,
@@ -113,6 +134,18 @@ class UserPersistenceContract(Protocol):
 @runtime_checkable
 class AuditLogPersistenceContract(Protocol):
     """Audit-log persistence API for actor-traceable actions."""
+
+    def append_execution_event(
+        self,
+        *,
+        actor_id: int | None,
+        event: ExecutionEventLog,
+    ) -> AuditLogRecord: ...
+
+    def append_execution_operation(
+        self,
+        operation: TaskExecutionOperation,
+    ) -> AuditLogRecord | None: ...
 
     def append_log(
         self,

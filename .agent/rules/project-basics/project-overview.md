@@ -22,4 +22,8 @@
     - scientific accuracy
     - reproducible workflows
     - one canonical definition feeding UI, API, CLI, simulation, and schemdraw
+- **Product goals**:
+    - support circuit definition, simulation, characterization, data management, task tracking, and result recovery in one platform
+    - keep metadata, trace payloads, and provenance contracts explicit and reconstructible
+    - ensure frontend holds draft/view state only, while canonical computation state stays in backend/core/storage contracts
 - **Audience**: researchers, students, and developers working on superconducting-circuit simulation and analysis workflows.

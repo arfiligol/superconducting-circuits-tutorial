@@ -6,4 +6,4 @@
 - **Versioning**: patch/minor/major bumps for doc changes
 - **Nav/links**: keep navigation and relative links aligned with `zensical.toml`
 - **Architecture Term**: this repo uses `Native zh-TW Build`
-- **Verify**: `./scripts/prepare_docs_locales.sh`, `uv run --group dev zensical build -f zensical.toml`, and `uv run python scripts/check_docs_nav_routes.py --check-built` must pass
+- **Verify**: run `./scripts/prepare_docs_locales.sh`, `uv run --group dev zensical build -f zensical.toml`, and `uv run python scripts/check_docs_nav_routes.py --check-built`

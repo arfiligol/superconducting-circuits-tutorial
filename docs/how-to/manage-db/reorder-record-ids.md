@@ -73,7 +73,4 @@ uv run sc-db tag auto-reorder
 
 請參考各 model 的 CLI Reference：
 
-- [sc-db dataset-record](../../reference/cli/sc-db-dataset-record.md)
-- [sc-db data-record](../../reference/cli/sc-db-data-record.md)
-- [sc-db derived-parameter](../../reference/cli/sc-db-derived-parameter.md)
-- [sc-db tag](../../reference/cli/sc-db-tag.md)
+- [CLI Reference](../../reference/cli/index.md)

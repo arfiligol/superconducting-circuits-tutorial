@@ -57,4 +57,4 @@ $$
 
 - 前置：[拉格朗日力學如何與電路物理結合？](lagrangian-mechanics-and-circuit-physics.md)
 - 任務導向：[SQUID Fitting](../../how-to/fit-model/squid.md)
-- 任務導向：[Flux Dependence Plot](../../reference/cli/flux-dependence-plot.md)
+- 任務導向：[CLI Reference](../../reference/cli/index.md)

@@ -5,6 +5,10 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from sc_core.storage import (
+    TraceBatchLifecyclePayload,
+    merge_trace_batch_summary_payload,
+)
 from sqlalchemy import String, and_, asc, case, delete, desc, func, not_, or_
 from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
@@ -63,76 +67,6 @@ def _canonical_trace_row(row: dict[str, str | int]) -> dict[str, str | int]:
     }
 
 
-def _resolved_source_kind(batch: TraceBatchRecord) -> str:
-    """Best-effort canonical source kind from legacy bundle fields."""
-    payload_value = batch.source_meta.get("source_kind")
-    if isinstance(payload_value, str) and payload_value.strip():
-        return payload_value.strip()
-    if batch.bundle_type == "simulation_postprocess":
-        return "circuit_simulation"
-    if batch.bundle_type == "characterization":
-        return "analysis"
-    return str(batch.bundle_type).strip()
-
-
-def _resolved_stage_kind(batch: TraceBatchRecord) -> str:
-    """Best-effort canonical stage kind from legacy bundle fields."""
-    payload_value = batch.source_meta.get("stage_kind")
-    if isinstance(payload_value, str) and payload_value.strip():
-        return payload_value.strip()
-    if batch.bundle_type == "circuit_simulation" and batch.role == "cache":
-        return "raw"
-    if batch.bundle_type == "simulation_postprocess":
-        return "postprocess"
-    return str(batch.role).strip()
-
-
-def _resolved_setup_kind(batch: TraceBatchRecord) -> str | None:
-    """Best-effort setup kind value for the canonical snapshot contract."""
-    value = batch.config_snapshot.get("setup_kind")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-
-    source_kind = _resolved_source_kind(batch)
-    stage_kind = _resolved_stage_kind(batch)
-    if source_kind and stage_kind:
-        return f"{source_kind}.{stage_kind}"
-    return None
-
-
-def _resolved_setup_version(batch: TraceBatchRecord) -> str | None:
-    """Best-effort setup version value for the canonical snapshot contract."""
-    value = batch.config_snapshot.get("setup_version")
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    source_value = batch.source_meta.get("schema_version")
-    if isinstance(source_value, str) and source_value.strip():
-        return source_value.strip()
-    return None
-
-
-def _merge_summary_payload(
-    result_payload: dict[str, Any],
-    summary_payload: dict[str, Any],
-) -> dict[str, Any]:
-    """Merge summary metadata into either canonical trace-batch or legacy payload shape."""
-    if not summary_payload:
-        return dict(result_payload)
-
-    merged = deepcopy(result_payload)
-    trace_batch_record = merged.get("trace_batch_record")
-    if isinstance(trace_batch_record, dict):
-        existing_summary = trace_batch_record.get("summary_payload")
-        trace_batch_record["summary_payload"] = {
-            **(existing_summary if isinstance(existing_summary, dict) else {}),
-            **summary_payload,
-        }
-        merged["trace_batch_record"] = trace_batch_record
-        return merged
-
-    return {**merged, **summary_payload}
-
-
 class TraceBatchRepository:
     """Repository for trace-batch metadata and membership operations."""
 
@@ -155,19 +89,23 @@ class TraceBatchRepository:
             return None
         if str(batch.status) != "completed":
             return None
-        return {
-            "id": int(batch.id),
-            "design_id": int(batch.dataset_id),
-            "source_kind": _resolved_source_kind(batch),
-            "stage_kind": _resolved_stage_kind(batch),
-            "status": str(batch.status),
-            "parent_batch_id": batch.parent_batch_id,
-            "setup_kind": _resolved_setup_kind(batch),
-            "setup_version": _resolved_setup_version(batch),
-            "provenance_payload": deepcopy(batch.source_meta),
-            "setup_payload": deepcopy(batch.config_snapshot),
-            "summary_payload": deepcopy(batch.result_payload),
-        }
+        lifecycle_payload = TraceBatchLifecyclePayload.from_persisted_batch(
+            bundle_type=str(batch.bundle_type),
+            role=str(batch.role),
+            source_meta=dict(batch.source_meta),
+            config_snapshot=dict(batch.config_snapshot),
+            result_payload=dict(batch.result_payload),
+        )
+        return cast(
+            TraceBatchSnapshot,
+            {
+                "id": int(batch.id),
+                "design_id": int(batch.dataset_id),
+                "status": str(batch.status),
+                "parent_batch_id": batch.parent_batch_id,
+                **lifecycle_payload.to_snapshot_payload(),
+            },
+        )
 
     def get_snapshot(self, id: int) -> ResultBundleSnapshot | None:
         """Get one detached legacy snapshot for provenance reads."""
@@ -213,9 +151,12 @@ class TraceBatchRepository:
         batch.status = "in_progress"
         batch.completed_at = None
         if isinstance(summary_payload, dict):
-            batch.result_payload = _merge_summary_payload(
-                dict(batch.result_payload),
-                dict(summary_payload),
+            batch.result_payload = cast(
+                dict[str, Any],
+                merge_trace_batch_summary_payload(
+                    dict(batch.result_payload),
+                    dict(summary_payload),
+                ),
             )
         self._session.add(batch)
         self._session.flush()
@@ -234,9 +175,12 @@ class TraceBatchRepository:
         batch.status = "completed"
         batch.completed_at = _utcnow()
         if isinstance(summary_payload, dict):
-            batch.result_payload = _merge_summary_payload(
-                dict(batch.result_payload),
-                dict(summary_payload),
+            batch.result_payload = cast(
+                dict[str, Any],
+                merge_trace_batch_summary_payload(
+                    dict(batch.result_payload),
+                    dict(summary_payload),
+                ),
             )
         self._session.add(batch)
         self._session.flush()
@@ -255,9 +199,12 @@ class TraceBatchRepository:
         batch.status = "failed"
         batch.completed_at = _utcnow()
         if isinstance(summary_payload, dict):
-            batch.result_payload = _merge_summary_payload(
-                dict(batch.result_payload),
-                dict(summary_payload),
+            batch.result_payload = cast(
+                dict[str, Any],
+                merge_trace_batch_summary_payload(
+                    dict(batch.result_payload),
+                    dict(summary_payload),
+                ),
             )
         self._session.add(batch)
         self._session.flush()

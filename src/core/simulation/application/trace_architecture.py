@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sc_core.storage import (
+    POSTPROCESS_SWEEP_TRACE_WRITER_VERSION,
+    SIMULATION_RAW_SWEEP_TRACE_WRITER_VERSION,
+)
 
 from core.shared.persistence.trace_store import (
     LocalZarrTraceStore,
@@ -473,6 +477,8 @@ class IncrementalRawSimulationSweepWriter:
                 chunk_shape=_default_chunk_shape(shape),
                 array_path="values",
                 store_key=self._store_key,
+                payload_role="raw",
+                writer_version=SIMULATION_RAW_SWEEP_TRACE_WRITER_VERSION,
             )
             store_ref = {
                 **dict(write_result.store_ref),
@@ -654,6 +660,8 @@ class IncrementalPostProcessedSweepWriter:
                 chunk_shape=_default_chunk_shape(shape),
                 array_path="values",
                 store_key=self._store_key,
+                payload_role="processed",
+                writer_version=POSTPROCESS_SWEEP_TRACE_WRITER_VERSION,
             )
             store_ref = {
                 **dict(write_result.store_ref),

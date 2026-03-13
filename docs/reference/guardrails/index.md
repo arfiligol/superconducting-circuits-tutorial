@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 目前 workspace 的 guardrails 總索引，供人類與 AI Agent 載入任務相關規則。
-version: v2.0.0
-last_updated: 2026-03-11
-updated_by: docs-team
+version: v2.2.0
+last_updated: 2026-03-12
+updated_by: codex
 ---
 
 # Guardrails
@@ -37,6 +37,7 @@ updated_by: docs-team
 | [Project Overview](./project-basics/project-overview.md) | Data Browser / Editor / Simulation / Characterization & Analysis / CLI 範疇 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
 | [Tech Stack](./project-basics/tech-stack.md) | Next.js + FastAPI + CLI + Julia simulation stack | [#agent-rule](./project-basics/tech-stack.md#agent-rule) |
 | [Folder Structure](./project-basics/folder-structure.md) | rewrite branch 的 frontend/backend/cli/core 分工 | [#agent-rule](./project-basics/folder-structure.md#agent-rule) |
+| [Backend Architecture](./project-basics/backend-architecture.md) | headless backend 的責任邊界與分層 | [#agent-rule](./project-basics/backend-architecture.md#agent-rule) |
 | [Source of Truth Order](./project-basics/source-of-truth-order.md) | reference、shared core、adapter、legacy 衝突時的裁決順序 | [#agent-rule](./project-basics/source-of-truth-order.md#agent-rule) |
 
 ### Code Quality
@@ -75,6 +76,7 @@ updated_by: docs-team
 | [Testing](./execution-verification/testing.md) | pytest / Vitest / Playwright / docs checks | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI Gates](./execution-verification/ci-gates.md) | rewrite branch 的合併品質門檻 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
 | [Phase Gates](./execution-verification/phase-gates.md) | migration phase 的最低驗收條件與測試對照 | [#agent-rule](./execution-verification/phase-gates.md#agent-rule) |
+| [Prompt Grading](./execution-verification/prompt-grading.md) | Integrator 發派 Contributor Prompt 時的任務粒度與升降級規則 | [#agent-rule](./execution-verification/prompt-grading.md#agent-rule) |
 | [Commit Standards](./execution-verification/commit-standards.md) | commit 邊界與訊息規範 | [#agent-rule](./execution-verification/commit-standards.md#agent-rule) |
 
 ### Documentation Design

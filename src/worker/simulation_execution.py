@@ -8,13 +8,14 @@ from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import UTC, datetime
 from typing import Any
 
+from sc_core.execution import build_task_heartbeat_operation, build_task_heartbeat_payload
+
 from app.services.simulation_batch_persistence import (
     mark_simulation_batch_failed,
     persist_simulation_result_into_batch,
 )
 from app.services.simulation_runner import SimulationRunRequest, execute_simulation_run
 from app.services.simulation_task_contract import PersistedSimulationTaskRequest
-from app.services.task_progress import progress_update
 from core.shared.persistence.unit_of_work import get_unit_of_work
 from core.simulation.application.run_simulation import (
     SimulationSweepAxis,
@@ -45,28 +46,29 @@ def _heartbeat_task(
     point_label: str | None = None,
     warning: str | None = None,
 ) -> None:
+    recorded_at = _utcnow()
+    details: dict[str, object] = {
+        "elapsed_seconds": int(elapsed_seconds),
+        "trace_batch_id": batch_id,
+        "point_label": point_label,
+        "warning": warning,
+    }
     with get_unit_of_work() as uow:
-        uow.tasks.heartbeat(
-            task_id,
-            progress_update(
-                phase="running",
-                summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
-                stage_label=stage_label,
-                stale_after_seconds=300,
-                details={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "point_label": point_label,
-                    "warning": warning,
-                },
-            ).to_payload(
-                extra={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "point_label": point_label,
-                    "warning": warning,
-                }
-            ),
+        uow.tasks.apply_execution_operation(
+            build_task_heartbeat_operation(
+                task_id=task_id,
+                recorded_at=recorded_at,
+                progress_payload=build_task_heartbeat_payload(
+                    phase="running",
+                    summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
+                    recorded_at=recorded_at,
+                    stage_label=stage_label,
+                    stale_after_seconds=300,
+                    warning=warning,
+                    details=details,
+                    extra_payload=details,
+                ),
+            )
         )
         uow.commit()
 

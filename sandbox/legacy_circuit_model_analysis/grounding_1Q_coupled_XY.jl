@@ -2,7 +2,7 @@ using JosephsonCircuits
 using PlotlyJS
 using CSV, DataFrames
 
-include("../utils.jl")
+include("../../src/julia/utils.jl")
 
 pH = 1e-12
 fF = 1e-15

@@ -6,6 +6,21 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from sc_core.execution import (
+    TaskCreationSpec,
+    TaskExecutionOperation,
+    TaskExecutionTransition,
+    TaskLifecycleMutation,
+    TaskResultHandle,
+    build_task_completed_mutation,
+    build_task_creation_spec,
+    build_task_failed_mutation,
+    build_task_heartbeat_operation,
+    build_task_queued_transition,
+    build_task_running_mutation,
+    normalize_task_dedupe_key,
+)
+from sc_core.storage import TraceResultLinkage
 from sqlalchemy import desc, or_
 from sqlmodel import Session, col, select
 
@@ -43,6 +58,42 @@ class TaskRepository:
             raise ValueError(f"Task ID {task_id} not found.")
         return task
 
+    def _apply_task_mutation(self, task: TaskRecord, mutation: TaskLifecycleMutation) -> None:
+        if mutation.status is not None:
+            task.status = mutation.status
+        if mutation.started_at is not None:
+            task.started_at = mutation.started_at
+        if mutation.heartbeat_at is not None:
+            task.heartbeat_at = mutation.heartbeat_at
+        if mutation.completed_at is not None:
+            task.completed_at = mutation.completed_at
+        if mutation.progress_payload is not None:
+            task.progress_payload = dict(mutation.progress_payload)
+        if mutation.result_summary_payload is not None:
+            task.result_summary_payload = dict(mutation.result_summary_payload)
+        if mutation.error_payload is not None:
+            task.error_payload = dict(mutation.error_payload)
+        if mutation.result_handle is not None:
+            task.trace_batch_id = mutation.result_handle.trace_batch_id
+            task.analysis_run_id = mutation.result_handle.analysis_run_id
+
+    def _result_handle_from_inputs(
+        self,
+        result_linkage: TraceResultLinkage | int | None,
+        *,
+        analysis_run_id: int | None = None,
+    ) -> TaskResultHandle:
+        if isinstance(result_linkage, TraceResultLinkage):
+            if analysis_run_id is not None:
+                raise ValueError(
+                    "analysis_run_id cannot be combined with TraceResultLinkage inputs."
+                )
+            return result_linkage.to_result_handle()
+        return TaskResultHandle(
+            trace_batch_id=result_linkage,
+            analysis_run_id=analysis_run_id,
+        )
+
     def create_task(
         self,
         task_kind: str,
@@ -56,70 +107,104 @@ class TaskRepository:
         analysis_run_id: int | None = None,
     ) -> TaskRecord:
         """Create and flush one queued task record."""
-        task = TaskRecord(
-            task_kind=task_kind,
-            status="queued",
-            design_id=design_id,
-            trace_batch_id=trace_batch_id,
-            analysis_run_id=analysis_run_id,
-            requested_by=requested_by,
-            actor_id=actor_id,
-            dedupe_key=dedupe_key,
-            request_payload=dict(request_payload),
+        return self.create_task_from_spec(
+            build_task_creation_spec(
+                task_kind=task_kind,
+                design_id=design_id,
+                request_payload=request_payload,
+                requested_by=requested_by,
+                actor_id=actor_id,
+                dedupe_key=dedupe_key,
+                result_handle=TaskResultHandle(
+                    trace_batch_id=trace_batch_id,
+                    analysis_run_id=analysis_run_id,
+                ),
+            )
         )
+
+    def create_task_from_spec(self, spec: TaskCreationSpec) -> TaskRecord:
+        """Create and flush one queued task record from the canonical creation spec."""
+        queued_transition = build_task_queued_transition(creation_spec=spec)
+        task = TaskRecord(
+            task_kind=spec.task_kind,
+            status="queued",
+            design_id=spec.design_id,
+            requested_by=spec.requested_by,
+            actor_id=spec.actor_id,
+            dedupe_key=spec.dedupe_key,
+            request_payload=dict(spec.request_payload),
+        )
+        self._apply_task_mutation(task, queued_transition.mutation)
         self._session.add(task)
         self._session.flush()
         return task
 
-    def mark_running(self, task_id: int) -> None:
-        """Mark one task as running and stamp start/heartbeat timestamps."""
+    def apply_lifecycle_mutation(self, task_id: int, mutation: TaskLifecycleMutation) -> None:
+        """Apply one canonical lifecycle mutation to a persisted task record."""
         task = self._require_task(task_id)
-        now = _utcnow()
-        task.status = "running"
-        task.started_at = now
-        task.heartbeat_at = now
+        self._apply_task_mutation(task, mutation)
         self._session.add(task)
         self._session.flush()
 
+    def apply_execution_transition(
+        self,
+        task_id: int,
+        transition: TaskExecutionTransition,
+    ) -> None:
+        """Apply one canonical orchestration transition to a persisted task record."""
+        self.apply_lifecycle_mutation(task_id, transition.mutation)
+
+    def apply_execution_operation(self, operation: TaskExecutionOperation) -> None:
+        """Apply one canonical persisted-task operation to the stored task row."""
+        self.apply_execution_transition(operation.task_id, operation.transition)
+
+    def mark_running(self, task_id: int) -> None:
+        """Mark one task as running and stamp start/heartbeat timestamps."""
+        self.apply_lifecycle_mutation(
+            task_id,
+            build_task_running_mutation(recorded_at=_utcnow()),
+        )
+
     def heartbeat(self, task_id: int, progress_payload: dict[str, Any]) -> None:
         """Persist one task heartbeat and progress snapshot."""
-        task = self._require_task(task_id)
-        task.heartbeat_at = _utcnow()
-        task.progress_payload = dict(progress_payload)
-        self._session.add(task)
-        self._session.flush()
+        self.apply_execution_operation(
+            build_task_heartbeat_operation(
+                task_id=task_id,
+                recorded_at=_utcnow(),
+                progress_payload=progress_payload,
+            ),
+        )
 
     def mark_completed(
         self,
         task_id: int,
-        trace_batch_id: int | None,
+        result_linkage: TraceResultLinkage | int | None,
         result_summary_payload: dict[str, Any],
         *,
         analysis_run_id: int | None = None,
     ) -> None:
         """Mark one task as completed and link its persisted outputs."""
-        task = self._require_task(task_id)
-        now = _utcnow()
-        task.status = "completed"
-        task.trace_batch_id = trace_batch_id
-        task.analysis_run_id = analysis_run_id
-        task.result_summary_payload = dict(result_summary_payload)
-        task.error_payload = {}
-        task.completed_at = now
-        task.heartbeat_at = now
-        self._session.add(task)
-        self._session.flush()
+        self.apply_lifecycle_mutation(
+            task_id,
+            build_task_completed_mutation(
+                recorded_at=_utcnow(),
+                result_summary_payload=result_summary_payload,
+                result_handle=self._result_handle_from_inputs(
+                    result_linkage,
+                    analysis_run_id=analysis_run_id,
+                ),
+            ),
+        )
 
     def mark_failed(self, task_id: int, error_payload: dict[str, Any]) -> None:
         """Mark one task as failed and persist structured error details."""
-        task = self._require_task(task_id)
-        now = _utcnow()
-        task.status = "failed"
-        task.error_payload = dict(error_payload)
-        task.completed_at = now
-        task.heartbeat_at = now
-        self._session.add(task)
-        self._session.flush()
+        self.apply_lifecycle_mutation(
+            task_id,
+            build_task_failed_mutation(
+                recorded_at=_utcnow(),
+                error_payload=error_payload,
+            ),
+        )
 
     def get_task(self, task_id: int) -> TaskRecord | None:
         """Load one task by ID."""
@@ -150,8 +235,8 @@ class TaskRepository:
 
     def find_active_by_dedupe_key(self, dedupe_key: str) -> TaskRecord | None:
         """Find one queued/running task by its dedupe key."""
-        normalized_key = dedupe_key.strip()
-        if not normalized_key:
+        normalized_key = normalize_task_dedupe_key(dedupe_key)
+        if normalized_key is None:
             return None
         statement = (
             select(TaskRecord)

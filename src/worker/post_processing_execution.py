@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from datetime import UTC, datetime
 
+from sc_core.execution import build_task_heartbeat_operation, build_task_heartbeat_payload
+
 from app.services.post_processing_batch_persistence import (
     mark_post_processing_batch_failed,
     persist_post_processing_result_into_batch,
@@ -22,7 +24,6 @@ from app.services.post_processing_support import (
     extract_compensated_post_processing_payload,
 )
 from app.services.post_processing_task_contract import PersistedPostProcessingTaskRequest
-from app.services.task_progress import progress_update
 from core.shared.persistence.unit_of_work import get_unit_of_work
 from worker.runtime import TaskExecutionResult
 
@@ -42,26 +43,28 @@ def _heartbeat_task(
     elapsed_seconds: int,
     warning: str | None = None,
 ) -> None:
+    recorded_at = _utcnow()
+    details: dict[str, object] = {
+        "elapsed_seconds": int(elapsed_seconds),
+        "trace_batch_id": batch_id,
+        "warning": warning,
+    }
     with get_unit_of_work() as uow:
-        uow.tasks.heartbeat(
-            task_id,
-            progress_update(
-                phase="running",
-                summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
-                stage_label=stage_label,
-                stale_after_seconds=300,
-                details={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "warning": warning,
-                },
-            ).to_payload(
-                extra={
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "trace_batch_id": batch_id,
-                    "warning": warning,
-                }
-            ),
+        uow.tasks.apply_execution_operation(
+            build_task_heartbeat_operation(
+                task_id=task_id,
+                recorded_at=recorded_at,
+                progress_payload=build_task_heartbeat_payload(
+                    phase="running",
+                    summary=warning or f"{stage_label} still running ({elapsed_seconds}s).",
+                    recorded_at=recorded_at,
+                    stage_label=stage_label,
+                    stale_after_seconds=300,
+                    warning=warning,
+                    details=details,
+                    extra_payload=details,
+                ),
+            )
         )
         uow.commit()
 

@@ -10,6 +10,6 @@ uv run python scripts/check_docs_nav_routes.py --check-source
 
 bash ./scripts/prepare_docs_locales.sh
 
-uv run --group dev zensical build -c
+uv run --group dev zensical build -f zensical.toml
 
 uv run python scripts/check_docs_nav_routes.py --check-built

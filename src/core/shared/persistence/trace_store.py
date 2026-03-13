@@ -11,10 +11,17 @@ from urllib.parse import urlparse
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+from sc_core.storage import (
+    TRACE_STORE_SCHEMA_BASELINE_VERSION,
+    TraceStoreLocator,
+    TraceStorePayloadLifecycle,
+    TraceStorePayloadRole,
+    TraceStoreVersionMarkers,
+)
 
 from core.shared.persistence.database import DATABASE_PATH
 
-TRACE_STORE_SCHEMA_VERSION = "1.0"
+TRACE_STORE_SCHEMA_VERSION = TRACE_STORE_SCHEMA_BASELINE_VERSION
 TRACE_STORE_PATH = DATABASE_PATH.parent / "trace_store"
 
 TraceStoreBackend = Literal["local_zarr", "s3_zarr"]
@@ -49,6 +56,8 @@ class TraceStoreRef(TypedDict):
     shape: list[int]
     chunk_shape: list[int]
     schema_version: str
+    payload_role: NotRequired[TraceStorePayloadRole]
+    writer_version: NotRequired[str]
 
 
 @dataclass(frozen=True)
@@ -100,6 +109,8 @@ class TraceStore(Protocol):
         chunk_shape: Sequence[int] | None = None,
         array_path: str = "values",
         store_key: str | None = None,
+        payload_role: TraceStorePayloadRole = "raw",
+        writer_version: str | None = None,
     ) -> TraceWriteResult: ...
 
     def create_trace(
@@ -114,6 +125,8 @@ class TraceStore(Protocol):
         chunk_shape: Sequence[int] | None = None,
         array_path: str = "values",
         store_key: str | None = None,
+        payload_role: TraceStorePayloadRole,
+        writer_version: str | None = None,
     ) -> TraceWriteResult: ...
 
     def write_trace_slice(
@@ -282,8 +295,10 @@ def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
         raise ValueError("TraceStoreRef.shape is required.")
     if len(chunk_shape) != len(shape):
         raise ValueError("TraceStoreRef.chunk_shape must match shape dimensionality.")
+    payload_role = _optional_payload_role(ref.get("payload_role"))
+    writer_version = _optional_str(ref.get("writer_version"))
 
-    return TraceStoreRef(
+    normalized_ref = TraceStoreRef(
         backend=cast(TraceStoreBackend, backend),
         store_key=store_key,
         store_uri=normalized_store_uri,
@@ -294,6 +309,15 @@ def coerce_trace_store_ref(ref: Mapping[str, object]) -> TraceStoreRef:
         chunk_shape=chunk_shape,
         schema_version=schema_version,
     )
+    if payload_role is not None:
+        normalized_ref["payload_role"] = payload_role
+        if writer_version is not None:
+            normalized_ref["writer_version"] = writer_version
+        lifecycle = TraceStorePayloadLifecycle.from_store_ref(normalized_ref)
+        return cast(TraceStoreRef, lifecycle.to_store_ref_payload())
+    if writer_version is not None:
+        normalized_ref["writer_version"] = writer_version
+    return normalized_ref
 
 
 def resolve_trace_store_path(
@@ -343,6 +367,8 @@ class LocalZarrTraceStore:
         chunk_shape: Sequence[int] | None = None,
         array_path: str = "values",
         store_key: str | None = None,
+        payload_role: TraceStorePayloadRole = "raw",
+        writer_version: str | None = None,
     ) -> TraceWriteResult:
         """Write one ND trace and its axis arrays to local Zarr storage."""
         payload = np.asarray(values)
@@ -360,6 +386,8 @@ class LocalZarrTraceStore:
             chunk_shape=normalized_chunk_shape,
             array_path=array_path,
             store_key=store_key,
+            payload_role=payload_role,
+            writer_version=writer_version,
         )
         self.write_trace_slice(
             write_result.store_ref,
@@ -380,6 +408,8 @@ class LocalZarrTraceStore:
         chunk_shape: Sequence[int] | None = None,
         array_path: str = "values",
         store_key: str | None = None,
+        payload_role: TraceStorePayloadRole,
+        writer_version: str | None = None,
     ) -> TraceWriteResult:
         """Create one empty ND trace and axis arrays for incremental slice writes."""
         zarr = _require_zarr()
@@ -392,6 +422,26 @@ class LocalZarrTraceStore:
             str(store_key).strip()
             if store_key is not None and str(store_key).strip()
             else self._backend_binding.build_store_key(design_id=design_id, batch_id=batch_id)
+        )
+        locator = TraceStoreLocator(
+            backend="local_zarr",
+            store_key=resolved_store_key,
+            group_path=f"/traces/{trace_id}",
+            array_path=array_path,
+            dtype=str(np.dtype(dtype)),
+            shape=normalized_shape,
+            chunk_shape=tuple(normalized_chunk_shape),
+            schema_version=TRACE_STORE_SCHEMA_VERSION,
+            store_uri=self._backend_binding.build_store_uri(store_key=resolved_store_key),
+        )
+        version_markers = TraceStoreVersionMarkers.from_locator(
+            locator,
+            payload_role=payload_role,
+            writer_version=writer_version,
+        )
+        lifecycle = TraceStorePayloadLifecycle(
+            locator=locator,
+            version_markers=version_markers,
         )
         store_path = self._backend_binding.resolve_store_path(store_key=resolved_store_key)
 
@@ -419,23 +469,14 @@ class LocalZarrTraceStore:
             {"name": axis["name"], "unit": axis["unit"], "length": axis["length"]}
             for axis in normalized_axes
         ]
+        trace_group.attrs["version_markers"] = version_markers.to_payload()
 
         return TraceWriteResult(
             axes=[
                 TraceAxisMetadata(name=axis["name"], unit=axis["unit"], length=axis["length"])
                 for axis in normalized_axes
             ],
-            store_ref=TraceStoreRef(
-                backend="local_zarr",
-                store_key=resolved_store_key,
-                store_uri=self._backend_binding.build_store_uri(store_key=resolved_store_key),
-                group_path=f"/traces/{trace_id}",
-                array_path=array_path,
-                dtype=str(np.dtype(dtype)),
-                shape=[int(dimension) for dimension in normalized_shape],
-                chunk_shape=normalized_chunk_shape,
-                schema_version=TRACE_STORE_SCHEMA_VERSION,
-            ),
+            store_ref=cast(TraceStoreRef, lifecycle.to_store_ref_payload()),
         )
 
     def write_trace_slice(
@@ -563,6 +604,13 @@ def _normalize_group_path(group_path: str) -> str:
     if not segments:
         return ""
     return "/" + "/".join(segments)
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _normalize_axes(
@@ -730,6 +778,15 @@ def _coerce_int_list(raw_value: object, *, field_name: str) -> list[int]:
     if not isinstance(raw_value, Sequence) or isinstance(raw_value, (str, bytes)):
         raise ValueError(f"TraceStoreRef.{field_name} must be a sequence of integers.")
     return [int(item) for item in raw_value]
+
+
+def _optional_payload_role(value: object) -> TraceStorePayloadRole | None:
+    if value is None:
+        return None
+    payload_role = str(value).strip()
+    if payload_role not in {"raw", "processed", "analysis", "export"}:
+        raise ValueError(f"Unsupported TraceStoreRef.payload_role: {payload_role}")
+    return cast(TraceStorePayloadRole, payload_role)
 
 
 def _require_zarr():

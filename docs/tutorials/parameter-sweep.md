@@ -103,7 +103,7 @@ println(results)
 專案提供 `ili_plot` 工具，簡化 PlotlyJS 繪圖：
 
 ```julia
-include("src/plotting.jl")
+include("src/julia/plotting.jl")
 
 # 收集所有 traces 後
 ili_plot(

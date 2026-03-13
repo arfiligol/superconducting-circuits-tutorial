@@ -8,14 +8,22 @@ import os
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from rq import Queue, SimpleWorker
 from rq.timeouts import TimerDeathPenalty
+from sc_core.execution import (
+    TaskExecutionOperation,
+    TaskExecutionResult,
+    WorkerExecutionContext,
+    build_worker_completed_operation,
+    build_worker_crashing_operation,
+    build_worker_execution_context,
+    build_worker_failed_operation,
+    build_worker_running_operation,
+)
+from sc_core.tasking import WorkerTaskName
 
-from app.services.task_progress import progress_update
 from core.shared.persistence.reconcile import ReconcileSummary, reconcile_stale_tasks_and_batches
 from core.shared.persistence.unit_of_work import get_unit_of_work
 from worker.config import LaneName, ensure_connection_available
@@ -36,187 +44,113 @@ def _utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-@dataclass(frozen=True)
-class TaskExecutionResult:
-    """Persisted worker-task outcome metadata."""
-
-    result_summary_payload: dict[str, Any] = field(default_factory=dict)
-    trace_batch_id: int | None = None
-    analysis_run_id: int | None = None
-
-
-def _task_start_payload(*, lane_name: LaneName, worker_task_name: str) -> dict[str, Any]:
-    """Return progress payload stored when a worker starts one task."""
-    return progress_update(
-        phase="running",
-        summary=f"{worker_task_name} started in the {lane_name} lane.",
-        stage_label=worker_task_name,
-        stale_after_seconds=300,
-        details={
-            "lane": lane_name,
-            "worker_task_name": worker_task_name,
-            "worker_pid": os.getpid(),
-            "started_at": _utcnow().isoformat(),
-        },
-    ).to_payload(extra={"lane": lane_name, "worker_task_name": worker_task_name})
-
-
-def _task_success_payload(
+def _worker_execution_context(
     *,
     lane_name: LaneName,
-    worker_task_name: str,
-    summary_payload: dict[str, Any],
-) -> dict[str, Any]:
-    """Return one completed-task summary payload."""
-    return progress_update(
-        phase="completed",
-        summary=f"{worker_task_name} completed in the {lane_name} lane.",
-        stage_label=worker_task_name,
-        details={
-            **summary_payload,
-            "lane": lane_name,
-            "worker_task_name": worker_task_name,
-            "worker_pid": os.getpid(),
-            "completed_at": _utcnow().isoformat(),
-        },
-    ).to_payload(
-        extra={
-            **summary_payload,
-            "lane": lane_name,
-            "worker_task_name": worker_task_name,
-        }
+    worker_task_name: WorkerTaskName,
+    worker_pid: int | None = None,
+) -> WorkerExecutionContext:
+    """Build canonical worker execution context for one runtime process."""
+    return build_worker_execution_context(
+        lane=lane_name,
+        worker_task_name=worker_task_name,
+        worker_pid=worker_pid if worker_pid is not None else os.getpid(),
     )
 
 
-def _task_error_payload(
-    *,
-    lane_name: LaneName,
-    worker_task_name: str,
-    exc: Exception,
-) -> dict[str, Any]:
-    """Return one structured task failure payload."""
-    return {
-        "error_code": "worker_task_failed",
-        "summary": f"{worker_task_name} failed in the {lane_name} lane.",
-        "details": {
-            "lane": lane_name,
-            "worker_task_name": worker_task_name,
-            "worker_pid": os.getpid(),
-            "exception_type": type(exc).__name__,
-            "message": str(exc),
-        },
-    }
+def _persist_execution_operation(operation: TaskExecutionOperation) -> None:
+    """Persist one shared orchestration operation and its optional audit record."""
+    with get_unit_of_work() as uow:
+        uow.tasks.apply_execution_operation(operation)
+        uow.audit_logs.append_execution_operation(operation)
+        uow.commit()
 
 
 def execute_managed_task(
     *,
     task_id: int,
     lane_name: LaneName,
-    worker_task_name: str,
+    worker_task_name: WorkerTaskName,
     operation: Callable[[], TaskExecutionResult],
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Run one managed worker operation and persist its lifecycle into TaskRecord."""
+    running_at = _utcnow()
+    context = _worker_execution_context(
+        lane_name=lane_name,
+        worker_task_name=worker_task_name,
+    )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-        uow.tasks.mark_running(task_id)
-        uow.tasks.heartbeat(
-            task_id,
-            _task_start_payload(lane_name=lane_name, worker_task_name=worker_task_name),
-        )
-        uow.audit_logs.append_log(
+    _persist_execution_operation(
+        build_worker_running_operation(
+            task_id=task_id,
+            recorded_at=running_at,
+            context=context,
             actor_id=actor_id,
-            action_kind="worker.task_started",
-            resource_kind="task",
-            resource_id=task_id,
-            summary=f"Worker started {worker_task_name} for task {task_id}",
-            payload={"lane": lane_name, "worker_pid": os.getpid()},
-        )
-        uow.commit()
+        ),
+    )
 
     try:
         result = operation()
     except Exception as exc:
-        failure_payload = _task_error_payload(
-            lane_name=lane_name,
-            worker_task_name=worker_task_name,
-            exc=exc,
-        )
+        failed_at = _utcnow()
         with get_unit_of_work() as uow:
             task = uow.tasks.get_task(task_id)
             actor_id = task.actor_id if task is not None else None
-            uow.tasks.mark_failed(task_id, failure_payload)
-            uow.audit_logs.append_log(
-                actor_id=actor_id,
-                action_kind="worker.task_failed",
-                resource_kind="task",
-                resource_id=task_id,
-                summary=f"Worker failed {worker_task_name} for task {task_id}",
-                payload=failure_payload,
-            )
-            uow.commit()
-        return failure_payload
+        failed_operation = build_worker_failed_operation(
+            task_id=task_id,
+            recorded_at=failed_at,
+            context=context,
+            exc_type=type(exc).__name__,
+            message=str(exc),
+            actor_id=actor_id,
+        )
+        _persist_execution_operation(failed_operation)
+        return dict(failed_operation.audit_payload or {})
 
-    completed_payload = _task_success_payload(
-        lane_name=lane_name,
-        worker_task_name=worker_task_name,
-        summary_payload=dict(result.result_summary_payload),
-    )
+    completed_at = _utcnow()
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         actor_id = task.actor_id if task is not None else None
-        uow.tasks.mark_completed(
-            task_id,
-            result.trace_batch_id,
-            completed_payload,
-            analysis_run_id=result.analysis_run_id,
-        )
-        uow.audit_logs.append_log(
-            actor_id=actor_id,
-            action_kind="worker.task_completed",
-            resource_kind="task",
-            resource_id=task_id,
-            summary=f"Worker completed {worker_task_name} for task {task_id}",
-            payload=completed_payload,
-        )
-        uow.commit()
-    return completed_payload
+    completed_operation = build_worker_completed_operation(
+        task_id=task_id,
+        recorded_at=completed_at,
+        context=context,
+        result=result,
+        actor_id=actor_id,
+    )
+    _persist_execution_operation(completed_operation)
+    return dict(completed_operation.audit_payload or {})
 
 
 def mark_task_running_before_crash(
     *,
     task_id: int,
     lane_name: LaneName,
-    worker_task_name: str,
+    worker_task_name: WorkerTaskName,
 ) -> None:
     """Persist a running state immediately before an intentional worker crash."""
+    crash_requested_at = _utcnow()
+    context = _worker_execution_context(
+        lane_name=lane_name,
+        worker_task_name=worker_task_name,
+    )
     with get_unit_of_work() as uow:
         task = uow.tasks.get_task(task_id)
         if task is None:
             raise ValueError(f"Task ID {task_id} not found.")
         actor_id = task.actor_id
-        uow.tasks.mark_running(task_id)
-        uow.tasks.heartbeat(
-            task_id,
-            {
-                "lane": lane_name,
-                "phase": "crashing",
-                "worker_task_name": worker_task_name,
-                "worker_pid": os.getpid(),
-                "crash_requested_at": _utcnow().isoformat(),
-            },
-        )
-        uow.audit_logs.append_log(
+    _persist_execution_operation(
+        build_worker_crashing_operation(
+            task_id=task_id,
+            recorded_at=crash_requested_at,
+            context=context,
             actor_id=actor_id,
-            action_kind="worker.task_crashing",
-            resource_kind="task",
-            resource_id=task_id,
-            summary=f"Worker is about to crash while running {worker_task_name} for task {task_id}",
-            payload={"lane": lane_name, "worker_pid": os.getpid()},
-        )
-        uow.commit()
+        ),
+    )
 
 
 def reconcile_stale_worker_tasks(*, stale_after_seconds: int) -> ReconcileSummary:

@@ -3,7 +3,7 @@ using PlotlyJS
 using CSV
 using DataFrames
 
-include("../utils.jl")
+include("../../src/julia/utils.jl")
 
 nH = 1e-9
 pH = 1e-12

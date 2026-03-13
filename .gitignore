@@ -12,6 +12,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+!frontend/src/lib/
+!frontend/src/lib/**
+!frontend/src/features/**/lib/
+!frontend/src/features/**/lib/**
 lib64/
 parts/
 sdist/
@@ -97,6 +101,7 @@ Thumbs.db
 # Sandbox - Experiments
 sandbox/*
 !sandbox/README.md
+!sandbox/test_sim.py
 !sandbox/legacy_circuit_model_analysis/
 
 # Local history
@@ -122,9 +127,20 @@ data/**/*.zarr/
 *.db
 *.sqlite
 *.sqlite3
+data/huey/
+
+# Generated package metadata can appear inside workspace packages too
+backend/**/*.egg-info/
+cli/**/*.egg-info/
+src/core/**/*.egg-info/
 
 # NiceGUI local user storage generated during local UI/E2E sessions
+.nicegui/
 .nicegui/storage-user-*.json
 
 # Local Playwright runtime outputs/logs
+output/
 output/playwright/
+tmp/
+tmp/rewrite_logs/
+tmp/rewrite_pids/

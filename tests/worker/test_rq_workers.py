@@ -295,6 +295,7 @@ def test_real_characterization_worker_task_persists_analysis_run(
         assert task.status == "completed"
         assert task.analysis_run_id == analysis_run_id
         assert task.result_summary_payload["worker_task_name"] == "characterization_run_task"
+        assert task.result_summary_payload["result_refs"] == {"analysis_run_id": analysis_run_id}
 
         analysis_run = uow.result_bundles.analysis_runs.get(analysis_run_id)
         assert analysis_run is not None
@@ -408,6 +409,7 @@ def test_real_simulation_worker_task_persists_trace_batch(
         assert task.status == "completed"
         assert task.trace_batch_id == trace_batch_id
         assert task.result_summary_payload["worker_task_name"] == "simulation_run_task"
+        assert task.result_summary_payload["result_refs"] == {"trace_batch_id": trace_batch_id}
 
         snapshot = uow.result_bundles.get_trace_batch_snapshot(trace_batch_id)
         assert snapshot is not None
@@ -487,6 +489,7 @@ def test_real_post_processing_worker_task_persists_trace_batch(
         assert task.status == "completed"
         assert task.trace_batch_id == trace_batch_id
         assert task.result_summary_payload["source_batch_id"] == source_batch_id
+        assert task.result_summary_payload["result_refs"] == {"trace_batch_id": trace_batch_id}
 
         snapshot = uow.result_bundles.get_trace_batch_snapshot(trace_batch_id)
         assert snapshot is not None

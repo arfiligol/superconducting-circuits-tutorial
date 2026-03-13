@@ -2,6 +2,59 @@
 
 使用 [JosephsonCircuits.jl](https://github.com/QICKLab/JosephsonCircuits.jl) 學習超導電路模擬的教學專案。
 
+## Rewrite Foundation
+
+Rewrite branch 目前同時保留 legacy NiceGUI runtime 與新的 `frontend/`、`backend/`、`desktop/` foundation。
+請用獨立入口操作 rewrite stack，不要把 legacy runtime helper 當成 rewrite 啟動方式。
+
+### Rewrite Quick Start
+
+```bash
+# Install rewrite workspace dependencies
+npm run rewrite:install
+
+# Run rewrite checks from repo root
+npm run rewrite:check
+
+# Build rewrite workspaces
+npm run rewrite:build
+
+# Start rewrite frontend + backend dev stack
+npm run rewrite:dev
+
+# Stop rewrite stack
+npm run rewrite:stop
+```
+
+### Rewrite Desktop Wrapper
+
+```bash
+# Start the rewrite stack first, then wrap the frontend in Electron
+DESKTOP_START_URL=http://127.0.0.1:3000 npm run dev --prefix desktop
+```
+
+### Rewrite CLI
+
+```bash
+# Install local rewrite packages, including sc-core and sc-cli
+uv sync
+
+# Show the new Typer-based CLI package help
+uv run sc --help
+
+# Proof commands wired to sc-core
+uv run sc core preview-artifacts
+uv run sc circuit-definition inspect path/to/draft.circuit.yaml
+```
+
+### Legacy Runtime
+
+```bash
+# Legacy NiceGUI runtime remains separate
+./scripts/dev_start.sh
+./scripts/dev_stop.sh
+```
+
 ## 📚 文件網站
 
 👉 **[線上教學文件](https://arfiligol.github.io/superconducting-circuits-tutorial/)**
@@ -23,7 +76,7 @@ uv sync
 ### 2. 本地預覽文件
 
 ```bash
-# 先產生 docs staging tree
+# 先產生 zh-TW staging tree
 ./scripts/prepare_docs_locales.sh
 
 # 文件站
@@ -37,21 +90,32 @@ uv run --group dev zensical serve
 
 ```
 superconducting-circuits-tutorial/
+├── cli/                     # Rewrite Typer CLI adapter package
+│   ├── src/sc_cli/          # Commands, presenters, entrypoint
+│   └── tests/               # CLI-focused pytest coverage
+├── backend/                 # FastAPI rewrite service
+│   ├── src/app/             # API, services, domain, infrastructure
+│   └── sc_backend/          # CLI-safe backend facade package
+├── frontend/                # Next.js rewrite frontend
+├── desktop/                 # Electron rewrite wrapper
 ├── src/
-│   ├── core/                 # 核心邏輯 (Clean Architecture)
-│   │   ├── analysis/         # 數據分析 (Fitting, Extraction)
-│   │   ├── simulation/       # 電路模擬 (JuliaCall ↔ Julia)
-│   │   └── shared/           # 共用工具 (visualization, utils)
-│   └── scripts/              # CLI 入口點
-├── data/                     # 數據生命週期
-│   ├── raw/                  # 原始數據 (HFSS/VNA)
-│   └── processed/            # 分析結果
-│   └── database.db           # SQLite 資料庫
-├── docs/                     # Zensical 教學文件
+│   ├── app/                 # Legacy NiceGUI runtime (migration-only)
+│   ├── core/                # Installable shared scientific core
+│   │   └── sc_core/         # Framework-agnostic rewrite boundary
+│   ├── julia/               # Shared Julia utilities and plotting helpers
+│   ├── scripts/             # Legacy CLI and migration helpers
+│   └── worker/              # Worker runtime and task execution
+├── data/                    # Local DB / raw / processed / trace-store data
+├── docs/                    # Zensical docs and guardrails
+│   ├── overrides/           # Docs theme overrides
+│   └── docs_zhtw/           # Generated zh-TW staging tree (do not edit directly)
 ├── examples/                 # 可執行範例
+├── sandbox/                  # Scratch scripts and legacy experiments
+├── openapi.json              # Committed OpenAPI snapshot for frontend-backend contract sync
 ├── pyproject.toml            # Python 依賴 (uv)
 ├── juliapkg.json             # Julia 依賴 (JosephsonCircuits.jl)
-└── Project.toml              # Julia 專案設定
+├── Project.toml              # Julia 專案設定
+└── Manifest.toml             # Julia lock file
 ```
 
 ## 🔬 模擬工具 (Simulation)

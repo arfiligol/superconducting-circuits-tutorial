@@ -1,0 +1,207 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  groupTaskResultHandles,
+  resolveTaskConnectionState,
+  resolveTaskRecoveryNotice,
+  summarizeTaskLifecycle,
+  summarizeTaskResultSurface,
+} from "../src/lib/task-surface";
+
+describe("shared task surface helpers", () => {
+  const task = {
+    taskId: 41,
+    kind: "characterization",
+    lane: "characterization",
+    executionMode: "run",
+    status: "running",
+    submittedAt: "2026-03-13 09:20:00",
+    ownerUserId: "user-dev-01",
+    ownerDisplayName: "Device Lab",
+    workspaceId: "workspace-lab",
+    workspaceSlug: "device-lab",
+    visibilityScope: "workspace",
+    datasetId: "fluxonium-2025-031",
+    definitionId: null,
+    summary: "Characterization request for Fluxonium sweep 031",
+    queueBackend: "in_memory_scaffold",
+    workerTaskName: "characterization_run_task",
+    requestReady: true,
+    submittedFromActiveDataset: true,
+    dispatch: {
+      dispatchKey: "dispatch:41:characterization_run_task",
+      status: "running",
+      submissionSource: "active_dataset",
+      acceptedAt: "2026-03-13 09:20:00",
+      lastUpdatedAt: "2026-03-13 09:21:00",
+    },
+    events: [],
+    progress: {
+      phase: "running",
+      percentComplete: 58,
+      summary: "Fitting admittance curves",
+      updatedAt: "2026-03-13 09:21:00",
+    },
+    resultRefs: {
+      traceBatchId: 44,
+      analysisRunId: 12,
+      metadataRecords: [
+        {
+          backend: "sqlite_metadata",
+          recordType: "analysis_run",
+          recordId: "analysis-run-12",
+          version: 1,
+          schemaVersion: "analysis-run/v1",
+        },
+      ],
+      tracePayload: {
+        contractVersion: "trace-payload/v1",
+        backend: "local_zarr",
+        payloadRole: "analysis_projection",
+        storeKey: "characterization-41",
+        storeUri: "/data/characterization-41.zarr",
+        groupPath: "/fits",
+        arrayPath: "/quality_factor",
+        dtype: "float64",
+        shape: [128],
+        chunkShape: [32],
+        schemaVersion: "zarr/v2",
+      },
+      resultHandles: [
+        {
+          contractVersion: "result-handle/v1",
+          handleId: "handle-fit-41",
+          kind: "fit_summary",
+          status: "materialized",
+          label: "Quality factor fit",
+          metadataRecord: {
+            backend: "sqlite_metadata",
+            recordType: "result_handle",
+            recordId: "handle-fit-41",
+            version: 1,
+            schemaVersion: "result-handle/v1",
+          },
+          payloadBackend: "json_artifact",
+          payloadFormat: "json",
+          payloadRole: "report_artifact",
+          payloadLocator: "/artifacts/fit-41.json",
+          provenanceTaskId: 41,
+          provenance: {
+            sourceDatasetId: "fluxonium-2025-031",
+            sourceTaskId: 41,
+            traceBatchRecord: null,
+            analysisRunRecord: null,
+          },
+        },
+        {
+          contractVersion: "result-handle/v1",
+          handleId: "handle-report-41",
+          kind: "characterization_report",
+          status: "pending",
+          label: "Research summary",
+          metadataRecord: {
+            backend: "sqlite_metadata",
+            recordType: "result_handle",
+            recordId: "handle-report-41",
+            version: 1,
+            schemaVersion: "result-handle/v1",
+          },
+          payloadBackend: "markdown_artifact",
+          payloadFormat: "markdown",
+          payloadRole: "report_artifact",
+          payloadLocator: null,
+          provenanceTaskId: 41,
+          provenance: {
+            sourceDatasetId: "fluxonium-2025-031",
+            sourceTaskId: 41,
+            traceBatchRecord: null,
+            analysisRunRecord: null,
+          },
+        },
+      ],
+    },
+  } as const;
+
+  it("resolves connection state for explicit and follow-latest attachments", () => {
+    expect(
+      resolveTaskConnectionState({
+        requestedTaskId: 37,
+        resolvedTaskId: 37,
+        latestTaskId: 41,
+        activeTask: task,
+      }),
+    ).toEqual({
+      mode: "explicit",
+      latestTaskId: 41,
+      selectedTaskId: 37,
+      attachedTaskId: 41,
+      hasNewerLatestTask: true,
+      isFollowingLatest: false,
+      isAttached: false,
+      isStaleSnapshot: true,
+    });
+
+    expect(
+      resolveTaskConnectionState({
+        requestedTaskId: null,
+        resolvedTaskId: 41,
+        latestTaskId: 41,
+        activeTask: task,
+      }).isFollowingLatest,
+    ).toBe(true);
+  });
+
+  it("builds generic recovery notices and lifecycle summaries", () => {
+    expect(resolveTaskRecoveryNotice(33, 41, new Error("not found"))).toEqual({
+      tone: "warning",
+      title: "Task reattach available",
+      message: "Task #33 could not be attached. A newer task #41 is available instead.",
+    });
+
+    expect(summarizeTaskLifecycle(task)).toEqual({
+      stage: "running",
+      statusLabel: "Dispatch running",
+      tone: "primary",
+      summary:
+        "Worker execution is active. Progress, events, and result refs remain recoverable from the persisted task contract.",
+      progressPercent: 58,
+      progressSummary: "Fitting admittance curves",
+      backendStatusLabel: "running",
+      workerTaskName: "characterization_run_task",
+      submissionSourceLabel: "Active dataset session",
+      acceptedAt: "2026-03-13 09:20:00",
+      lastUpdatedAt: "2026-03-13 09:21:00",
+      taskDatasetId: "fluxonium-2025-031",
+      dispatchKey: "dispatch:41:characterization_run_task",
+      requestReady: true,
+      submittedFromActiveDataset: true,
+      executionMode: "run",
+      visibilityScope: "workspace",
+    });
+  });
+
+  it("summarizes and groups persisted result handles", () => {
+    expect(summarizeTaskResultSurface(task)).toEqual({
+      metadataRecordCount: 1,
+      resultHandleCount: 2,
+      materializedHandleCount: 1,
+      pendingHandleCount: 1,
+      hasTracePayload: true,
+      traceBatchId: 44,
+      analysisRunId: 12,
+      handleKindCounts: [
+        { kind: "characterization_report", count: 1 },
+        { kind: "fit_summary", count: 1 },
+      ],
+    });
+
+    expect(groupTaskResultHandles(task)).toEqual({
+      materialized: [task.resultRefs.resultHandles[0]],
+      pending: [task.resultRefs.resultHandles[1]],
+    });
+  });
+
+  it("treats an unattached task as having no trace payload", () => {
+    expect(summarizeTaskResultSurface(undefined).hasTracePayload).toBe(false);
+  });
+});

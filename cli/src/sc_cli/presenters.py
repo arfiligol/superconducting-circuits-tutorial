@@ -1,0 +1,855 @@
+"""Output formatting helpers for the CLI adapter layer."""
+
+from collections.abc import Iterable, Sequence
+from json import dumps
+from pathlib import Path
+
+from pydantic import BaseModel
+from sc_backend import (
+    ApiErrorBodyResponse,
+    CircuitDefinitionDetailResponse,
+    CircuitDefinitionSummaryResponse,
+    DatasetDetailResponse,
+    DatasetMetadataUpdateResponse,
+    DatasetSummaryResponse,
+    SessionResponse,
+    TaskDetailResponse,
+    TaskSummaryResponse,
+)
+from sc_core import CircuitDefinitionInspection
+
+from sc_cli.output import OutputMode
+
+
+def render_preview_artifacts(artifacts: tuple[str, ...]) -> str:
+    lines = ["sc_core preview artifacts:"]
+    lines.extend(f"- {artifact}" for artifact in artifacts)
+    return "\n".join(lines)
+
+
+def render_circuit_definition_inspection(
+    source_file: Path,
+    inspection: CircuitDefinitionInspection,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "source_file": str(source_file),
+                "circuit_name": inspection.circuit_name,
+                "family": inspection.family,
+                "element_count": inspection.element_count,
+                "normalized_output": inspection.normalized_output,
+                "validation_notices": [
+                    {"level": notice.level, "message": notice.message}
+                    for notice in inspection.validation_notices
+                ],
+            }
+        )
+    lines = [
+        f"source_file: {source_file}",
+        f"circuit_name: {inspection.circuit_name}",
+        f"family: {inspection.family}",
+        f"element_count: {inspection.element_count}",
+        "normalized_output:",
+        inspection.normalized_output,
+        "validation_notices:",
+    ]
+    lines.extend(f"- [{notice.level}] {notice.message}" for notice in inspection.validation_notices)
+    return "\n".join(lines)
+
+
+def render_circuit_definition_summaries(
+    definitions: list[CircuitDefinitionSummaryResponse],
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_models(definitions)
+    lines = [f"circuit_definitions: {len(definitions)}"]
+    lines.extend(
+        _render_list_line(
+            f"#{definition.definition_id}",
+            (
+                definition.name,
+                f"created_at={definition.created_at}",
+                f"elements={definition.element_count}",
+                f"validation={definition.validation_status}",
+                f"preview_artifacts={definition.preview_artifact_count}",
+            ),
+        )
+        for definition in definitions
+    )
+    return "\n".join(lines)
+
+
+def render_session(session: SessionResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(session)
+    lines = [
+        f"session_id: {session.session_id}",
+        f"auth_state: {session.auth.state}",
+        f"auth_mode: {session.auth.mode}",
+        f"scopes: {', '.join(session.auth.scopes) if session.auth.scopes else '(none)'}",
+        f"can_submit_tasks: {_render_bool(session.auth.can_submit_tasks)}",
+        f"can_manage_datasets: {_render_bool(session.auth.can_manage_datasets)}",
+        f"workspace_id: {session.workspace.workspace_id}",
+        f"workspace_slug: {session.workspace.slug}",
+        f"workspace_display_name: {session.workspace.display_name}",
+        f"workspace_role: {session.workspace.role}",
+        f"default_task_scope: {session.workspace.default_task_scope}",
+    ]
+    if session.identity is None:
+        lines.append("identity: none")
+    else:
+        lines.extend(
+            [
+                f"identity_user_id: {session.identity.user_id}",
+                f"identity_display_name: {session.identity.display_name}",
+                f"identity_email: {session.identity.email or '-'}",
+            ]
+        )
+    if session.workspace.active_dataset is None:
+        lines.append("active_dataset: none")
+    else:
+        lines.extend(
+            [
+                f"active_dataset_id: {session.workspace.active_dataset.dataset_id}",
+                f"active_dataset_name: {session.workspace.active_dataset.name}",
+                f"active_dataset_family: {session.workspace.active_dataset.family}",
+                f"active_dataset_status: {session.workspace.active_dataset.status}",
+                f"active_dataset_owner: {session.workspace.active_dataset.owner}",
+                f"active_dataset_access_scope: {session.workspace.active_dataset.access_scope}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_session_identity(
+    session: SessionResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "session_id": session.session_id,
+                "auth": session.auth.model_dump(mode="json"),
+                "identity": (
+                    None if session.identity is None else session.identity.model_dump(mode="json")
+                ),
+            }
+        )
+    lines = [
+        f"session_id: {session.session_id}",
+        f"auth_state: {session.auth.state}",
+        f"auth_mode: {session.auth.mode}",
+        f"scopes: {', '.join(session.auth.scopes) if session.auth.scopes else '(none)'}",
+        f"can_submit_tasks: {_render_bool(session.auth.can_submit_tasks)}",
+        f"can_manage_datasets: {_render_bool(session.auth.can_manage_datasets)}",
+    ]
+    if session.identity is None:
+        lines.append("identity: none")
+    else:
+        lines.extend(
+            [
+                f"identity_user_id: {session.identity.user_id}",
+                f"identity_display_name: {session.identity.display_name}",
+                f"identity_email: {session.identity.email or '-'}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def render_session_workspace(
+    session: SessionResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(session.workspace)
+    lines = [
+        f"workspace_id: {session.workspace.workspace_id}",
+        f"workspace_slug: {session.workspace.slug}",
+        f"workspace_display_name: {session.workspace.display_name}",
+        f"workspace_role: {session.workspace.role}",
+        f"default_task_scope: {session.workspace.default_task_scope}",
+    ]
+    lines.extend(_render_active_dataset_lines(session))
+    return "\n".join(lines)
+
+
+def render_session_active_dataset(
+    session: SessionResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "active_dataset": (
+                    None
+                    if session.workspace.active_dataset is None
+                    else session.workspace.active_dataset.model_dump(mode="json")
+                )
+            }
+        )
+    return "\n".join(_render_active_dataset_lines(session))
+
+
+def render_dataset_summaries(
+    datasets: list[DatasetSummaryResponse],
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_models(datasets)
+    lines = [f"datasets: {len(datasets)}"]
+    lines.extend(
+        _render_list_line(
+            dataset.dataset_id,
+            (
+                dataset.name,
+                f"family={dataset.family}",
+                f"status={dataset.status}",
+                f"samples={dataset.samples}",
+                f"updated_at={dataset.updated_at}",
+            ),
+        )
+        for dataset in datasets
+    )
+    return "\n".join(lines)
+
+
+def render_dataset_detail(
+    dataset: DatasetDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(dataset)
+    lines = [
+        f"dataset_id: {dataset.dataset_id}",
+        f"name: {dataset.name}",
+        f"family: {dataset.family}",
+        f"owner: {dataset.owner}",
+        f"status: {dataset.status}",
+        f"device_type: {dataset.device_type}",
+        f"source: {dataset.source}",
+        f"samples: {dataset.samples}",
+        f"updated_at: {dataset.updated_at}",
+        f"capability_count: {dataset.capability_count}",
+        f"tag_count: {dataset.tag_count}",
+        "capabilities:",
+    ]
+    lines.extend(f"- {capability}" for capability in dataset.capabilities)
+    lines.extend(["tags:"])
+    lines.extend(f"- {tag}" for tag in dataset.tags)
+    lines.extend(
+        [
+            (
+                "preview_columns: "
+                f"{', '.join(dataset.preview_columns) if dataset.preview_columns else '-'}"
+            ),
+            "preview_rows:",
+        ]
+    )
+    lines.extend(f"- {', '.join(row)}" for row in dataset.preview_rows)
+    lines.extend(["artifacts:"])
+    lines.extend(f"- {artifact}" for artifact in dataset.artifacts)
+    lines.extend(["lineage:"])
+    lines.extend(f"- {item}" for item in dataset.lineage)
+    lines.extend(
+        [
+            f"metrics_capability_count: {dataset.metrics.capability_count}",
+            f"metrics_tag_count: {dataset.metrics.tag_count}",
+            f"metrics_preview_row_count: {dataset.metrics.preview_row_count}",
+            f"metrics_artifact_count: {dataset.metrics.artifact_count}",
+            f"metrics_lineage_depth: {dataset.metrics.lineage_depth}",
+            f"storage_metadata_record_id: {dataset.storage.metadata_record.record_id}",
+            (f"storage_primary_trace_store_uri: {_render_primary_trace_store_uri(dataset)}"),
+            f"storage_result_handle_count: {len(dataset.storage.result_handles)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def render_dataset_metadata_update(
+    result: DatasetMetadataUpdateResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(result)
+    lines = [
+        (
+            "updated_fields: "
+            f"{', '.join(result.updated_fields) if result.updated_fields else '(none)'}"
+        ),
+        render_dataset_detail(result.dataset, output=OutputMode.TEXT),
+    ]
+    return "\n".join(lines)
+
+
+def render_task_summaries(
+    tasks: list[TaskSummaryResponse],
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_models(tasks)
+    lines = [f"tasks: {len(tasks)}"]
+    lines.extend(
+        _render_list_line(
+            f"#{task.task_id}",
+            (
+                f"kind={task.kind}",
+                f"lane={task.lane}",
+                f"mode={task.execution_mode}",
+                f"status={task.status}",
+                f"scope={task.visibility_scope}",
+                f"dataset={task.dataset_id or '-'}",
+                f"definition={task.definition_id if task.definition_id is not None else '-'}",
+                f"summary={task.summary}",
+            ),
+        )
+        for task in tasks
+    )
+    return "\n".join(lines)
+
+
+def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(task)
+    trace_batch_id = task.result_refs.trace_batch_id
+    analysis_run_id = task.result_refs.analysis_run_id
+    return "\n".join(
+        [
+            f"task_id: {task.task_id}",
+            f"kind: {task.kind}",
+            f"lane: {task.lane}",
+            f"execution_mode: {task.execution_mode}",
+            f"status: {task.status}",
+            f"submitted_at: {task.submitted_at}",
+            f"owner_user_id: {task.owner_user_id}",
+            f"owner_display_name: {task.owner_display_name}",
+            f"workspace_id: {task.workspace_id}",
+            f"workspace_slug: {task.workspace_slug}",
+            f"visibility_scope: {task.visibility_scope}",
+            f"dataset_id: {task.dataset_id or '-'}",
+            f"definition_id: {task.definition_id if task.definition_id is not None else '-'}",
+            f"summary: {task.summary}",
+            f"queue_backend: {task.queue_backend}",
+            f"worker_task_name: {task.worker_task_name}",
+            f"request_ready: {_render_bool(task.request_ready)}",
+            f"submitted_from_active_dataset: {_render_bool(task.submitted_from_active_dataset)}",
+            f"progress_phase: {task.progress.phase}",
+            f"progress_percent_complete: {task.progress.percent_complete}",
+            f"progress_summary: {task.progress.summary}",
+            f"progress_updated_at: {task.progress.updated_at}",
+            f"result_trace_batch_id: {trace_batch_id if trace_batch_id is not None else '-'}",
+            f"result_analysis_run_id: {analysis_run_id if analysis_run_id is not None else '-'}",
+        ]
+    )
+
+
+def render_task_inspection(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    latest_event = task.events[-1] if task.events else None
+    inspection = {
+        "event_count": len(task.events),
+        "latest_event": None if latest_event is None else latest_event.model_dump(mode="json"),
+        "metadata_record_count": len(task.result_refs.metadata_records),
+        "result_handle_count": len(task.result_refs.result_handles),
+        "trace_payload_present": task.result_refs.trace_payload is not None,
+        "trace_batch_id": task.result_refs.trace_batch_id,
+        "analysis_run_id": task.result_refs.analysis_run_id,
+    }
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {"task": task.model_dump(mode="json"), "inspection": inspection}
+        )
+    lines = [
+        render_task_detail(task, output=OutputMode.TEXT),
+        "inspection:",
+        f"event_count: {inspection['event_count']}",
+        f"latest_event_type: {latest_event.event_type if latest_event is not None else '-'}",
+        f"latest_event_level: {latest_event.level if latest_event is not None else '-'}",
+        (
+            "latest_event_occurred_at: "
+            f"{latest_event.occurred_at if latest_event is not None else '-'}"
+        ),
+        f"metadata_record_count: {inspection['metadata_record_count']}",
+        f"result_handle_count: {inspection['result_handle_count']}",
+        f"trace_payload_present: {_render_bool(inspection['trace_payload_present'])}",
+        f"inspection_trace_batch_id: {_render_nullable(inspection['trace_batch_id'])}",
+        f"inspection_analysis_run_id: {_render_nullable(inspection['analysis_run_id'])}",
+    ]
+    if latest_event is not None:
+        lines.append(f"latest_event_message: {latest_event.message}")
+    return "\n".join(lines)
+
+
+def render_task_operations_bundle(
+    task: TaskDetailResponse,
+    *,
+    recent_event_limit: int = 3,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    recent_events = task.events[-recent_event_limit:]
+    result_summary = {
+        "trace_batch_id": task.result_refs.trace_batch_id,
+        "analysis_run_id": task.result_refs.analysis_run_id,
+        "metadata_record_count": len(task.result_refs.metadata_records),
+        "result_handle_count": len(task.result_refs.result_handles),
+        "trace_payload_present": task.result_refs.trace_payload is not None,
+        "result_handle_ids": [handle.handle_id for handle in task.result_refs.result_handles],
+    }
+    latest_event = task.events[-1] if task.events else None
+    inspection = {
+        "event_count": len(task.events),
+        "latest_event": None if latest_event is None else latest_event.model_dump(mode="json"),
+        "metadata_record_count": result_summary["metadata_record_count"],
+        "result_handle_count": result_summary["result_handle_count"],
+        "trace_payload_present": result_summary["trace_payload_present"],
+        "trace_batch_id": result_summary["trace_batch_id"],
+        "analysis_run_id": result_summary["analysis_run_id"],
+    }
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": task.model_dump(mode="json"),
+                "inspection": inspection,
+                "recent_events": [event.model_dump(mode="json") for event in recent_events],
+                "result_summary": result_summary,
+            }
+        )
+    lines = [
+        render_task_inspection(task, output=OutputMode.TEXT),
+        "recent_events:",
+    ]
+    if not recent_events:
+        lines.append("- none")
+    else:
+        for event in recent_events:
+            lines.append(
+                _render_list_line(
+                    event.occurred_at,
+                    (
+                        f"type={event.event_type}",
+                        f"level={event.level}",
+                        f"message={event.message}",
+                    ),
+                )
+            )
+    lines.extend(
+        [
+            "result_summary:",
+            f"trace_batch_id: {_render_nullable(result_summary['trace_batch_id'])}",
+            f"analysis_run_id: {_render_nullable(result_summary['analysis_run_id'])}",
+            f"metadata_record_count: {result_summary['metadata_record_count']}",
+            f"result_handle_count: {result_summary['result_handle_count']}",
+            f"trace_payload_present: {_render_bool(result_summary['trace_payload_present'])}",
+            "result_handle_ids: "
+            + (
+                ", ".join(result_summary["result_handle_ids"])
+                if result_summary["result_handle_ids"]
+                else "-"
+            ),
+        ]
+    )
+    return "\n".join(lines)
+
+
+def render_task_result_refs(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "result_refs": task.result_refs.model_dump(mode="json"),
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
+        f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
+        f"metadata_record_count: {len(task.result_refs.metadata_records)}",
+        "metadata_records:",
+    ]
+    lines.extend(_render_metadata_record_lines(task))
+    lines.extend(
+        [
+            f"trace_payload_present: {_render_bool(task.result_refs.trace_payload is not None)}",
+            "trace_payload_summary:",
+        ]
+    )
+    lines.extend(_render_trace_payload_summary_lines(task))
+    lines.extend(["result_handles:"])
+    lines.extend(_render_result_handle_summary_lines(task))
+    return "\n".join(lines)
+
+
+def render_task_trace_payload(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    trace_payload = task.result_refs.trace_payload
+    assert trace_payload is not None
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "trace_payload": trace_payload.model_dump(mode="json"),
+            }
+        )
+    return "\n".join(
+        [
+            *_build_task_result_context_lines(task),
+            f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
+            f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
+            f"contract_version: {trace_payload.contract_version}",
+            f"backend: {trace_payload.backend}",
+            f"payload_role: {trace_payload.payload_role}",
+            f"store_key: {trace_payload.store_key}",
+            f"store_uri: {trace_payload.store_uri}",
+            f"group_path: {trace_payload.group_path}",
+            f"array_path: {trace_payload.array_path}",
+            f"dtype: {trace_payload.dtype}",
+            f"shape: {_render_list_value(trace_payload.shape)}",
+            f"chunk_shape: {_render_list_value(trace_payload.chunk_shape)}",
+            f"schema_version: {trace_payload.schema_version}",
+        ]
+    )
+
+
+def render_task_result_handles(
+    task: TaskDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "metadata_records": [
+                    record.model_dump(mode="json") for record in task.result_refs.metadata_records
+                ],
+                "result_handles": [
+                    handle.model_dump(mode="json") for handle in task.result_refs.result_handles
+                ],
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        "metadata_records:",
+    ]
+    lines.extend(_render_metadata_record_lines(task))
+    lines.extend(["result_handles:"])
+    lines.extend(_render_result_handle_detail_lines(task))
+    return "\n".join(lines)
+
+
+def render_task_event_history(
+    task: TaskDetailResponse,
+    *,
+    events: Sequence[BaseModel],
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "event_count": len(events),
+                "events": [event.model_dump(mode="json") for event in events],
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        "events:",
+    ]
+    for event in events:
+        lines.extend(_render_event_lines(event))
+    return "\n".join(lines)
+
+
+def render_task_latest_event(
+    task: TaskDetailResponse,
+    *,
+    event: BaseModel,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload(
+            {
+                "task": _build_task_result_context(task),
+                "event": event.model_dump(mode="json"),
+            }
+        )
+    lines = [
+        *_build_task_result_context_lines(task),
+        "latest_event:",
+    ]
+    lines.extend(_render_event_lines(event))
+    return "\n".join(lines)
+
+
+def render_circuit_definition_detail(
+    definition: CircuitDefinitionDetailResponse,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(definition)
+    lines = [
+        f"source_definition_id: {definition.definition_id}",
+        f"definition_name: {definition.name}",
+        f"created_at: {definition.created_at}",
+        f"element_count: {definition.element_count}",
+        f"validation_status: {definition.validation_status}",
+        f"preview_artifact_count: {definition.preview_artifact_count}",
+        "preview_artifacts:",
+    ]
+    lines.extend(f"- {artifact}" for artifact in definition.preview_artifacts)
+    lines.extend(
+        [
+            "source_text:",
+            definition.source_text,
+            "normalized_output:",
+            definition.normalized_output,
+            "validation_notices:",
+        ]
+    )
+    lines.extend(f"- [{notice.level}] {notice.message}" for notice in definition.validation_notices)
+    return "\n".join(lines)
+
+
+def render_circuit_definition_delete_result(
+    definition_id: int,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload({"operation": "deleted", "definition_id": definition_id})
+    return "\n".join(
+        [
+            "operation: deleted",
+            f"definition_id: {definition_id}",
+        ]
+    )
+
+
+def render_api_error(error: ApiErrorBodyResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_payload({"error": error.model_dump(mode="json")})
+    suffix = f" [{error.category}/{error.code}]"
+    lines = [f"error: {error.message}{suffix}"]
+    lines.extend(
+        f"field_error: {field_error.field}: {field_error.message}"
+        for field_error in error.field_errors
+    )
+    return "\n".join(lines)
+
+
+def _render_bool(value: bool) -> str:
+    return "true" if value else "false"
+
+
+def _render_nullable(value: object | None) -> str:
+    return "-" if value is None else str(value)
+
+
+def _render_list_value(values: Sequence[object]) -> str:
+    return ", ".join(str(value) for value in values)
+
+
+def _render_list_line(label: str, parts: Iterable[str]) -> str:
+    return f"- {label} | " + " | ".join(parts)
+
+
+def _build_task_result_context(task: TaskDetailResponse) -> dict[str, object]:
+    return {
+        "task_id": task.task_id,
+        "kind": task.kind,
+        "lane": task.lane,
+        "execution_mode": task.execution_mode,
+        "status": task.status,
+        "worker_task_name": task.worker_task_name,
+        "dataset_id": task.dataset_id,
+        "definition_id": task.definition_id,
+        "summary": task.summary,
+        "event_count": len(task.events),
+        "result_handle_count": len(task.result_refs.result_handles),
+        "trace_batch_id": task.result_refs.trace_batch_id,
+        "analysis_run_id": task.result_refs.analysis_run_id,
+        "dispatch": task.dispatch.model_dump(mode="json"),
+    }
+
+
+def _build_task_result_context_lines(task: TaskDetailResponse) -> list[str]:
+    return [
+        f"task_id: {task.task_id}",
+        f"kind: {task.kind}",
+        f"lane: {task.lane}",
+        f"execution_mode: {task.execution_mode}",
+        f"status: {task.status}",
+        f"worker_task_name: {task.worker_task_name}",
+        f"dataset_id: {task.dataset_id or '-'}",
+        f"definition_id: {_render_nullable(task.definition_id)}",
+        f"summary: {task.summary}",
+        f"dispatch_key: {task.dispatch.dispatch_key}",
+        f"dispatch_status: {task.dispatch.status}",
+        f"submission_source: {task.dispatch.submission_source}",
+        f"event_count: {len(task.events)}",
+        f"result_handle_count: {len(task.result_refs.result_handles)}",
+    ]
+
+
+def _render_metadata_record_lines(task: TaskDetailResponse) -> list[str]:
+    if not task.result_refs.metadata_records:
+        return ["- none"]
+    return [
+        _render_list_line(
+            record.record_id,
+            (
+                f"type={record.record_type}",
+                f"backend={record.backend}",
+                f"version={record.version}",
+                f"schema={record.schema_version}",
+            ),
+        )
+        for record in task.result_refs.metadata_records
+    ]
+
+
+def _render_trace_payload_summary_lines(task: TaskDetailResponse) -> list[str]:
+    trace_payload = task.result_refs.trace_payload
+    if trace_payload is None:
+        return ["- none"]
+    return [
+        f"- store_uri={trace_payload.store_uri}",
+        f"- array_path={trace_payload.array_path}",
+        f"- dtype={trace_payload.dtype}",
+        f"- shape={_render_list_value(trace_payload.shape)}",
+        f"- chunk_shape={_render_list_value(trace_payload.chunk_shape)}",
+        f"- role={trace_payload.payload_role}",
+    ]
+
+
+def _render_result_handle_summary_lines(task: TaskDetailResponse) -> list[str]:
+    if not task.result_refs.result_handles:
+        return ["- none"]
+    return [
+        _render_list_line(
+            handle.handle_id,
+            (
+                f"kind={handle.kind}",
+                f"status={handle.status}",
+                f"label={handle.label}",
+                f"payload_format={handle.payload_format or '-'}",
+                f"payload_locator={handle.payload_locator or '-'}",
+            ),
+        )
+        for handle in task.result_refs.result_handles
+    ]
+
+
+def _render_result_handle_detail_lines(task: TaskDetailResponse) -> list[str]:
+    if not task.result_refs.result_handles:
+        return ["- none"]
+    lines: list[str] = []
+    for handle in task.result_refs.result_handles:
+        trace_batch_record_id = (
+            "-"
+            if handle.provenance.trace_batch_record is None
+            else handle.provenance.trace_batch_record.record_id
+        )
+        analysis_run_record_id = (
+            "-"
+            if handle.provenance.analysis_run_record is None
+            else handle.provenance.analysis_run_record.record_id
+        )
+        lines.extend(
+            [
+                f"- handle_id: {handle.handle_id}",
+                f"  kind: {handle.kind}",
+                f"  status: {handle.status}",
+                f"  label: {handle.label}",
+                f"  payload_backend: {handle.payload_backend or '-'}",
+                f"  payload_format: {handle.payload_format or '-'}",
+                f"  payload_role: {handle.payload_role or '-'}",
+                f"  payload_locator: {handle.payload_locator or '-'}",
+                f"  metadata_record_id: {handle.metadata_record.record_id}",
+                f"  provenance_task_id: {_render_nullable(handle.provenance_task_id)}",
+                f"  provenance_source_dataset_id: {handle.provenance.source_dataset_id or '-'}",
+                f"  provenance_trace_batch_record: {trace_batch_record_id}",
+                f"  provenance_analysis_run_record: {analysis_run_record_id}",
+            ]
+        )
+    return lines
+
+
+def _render_event_lines(event: BaseModel) -> list[str]:
+    event_data = event.model_dump(mode="json")
+    metadata = event_data["metadata"]
+    lines = [
+        f"- event_key: {event_data['event_key']}",
+        f"  event_type: {event_data['event_type']}",
+        f"  level: {event_data['level']}",
+        f"  occurred_at: {event_data['occurred_at']}",
+        f"  message: {event_data['message']}",
+        "  metadata:",
+    ]
+    if not metadata:
+        lines.append("  - none")
+        return lines
+    for key, value in metadata.items():
+        lines.append(f"  - {key}: {_render_event_metadata_value(value)}")
+    return lines
+
+
+def _render_event_metadata_value(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _render_primary_trace_store_uri(dataset: DatasetDetailResponse) -> str:
+    if dataset.storage.primary_trace is None:
+        return "-"
+    return dataset.storage.primary_trace.store_uri
+
+
+def _render_active_dataset_lines(session: SessionResponse) -> list[str]:
+    if session.workspace.active_dataset is None:
+        return ["active_dataset: none"]
+    return [
+        f"active_dataset_id: {session.workspace.active_dataset.dataset_id}",
+        f"active_dataset_name: {session.workspace.active_dataset.name}",
+        f"active_dataset_family: {session.workspace.active_dataset.family}",
+        f"active_dataset_status: {session.workspace.active_dataset.status}",
+        f"active_dataset_owner: {session.workspace.active_dataset.owner}",
+        f"active_dataset_access_scope: {session.workspace.active_dataset.access_scope}",
+    ]
+
+
+def _render_json_model(model: BaseModel) -> str:
+    return model.model_dump_json(indent=2)
+
+
+def _render_json_models(models: Sequence[BaseModel]) -> str:
+    return _render_json_payload([model.model_dump(mode="json") for model in models])
+
+
+def _render_json_payload(payload: object) -> str:
+    return dumps(payload, indent=2)
