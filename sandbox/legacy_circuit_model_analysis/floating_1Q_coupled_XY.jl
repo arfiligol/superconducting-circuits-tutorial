@@ -3,207 +3,401 @@ using JosephsonCircuits
 using PlotlyJS
 using CSV, DataFrames
 
-include("../../src/julia/utils.jl")
-# using GLMakie
+# =============================================================================
+# 1. Basic setup
+# =============================================================================
+# 這一段只做最基本的環境設定：
+# - 載入單位常數
+# - 指定要分析哪一顆 qubit
+# - 準備 Q3D 匯出的電容矩陣資料
 
-nH = 1e-9
-GHz = 1e9
-fF = 1e-15
+const nH = 1e-9
+const GHz = 1e9
+const fF = 1e-15
 
-df = CSV.read("/Users/arfiligol/Github/Lab/Quantum-Chip-Design-Julia/circuit_model_analysis/PF6FQ_Q3D_C_Matrix.csv", DataFrame)
-qubit = "q5"
-sub = df[df.qubit_id.==qubit, :]
-sub.value_F = sub[!, "value(fF)"] .* 1e-15
+const CAP_MATRIX_PATH = joinpath(@__DIR__, "PF6FQ_Q3D_C_Matrix.csv")
+const TARGET_QUBIT = "q5"
 
 
-# Single Floating Qubit Coupled To XY Line
+# =============================================================================
+# 2. Helper functions
+# =============================================================================
+# 這裡把重複出現的步驟抽成小函式，讓主流程可以直接讀出：
+# 「先建模 -> 再求解 -> 再做 reduction -> 最後抽物理量」。
+
+"""
+    load_qubit_capacitance_table(csv_path, qubit_id)
+
+讀取 Q3D 匯出的電容表，只保留目標 qubit 的資料，並把 fF 轉成 SI 單位 F。
+"""
+function load_qubit_capacitance_table(csv_path, qubit_id)
+    df = CSV.read(csv_path, DataFrame)
+    sub = df[df.qubit_id.==qubit_id, :]
+    isempty(sub) && error("No capacitance data found for qubit_id = $qubit_id")
+
+    sub.value_F = sub[!, "value(fF)"] .* fF
+    return sub
+end
+
+"""
+    get_component_value(sub, component_name)
+
+從 qubit 對應的資料表中取出某一個元件的電容值。
+"""
+function get_component_value(sub, component_name)
+    values = sub[sub.name.==component_name, :value_F]
+    isempty(values) && error("Missing component $component_name in capacitance table")
+    return values[1]
+end
+
+"""
+    build_floating_qubit_coupled_xy_circuit(; include_qubit_inductor, port3_resistance_symbol)
+
+建立「floating qubit + XY line」的三埠模型。
+
+- Port 1 / Port 2：qubit 的兩個差模端點
+- Port 3：XY line 耦合端
+- include_qubit_inductor=false 時，可得到純電容網路，用來抽等效電容
+"""
+function build_floating_qubit_coupled_xy_circuit(; include_qubit_inductor, port3_resistance_symbol)
+    circuit = Tuple{String,String,String,Num}[]
+
+    # Qubit body:
+    # C_01 / C_02 是兩個 pad 對地電容，C_12 是 pad 間電容。
+    push!(circuit, ("C_01", "1", "0", C_01))
+    push!(circuit, ("C_02", "2", "0", C_02))
+    push!(circuit, ("C_12", "1", "2", C_12))
+
+    # Lq 只放在完整 qubit 模型中；若拿掉 Lq，網路就只剩靜電耦合。
+    if include_qubit_inductor
+        push!(circuit, ("Lq", "1", "2", Lq))
+    end
+
+    # Coupling to XY line:
+    # 透過 C_13 / C_23 把 qubit 兩側 pad 耦合到 node 3。
+    push!(circuit, ("C_13", "1", "3", C_13))
+    push!(circuit, ("C_23", "2", "3", C_23))
+
+    # Differential probe ports:
+    # Port 1 / Port 2 用非常大的電阻接地，近似理想量測 port 而不額外載入系統。
+    push!(circuit, ("P1", "1", "0", 1))
+    push!(circuit, ("R_P1", "1", "0", R_Big))
+    push!(circuit, ("P2", "2", "0", 2))
+    push!(circuit, ("R_P2", "2", "0", R_Big))
+
+    # XY line port:
+    # Port 3 是外部控制線；可接真實 50 Ohm，也可用超大電阻近似開路。
+    push!(circuit, ("P3", "3", "0", 3))
+    push!(circuit, ("R50_XY", "3", "0", port3_resistance_symbol))
+
+    return circuit
+end
+
+"""
+    build_component_values(sub)
+
+把資料表中的電容值整理成 JosephsonCircuits 使用的符號參數字典。
+"""
+function build_component_values(sub)
+    return Dict(
+        C_01 => get_component_value(sub, "C_01"),
+        C_02 => get_component_value(sub, "C_02"),
+        C_12 => get_component_value(sub, "C_12"),
+        C_13 => get_component_value(sub, "C_13"),
+        C_23 => get_component_value(sub, "C_23"),
+    )
+end
+
+"""
+    z_to_y_cube(solution)
+
+從 hbsolve 的線性化 Z 矩陣出發，逐頻點反矩陣得到 Y 矩陣。
+輸出尺寸為 `(port, port, frequency_index)`。
+"""
+function z_to_y_cube(solution)
+    z_cube = Array(solution.linearized.Z[1, :, 1, :, :])
+    _, _, n_freq = size(z_cube)
+    y_cube = similar(z_cube)
+
+    for k in 1:n_freq
+        y_cube[:, :, k] = inv(Matrix(@view z_cube[:, :, k]))
+    end
+
+    return y_cube
+end
+
+"""
+    apply_port_termination_compensation(y_cube; resistance_ohm_by_port)
+
+在 Y-domain 做 port termination compensation:
+
+    Y_ptc = Y_raw - diag(1 / R_i)
+
+這裡只會扣除被指定的 ports；未指定的 port 會保持原樣。
+"""
+function apply_port_termination_compensation(y_cube; resistance_ohm_by_port)
+    compensated = copy(y_cube)
+    n_ports, _, n_freq = size(compensated)
+
+    for (port, resistance_ohm) in resistance_ohm_by_port
+        if port < 1 || port > n_ports
+            error("Port index $port is out of range for a $n_ports-port matrix.")
+        end
+        resistance_ohm <= 0 && error("Termination resistance for port $port must be positive.")
+
+        shunt_admittance = 1 / resistance_ohm
+        for k in 1:n_freq
+            compensated[port, port, k] -= shunt_admittance
+        end
+    end
+
+    return compensated
+end
+
+"""
+    differential_mode_weights(component_values)
+
+計算差模/共模轉換中使用的權重。
+這裡的 alpha / beta 反映兩個 qubit pad 對整體浮動島權重的分配。
+"""
+function differential_mode_weights(component_values)
+    w_1 = component_values[C_01] + component_values[C_13]
+    w_2 = component_values[C_02] + component_values[C_23]
+    total = w_1 + w_2
+
+    return (
+        w_1=w_1,
+        w_2=w_2,
+        alpha=w_1 / total,
+        beta=w_2 / total,
+    )
+end
+
+"""
+    differential_mode_input_admittance(y_cube, component_values)
+
+這一步做兩件事：
+1. 先對 port 3 做 Neumann-Kron reduction，把 XY line 自由度消掉
+2. 再把剩下的雙端口轉到 differential-mode basis，抽出差模看到的輸入導納 Yin_dm
+"""
+function differential_mode_input_admittance(y_cube, component_values)
+    y11 = vec(y_cube[1, 1, :])
+    y12 = vec(y_cube[1, 2, :])
+    y22 = vec(y_cube[2, 2, :])
+    y13 = vec(y_cube[1, 3, :])
+    y23 = vec(y_cube[2, 3, :])
+    y33 = vec(y_cube[3, 3, :])
+
+    weights = differential_mode_weights(component_values)
+    alpha = weights.alpha
+    beta = weights.beta
+
+    # Step 1: eliminate the XY line port (port 3).
+    a = y11 .- ((y13 .* y13) ./ y33)
+    b = y22 .- ((y23 .* y23) ./ y33)
+    c = -(y12 .- ((y13 .* y23) ./ y33))
+
+    # Step 2: project the reduced network into the differential/common-mode basis.
+    y_eff_11 = a .- (2 .* c) .+ b
+    y_eff_12 = beta .* (a .- c) .- alpha .* (-c .+ b)
+    y_eff_21 = y_eff_12
+    y_eff_22 = beta^2 .* a .+ (2 .* alpha .* beta .* c) .+ alpha^2 .* b
+
+    n_freq = length(y_eff_11)
+    y_eff = Array{ComplexF64}(undef, 2, 2, n_freq)
+    for k in 1:n_freq
+        y_eff[:, :, k] = [
+            y_eff_11[k] y_eff_12[k];
+            y_eff_21[k] y_eff_22[k]
+        ]
+    end
+
+    # 對 2x2 有效導納矩陣再做一次 Schur complement，
+    # 取得 differential mode 看到的單一輸入導納 Yin_dm。
+    yin_dm = y_eff_22 .- ((y_eff_21 .* y_eff_12) ./ y_eff_11)
+
+    return (
+        Yin_dm=yin_dm,
+        Y_m_eff=y_eff,
+        Y_m_eff_11=y_eff_11,
+        Y_m_eff_12=y_eff_12,
+        Y_m_eff_21=y_eff_21,
+        Y_m_eff_22=y_eff_22,
+    )
+end
+
+"""
+    effective_capacitance_from_yin(yin_dm, freqs_ghz)
+
+當網路中不含 Josephson 電感與 50 Ohm 終端時，
+Im(Yin)/omega 可以視為差模看到的有效電容。
+"""
+function effective_capacitance_from_yin(yin_dm, freqs_ghz)
+    omega = 2π .* freqs_ghz .* GHz
+    return imag.(yin_dm) ./ omega
+end
+
+"""
+    build_plot(traces, title, xaxis_title, yaxis_title; legend_title="Legend")
+
+建立這支 sandbox 腳本自用的 PlotlyJS 圖。
+這裡不依賴 repo 其他 plotting helper，避免 sandbox 腳本被外部型別耦合卡住。
+"""
+function build_plot(traces, title, xaxis_title, yaxis_title; legend_title="Legend")
+    return plot(
+        traces,
+        Layout(
+            title=title,
+            xaxis_title=xaxis_title,
+            yaxis_title=yaxis_title,
+            legend=attr(title=attr(text=legend_title)),
+        ),
+    )
+end
+
+
+# =============================================================================
+# 3. Load capacitance data for the target qubit
+# =============================================================================
+# 這一步只處理資料來源：
+# - 讀取 Q3D 結果
+# - 篩出指定 qubit
+# - 把元件電容值整理成後續建模要用的字典
+
+qubit_cap_table = load_qubit_capacitance_table(CAP_MATRIX_PATH, TARGET_QUBIT)
+
+
+# =============================================================================
+# 4. Define circuit symbols and parameter values
+# =============================================================================
+# 這裡先宣告 JosephsonCircuits 會用到的符號參數，
+# 再準備兩組 parameter dictionary：
+# - 第一組: 真正的 qubit + XY 50 Ohm 負載
+# - 第二組: 拿掉 Lq 並把 XY 負載改成近似開路，只保留電容網路
+
 @variables R_Big R50 C_01 C_02 C_12 Lq C_13 C_23
-# @variables R_Big R50 C_01 C_02 C_12 C_13 C_23
 
+component_values = build_component_values(qubit_cap_table)
 
-circuit = Tuple{String,String,String,Num}[]
-
-# Qubit
-push!(circuit, ("C_01", "1", "0", C_01))
-push!(circuit, ("C_02", "2", "0", C_02))
-push!(circuit, ("C_12", "1", "2", C_12))
-push!(circuit, ("Lq", "1", "2", Lq))
-
-# Coupler
-push!(circuit, ("C_13", "1", "3", C_13))
-push!(circuit, ("C_23", "2", "3", C_23))
-
-# Differential Ports
-push!(circuit, ("P1", "1", "0", 1))
-push!(circuit, ("R_P1", "1", "0", R_Big))
-push!(circuit, ("P2", "2", "0", 2))
-push!(circuit, ("R_P2", "2", "0", R_Big))
-push!(circuit, ("P3", "3", "0", 3))
-
-# R50
-push!(circuit, ("R50_XY", "3", "0", R50))
-
-circuitdefs = Dict(
-    R_Big => 1e100,
-    R50 => 50,
-    C_01 => sub[sub.name.=="C_01", :value_F][1],
-    C_02 => sub[sub.name.=="C_02", :value_F][1],
-    C_12 => sub[sub.name.=="C_12", :value_F][1],
-    C_13 => sub[sub.name.=="C_13", :value_F][1],
-    C_23 => sub[sub.name.=="C_23", :value_F][1],
-    Lq => 12.34e-9,
+circuitdefs = merge(
+    component_values,
+    Dict(
+        R_Big => 1e100,
+        R50 => 50.0,
+        Lq => 12.34nH,
+    ),
 )
 
-# Another Circuit wihtout R50 & Lq for capacitance network and effective capacitance extraction
-circuit2 = Tuple{String,String,String,Num}[]
-# Qubit
-push!(circuit2, ("C_01", "1", "0", C_01))
-push!(circuit2, ("C_02", "2", "0", C_02))
-push!(circuit2, ("C_12", "1", "2", C_12))
-# Coupler
-push!(circuit2, ("C_13", "1", "3", C_13))
-push!(circuit2, ("C_23", "2", "3", C_23))
-# Differential Ports
-push!(circuit2, ("P1", "1", "0", 1))
-push!(circuit2, ("R_P1", "1", "0", R_Big))
-push!(circuit2, ("P2", "2", "0", 2))
-push!(circuit2, ("R_P2", "2", "0", R_Big))
-push!(circuit2, ("P3", "3", "0", 3))
-push!(circuit2, ("R50_XY", "3", "0", R_Big))
-
-circuitdefs2 = Dict(
-    R_Big => 1e100,
-    C_01 => sub[sub.name.=="C_01", :value_F][1],
-    C_02 => sub[sub.name.=="C_02", :value_F][1],
-    C_12 => sub[sub.name.=="C_12", :value_F][1],
-    C_13 => sub[sub.name.=="C_13", :value_F][1],
-    C_23 => sub[sub.name.=="C_23", :value_F][1],
+circuitdefs_open = merge(
+    component_values,
+    Dict(
+        R_Big => 1e100,
+        R50 => 1e100,
+        Lq => 12.34nH,
+    ),
 )
 
 
-ws = 2 * pi * (1.0:0.001:10.0) * GHz
-wp = (2 * pi * 4.3 * GHz,)
-Ip = 0.0
-sources = [(mode=(1,), port=1, current=Ip)]
-Npumpharmonics = (1,)
-Nmodulationharmonics = (1,)
+# =============================================================================
+# 5. Build the two circuits used in this study
+# =============================================================================
+# 這個分析會跑兩個版本的模型：
+# - full_circuit: 真正有 qubit inductance，且 XY line 接 50 Ohm
+# - capacitive_reference_circuit: 去掉 Lq，並把 XY line 視為開路
+#
+# 第二個模型的用途不是找 qubit 頻率，而是抽「純電容視角」的 Ceff。
 
-ws = 2 * pi * (1:0.001:10) * 1e9
-wp = (2 * pi * 8.001 * 1e9,)
+full_circuit = build_floating_qubit_coupled_xy_circuit(
+    include_qubit_inductor=true,
+    port3_resistance_symbol=R50,
+)
+
+capacitive_reference_circuit = build_floating_qubit_coupled_xy_circuit(
+    include_qubit_inductor=false,
+    port3_resistance_symbol=R_Big,
+)
+
+
+# =============================================================================
+# 6. Harmonic-balance simulation setup
+# =============================================================================
+# 這裡定義 hbsolve 的掃頻範圍與求解設定。
+# 目前保留原本腳本最後實際使用的設定值，不改物理條件。
+
+ws = 2π .* (1:0.001:10) .* GHz
+wp = (2π * 8.001 * GHz,)
 Ip = 0.0
 sources = [(mode=(1,), port=1, current=Ip)]
 Npumpharmonics = (20,)
 Nmodulationharmonics = (10,)
 
-@time single_FQ_with_XY = hbsolve(ws, wp, sources, Nmodulationharmonics,
-    Npumpharmonics, circuit, circuitdefs; returnZ=true)
-@time single_FQ_no_Lq_R50 = hbsolve(ws, wp, sources, Nmodulationharmonics,
-    Npumpharmonics, circuit2, circuitdefs2; returnZ=true)
+
+# =============================================================================
+# 7. Run the two simulations
+# =============================================================================
+# - 第一個解: 用來抽含 50 Ohm XY 線載入時的 Yin_dm、G、T1
+# - 第二個解: 用來抽純電容網路下的 Ceff
+
+@time single_FQ_with_XY = hbsolve(
+    ws,
+    wp,
+    sources,
+    Nmodulationharmonics,
+    Npumpharmonics,
+    full_circuit,
+    circuitdefs;
+    returnZ=true,
+)
+
+@time single_FQ_no_Lq_R50 = hbsolve(
+    ws,
+    wp,
+    sources,
+    Nmodulationharmonics,
+    Npumpharmonics,
+    capacitive_reference_circuit,
+    circuitdefs_open;
+    returnZ=true,
+)
 
 
-freqs = single_FQ_with_XY.linearized.w / (2 * pi * 1e9)
+# =============================================================================
+# 8. Convert solver outputs into differential-mode admittance
+# =============================================================================
+# 這一步是整支腳本最核心的物理後處理：
+# 1. 先把 hbsolve 輸出的 Z(ω) 轉成 Y(ω)
+# 2. 對 port 1 / port 2 做 PTC，移除 solver-artificial 50 Ohm termination
+# 3. 用 PTC 後的 Y 做 differential/common-mode 座標轉換
+# 4. 再做 Kron reduction，最後抽出 qubit 差模看到的 Yin_dm
 
-Z_mat = Array(single_FQ_with_XY.linearized.Z[1, :, 1, :, :]) # 只取第一個 Mode 的 Z 矩陣
-N, _, Nf = size(Z_mat)
-Y_mat = similar(Z_mat)    # 同樣型別、同樣尺寸
+freqs = single_FQ_with_XY.linearized.w ./ (2π .* GHz)
 
-for k in 1:Nf
-    # 先把切片拿成真正的 Matrix
-    Zk = Matrix(@view Z_mat[:, :, k])
-    # inv!(F) 就会返回 Zk^{-1} 这个 Matrix
-    Y_mat[:, :, k] = inv(Zk)
-    # ——等价于 Y_mat[:,:,k] = Zk \ I
-end
+y_cube_full_raw = z_to_y_cube(single_FQ_with_XY)
+y_cube_full_ptc = apply_port_termination_compensation(
+    y_cube_full_raw;
+    resistance_ohm_by_port=Dict(1 => 50.0, 2 => 50.0),
+)
+dm_result_full = differential_mode_input_admittance(y_cube_full_ptc, circuitdefs)
+Yin_dm = dm_result_full.Yin_dm
+G_dm = real.(Yin_dm)
 
-Y11 = vec(Y_mat[1, 1, :]) # 取出 Y₁₁
-Y12 = vec(Y_mat[1, 2, :]) # 取出 Y₁₂
-Y21 = vec(Y_mat[2, 1, :]) # 取出 Y₂₁
-Y22 = vec(Y_mat[2, 2, :]) # 取出 Y₂₂
-Y13 = vec(Y_mat[1, 3, :]) # 取出 Y₁₃
-Y23 = vec(Y_mat[2, 3, :]) # 取出 Y₂₃
-Y31 = vec(Y_mat[3, 1, :]) # 取出 Y₃₁
-Y32 = vec(Y_mat[3, 2, :]) # 取出 Y₃₂
-Y33 = vec(Y_mat[3, 3, :]) # 取出 Y₃₃
-
-Nf = length(Y11)
-
-# Calculate the weighting of common and differential modes
-w_1 = (circuitdefs[C_01] + circuitdefs[C_13])
-w_2 = (circuitdefs[C_02] + circuitdefs[C_23])
-S = w_1 + w_2
-alpha = w_1 / S
-beta = w_2 / S
-
-# Do Neumann-Kron reduction to eliminate port 3 (XY line)
-# I will directly use the result from handwriting notes
-A = Y11 .- ((Y13 .* Y13) ./ Y33)
-B = Y22 .- ((Y23 .* Y23) ./ Y33)
-C = -(Y12 .- ((Y13 .* Y23) ./ Y33))
-
-Y_m_eff_11 = A .- (2 .* C) .+ B
-Y_m_eff_12 = beta .* (A .- C) .- alpha .* (-C .+ B)
-Y_m_eff_21 = beta .* (A .- C) .- alpha .* (-C .+ B)
-Y_m_eff_22 = beta^2 .* A .+ (2 .* alpha .* beta .* C) .+ alpha^2 .* B
+y_cube_open_raw = z_to_y_cube(single_FQ_no_Lq_R50)
+y_cube_open_ptc = apply_port_termination_compensation(
+    y_cube_open_raw;
+    resistance_ohm_by_port=Dict(1 => 50.0, 2 => 50.0),
+)
+dm_result_open = differential_mode_input_admittance(y_cube_open_ptc, circuitdefs_open)
+Ceff_dm = effective_capacitance_from_yin(dm_result_open.Yin_dm, freqs)
 
 
-# 準備一個 2×2×Nf 的陣列
-Y_m_eff = Array{ComplexF64}(undef, 2, 2, Nf)
-for k in 1:Nf
-    # Put the values into the 2D array
-    Y_m_eff[:, :, k] = [
-        Y_m_eff_11[k] Y_m_eff_12[k];
-        Y_m_eff_21[k] Y_m_eff_22[k]
-    ]
-end
+# =============================================================================
+# 9. Plot the effective capacitance and input admittance
+# =============================================================================
+# 這裡只做視覺化：
+# - C_eff_plot: 純電容網路推得的等效差模電容
+# - Y_m_eff_plot: 真實 qubit 模型在差模下的輸入導納
 
-Yin_dm = Y_m_eff_22 .- (Y_m_eff_21 .* inv.(Y_m_eff_11) .* Y_m_eff_12)   # Vector{ComplexF64} 長度 Nf
-G_dm = real.(Yin_dm) # 損耗
-
-Z_mat2 = Array(single_FQ_no_Lq_R50.linearized.Z[1, :, 1, :, :]) # 只取第一個 Mode 的 Z 矩陣
-N2, _, Nf2 = size(Z_mat2)
-Y_mat2 = similar(Z_mat2)    # 同樣型別、同樣尺寸
-for k in 1:Nf2
-    Zk2 = Matrix(@view Z_mat2[:, :, k])
-    Y_mat2[:, :, k] = inv(Zk2)
-end
-Y11_2 = vec(Y_mat2[1, 1, :]) # 取出 Y₁₁
-Y12_2 = vec(Y_mat2[1, 2, :]) # 取出 Y₁₂
-Y21_2 = vec(Y_mat2[2, 1, :]) # 取出 Y₂₁
-Y22_2 = vec(Y_mat2[2, 2, :]) # 取出 Y₂₂
-Y13_2 = vec(Y_mat2[1, 3, :]) # 取出 Y₁₃
-Y23_2 = vec(Y_mat2[2, 3, :]) # 取出 Y₂₃
-Y31_2 = vec(Y_mat2[3, 1, :]) # 取出 Y₃₁
-Y32_2 = vec(Y_mat2[3, 2, :]) # 取出 Y₃₂
-Y33_2 = vec(Y_mat2[3, 3, :]) # 取出 Y₃₃
-Nf2 = length(Y11_2)
-# Calculate the weighting of common and differential modes
-w_1_2 = (circuitdefs2[C_01] + circuitdefs2[C_13])
-w_2_2 = (circuitdefs2[C_02] + circuitdefs2[C_23])
-S2 = w_1_2 + w_2_2
-alpha2 = w_1_2 / S2
-beta2 = w_2_2 / S2
-# Do Neumann-Kron reduction to eliminate port 3 (XY line)
-# I will directly use the result from handwriting notes
-A2 = Y11_2 .- ((Y13_2 .* Y13_2) ./ Y33_2)
-B2 = Y22_2 .- ((Y23_2 .* Y23_2) ./ Y33_2)
-C2 = -(Y12_2 .- ((Y13_2 .* Y23_2) ./ Y33_2))
-Y_m_eff_11_2 = A2 .- (2 .* C2) .+ B2
-Y_m_eff_12_2 = beta2 .* (A2 .- C2) .- alpha2 .* (-C2 .+ B2)
-Y_m_eff_21_2 = beta2 .* (A2 .- C2) .- alpha2 .* (-C2 .+ B2)
-Y_m_eff_22_2 = beta2^2 .* A2 .+ (2 .* alpha2 .* beta2 .* C2) .+ alpha2^2 .* B2
-# 準備一個 2×2×Nf 的陣列
-Y_m_eff_2 = Array{ComplexF64}(undef, 2, 2, Nf2)
-for k in 1:Nf2
-    # Put the values into the 2D array
-    Y_m_eff_2[:, :, k] = [
-        Y_m_eff_11_2[k] Y_m_eff_12_2[k];
-        Y_m_eff_21_2[k] Y_m_eff_22_2[k]
-    ]
-end
-Yin_dm_2 = Y_m_eff_22_2 .- (Y_m_eff_21_2 .* inv.(Y_m_eff_11_2) .* Y_m_eff_12_2)   # Vector{ComplexF64} 長度 Nf
-Ceff_dm = imag.(Yin_dm_2) ./ (2π .* freqs * GHz) # 等效電容（給你有 ω::Vector） # Only Available when L = 0 (purely capacitance network)
-
-C_eff_plot = ili_plot(
+C_eff_plot = build_plot(
     [
         scatter(
             mode="lines+markers",
@@ -213,12 +407,12 @@ C_eff_plot = ili_plot(
         ),
     ],
     "Single Floating Qubit Differential Mode Effective Capacitance",
-    "C_{eff}",
     "Frequency (GHz)",
-    "Capacitance (F)";
+    "Capacitance (F)",
+    legend_title="Legend",
 )
 
-Y_m_eff_plot = ili_plot(
+Y_m_eff_plot = build_plot(
     [
         scatter(
             mode="lines+markers",
@@ -234,28 +428,42 @@ Y_m_eff_plot = ili_plot(
         ),
     ],
     "Single Floating Qubit Differential Mode Input Admittance",
-    "1 / Ω",
     "Frequency (GHz)",
-    "Legend";
+    "Admittance (S)",
+    legend_title="Legend",
 )
+
+
+# =============================================================================
+# 10. Extract resonance point and estimate T1
+# =============================================================================
+# 這裡把前面抽到的差模輸入導納轉成幾個更直觀的物理量：
+# - qubit_frequency: 用 |Yin_dm| 最小的位置當作共振附近點
+# - Ceff0: 該頻點的有效差模電容
+# - G0:   該頻點的實部導納，視作損耗通道
+# - T1:   以 Ceff / G 估算能量衰減時間
 
 idx = argmin(abs.(Yin_dm))
 qubit_frequency = freqs[idx] # GHz
-idx_4_3GHz = argmin(abs.(freqs .- 4.3)) # 找最接近 4.3 GHz 的 index
-# println("At 4.3 GHz, Im(Yin_dm) = ", imag.(Yin_dm[idx_4_3GHz]), "F")
-# f_near = freqs[idx]
+
+idx_4_3GHz = argmin(abs.(freqs .- 4.3))
+
 Ceff0 = Ceff_dm[idx]
-analytical_differential_mode_effective_c = circuitdefs[C_12] + (circuitdefs[C_01] * circuitdefs[C_02]) / (circuitdefs[C_01] + circuitdefs[C_02]) + (circuitdefs[C_13] * circuitdefs[C_23]) / (circuitdefs[C_13] + circuitdefs[C_23])
+analytical_differential_mode_effective_c =
+    circuitdefs[C_12] +
+    (circuitdefs[C_01] * circuitdefs[C_02]) / (circuitdefs[C_01] + circuitdefs[C_02]) +
+    (circuitdefs[C_13] * circuitdefs[C_23]) / (circuitdefs[C_13] + circuitdefs[C_23])
+
 Yin0 = Yin_dm[idx]
 G0 = real(Yin0)
-# G0 = real(Yin_dm[idx_4_3GHz]) # 直接取 4.3 GHz 的 Re(Yin_dm)
+
 if G0 <= 0
     @warn "Re(Y_in) ≤ 0 at f ≈ $qubit_frequency GHz → 無有限 T1（近乎無損或模型需檢查）"
 else
     T1 = Ceff0 / G0
     println("f≈$(qubit_frequency) GHz:  Ceff=$(Ceff0) F,  ReY=$(G0) S,  T1=$(T1) s")
-    # 可選：也印 Q
-    ω0 = 2π * qubit_frequency * 1e9
+
+    ω0 = 2π * qubit_frequency * GHz
     Q = ω0 * Ceff0 / G0
     println("Q=$(Q)")
 end
