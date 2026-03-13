@@ -90,6 +90,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tasks/{task_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Task Events */
+        get: operations["list_task_events_tasks__task_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/datasets": {
         parameters: {
             query?: never;
@@ -949,6 +966,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_task_events_tasks__task_id__events_get: {
+        parameters: {
+            query?: {
+                order?: "asc" | "desc";
+                limit?: number;
+                event_type?: ("task_submitted" | "task_running" | "task_completed" | "task_failed") | null;
+            };
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskEventResponse"][];
                 };
             };
             /** @description Validation Error */

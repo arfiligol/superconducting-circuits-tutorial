@@ -24,9 +24,6 @@ import {
   filterSimulationDefinitions,
   filterSimulationTasks,
   resolveSimulationSelectionRecovery,
-  resolveSimulationTaskAttachmentState,
-  resolveSimulationTaskRecovery,
-  summarizeSimulationTaskResults,
   summarizeSimulationTasks,
   type SimulationTaskScope,
   type SimulationTaskStatusFilter,
@@ -38,7 +35,18 @@ import {
   cx,
 } from "@/features/shared/components/surface-kit";
 import { TaskEventHistoryPanel } from "@/features/shared/components/task-event-history-panel";
+import {
+  TaskAttachmentPanel,
+  TaskLifecyclePanel,
+  TaskResultPanel,
+} from "@/features/shared/components/task-workflow-panels";
 import { ApiError } from "@/lib/api/client";
+import {
+  resolveTaskConnectionState,
+  resolveTaskRecoveryNotice,
+  summarizeTaskLifecycle,
+  summarizeTaskResultSurface,
+} from "@/lib/task-surface";
 
 const simulationRequestSchema = z.object({
   summaryNote: z.string().trim().max(180, "Keep the request note within 180 characters."),
@@ -294,18 +302,24 @@ export function SimulationWorkbenchShell() {
     selectedDefinitionId: resolvedDefinitionId,
     activeDatasetId: activeDatasetState.activeDataset?.datasetId ?? null,
   });
-  const taskResultSummary = summarizeSimulationTaskResults(activeTask);
   const definitionRecovery = resolveSimulationSelectionRecovery(
     requestedDefinitionId,
     resolvedDefinitionId,
     definitions,
   );
-  const taskRecovery = resolveSimulationTaskRecovery(
+  const taskConnectionState = resolveTaskConnectionState({
+    requestedTaskId,
+    resolvedTaskId,
+    latestTaskId: latestSimulationTask?.taskId ?? null,
+    activeTask,
+  });
+  const taskRecovery = resolveTaskRecoveryNotice(
     requestedTaskId,
     latestSimulationTask?.taskId ?? null,
     activeTaskError,
   );
-  const taskAttachmentState = resolveSimulationTaskAttachmentState(activeTask, resolvedTaskId);
+  const taskLifecycleSummary = summarizeTaskLifecycle(activeTask);
+  const taskResultSummary = summarizeTaskResultSurface(activeTask);
   const normalizedPreview = buildNormalizedOutputPreview(
     activeDefinition?.normalized_output ?? "{\n  \"circuit\": \"pending\"\n}",
   );
@@ -322,9 +336,11 @@ export function SimulationWorkbenchShell() {
   const activeTaskErrorMessage = describeApiError(activeTaskError);
   const eventHistoryNarrative = !activeTask
     ? "Attach or submit a simulation task to inspect its persisted dispatch trail."
-    : taskAttachmentState.isStaleSnapshot && resolvedTaskId !== null
+    : taskConnectionState.isStaleSnapshot && resolvedTaskId !== null
       ? `Showing persisted events from task #${activeTask.taskId} while task #${resolvedTaskId} reattaches so the simulation surface stays readable during route switching.`
-      : latestSimulationTask && resolvedTaskId === latestSimulationTask.taskId
+      : taskConnectionState.hasNewerLatestTask && taskConnectionState.latestTaskId !== null
+        ? `Task #${taskConnectionState.selectedTaskId} remains attached for comparison while newer simulation activity exists on task #${taskConnectionState.latestTaskId}.`
+        : latestSimulationTask && resolvedTaskId === latestSimulationTask.taskId
         ? `Following the latest simulation task #${latestSimulationTask.taskId}. Persisted events should advance here as dispatch, progress, and result publication change.`
         : `Task #${activeTask.taskId} keeps a persisted event trail alongside dispatch and progress so refreshes do not erase execution context.`;
 
@@ -408,9 +424,15 @@ export function SimulationWorkbenchShell() {
                 {activeDatasetState.activeDataset?.name ?? "Dataset not attached"}
               </SurfaceTag>
               {resolvedTaskId !== null ? (
-                <SurfaceTag tone={taskAttachmentState.isAttached ? "success" : "warning"}>
+                <SurfaceTag tone={taskConnectionState.isAttached ? "success" : "warning"}>
                   Task #{resolvedTaskId}
                 </SurfaceTag>
+              ) : null}
+              <SurfaceTag tone={taskLifecycleSummary.tone}>
+                {taskLifecycleSummary.statusLabel}
+              </SurfaceTag>
+              {taskConnectionState.isFollowingLatest ? (
+                <SurfaceTag tone="success">Following latest queue task</SurfaceTag>
               ) : null}
             </div>
             <p className="mt-3 text-sm text-muted-foreground">
@@ -715,294 +737,39 @@ export function SimulationWorkbenchShell() {
         </div>
 
         <div className="space-y-4">
-          <SurfacePanel
-            title="Task Attachment / Recovery"
-            description="Inspect the attached task detail, refresh it safely, and recover from stale route state without leaving the simulation workspace."
-            actions={
-              <button
-                type="button"
-                onClick={() => {
-                  void handleRefreshWorkflow();
-                }}
-                disabled={isRefreshingWorkflow}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RefreshCcw className={cx("h-3.5 w-3.5", isRefreshingWorkflow && "animate-spin")} />
-                Refresh surface
-              </button>
+          <TaskAttachmentPanel
+            task={activeTask}
+            connectionState={taskConnectionState}
+            recoveryNotice={taskRecovery}
+            taskErrorMessage={activeTaskErrorMessage}
+            isRefreshing={isRefreshingWorkflow}
+            isTransitioning={isTaskTransitioning}
+            onRefresh={() => {
+              void handleRefreshWorkflow();
+            }}
+            onAttachLatest={
+              latestSimulationTask
+                ? () => {
+                    replaceSearchState({ taskId: String(latestSimulationTask.taskId) });
+                  }
+                : null
             }
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Selected Task
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {resolvedTaskId ?? "--"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Attached Snapshot
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {activeTask?.taskId ?? "--"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Backend Status
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {activeTask?.status ?? "pending"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Worker Task
-                </p>
-                <p className="mt-2 text-sm font-semibold text-foreground">
-                  {activeTask?.workerTaskName ?? "--"}
-                </p>
-              </div>
-            </div>
+            onFollowLatest={() => {
+              replaceSearchState({ taskId: null });
+            }}
+          />
 
-            {taskRecovery ? (
-              <div className="mt-4 rounded-[0.9rem] border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-foreground">
-                <p className="font-medium">{taskRecovery.title}</p>
-                <p className="mt-1">{taskRecovery.message}</p>
-                {latestSimulationTask ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      replaceSearchState({ taskId: String(latestSimulationTask.taskId) });
-                    }}
-                    className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-full border border-amber-500/30 px-3 py-1.5 text-xs font-medium transition hover:bg-amber-500/10"
-                  >
-                    Attach latest task #{latestSimulationTask.taskId}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
-            {activeTaskError ? (
-              <div className="mt-4 rounded-[0.9rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
-                Unable to load task detail. {activeTaskErrorMessage}
-              </div>
-            ) : null}
-
-            {taskAttachmentState.isStaleSnapshot && activeTask ? (
-              <div className="mt-4 rounded-[0.9rem] border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-foreground">
-                Retaining task #{activeTask.taskId} while task #{resolvedTaskId} attaches so the
-                simulation surface stays readable during refresh or route switching.
-              </div>
-            ) : null}
-
-            {isTaskTransitioning && resolvedTaskId !== null ? (
-              <div className="mt-4 flex items-center gap-3 rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                Reattaching task detail...
-              </div>
-            ) : null}
-          </SurfacePanel>
-
-          <SurfacePanel
-            title="Execution Status"
-            description="Track persisted worker progress, submission readiness, and whether the task is still anchored to the active dataset."
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Phase
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {activeTask?.progress.phase ?? "pending"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Progress
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {activeTask ? `${activeTask.progress.percentComplete}%` : "--"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Result Handles
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {taskResultSummary.resultHandleCount}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Metadata Records
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {taskResultSummary.metadataRecordCount}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-              {activeTask?.progress.summary ??
-                "Select or submit a task to inspect its persisted execution status."}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2 text-[11px]">
-              {activeTask ? (
-                <>
-                  <SurfaceTag tone={activeTask.requestReady ? "success" : "warning"}>
-                    {activeTask.requestReady ? "Request ready" : "Request not ready"}
-                  </SurfaceTag>
-                  <SurfaceTag
-                    tone={activeTask.submittedFromActiveDataset ? "success" : "warning"}
-                  >
-                    {activeTask.submittedFromActiveDataset
-                      ? "Submitted from active dataset"
-                      : "Dataset detached from session"}
-                  </SurfaceTag>
-                  <SurfaceTag tone="default">{activeTask.executionMode}</SurfaceTag>
-                  <SurfaceTag tone="default">{activeTask.visibilityScope}</SurfaceTag>
-                  <SurfaceTag tone="default">{taskKindLabel(activeTask.kind)}</SurfaceTag>
-                </>
-              ) : (
-                <SurfaceTag tone="default">No task attached</SurfaceTag>
-              )}
-            </div>
-          </SurfacePanel>
+          <TaskLifecyclePanel task={activeTask} summary={taskLifecycleSummary} />
 
           <TaskEventHistoryPanel
             title="Task Event History"
-            description="Inspect the persisted task timeline directly so dispatch changes, progress movement, and task outcomes remain readable after refresh or reattachment."
+            description="Inspect persisted event records so dispatch changes, progress movement, and task outcomes remain readable after refresh or recovery."
             task={activeTask}
             narrative={eventHistoryNarrative}
             emptyMessage="No persisted simulation task events are attached yet. Submit or attach a task to inspect its backend event history."
           />
 
-          <SurfacePanel
-            title="Result Refs"
-            description="Surface the persisted result references directly from task detail so refresh and reattach paths still have enough authority context."
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              <SurfaceStat
-                label="Trace Batch"
-                value={taskResultSummary.traceBatchId !== null ? String(taskResultSummary.traceBatchId) : "--"}
-              />
-              <SurfaceStat
-                label="Analysis Run"
-                value={taskResultSummary.analysisRunId !== null ? String(taskResultSummary.analysisRunId) : "--"}
-              />
-              <SurfaceStat
-                label="Materialized"
-                value={String(taskResultSummary.materializedHandleCount)}
-                tone="primary"
-              />
-              <SurfaceStat
-                label="Trace Payload"
-                value={taskResultSummary.hasTracePayload ? "present" : "none"}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Trace Payload
-                  </p>
-                  <SurfaceTag tone={activeTask?.resultRefs.tracePayload ? "success" : "default"}>
-                    {activeTask?.resultRefs.tracePayload ? "attached" : "pending"}
-                  </SurfaceTag>
-                </div>
-                {activeTask?.resultRefs.tracePayload ? (
-                  <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">
-                      {activeTask.resultRefs.tracePayload.backend} ·{" "}
-                      {activeTask.resultRefs.tracePayload.payloadRole}
-                    </p>
-                    <p className="mt-2 break-all">
-                      {activeTask.resultRefs.tracePayload.storeUri}
-                    </p>
-                    <p className="mt-2">
-                      {activeTask.resultRefs.tracePayload.dtype} · shape{" "}
-                      {activeTask.resultRefs.tracePayload.shape.join(" × ")}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                    No trace payload ref is attached to the current task yet.
-                  </div>
-                )}
-
-                <div className="space-y-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Metadata Records
-                  </p>
-                  {activeTask?.resultRefs.metadataRecords.length ? (
-                    activeTask.resultRefs.metadataRecords.map((record) => (
-                      <div
-                        key={`${record.recordType}-${record.recordId}`}
-                        className="rounded-[0.9rem] border border-border bg-surface px-4 py-3 text-sm"
-                      >
-                        <p className="font-medium text-foreground">
-                          {record.recordType} · {record.recordId}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          v{record.version} · {record.schemaVersion}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                      No metadata records have been surfaced for this task yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Result Handles
-                  </p>
-                  <SurfaceTag tone={taskResultSummary.resultHandleCount > 0 ? "primary" : "default"}>
-                    {taskResultSummary.resultHandleCount}
-                  </SurfaceTag>
-                </div>
-                {activeTask?.resultRefs.resultHandles.length ? (
-                  activeTask.resultRefs.resultHandles.map((handle) => (
-                    <div
-                      key={handle.handleId}
-                      className="rounded-[0.9rem] border border-border bg-surface px-4 py-4"
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <SurfaceTag tone={taskStatusTone(handle.status === "materialized" ? "completed" : "queued")}>
-                          {handle.status}
-                        </SurfaceTag>
-                        <SurfaceTag tone="default">{handle.kind}</SurfaceTag>
-                        {handle.payloadFormat ? (
-                          <SurfaceTag tone="default">{handle.payloadFormat}</SurfaceTag>
-                        ) : null}
-                      </div>
-                      <p className="mt-3 text-sm font-semibold text-foreground">{handle.label}</p>
-                      <p className="mt-1 break-all text-xs text-muted-foreground">
-                        {handle.payloadLocator ?? handle.handleId}
-                      </p>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Source task: {handle.provenance.sourceTaskId ?? "--"} · Dataset:{" "}
-                        {handle.provenance.sourceDatasetId ?? "--"}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                    No result handles have been attached to the current task yet.
-                  </div>
-                )}
-              </div>
-            </div>
-          </SurfacePanel>
+          <TaskResultPanel task={activeTask} summary={taskResultSummary} />
 
           <SurfacePanel
             title="Canonical Definition Snapshot"
