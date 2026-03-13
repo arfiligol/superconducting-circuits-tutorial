@@ -12,6 +12,7 @@ from src.app.domain.tasks import (
     TaskDetail,
     TaskEvent,
     TaskEventHistoryQuery,
+    TaskHistoryView,
     TaskKind,
     TaskLifecycleUpdate,
     TaskListQuery,
@@ -68,16 +69,21 @@ class TaskService:
         return sorted(tasks, key=lambda task: task.submitted_at, reverse=True)[: query.limit]
 
     def get_task(self, task_id: int) -> TaskDetail:
-        detail = self._repository.get_task(task_id)
-        session = self._session_repository.get_session_state()
-        if detail is None or not self._is_visible(detail, session, scope="workspace"):
-            raise service_error(
-                404,
-                code="task_not_found",
-                category="not_found",
-                message=f"Task {task_id} was not found.",
-            )
-        return self._normalize_task(detail)
+        detail = self._load_visible_task(task_id)
+        persisted_events = tuple(self._repository.list_task_events(task_id))
+        normalized_task = self._normalize_task(detail)
+        return replace(
+            normalized_task,
+            events=tuple(
+                _select_task_events(
+                    persisted_events,
+                    TaskEventHistoryQuery(
+                        order="asc",
+                        limit=len(persisted_events),
+                    ),
+                )
+            ),
+        )
 
     def submit_task(self, draft: TaskSubmissionDraft) -> TaskDetail:
         session = self._session_repository.get_session_state()
@@ -153,13 +159,35 @@ class TaskService:
                 submission_source=submission_source,
             )
         )
-        return self._normalize_task(created_task)
+        return self.get_task(created_task.task_id)
 
     def list_task_events(
         self,
         task_id: int,
         query: TaskEventHistoryQuery,
     ) -> list[TaskEvent]:
+        return list(self.get_task_history(task_id, query).task.events)
+
+    def get_task_history(
+        self,
+        task_id: int,
+        query: TaskEventHistoryQuery,
+    ) -> TaskHistoryView:
+        detail = self._load_visible_task(task_id)
+        normalized_task = self._normalize_task(detail)
+        persisted_events = tuple(self._repository.list_task_events(task_id))
+        selected_events = tuple(_select_task_events(persisted_events, query))
+        latest_event_candidates = _select_task_events(
+            persisted_events,
+            TaskEventHistoryQuery(order="desc", limit=1),
+        )
+        return TaskHistoryView(
+            task=replace(normalized_task, events=selected_events),
+            event_count=len(persisted_events),
+            latest_event=latest_event_candidates[0] if len(latest_event_candidates) > 0 else None,
+        )
+
+    def _load_visible_task(self, task_id: int) -> TaskDetail:
         detail = self._repository.get_task(task_id)
         session = self._session_repository.get_session_state()
         if detail is None or not self._is_visible(detail, session, scope="workspace"):
@@ -169,11 +197,7 @@ class TaskService:
                 category="not_found",
                 message=f"Task {task_id} was not found.",
             )
-
-        return _select_task_events(
-            self._repository.list_task_events(task_id),
-            query,
-        )
+        return detail
 
     def update_task_lifecycle(self, update: TaskLifecycleUpdate) -> TaskDetail:
         detail = self._repository.get_task(update.task_id)
@@ -216,7 +240,7 @@ class TaskService:
                 category="not_found",
                 message=f"Task {update.task_id} was not found.",
             )
-        return self._normalize_task(updated_task)
+        return self.get_task(updated_task.task_id)
 
     def _matches_query(self, task: TaskDetail, query: TaskListQuery) -> bool:
         session = self._session_repository.get_session_state()

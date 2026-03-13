@@ -184,6 +184,25 @@ def test_task_service_event_history_query_supports_order_limit_and_filter() -> N
     assert events[0].metadata["dispatch_status"] == "completed"
 
 
+def test_task_service_history_view_coheres_detail_dispatch_and_events() -> None:
+    history = get_task_service().get_task_history(
+        303,
+        TaskEventHistoryQuery(order="desc", limit=2),
+    )
+
+    assert history.task.task_id == 303
+    assert history.task.dispatch is not None
+    assert history.task.dispatch.status == "completed"
+    assert history.event_count == 2
+    assert history.latest_event is not None
+    assert history.latest_event.event_type == "task_completed"
+    assert [event.event_type for event in history.task.events] == [
+        "task_completed",
+        "task_submitted",
+    ]
+    assert history.task.events[0].metadata["dispatch_key"] == history.task.dispatch.dispatch_key
+
+
 def test_task_service_lifecycle_update_persists_running_state_across_reset() -> None:
     submitted_task = get_task_service().submit_task(
         TaskSubmissionDraft(
@@ -230,6 +249,16 @@ def test_task_service_lifecycle_update_persists_running_state_across_reset() -> 
         "task_running",
     ]
     assert reloaded_task.events[1].metadata["progress_percent_complete"] == 35
+
+    history = get_task_service().get_task_history(
+        submitted_task.task_id,
+        TaskEventHistoryQuery(order="desc", limit=2),
+    )
+    assert history.event_count == 2
+    assert history.latest_event is not None
+    assert history.latest_event.event_type == "task_running"
+    assert history.task.dispatch is not None
+    assert history.latest_event.metadata["dispatch_key"] == history.task.dispatch.dispatch_key
 
 
 def test_service_read_reconciles_stale_dispatch_snapshot_to_task_lifecycle() -> None:

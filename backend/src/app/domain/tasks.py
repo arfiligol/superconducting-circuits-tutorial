@@ -116,6 +116,13 @@ class TaskEventHistoryQuery:
 
 
 @dataclass(frozen=True)
+class TaskHistoryView:
+    task: TaskDetail
+    event_count: int
+    latest_event: TaskEvent | None
+
+
+@dataclass(frozen=True)
 class TaskSubmissionDraft:
     kind: TaskKind
     dataset_id: str | None

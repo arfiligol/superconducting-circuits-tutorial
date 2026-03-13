@@ -412,6 +412,10 @@ def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
         "result_handles"
     ]
 
+    events_response = client.get("/tasks/306/events?order=asc&limit=10")
+    assert events_response.status_code == 200
+    assert events_response.json() == created_task["events"]
+
 
 def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
     updated_task = get_task_service().update_task_lifecycle(
@@ -446,6 +450,16 @@ def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
         "task_failed",
     ]
     assert payload["events"][1]["metadata"]["progress_percent_complete"] == 100
+
+    events_response = client.get("/tasks/302/events?order=desc&limit=2")
+    assert events_response.status_code == 200
+    assert [event["event_type"] for event in events_response.json()] == [
+        "task_failed",
+        "task_submitted",
+    ]
+    assert events_response.json()[0]["metadata"]["dispatch_key"] == (
+        payload["dispatch"]["dispatch_key"]
+    )
 
 
 def test_submit_simulation_task_requires_definition_id() -> None:

@@ -80,8 +80,6 @@ class PersistedRewriteTaskRepository:
         return self._hydrate_task(task)
 
     def list_task_events(self, task_id: int) -> tuple[TaskEvent, ...]:
-        if self._task_snapshot_repository.get_task(task_id) is None:
-            return ()
         return self._task_snapshot_repository.list_task_events(task_id)
 
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail:
