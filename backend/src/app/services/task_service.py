@@ -4,7 +4,6 @@ from typing import Protocol
 
 from sc_core.tasking import resolve_worker_task_route
 
-from src.app.domain.circuit_definitions import CircuitDefinitionDetail
 from src.app.domain.datasets import DatasetDetail
 from src.app.domain.session import SessionState
 from src.app.domain.tasks import (
@@ -42,7 +41,7 @@ class TaskDatasetRepository(Protocol):
 
 
 class TaskCircuitDefinitionRepository(Protocol):
-    def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail | None: ...
+    def get_circuit_definition(self, definition_id: int) -> object | None: ...
 
 
 class TaskSessionRepository(Protocol):

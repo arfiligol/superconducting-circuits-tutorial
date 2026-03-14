@@ -1,4 +1,6 @@
 import pytest
+from fastapi.testclient import TestClient
+
 from src.app.domain.datasets import (
     CharacterizationAnalysisRegistryQuery,
     CharacterizationResultBrowseQuery,
@@ -10,8 +12,17 @@ from src.app.domain.datasets import (
 )
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
+from src.app.infrastructure.runtime import reset_runtime_state
+from src.app.main import app
 from src.app.services.dataset_service import DatasetService
 from src.app.services.service_errors import ServiceError
+
+client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def reset_catalog_state() -> None:
+    reset_runtime_state()
 
 
 @pytest.fixture
@@ -251,3 +262,210 @@ def test_dataset_service_rejects_invisible_dataset_outside_active_workspace(
     assert exc_info.value.status_code == 403
     assert exc_info.value.code == "dataset_not_visible_in_workspace"
     assert exc_info.value.category == "permission_denied"
+
+
+def test_list_circuit_definitions_returns_seeded_summaries() -> None:
+    response = client.get("/circuit-definitions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert [row["definition_id"] for row in payload["data"]["rows"]] == [18, 12, 7]
+    assert payload["data"]["rows"][0]["name"] == "FloatingQubitWithXYLine"
+    assert payload["data"]["rows"][0]["visibility_scope"] == "private"
+    assert payload["data"]["rows"][0]["allowed_actions"] == {
+        "update": True,
+        "delete": True,
+        "publish": True,
+        "clone": True,
+    }
+    assert payload["meta"]["limit"] == 20
+    assert payload["meta"]["has_more"] is False
+
+
+def test_list_circuit_definitions_supports_search_and_sort() -> None:
+    response = client.get(
+        "/circuit-definitions?search_query=Fluxonium&sort_by=name&sort_order=asc&limit=1"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["name"] for item in payload["data"]["rows"]] == ["FluxoniumReadoutChain"]
+    assert payload["data"]["total_count"] == 1
+    assert payload["meta"]["filter_echo"]["search_query"] == "Fluxonium"
+
+
+def test_get_circuit_definition_returns_detail_payload() -> None:
+    response = client.get("/circuit-definitions/18")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["definition_id"] == 18
+    assert payload["workspace_id"] == "ws-device-lab"
+    assert payload["visibility_scope"] == "private"
+    assert payload["allowed_actions"] == {
+        "update": True,
+        "delete": True,
+        "publish": True,
+        "clone": True,
+    }
+    assert payload["preview_artifacts"] == [
+        "expanded-netlist.json",
+        "validation-summary.json",
+        "schemdraw-preview.svg",
+    ]
+    assert payload["validation_summary"] == {
+        "status": "valid",
+        "notice_count": 3,
+        "warning_count": 0,
+        "blocking_notice_count": 0,
+    }
+    assert payload["validation_notices"][0]["code"] == "definition_parsed"
+    assert "expanded" in payload["normalized_output"]
+
+
+def test_create_update_publish_clone_and_delete_circuit_definition_flow() -> None:
+    created = client.post(
+        "/circuit-definitions",
+        json={
+            "name": "ReadoutPreview",
+            "source_text": _valid_circuit_source("ReadoutPreview"),
+        },
+    )
+
+    assert created.status_code == 201
+    created_payload = created.json()["data"]
+    definition_id = int(created_payload["definition"]["definition_id"])
+    assert created_payload["operation"] == "created"
+    assert created_payload["definition"]["name"] == "ReadoutPreview"
+    assert created_payload["definition"]["visibility_scope"] == "private"
+    assert created_payload["definition"]["concurrency_token"] == f"etag_{definition_id}_1"
+
+    updated = client.put(
+        f"/circuit-definitions/{definition_id}",
+        json={
+            "name": "ReadoutPreviewV2",
+            "source_text": _valid_circuit_source("ReadoutPreviewV2"),
+            "concurrency_token": created_payload["definition"]["concurrency_token"],
+        },
+    )
+    assert updated.status_code == 200
+    updated_payload = updated.json()["data"]
+    assert updated_payload["operation"] == "updated"
+    assert updated_payload["definition"]["name"] == "ReadoutPreviewV2"
+    assert updated_payload["definition"]["concurrency_token"] == f"etag_{definition_id}_2"
+
+    published = client.post(f"/circuit-definitions/{definition_id}/publish")
+    assert published.status_code == 200
+    assert published.json()["data"]["definition"]["visibility_scope"] == "workspace"
+
+    cloned = client.post(
+        f"/circuit-definitions/{definition_id}/clone",
+        json={"name": "ReadoutPreview Private Copy"},
+    )
+    assert cloned.status_code == 201
+    cloned_payload = cloned.json()["data"]["definition"]
+    assert cloned_payload["name"] == "ReadoutPreview Private Copy"
+    assert cloned_payload["visibility_scope"] == "private"
+    assert cloned_payload["lineage_parent_id"] == definition_id
+
+    deleted = client.delete(f"/circuit-definitions/{definition_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {
+        "operation": "deleted",
+        "definition_id": definition_id,
+    }
+
+    missing = client.get(f"/circuit-definitions/{definition_id}")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "definition_not_found"
+
+
+def test_create_circuit_definition_rejects_blank_name() -> None:
+    response = client.post(
+        "/circuit-definitions",
+        json={
+            "name": "   ",
+            "source_text": _valid_circuit_source("readout_preview"),
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "request_validation_failed"
+
+
+def test_schemdraw_render_returns_svg_preview_and_diagnostics() -> None:
+    response = client.post(
+        "/api/backend/schemdraw/render",
+        json={
+            "source_text": (
+                "import schemdraw\n"
+                "import schemdraw.elements as elm\n\n"
+                "def build_drawing(relation):\n"
+                "    return relation\n"
+            ),
+            "relation_config": {
+                "tag": "draft",
+                "labels": {"P1": "input"},
+                "cursor_position": {"x": 12.0, "y": 18.0},
+                "probe_points": [{"name": "P1", "x": 14.0, "y": 18.0}],
+            },
+            "linked_schema": {
+                "definition_id": 18,
+                "workspace_id": "ws-device-lab",
+                "name": "FloatingQubitWithXYLine",
+            },
+            "document_version": 14,
+            "request_id": "req_sdraw_14",
+            "render_mode": "debounced",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["status"] == "rendered"
+    assert payload["request_id"] == "req_sdraw_14"
+    assert payload["svg"].startswith("<svg")
+    assert payload["cursor_position"] == {"x": 12.0, "y": 18.0}
+    assert payload["probe_points"] == [{"name": "P1", "x": 14.0, "y": 18.0}]
+    assert payload["preview_metadata"]["linked_definition_id"] == 18
+
+
+def test_schemdraw_render_returns_blocking_diagnostics_for_invalid_source() -> None:
+    response = client.post(
+        "/api/backend/schemdraw/render",
+        json={
+            "source_text": "def build_drawing(relation):\n    return (\n",
+            "relation_config": {"tag": "draft"},
+            "linked_schema": None,
+            "document_version": 21,
+            "request_id": "req_sdraw_21",
+            "render_mode": "manual",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["status"] == "syntax_error"
+    assert payload["svg"] is None
+    assert payload["diagnostics"][0]["code"] == "schemdraw_syntax_error"
+    assert payload["diagnostics"][0]["blocking"] is True
+
+
+def _valid_circuit_source(name: str) -> str:
+    return f"""{{
+    "name": "{name}",
+    "components": [
+        {{"name": "R1", "default": 50.0, "unit": "Ohm"}},
+        {{"name": "C1", "default": 100.0, "unit": "fF"}},
+        {{"name": "Lj1", "default": 1000.0, "unit": "pH"}},
+        {{"name": "C2", "default": 1000.0, "unit": "fF"}}
+    ],
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R1"),
+        ("C1", "1", "2", "C1"),
+        ("Lj1", "2", "0", "Lj1"),
+        ("C2", "2", "0", "C2")
+    ]
+}}"""

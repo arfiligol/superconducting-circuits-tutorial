@@ -1,19 +1,27 @@
 from dataclasses import replace
+from hashlib import sha256
+from pathlib import Path
+import sys
 
-from sc_core.circuit_definitions import (
-    DEFAULT_PREVIEW_ARTIFACTS,
-    inspect_circuit_definition_source,
+_WORKSPACE_SRC = Path(__file__).resolve().parents[4] / "src"
+if str(_WORKSPACE_SRC) not in sys.path:
+    sys.path.insert(0, str(_WORKSPACE_SRC))
+
+from core.simulation.domain.circuit import (
+    CircuitDefinition,
+    expand_circuit_definition,
+    format_circuit_definition,
+    format_expanded_circuit_definition,
+    parse_circuit_definition_source,
 )
-from sc_core.circuit_definitions import (
-    ValidationNotice as CoreValidationNotice,
-)
+from core.simulation.domain.validators import CircuitValidationError
 
 from src.app.domain.circuit_definitions import (
-    CircuitDefinitionDetail,
+    CircuitDefinitionCloneDraft,
     CircuitDefinitionDraft,
-    CircuitDefinitionSummary,
+    CircuitDefinitionRecord,
     CircuitDefinitionUpdate,
-    ValidationLevel,
+    ValidationSummary,
     ValidationNotice,
 )
 from src.app.domain.datasets import (
@@ -216,30 +224,30 @@ class InMemoryRewriteCatalogRepository:
             tagged_metric=tagged_metric,
         )
 
-    def list_circuit_definitions(self) -> list[CircuitDefinitionSummary]:
-        return [
-            CircuitDefinitionSummary(
-                definition_id=definition.definition_id,
-                name=definition.name,
-                created_at=definition.created_at,
-                element_count=definition.element_count,
-                validation_status=_validation_status(definition.validation_notices),
-                preview_artifact_count=len(definition.preview_artifacts),
-            )
-            for definition in self._circuit_definitions.values()
-        ]
+    def list_circuit_definitions(self) -> list[CircuitDefinitionRecord]:
+        return list(self._circuit_definitions.values())
 
-    def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail | None:
+    def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionRecord | None:
         return self._circuit_definitions.get(definition_id)
 
     def create_circuit_definition(
         self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        owner_display_name: str,
         draft: CircuitDefinitionDraft,
-    ) -> CircuitDefinitionDetail:
-        definition = _build_circuit_definition_detail(
+    ) -> CircuitDefinitionRecord:
+        definition = _build_circuit_definition_record(
             definition_id=self._next_definition_id,
+            workspace_id=workspace_id,
+            visibility_scope=draft.visibility_scope,
+            owner_user_id=owner_user_id,
+            owner_display_name=owner_display_name,
             name=draft.name,
-            created_at="2026-03-11 23:30:00",
+            created_at=_timestamp_for_definition(self._next_definition_id),
+            updated_at=_timestamp_for_definition(self._next_definition_id),
+            concurrency_token=f"etag_{self._next_definition_id}_1",
             source_text=draft.source_text,
         )
         self._circuit_definitions[definition.definition_id] = definition
@@ -250,60 +258,204 @@ class InMemoryRewriteCatalogRepository:
         self,
         definition_id: int,
         update: CircuitDefinitionUpdate,
-    ) -> CircuitDefinitionDetail | None:
+    ) -> CircuitDefinitionRecord | None:
         definition = self._circuit_definitions.get(definition_id)
         if definition is None:
             return None
-
-        inspection = inspect_circuit_definition_source(update.source_text)
+        if (
+            update.concurrency_token is not None
+            and update.concurrency_token != definition.concurrency_token
+        ):
+            return None
+        inspection = _inspect_circuit_definition(update.source_text)
 
         updated_definition = replace(
             definition,
-            name=update.name,
+            name=update.name or definition.name,
+            updated_at=_timestamp_for_definition(definition.definition_id + 100),
+            concurrency_token=_next_concurrency_token(definition.concurrency_token),
             source_text=update.source_text,
-            element_count=inspection.element_count,
+            source_hash=_source_hash(update.source_text),
             normalized_output=inspection.normalized_output,
-            validation_notices=_to_domain_validation_notices(inspection.validation_notices),
+            validation_notices=inspection.validation_notices,
+            validation_summary=inspection.validation_summary,
         )
         self._circuit_definitions[definition_id] = updated_definition
         return updated_definition
+
+    def publish_circuit_definition(
+        self,
+        definition_id: int,
+    ) -> CircuitDefinitionRecord | None:
+        definition = self._circuit_definitions.get(definition_id)
+        if definition is None:
+            return None
+        published_definition = replace(
+            definition,
+            visibility_scope="workspace",
+            updated_at=_timestamp_for_definition(definition.definition_id + 200),
+            concurrency_token=_next_concurrency_token(definition.concurrency_token),
+        )
+        self._circuit_definitions[definition_id] = published_definition
+        return published_definition
+
+    def clone_circuit_definition(
+        self,
+        *,
+        source_definition_id: int,
+        workspace_id: str,
+        owner_user_id: str,
+        owner_display_name: str,
+        draft: CircuitDefinitionCloneDraft,
+    ) -> CircuitDefinitionRecord | None:
+        source_definition = self._circuit_definitions.get(source_definition_id)
+        if source_definition is None:
+            return None
+        cloned_definition = _build_circuit_definition_record(
+            definition_id=self._next_definition_id,
+            workspace_id=workspace_id,
+            visibility_scope="private",
+            owner_user_id=owner_user_id,
+            owner_display_name=owner_display_name,
+            name=draft.name or f"{source_definition.name} Copy",
+            created_at=_timestamp_for_definition(self._next_definition_id),
+            updated_at=_timestamp_for_definition(self._next_definition_id),
+            concurrency_token=f"etag_{self._next_definition_id}_1",
+            source_text=source_definition.source_text,
+            lineage_parent_id=source_definition.definition_id,
+        )
+        self._circuit_definitions[cloned_definition.definition_id] = cloned_definition
+        self._next_definition_id += 1
+        return cloned_definition
 
     def delete_circuit_definition(self, definition_id: int) -> bool:
         existing = self._circuit_definitions.pop(definition_id, None)
         return existing is not None
 
 
-def _build_circuit_definition_detail(
+def _build_circuit_definition_record(
     definition_id: int,
+    workspace_id: str,
+    visibility_scope: str,
+    owner_user_id: str,
+    owner_display_name: str,
     name: str,
     created_at: str,
+    updated_at: str,
+    concurrency_token: str,
     source_text: str,
     *,
-    element_count: int | None = None,
-) -> CircuitDefinitionDetail:
-    inspection = inspect_circuit_definition_source(source_text)
-    return CircuitDefinitionDetail(
+    lineage_parent_id: int | None = None,
+) -> CircuitDefinitionRecord:
+    inspection = _inspect_circuit_definition(source_text)
+    return CircuitDefinitionRecord(
         definition_id=definition_id,
+        workspace_id=workspace_id,
+        visibility_scope=visibility_scope,
+        lifecycle_state="active",
+        owner_user_id=owner_user_id,
+        owner_display_name=owner_display_name,
         name=name,
         created_at=created_at,
-        element_count=inspection.element_count if element_count is None else element_count,
+        updated_at=updated_at,
+        concurrency_token=concurrency_token,
+        source_hash=_source_hash(source_text),
         source_text=source_text,
         normalized_output=inspection.normalized_output,
-        validation_notices=_to_domain_validation_notices(inspection.validation_notices),
-        preview_artifacts=DEFAULT_PREVIEW_ARTIFACTS,
+        validation_notices=inspection.validation_notices,
+        validation_summary=inspection.validation_summary,
+        preview_artifacts=(
+            "expanded-netlist.json",
+            "validation-summary.json",
+            "schemdraw-preview.svg",
+        ),
+        lineage_parent_id=lineage_parent_id,
     )
 
 
-def _to_domain_validation_notices(
-    notices: tuple[CoreValidationNotice, ...],
-) -> tuple[ValidationNotice, ...]:
-    return tuple(ValidationNotice(level=notice.level, message=notice.message) for notice in notices)
+class _CircuitInspectionResult:
+    def __init__(
+        self,
+        *,
+        normalized_output: str,
+        validation_notices: tuple[ValidationNotice, ...],
+        validation_summary: ValidationSummary,
+    ) -> None:
+        self.normalized_output = normalized_output
+        self.validation_notices = validation_notices
+        self.validation_summary = validation_summary
 
 
-def _validation_status(notices: tuple[ValidationNotice, ...]) -> ValidationLevel:
-    if any(notice.level == "warning" for notice in notices):
-        return "warning"
-    return "ok"
+def _inspect_circuit_definition(source_text: str) -> _CircuitInspectionResult:
+    try:
+        parsed = parse_circuit_definition_source(source_text)
+        expanded = expand_circuit_definition(parsed)
+    except CircuitValidationError as exc:
+        raise ValueError(str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
+
+    notices = (
+        ValidationNotice(
+            severity="info",
+            code="definition_parsed",
+            message="Circuit definition source was parsed successfully.",
+            source="circuit_netlist",
+            blocking=False,
+        ),
+        ValidationNotice(
+            severity="info",
+            code="definition_expanded",
+            message=(
+                f"Expanded netlist contains {len(expanded.components)} components and "
+                f"{len(expanded.topology)} topology rows."
+            ),
+            source="circuit_netlist",
+            blocking=False,
+        ),
+        ValidationNotice(
+            severity="info",
+            code="layout_profile_inferred",
+            message=f"Preview layout profile: {parsed.effective_layout_profile}.",
+            source="circuit_netlist",
+            blocking=False,
+        ),
+    )
+    return _CircuitInspectionResult(
+        normalized_output=_normalized_output(parsed),
+        validation_notices=notices,
+        validation_summary=ValidationSummary(
+            status="valid",
+            notice_count=len(notices),
+            warning_count=0,
+            blocking_notice_count=0,
+        ),
+    )
+
+
+def _normalized_output(parsed: CircuitDefinition) -> str:
+    return (
+        "{\n"
+        f'  "source": {format_circuit_definition(parsed)!r},\n'
+        f'  "expanded": {format_expanded_circuit_definition(parsed)!r}\n'
+        "}"
+    )
+
+
+def _source_hash(source_text: str) -> str:
+    return sha256(source_text.encode("utf-8")).hexdigest()[:12]
+
+
+def _next_concurrency_token(current_token: str) -> str:
+    prefix, _, suffix = current_token.rpartition("_")
+    if suffix.isdigit():
+        return f"{prefix}_{int(suffix) + 1}"
+    return f"{current_token}_next"
+
+
+def _timestamp_for_definition(definition_id: int) -> str:
+    minute = 10 + (definition_id % 40)
+    return f"2026-03-15T09:{minute:02d}:00Z"
 
 
 def _seed_datasets() -> tuple[DatasetDetail, ...]:
@@ -1473,62 +1625,94 @@ def _build_tagged_metric_id(dataset_id: str, designated_metric: str) -> str:
     return f"metric-{normalized_dataset}-{normalized_metric}"
 
 
-def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:
-    floating_qubit_source = (
-        "circuit:\n"
-        "  name: fluxonium_reference_a\n"
-        "  family: fluxonium\n"
-        "  elements:\n"
-        "    junction:\n"
-        "      ej_ghz: 8.45\n"
-        "    shunt_inductor:\n"
-        "      el_ghz: 0.42\n"
-        "    capacitance:\n"
-        "      ec_ghz: 1.22\n"
-        "  sweep:\n"
-        "    flux_bias: [0.0, 0.5]\n"
-        "    temperature_mk: 15\n"
-    )
-    readout_chain_source = (
-        "circuit:\n"
-        "  name: fluxonium_readout_chain\n"
-        "  family: fluxonium\n"
-        "  elements:\n"
-        "    readout:\n"
-        "      resonator_ghz: 6.81\n"
-        "    coupling:\n"
-        "      chi_mhz: 2.4\n"
-    )
-    coupler_demo_source = (
-        "circuit:\n"
-        "  name: coupler_detuning_demo\n"
-        "  family: transmon\n"
-        "  elements:\n"
-        "    coupler:\n"
-        "      g_mhz: 11.2\n"
-        "    bus:\n"
-        "      resonance_ghz: 7.05\n"
-    )
+def _seed_circuit_definitions() -> tuple[CircuitDefinitionRecord, ...]:
+    floating_qubit_source = """{
+    "name": "FloatingQubitWithXYLine",
+    "components": [
+        {"name": "R1", "default": 50.0, "unit": "Ohm"},
+        {"name": "C1", "default": 100.0, "unit": "fF"},
+        {"name": "Lj1", "default": 1000.0, "unit": "pH"},
+        {"name": "C2", "default": 1000.0, "unit": "fF"}
+    ],
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R1"),
+        ("C1", "1", "2", "C1"),
+        ("Lj1", "2", "0", "Lj1"),
+        ("C2", "2", "0", "C2")
+    ]
+}"""
+    readout_chain_source = """{
+    "name": "FluxoniumReadoutChain",
+    "parameters": [
+        {"name": "Lj", "default": 1000.0, "unit": "pH"},
+        {"name": "Cj", "default": 1000.0, "unit": "fF"}
+    ],
+    "components": [
+        {"name": "R1", "default": 50.0, "unit": "Ohm"},
+        {"name": "C1", "default": 100.0, "unit": "fF"},
+        {"name": "Lj1", "value_ref": "Lj", "unit": "pH"},
+        {"name": "C2", "value_ref": "Cj", "unit": "fF"}
+    ],
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R1"),
+        ("C1", "1", "2", "C1"),
+        ("Lj1", "2", "0", "Lj1"),
+        ("C2", "2", "0", "C2")
+    ]
+}"""
+    coupler_demo_source = """{
+    "name": "CouplerDetuningDemo",
+    "components": [
+        {"name": "R1", "default": 50.0, "unit": "Ohm"},
+        {"name": "C1", "default": 80.0, "unit": "fF"},
+        {"name": "Lj1", "default": 850.0, "unit": "pH"},
+        {"name": "C2", "default": 950.0, "unit": "fF"}
+    ],
+    "topology": [
+        ("P1", "1", "0", 1),
+        ("R1", "1", "0", "R1"),
+        ("C1", "1", "2", "C1"),
+        ("Lj1", "2", "0", "Lj1"),
+        ("C2", "2", "0", "C2")
+    ]
+}"""
     return (
-        _build_circuit_definition_detail(
+        _build_circuit_definition_record(
             definition_id=18,
+            workspace_id="ws-device-lab",
+            visibility_scope="private",
+            owner_user_id="researcher-01",
+            owner_display_name="Ari",
             name="FloatingQubitWithXYLine",
-            created_at="2026-03-08 18:19:42",
-            element_count=12,
+            created_at="2026-03-08T18:19:42Z",
+            updated_at="2026-03-14T08:30:00Z",
+            concurrency_token="etag_18_3",
             source_text=floating_qubit_source,
         ),
-        _build_circuit_definition_detail(
+        _build_circuit_definition_record(
             definition_id=12,
+            workspace_id="ws-device-lab",
+            visibility_scope="workspace",
+            owner_user_id="researcher-01",
+            owner_display_name="Ari",
             name="FluxoniumReadoutChain",
-            created_at="2026-03-05 11:14:03",
-            element_count=9,
+            created_at="2026-03-05T11:14:03Z",
+            updated_at="2026-03-14T07:42:00Z",
+            concurrency_token="etag_12_2",
             source_text=readout_chain_source,
         ),
-        _build_circuit_definition_detail(
+        _build_circuit_definition_record(
             definition_id=7,
+            workspace_id="ws-device-lab",
+            visibility_scope="workspace",
+            owner_user_id="collaborator-02",
+            owner_display_name="Device Lab",
             name="CouplerDetuningDemo",
-            created_at="2026-02-25 09:43:18",
-            element_count=8,
+            created_at="2026-02-25T09:43:18Z",
+            updated_at="2026-03-13T16:10:00Z",
+            concurrency_token="etag_7_4",
             source_text=coupler_demo_source,
         ),
     )

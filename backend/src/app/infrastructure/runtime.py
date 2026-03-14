@@ -13,6 +13,7 @@ from src.app.infrastructure.rewrite_task_repository import PersistedRewriteTaskR
 from src.app.services.circuit_definition_service import CircuitDefinitionService
 from src.app.services.dataset_service import DatasetService
 from src.app.services.health_service import HealthService
+from src.app.services.schemdraw_render_service import SchemdrawRenderService
 from src.app.services.session_service import SessionService
 from src.app.services.task_service import TaskService
 from src.app.settings import get_settings
@@ -74,7 +75,18 @@ def get_dataset_service() -> DatasetService:
 
 @lru_cache(maxsize=1)
 def get_circuit_definition_service() -> CircuitDefinitionService:
-    return CircuitDefinitionService(repository=get_rewrite_catalog_repository())
+    return CircuitDefinitionService(
+        repository=get_rewrite_catalog_repository(),
+        session_repository=get_rewrite_app_state_repository(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_schemdraw_render_service() -> SchemdrawRenderService:
+    return SchemdrawRenderService(
+        definition_repository=get_rewrite_catalog_repository(),
+        session_repository=get_rewrite_app_state_repository(),
+    )
 
 
 @lru_cache(maxsize=1)
@@ -112,6 +124,7 @@ def reset_runtime_state() -> None:
     get_rewrite_task_repository.cache_clear()
     get_dataset_service.cache_clear()
     get_circuit_definition_service.cache_clear()
+    get_schemdraw_render_service.cache_clear()
     get_session_service.cache_clear()
     get_task_service.cache_clear()
     get_task_execution_runtime.cache_clear()

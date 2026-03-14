@@ -4,11 +4,15 @@ from typing import Literal
 ApiErrorCategory = Literal[
     "auth_required",
     "permission_denied",
+    "validation",
     "validation_error",
     "not_found",
-    "conflict",
-    "validation",
     "forbidden",
+    "conflict",
+    "task_not_ready",
+    "task_execution_failed",
+    "persistence_error",
+    "internal_error",
 ]
 
 

@@ -1,114 +1,414 @@
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Protocol
 
 from src.app.domain.circuit_definitions import (
+    AllowedActions,
+    CircuitDefinitionCatalogPage,
+    CircuitDefinitionCloneDraft,
     CircuitDefinitionDetail,
     CircuitDefinitionDraft,
     CircuitDefinitionListQuery,
+    CircuitDefinitionRecord,
     CircuitDefinitionSummary,
     CircuitDefinitionUpdate,
 )
+from src.app.domain.session import SessionState
 from src.app.services.service_errors import service_error
 
 
 class CircuitDefinitionRepository(Protocol):
-    def list_circuit_definitions(self) -> Sequence[CircuitDefinitionSummary]: ...
+    def list_circuit_definitions(self) -> Sequence[CircuitDefinitionRecord]: ...
 
-    def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail | None: ...
+    def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionRecord | None: ...
 
     def create_circuit_definition(
         self,
+        *,
+        workspace_id: str,
+        owner_user_id: str,
+        owner_display_name: str,
         draft: CircuitDefinitionDraft,
-    ) -> CircuitDefinitionDetail: ...
+    ) -> CircuitDefinitionRecord: ...
 
     def update_circuit_definition(
         self,
         definition_id: int,
         update: CircuitDefinitionUpdate,
-    ) -> CircuitDefinitionDetail | None: ...
+    ) -> CircuitDefinitionRecord | None: ...
+
+    def publish_circuit_definition(
+        self,
+        definition_id: int,
+    ) -> CircuitDefinitionRecord | None: ...
+
+    def clone_circuit_definition(
+        self,
+        *,
+        source_definition_id: int,
+        workspace_id: str,
+        owner_user_id: str,
+        owner_display_name: str,
+        draft: CircuitDefinitionCloneDraft,
+    ) -> CircuitDefinitionRecord | None: ...
 
     def delete_circuit_definition(self, definition_id: int) -> bool: ...
 
 
+class CircuitDefinitionSessionRepository(Protocol):
+    def get_session_state(self) -> SessionState: ...
+
+
 class CircuitDefinitionService:
-    def __init__(self, repository: CircuitDefinitionRepository) -> None:
+    def __init__(
+        self,
+        *,
+        repository: CircuitDefinitionRepository,
+        session_repository: CircuitDefinitionSessionRepository,
+    ) -> None:
         self._repository = repository
+        self._session_repository = session_repository
 
     def list_circuit_definitions(
         self,
         query: CircuitDefinitionListQuery,
-    ) -> list[CircuitDefinitionSummary]:
-        definitions = [
-            summary
-            for summary in self._repository.list_circuit_definitions()
-            if self._matches_query(summary, query)
+    ) -> CircuitDefinitionCatalogPage:
+        session = self._session_repository.get_session_state()
+        visible_records = [
+            record
+            for record in self._repository.list_circuit_definitions()
+            if _is_visible(record, session)
         ]
-        return self._sort_definitions(definitions, query)
+        filtered_records = [
+            record
+            for record in visible_records
+            if query.search_query is None
+            or query.search_query.casefold() in record.name.casefold()
+        ]
+        ordered_records = _sort_records(filtered_records, query)
+        page_records, next_cursor, prev_cursor, has_more = _slice_records(ordered_records, query)
+        return CircuitDefinitionCatalogPage(
+            rows=tuple(_build_summary(record, session) for record in page_records),
+            total_count=len(filtered_records),
+            next_cursor=next_cursor,
+            prev_cursor=prev_cursor,
+            has_more=has_more,
+        )
 
     def get_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail:
-        detail = self._repository.get_circuit_definition(definition_id)
-        if detail is None:
+        session = self._session_repository.get_session_state()
+        record = self._repository.get_circuit_definition(definition_id)
+        if record is None:
             raise service_error(
                 404,
-                code="circuit_definition_not_found",
+                code="definition_not_found",
                 category="not_found",
-                message=f"Circuit definition {definition_id} was not found.",
+                message=f"Definition {definition_id} was not found.",
             )
-        return detail
+        if not _is_visible(record, session):
+            raise service_error(
+                403,
+                code="definition_not_visible",
+                category="permission_denied",
+                message=f"Definition {definition_id} is not visible in the active workspace.",
+            )
+        return _build_detail(record, session)
 
     def create_circuit_definition(self, draft: CircuitDefinitionDraft) -> CircuitDefinitionDetail:
-        return self._repository.create_circuit_definition(draft)
+        session = self._session_repository.get_session_state()
+        try:
+            record = self._repository.create_circuit_definition(
+                workspace_id=session.workspace_id,
+                owner_user_id=_session_user_id(session),
+                owner_display_name=_session_user_name(session),
+                draft=draft,
+            )
+        except ValueError as exc:
+            raise service_error(
+                400,
+                code="definition_source_invalid",
+                category="validation_error",
+                message=str(exc),
+            ) from exc
+        return _build_detail(record, session)
 
     def update_circuit_definition(
         self,
         definition_id: int,
         update: CircuitDefinitionUpdate,
     ) -> CircuitDefinitionDetail:
-        detail = self._repository.update_circuit_definition(definition_id, update)
-        if detail is None:
+        session = self._session_repository.get_session_state()
+        current = self._repository.get_circuit_definition(definition_id)
+        if current is None:
             raise service_error(
                 404,
-                code="circuit_definition_not_found",
+                code="definition_not_found",
                 category="not_found",
-                message=f"Circuit definition {definition_id} was not found.",
+                message=f"Definition {definition_id} was not found.",
             )
-        return detail
+        if not _is_visible(current, session):
+            raise service_error(
+                403,
+                code="definition_not_visible",
+                category="permission_denied",
+                message=f"Definition {definition_id} is not visible in the active workspace.",
+            )
+        if not _allowed_actions(current, session).update:
+            raise service_error(
+                409,
+                code="definition_conflict",
+                category="conflict",
+                message="The selected definition cannot be updated by the current session.",
+            )
+        try:
+            record = self._repository.update_circuit_definition(definition_id, update)
+        except ValueError as exc:
+            raise service_error(
+                400,
+                code="definition_source_invalid",
+                category="validation_error",
+                message=str(exc),
+            ) from exc
+        if record is None:
+            if update.concurrency_token is not None:
+                raise service_error(
+                    409,
+                    code="definition_conflict",
+                    category="conflict",
+                    message="The provided concurrency token does not match the persisted definition.",
+                )
+            raise service_error(
+                404,
+                code="definition_not_found",
+                category="not_found",
+                message=f"Definition {definition_id} was not found.",
+            )
+        return _build_detail(record, session)
+
+    def publish_circuit_definition(self, definition_id: int) -> CircuitDefinitionDetail:
+        session = self._session_repository.get_session_state()
+        current = self._repository.get_circuit_definition(definition_id)
+        if current is None:
+            raise service_error(
+                404,
+                code="definition_not_found",
+                category="not_found",
+                message=f"Definition {definition_id} was not found.",
+            )
+        if not _is_visible(current, session):
+            raise service_error(
+                403,
+                code="definition_not_visible",
+                category="permission_denied",
+                message=f"Definition {definition_id} is not visible in the active workspace.",
+            )
+        if not _allowed_actions(current, session).publish:
+            raise service_error(
+                409,
+                code="definition_conflict",
+                category="conflict",
+                message="The selected definition cannot be published in the current state.",
+            )
+        record = self._repository.publish_circuit_definition(definition_id)
+        if record is None:
+            raise service_error(
+                404,
+                code="definition_not_found",
+                category="not_found",
+                message=f"Definition {definition_id} was not found.",
+            )
+        return _build_detail(record, session)
+
+    def clone_circuit_definition(
+        self,
+        definition_id: int,
+        draft: CircuitDefinitionCloneDraft,
+    ) -> CircuitDefinitionDetail:
+        session = self._session_repository.get_session_state()
+        current = self._repository.get_circuit_definition(definition_id)
+        if current is None:
+            raise service_error(
+                404,
+                code="definition_not_found",
+                category="not_found",
+                message=f"Definition {definition_id} was not found.",
+            )
+        if not _is_visible(current, session):
+            raise service_error(
+                403,
+                code="definition_not_visible",
+                category="permission_denied",
+                message=f"Definition {definition_id} is not visible in the active workspace.",
+            )
+        record = self._repository.clone_circuit_definition(
+            source_definition_id=definition_id,
+            workspace_id=session.workspace_id,
+            owner_user_id=_session_user_id(session),
+            owner_display_name=_session_user_name(session),
+            draft=draft,
+        )
+        if record is None:
+            raise service_error(
+                404,
+                code="definition_not_found",
+                category="not_found",
+                message=f"Definition {definition_id} was not found.",
+            )
+        return _build_detail(record, session)
 
     def delete_circuit_definition(self, definition_id: int) -> None:
-        deleted = self._repository.delete_circuit_definition(definition_id)
-        if not deleted:
+        session = self._session_repository.get_session_state()
+        current = self._repository.get_circuit_definition(definition_id)
+        if current is None:
             raise service_error(
                 404,
-                code="circuit_definition_not_found",
+                code="definition_not_found",
                 category="not_found",
-                message=f"Circuit definition {definition_id} was not found.",
+                message=f"Definition {definition_id} was not found.",
+            )
+        if not _is_visible(current, session):
+            raise service_error(
+                403,
+                code="definition_not_visible",
+                category="permission_denied",
+                message=f"Definition {definition_id} is not visible in the active workspace.",
+            )
+        if not _allowed_actions(current, session).delete:
+            raise service_error(
+                409,
+                code="definition_delete_blocked",
+                category="conflict",
+                message="The selected definition cannot be deleted by the current session.",
+            )
+        if not self._repository.delete_circuit_definition(definition_id):
+            raise service_error(
+                404,
+                code="definition_not_found",
+                category="not_found",
+                message=f"Definition {definition_id} was not found.",
             )
 
-    def _matches_query(
-        self,
-        summary: CircuitDefinitionSummary,
-        query: CircuitDefinitionListQuery,
-    ) -> bool:
-        if query.search is None:
-            return True
-        return query.search.casefold() in summary.name.casefold()
 
-    def _sort_definitions(
-        self,
-        definitions: list[CircuitDefinitionSummary],
-        query: CircuitDefinitionListQuery,
-    ) -> list[CircuitDefinitionSummary]:
-        reverse = query.sort_order == "desc"
-        if query.sort_by == "name":
-            return sorted(
-                definitions,
-                key=lambda summary: summary.name.casefold(),
-                reverse=reverse,
-            )
-        if query.sort_by == "element_count":
-            return sorted(
-                definitions,
-                key=lambda summary: summary.element_count,
-                reverse=reverse,
-            )
-        return sorted(definitions, key=lambda summary: summary.created_at, reverse=reverse)
+def _build_summary(
+    record: CircuitDefinitionRecord,
+    session: SessionState,
+) -> CircuitDefinitionSummary:
+    return CircuitDefinitionSummary(
+        definition_id=record.definition_id,
+        name=record.name,
+        created_at=record.created_at,
+        visibility_scope=record.visibility_scope,
+        owner_display_name=record.owner_display_name,
+        allowed_actions=_allowed_actions(record, session),
+    )
+
+
+def _build_detail(
+    record: CircuitDefinitionRecord,
+    session: SessionState,
+) -> CircuitDefinitionDetail:
+    return CircuitDefinitionDetail(
+        definition_id=record.definition_id,
+        workspace_id=record.workspace_id,
+        visibility_scope=record.visibility_scope,
+        lifecycle_state=record.lifecycle_state,
+        owner_user_id=record.owner_user_id,
+        owner_display_name=record.owner_display_name,
+        allowed_actions=_allowed_actions(record, session),
+        name=record.name,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        concurrency_token=record.concurrency_token,
+        source_hash=record.source_hash,
+        source_text=record.source_text,
+        normalized_output=record.normalized_output,
+        validation_notices=record.validation_notices,
+        validation_summary=record.validation_summary,
+        preview_artifacts=record.preview_artifacts,
+        lineage_parent_id=record.lineage_parent_id,
+    )
+
+
+def _allowed_actions(
+    record: CircuitDefinitionRecord,
+    session: SessionState,
+) -> AllowedActions:
+    owned = record.owner_user_id == _session_user_id(session)
+    visible = _is_visible(record, session)
+    return AllowedActions(
+        update=visible and owned and record.lifecycle_state == "active",
+        delete=visible and owned and record.lifecycle_state == "active",
+        publish=(
+            visible
+            and owned
+            and record.lifecycle_state == "active"
+            and record.visibility_scope == "private"
+        ),
+        clone=visible and record.lifecycle_state == "active",
+    )
+
+
+def _is_visible(record: CircuitDefinitionRecord, session: SessionState) -> bool:
+    if record.workspace_id != session.workspace_id:
+        return False
+    if record.visibility_scope == "workspace":
+        return True
+    return record.owner_user_id == _session_user_id(session)
+
+
+def _session_user_id(session: SessionState) -> str:
+    return session.user.user_id if session.user is not None else "anonymous"
+
+
+def _session_user_name(session: SessionState) -> str:
+    return session.user.display_name if session.user is not None else "anonymous"
+
+
+def _sort_records(
+    records: Sequence[CircuitDefinitionRecord],
+    query: CircuitDefinitionListQuery,
+) -> list[CircuitDefinitionRecord]:
+    reverse = query.sort_order == "desc"
+    if query.sort_by == "name":
+        return sorted(records, key=lambda record: record.name.casefold(), reverse=reverse)
+    if query.sort_by == "created_at":
+        return sorted(records, key=lambda record: record.created_at, reverse=reverse)
+    return sorted(records, key=lambda record: record.updated_at, reverse=reverse)
+
+
+def _slice_records(
+    records: Sequence[CircuitDefinitionRecord],
+    query: CircuitDefinitionListQuery,
+) -> tuple[list[CircuitDefinitionRecord], str | None, str | None, bool]:
+    limit = max(1, query.limit)
+    if len(records) == 0:
+        return [], None, None, False
+
+    start_index = 0
+    end_index = len(records)
+
+    if query.after is not None:
+        start_index = next(
+            (
+                index + 1
+                for index, record in enumerate(records)
+                if str(record.definition_id) == query.after
+            ),
+            len(records),
+        )
+    if query.before is not None:
+        end_index = next(
+            (
+                index
+                for index, record in enumerate(records)
+                if str(record.definition_id) == query.before
+            ),
+            len(records),
+        )
+
+    window = list(records[start_index:end_index])
+    page = window[:limit]
+    has_more = len(window) > limit
+    next_cursor = str(page[-1].definition_id) if has_more and len(page) > 0 else None
+    prev_cursor = str(records[start_index - 1].definition_id) if start_index > 0 else None
+    return page, next_cursor, prev_cursor, has_more

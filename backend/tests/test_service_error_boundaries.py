@@ -117,12 +117,16 @@ def test_task_service_raises_framework_agnostic_validation_error() -> None:
 def test_circuit_definition_service_raises_framework_agnostic_error_for_missing_definition() -> (
     None
 ):
-    service = CircuitDefinitionService(repository=InMemoryRewriteCatalogRepository())
+    app_state_repository = InMemoryRewriteAppStateRepository(include_task_scaffold=False)
+    service = CircuitDefinitionService(
+        repository=InMemoryRewriteCatalogRepository(),
+        session_repository=app_state_repository,
+    )
 
     with pytest.raises(ServiceError) as exc_info:
         service.get_circuit_definition(999)
 
     assert not isinstance(exc_info.value, HTTPException)
     assert exc_info.value.status_code == 404
-    assert exc_info.value.code == "circuit_definition_not_found"
+    assert exc_info.value.code == "definition_not_found"
     assert exc_info.value.category == "not_found"
