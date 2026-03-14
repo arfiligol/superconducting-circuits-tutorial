@@ -38,12 +38,13 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     aliases: ["/data-browser"],
   },
   {
-    href: "/circuit-definition-editor",
+    href: "/schemas",
     label: "Schemas",
     pageTitle: "Schema Editor",
     summary: "Edit canonical circuit definitions with validation-ready structure.",
     group: "circuit-workbench",
     icon: FilePenLine,
+    aliases: ["/circuit-definition-editor"],
   },
   {
     href: "/circuit-schemdraw",

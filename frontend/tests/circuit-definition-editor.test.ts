@@ -6,9 +6,17 @@ import {
   unwrapCircuitDefinitionMutation,
 } from "../src/features/circuit-definition-editor/lib/api";
 import {
+  filterCircuitDefinitionCatalog,
+} from "../src/features/circuit-definition-editor/lib/catalog";
+import {
   parseDefinitionIdParam,
   resolveSelectedDefinitionId,
 } from "../src/features/circuit-definition-editor/lib/definition-id";
+import {
+  buildCircuitDefinitionDraft,
+  formatCircuitNetlistSource,
+  summarizeCircuitNetlistDocument,
+} from "../src/features/circuit-definition-editor/lib/netlist";
 import {
   buildNormalizedOutputPreview,
   partitionValidationNotices,
@@ -49,6 +57,14 @@ describe("circuit definition editor routing helpers", () => {
 
   it("preserves explicit new-draft selection", () => {
     expect(resolveSelectedDefinitionId("new", definitions)).toBe("new");
+  });
+
+  it("filters and sorts the catalog for the dedicated schemas page", () => {
+    expect(
+      filterCircuitDefinitionCatalog(definitions, "flux", "name").map(
+        (definition) => definition.definition_id,
+      ),
+    ).toEqual([12]);
   });
 });
 
@@ -94,6 +110,63 @@ describe("circuit definition editor api keys", () => {
 });
 
 describe("circuit definition preview helpers", () => {
+  it("formats canonical netlist source and builds a save payload from it", () => {
+    const formatted = formatCircuitNetlistSource(`{
+      "name": "Scratch",
+      "components": [
+        {"name": "R1", "default": 50, "unit": "Ohm"},
+        {"name": "C1", "value_ref": "Cj", "unit": "fF"}
+      ],
+      "parameters": [
+        {"name": "Cj", "default": 100, "unit": "fF"}
+      ],
+      "topology": [
+        ["P1", "1", "0", 1],
+        ["R1", "1", "0", "R1"],
+        ["C1", "1", "2", "C1"]
+      ]
+    }`);
+
+    expect(formatted.diagnostics).toEqual([]);
+    expect(summarizeCircuitNetlistDocument(formatted.document)).toEqual({
+      componentCount: 2,
+      topologyCount: 3,
+      parameterCount: 1,
+    });
+    expect(
+      buildCircuitDefinitionDraft({
+        name: "RenamedCircuit",
+        sourceText: formatted.formattedSource,
+      }),
+    ).toMatchObject({
+      formattedSource: expect.stringContaining('"name": "RenamedCircuit"'),
+      draft: {
+        name: "RenamedCircuit",
+      },
+    });
+  });
+
+  it("reports blocking diagnostics for invalid netlist contracts", () => {
+    expect(
+      buildCircuitDefinitionDraft({
+        name: "Invalid",
+        sourceText: `{
+          "name": "Invalid",
+          "components": [
+            {"name": "C1", "unit": "fF", "value_ref": "Missing"}
+          ],
+          "topology": [
+            ["C1", "node-a", "0", "missing_component"]
+          ]
+        }`,
+      }).diagnostics.map((diagnostic) => diagnostic.message),
+    ).toEqual([
+      'Component "C1" references undefined parameter "Missing".',
+      'Topology row "C1" must use numeric string node tokens and ground token "0".',
+      'Topology row "C1" must reference an existing component name.',
+    ]);
+  });
+
   it("describes stale and persisted preview states distinctly", () => {
     expect(
       resolvePersistedPreviewState({

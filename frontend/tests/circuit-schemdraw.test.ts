@@ -14,6 +14,18 @@ import {
   resolveSchemdrawSelectionRecovery,
   summarizeSchemdrawCatalog,
 } from "../src/features/circuit-schemdraw/lib/workflow";
+import {
+  schemdrawRenderEndpoint,
+} from "../src/features/circuit-schemdraw/lib/api";
+import {
+  buildSchemdrawRenderRequest,
+  buildRenderSurfaceFromResponse,
+  createInitialRenderSurface,
+  createRelationConfigTemplate,
+  createSchemdrawSourceTemplate,
+  markSchemdrawPreviewStale,
+  shouldApplySchemdrawResponse,
+} from "../src/features/circuit-schemdraw/lib/render";
 
 describe("circuit schemdraw routing helpers", () => {
   const definitions = [
@@ -232,6 +244,122 @@ describe("circuit schemdraw workflow helpers", () => {
     ).toEqual({
       isAttached: false,
       isStaleSnapshot: true,
+    });
+  });
+});
+
+describe("circuit schemdraw render helpers", () => {
+  it("keeps the documented request endpoint stable", () => {
+    expect(schemdrawRenderEndpoint).toBe("/api/backend/schemdraw/render");
+  });
+
+  it("builds render requests from editor drafts and linked schema context", () => {
+    const request = buildSchemdrawRenderRequest({
+      activeDefinition: {
+        definition_id: 18,
+        name: "FloatingQubitWithXYLine",
+        created_at: "2026-03-08 18:19:42",
+        element_count: 12,
+        validation_status: "ok",
+        preview_artifact_count: 2,
+        source_text: "{}",
+        normalized_output: "{}",
+        validation_notices: [],
+        validation_summary: {
+          status: "ok",
+          notice_count: 0,
+          warning_count: 0,
+        },
+        preview_artifacts: [],
+      },
+      draft: {
+        sourceText: createSchemdrawSourceTemplate("FloatingQubitWithXYLine"),
+        relationText: createRelationConfigTemplate(undefined),
+        documentVersion: 4,
+      },
+      renderMode: "manual",
+      requestId: "req-4",
+    });
+
+    expect(request.diagnostics).toEqual([]);
+    expect(request.request).toMatchObject({
+      request_id: "req-4",
+      document_version: 4,
+      render_mode: "manual",
+      linked_schema: {
+        definition_id: 18,
+        name: "FloatingQubitWithXYLine",
+      },
+    });
+  });
+
+  it("marks the preview stale and accepts latest-only render responses", () => {
+    const staleSurface = markSchemdrawPreviewStale({
+      ...createInitialRenderSurface(),
+      svg: "<svg />",
+    });
+
+    expect(staleSurface).toMatchObject({
+      phase: "stale",
+      statusLabel: "Preview Stale",
+      isStale: true,
+    });
+    expect(shouldApplySchemdrawResponse(
+      {
+        request_id: "req-7",
+        document_version: 7,
+        status: "rendered",
+        svg: "<svg />",
+        diagnostics: [],
+      },
+      "req-7",
+      7,
+    )).toBe(true);
+    expect(shouldApplySchemdrawResponse(
+      {
+        request_id: "req-6",
+        document_version: 6,
+        status: "rendered",
+        svg: "<svg />",
+        diagnostics: [],
+      },
+      "req-7",
+      7,
+    )).toBe(false);
+  });
+
+  it("keeps the previous svg when a newer response is not rendered", () => {
+    expect(
+      buildRenderSurfaceFromResponse(
+        {
+          request_id: "req-8",
+          document_version: 8,
+          status: "syntax_error",
+          svg: null,
+          diagnostics: [
+            {
+              severity: "error",
+              code: "schemdraw_syntax_error",
+              message: "Bad source",
+              source: "python_syntax",
+              blocking: true,
+              line: 12,
+              column: 4,
+            },
+          ],
+        },
+        {
+          ...createInitialRenderSurface(),
+          svg: "<svg>old</svg>",
+          requestId: "req-5",
+          appliedDocumentVersion: 5,
+        },
+      ),
+    ).toMatchObject({
+      phase: "syntax_error",
+      svg: "<svg>old</svg>",
+      isStale: true,
+      appliedDocumentVersion: 5,
     });
   });
 });

@@ -1,45 +1,22 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useTransition } from "react";
 import {
   AlertTriangle,
-  ChevronLeft,
-  ChevronRight,
+  ArrowLeft,
+  CheckCircle2,
   FileCode2,
   LoaderCircle,
-  Package,
   RefreshCcw,
-  Search,
-  ShieldCheck,
-  SlidersHorizontal,
-  Waypoints,
+  Shapes,
+  WandSparkles,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import CodeMirror from "@uiw/react-codemirror";
 
 import { useCircuitSchemdrawData } from "@/features/circuit-schemdraw/hooks/use-circuit-schemdraw-data";
-import {
-  parseSchemdrawDefinitionIdParam,
-} from "@/features/circuit-schemdraw/lib/definition-id";
-import { inferSchemdrawReadiness } from "@/features/circuit-schemdraw/lib/readiness";
-import {
-  buildSchemdrawStructuredPreview,
-  filterAndSortSchemdrawCatalog,
-  partitionSchemdrawNotices,
-  pinActiveSchemdrawDefinition,
-  resolveSchemdrawAttachmentState,
-  resolveSchemdrawSelectionRecovery,
-  summarizeSchemdrawCatalog,
-  type SchemdrawCatalogFilter,
-  type SchemdrawCatalogSortMode,
-  type SchemdrawPreviewMode,
-} from "@/features/circuit-schemdraw/lib/workflow";
-import {
-  SurfacePanel,
-  SurfaceStat,
-  SurfaceTag,
-  cx,
-} from "@/features/shared/components/surface-kit";
-import { ApiError } from "@/lib/api/client";
+import { parseSchemdrawDefinitionIdParam } from "@/features/circuit-schemdraw/lib/definition-id";
+import { cx } from "@/features/shared/components/surface-kit";
 
 function definitionSearchHref(pathname: string, searchParamsValue: string, definitionId: string) {
   const params = new URLSearchParams(searchParamsValue);
@@ -47,113 +24,20 @@ function definitionSearchHref(pathname: string, searchParamsValue: string, defin
   return `${pathname}?${params.toString()}`;
 }
 
-function lineCount(value: string) {
-  return value.split("\n").length;
-}
-
-function readinessTone(status: "ready" | "warning" | "pending") {
-  if (status === "ready") {
+function renderTone(phase: string) {
+  if (phase === "rendered") {
     return "success" as const;
   }
 
-  if (status === "warning") {
+  if (phase === "syntax_error" || phase === "runtime_error" || phase === "request_error") {
     return "warning" as const;
   }
 
-  return "default" as const;
-}
-
-function describeApiError(error: Error | undefined) {
-  if (!error) {
-    return null;
-  }
-
-  if (error instanceof ApiError) {
-    const retryHint = error.retryable === true ? " Retry is available." : "";
-    const debugHint = error.debugRef ? ` Ref: ${error.debugRef}.` : "";
-    return `${error.message}${retryHint}${debugHint}`;
-  }
-
-  return error.message;
-}
-
-function artifactTone(artifact: string) {
-  if (artifact.endsWith(".json")) {
+  if (phase === "validating") {
     return "primary" as const;
   }
 
-  if (artifact.endsWith(".yaml") || artifact.endsWith(".yml")) {
-    return "success" as const;
-  }
-
   return "default" as const;
-}
-
-type CatalogCardProps = Readonly<{
-  createdAt: string;
-  definitionId: number;
-  elementCount: number;
-  isActive: boolean;
-  isAttachedSnapshot: boolean;
-  isPinned: boolean;
-  name: string;
-  onSelect: (definitionId: number) => void;
-  previewArtifactCount: number;
-  validationStatus: "ok" | "warning";
-}>;
-
-function CatalogCard({
-  createdAt,
-  definitionId,
-  elementCount,
-  isActive,
-  isAttachedSnapshot,
-  isPinned,
-  name,
-  onSelect,
-  previewArtifactCount,
-  validationStatus,
-}: CatalogCardProps) {
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        onSelect(definitionId);
-      }}
-      className={cx(
-        "w-full cursor-pointer rounded-[1rem] border px-4 py-4 text-left shadow-[0_10px_30px_rgba(0,0,0,0.08)] transition",
-        isActive
-          ? "border-primary/40 bg-card"
-          : "border-border bg-card hover:border-primary/25 hover:bg-primary/5",
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold text-foreground">{name}</h2>
-          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            Definition #{definitionId}
-          </p>
-        </div>
-        <SurfaceTag tone={previewArtifactCount > 0 ? "primary" : "default"}>
-          {previewArtifactCount} artifacts
-        </SurfaceTag>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-        {isActive ? <SurfaceTag tone="primary">Active target</SurfaceTag> : null}
-        {isAttachedSnapshot ? <SurfaceTag tone="success">Attached snapshot</SurfaceTag> : null}
-        {isPinned ? <SurfaceTag tone="warning">Pinned while filtered</SurfaceTag> : null}
-        <SurfaceTag tone={validationStatus === "warning" ? "warning" : "success"}>
-          {validationStatus === "warning" ? "Warnings present" : "Validation clean"}
-        </SurfaceTag>
-      </div>
-
-      <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-        <span>Created: {createdAt}</span>
-        <span className="sm:text-right">{elementCount} elements</span>
-      </div>
-    </button>
-  );
 }
 
 export function CircuitSchemdrawWorkspace() {
@@ -161,15 +45,8 @@ export function CircuitSchemdrawWorkspace() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isNavigating, startTransition] = useTransition();
-  const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false);
-  const [isRefreshingDefinition, setIsRefreshingDefinition] = useState(false);
-  const [catalogQuery, setCatalogQuery] = useState("");
-  const [catalogFilter, setCatalogFilter] = useState<SchemdrawCatalogFilter>("all");
-  const [catalogSort, setCatalogSort] = useState<SchemdrawCatalogSortMode>("recent");
-  const [previewMode, setPreviewMode] = useState<SchemdrawPreviewMode>("structured");
 
-  const requestedDefinitionId = searchParams.get("definitionId");
-  const rawDefinitionId = parseSchemdrawDefinitionIdParam(requestedDefinitionId);
+  const rawDefinitionId = parseSchemdrawDefinitionIdParam(searchParams.get("definitionId"));
   const {
     definitions,
     definitionsError,
@@ -179,65 +56,14 @@ export function CircuitSchemdrawWorkspace() {
     activeDefinition,
     activeDefinitionError,
     isDefinitionTransitioning,
-    refreshDefinitions,
-    refreshActiveDefinition,
+    draft,
+    renderSurface,
+    isRendering,
+    updateSourceText,
+    updateRelationText,
+    resetDraft,
+    renderNow,
   } = useCircuitSchemdrawData(rawDefinitionId);
-
-  const readiness = inferSchemdrawReadiness(activeDefinition);
-  const catalogSummary = summarizeSchemdrawCatalog(definitions);
-  const filteredDefinitions = filterAndSortSchemdrawCatalog(definitions, {
-    searchQuery: catalogQuery,
-    filter: catalogFilter,
-    sort: catalogSort,
-  });
-  const pinnedDefinitionId = pinActiveSchemdrawDefinition(
-    filteredDefinitions,
-    resolvedDefinitionId,
-  );
-  const pinnedDefinition =
-    pinnedDefinitionId === null
-      ? undefined
-      : definitions?.find((definition) => definition.definition_id === pinnedDefinitionId);
-  const selectionRecovery = resolveSchemdrawSelectionRecovery(
-    requestedDefinitionId,
-    resolvedDefinitionId,
-    definitions,
-  );
-  const attachmentState = resolveSchemdrawAttachmentState(
-    activeDefinition,
-    resolvedDefinitionId,
-  );
-  const noticeGroups = partitionSchemdrawNotices(
-    activeDefinition?.validation_notices ?? [],
-  );
-  const structuredPreview = buildSchemdrawStructuredPreview(
-    activeDefinition?.normalized_output ?? '{\n  "schemdraw_ready": false\n}',
-  );
-  const activeDefinitionIndex =
-    typeof resolvedDefinitionId === "number"
-      ? (definitions ?? []).findIndex((definition) => definition.definition_id === resolvedDefinitionId)
-      : -1;
-  const previousDefinition =
-    activeDefinitionIndex > 0 ? definitions?.[activeDefinitionIndex - 1] : undefined;
-  const nextDefinition =
-    activeDefinitionIndex >= 0 && definitions && activeDefinitionIndex < definitions.length - 1
-      ? definitions[activeDefinitionIndex + 1]
-      : undefined;
-  const catalogErrorMessage = describeApiError(definitionsError);
-  const activeDefinitionErrorMessage = describeApiError(activeDefinitionError);
-
-  useEffect(() => {
-    if (resolvedDefinitionId === null || resolvedDefinitionId === rawDefinitionId) {
-      return;
-    }
-
-    startTransition(() => {
-      router.replace(
-        definitionSearchHref(pathname, searchParams.toString(), String(resolvedDefinitionId)),
-        { scroll: false },
-      );
-    });
-  }, [pathname, rawDefinitionId, resolvedDefinitionId, router, searchParams]);
 
   function replaceDefinitionId(definitionId: number) {
     startTransition(() => {
@@ -247,64 +73,98 @@ export function CircuitSchemdrawWorkspace() {
     });
   }
 
-  async function handleRefreshCatalog() {
-    setIsRefreshingCatalog(true);
-    try {
-      await refreshDefinitions();
-    } finally {
-      setIsRefreshingCatalog(false);
-    }
-  }
-
-  async function handleRefreshDefinition() {
-    setIsRefreshingDefinition(true);
-    try {
-      await Promise.all([refreshDefinitions(), refreshActiveDefinition()]);
-    } finally {
-      setIsRefreshingDefinition(false);
-    }
-  }
-
-  function resetCatalogControls() {
-    setCatalogQuery("");
-    setCatalogFilter("all");
-    setCatalogSort("recent");
-  }
-
-  const targetDefinitionName =
-    selectedDefinitionSummary?.name ?? activeDefinition?.name ?? "None selected";
-
   return (
     <div className="space-y-8">
-      <section className="space-y-6">
+      <section className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-[2.05rem] font-semibold tracking-tight text-foreground">
             Circuit Schemdraw
           </h1>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            Work against the canonical circuit-definition contract, inspect normalized output, and
-            verify whether the current definition detail is ready to support downstream schemdraw
-            migration.
+            Use Schemdraw as a request/response authoring assist surface: edit Python source,
+            edit relation JSON, send a backend render snapshot, and inspect diagnostics plus the
+            latest SVG preview without touching the task queue.
           </p>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              router.push("/schemas");
+            }}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Catalog
+          </button>
+          {typeof resolvedDefinitionId === "number" ? (
+            <button
+              type="button"
+              onClick={() => {
+                router.push(`/circuit-definition-editor?definitionId=${resolvedDefinitionId}`);
+              }}
+              className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
+            >
+              <Shapes className="h-4 w-4" />
+              Open Schema Editor
+            </button>
+          ) : null}
+        </div>
+      </section>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(180px,0.4fr)_minmax(180px,0.4fr)_minmax(180px,0.4fr)]">
-          <div className="rounded-[1rem] border border-border bg-card px-4 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
-            <div className="flex items-center gap-4">
-              <span className="text-base font-semibold text-foreground">Definition</span>
-              <div className="min-w-0 flex-1">
+      {definitionsError ? (
+        <div className="rounded-[1rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
+          Unable to load linked schemas. {definitionsError.message}
+        </div>
+      ) : null}
+
+      {activeDefinitionError ? (
+        <div className="rounded-[1rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
+          Unable to load linked schema detail. {activeDefinitionError.message}
+        </div>
+      ) : null}
+
+      <section className="grid gap-5 xl:grid-cols-[minmax(340px,0.88fr)_minmax(0,1.12fr)]">
+        <div className="space-y-4">
+          <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Linked Schema Context
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Schemdraw preview can attach a canonical schema snapshot, but preview authority
+                  still comes from backend render responses, not persisted tasks.
+                </p>
+              </div>
+              <span
+                className={cx(
+                  "rounded-full px-3 py-1 text-xs font-medium",
+                  renderTone(renderSurface.phase) === "success" && "bg-emerald-500/12 text-emerald-300",
+                  renderTone(renderSurface.phase) === "primary" && "bg-primary/10 text-primary",
+                  renderTone(renderSurface.phase) === "warning" && "bg-amber-500/12 text-amber-300",
+                  renderTone(renderSurface.phase) === "default" && "bg-surface text-muted-foreground",
+                )}
+              >
+                {renderSurface.statusLabel}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_140px]">
+              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+                <span className="mb-2 block text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  Linked Schema
+                </span>
                 <select
                   value={resolvedDefinitionId ?? ""}
                   onChange={(event) => {
                     replaceDefinitionId(Number(event.target.value));
                   }}
-                  disabled={
-                    isDefinitionsLoading || !definitions || definitions.length === 0 || isNavigating
-                  }
-                  className="min-h-11 w-full rounded-md border border-border bg-surface px-4 text-sm text-foreground transition focus:border-primary/40 focus:outline-none"
+                  disabled={isDefinitionsLoading || isNavigating || (definitions?.length ?? 0) === 0}
+                  className="w-full bg-transparent text-sm text-foreground outline-none"
                 >
                   <option value="" disabled>
-                    {isDefinitionsLoading ? "Loading definitions..." : "Select a definition"}
+                    {isDefinitionsLoading ? "Loading schemas..." : "Select a schema"}
                   </option>
                   {(definitions ?? []).map((definition) => (
                     <option key={definition.definition_id} value={definition.definition_id}>
@@ -312,569 +172,313 @@ export function CircuitSchemdrawWorkspace() {
                     </option>
                   ))}
                 </select>
-              </div>
-              {isNavigating ? (
-                <LoaderCircle className="h-4 w-4 animate-spin text-muted-foreground" />
-              ) : null}
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-              <SurfaceTag tone="primary">{targetDefinitionName}</SurfaceTag>
-              {selectionRecovery ? (
-                <SurfaceTag tone={selectionRecovery.tone === "warning" ? "warning" : "default"}>
-                  {selectionRecovery.title}
-                </SurfaceTag>
-              ) : null}
-              {attachmentState.isStaleSnapshot ? (
-                <SurfaceTag tone="warning">Holding previous snapshot</SurfaceTag>
-              ) : null}
-            </div>
-          </div>
-
-          <SurfaceStat label="Definitions" value={String(catalogSummary.total)} />
-          <SurfaceStat label="Ready Candidates" value={String(catalogSummary.readyCount)} tone="primary" />
-          <SurfaceStat label="Artifact-backed" value={String(catalogSummary.artifactBackedCount)} />
-        </div>
-      </section>
-
-      {definitionsError ? (
-        <div className="rounded-[1rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
-          Unable to load circuit definitions. {catalogErrorMessage}
-        </div>
-      ) : null}
-
-      <section className="grid gap-5 xl:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.22fr)]">
-        <div className="space-y-4">
-          <SurfacePanel
-            title="Canonical Definition Catalog"
-            description="Filter the summary rows first, then attach the selected canonical detail without leaving the schemdraw workspace."
-            actions={
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Refresh definition catalog"
-                  onClick={() => {
-                    void handleRefreshCatalog();
-                  }}
-                  disabled={isRefreshingCatalog}
-                  className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <RefreshCcw className={cx("h-4 w-4", isRefreshingCatalog && "animate-spin")} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Select previous definition"
-                  disabled={!previousDefinition || isNavigating}
-                  onClick={() => {
-                    if (previousDefinition) {
-                      replaceDefinitionId(previousDefinition.definition_id);
-                    }
-                  }}
-                  className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Select next definition"
-                  disabled={!nextDefinition || isNavigating}
-                  onClick={() => {
-                    if (nextDefinition) {
-                      replaceDefinitionId(nextDefinition.definition_id);
-                    }
-                  }}
-                  className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            }
-          >
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_180px]">
-              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  <Search className="h-3.5 w-3.5" />
-                  Search
-                </span>
-                <input
-                  value={catalogQuery}
-                  onChange={(event) => {
-                    setCatalogQuery(event.target.value);
-                  }}
-                  placeholder="Find by name or id"
-                  className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                />
               </label>
 
-              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  Filter
-                </span>
-                <select
-                  value={catalogFilter}
-                  onChange={(event) => {
-                    setCatalogFilter(event.target.value as SchemdrawCatalogFilter);
-                  }}
-                  className="w-full bg-transparent text-sm text-foreground outline-none"
-                >
-                  <option value="all">All definitions</option>
-                  <option value="ready">Ready candidates</option>
-                  <option value="warning">Warnings present</option>
-                  <option value="artifacts">Artifact-backed</option>
-                </select>
-              </label>
-
-              <label className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  <Waypoints className="h-3.5 w-3.5" />
-                  Sort
-                </span>
-                <select
-                  value={catalogSort}
-                  onChange={(event) => {
-                    setCatalogSort(event.target.value as SchemdrawCatalogSortMode);
-                  }}
-                  className="w-full bg-transparent text-sm text-foreground outline-none"
-                >
-                  <option value="recent">Newest first</option>
-                  <option value="warnings">Warnings first</option>
-                  <option value="name">Name A-Z</option>
-                </select>
-              </label>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-[0.9rem] border border-border bg-surface px-4 py-3 text-xs text-muted-foreground">
-              <span>
-                Showing {filteredDefinitions.length} of {catalogSummary.total} definitions
-              </span>
-              <button
-                type="button"
-                onClick={resetCatalogControls}
-                disabled={
-                  catalogQuery.length === 0 &&
-                  catalogFilter === "all" &&
-                  catalogSort === "recent"
-                }
-                className="cursor-pointer rounded-full border border-border px-3 py-1.5 text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Reset filters
-              </button>
-            </div>
-
-            {selectionRecovery ? (
-              <div
-                className={cx(
-                  "mt-4 rounded-[0.9rem] border px-4 py-3 text-sm",
-                  selectionRecovery.tone === "warning"
-                    ? "border-amber-500/30 bg-amber-500/8 text-foreground"
-                    : "border-border bg-surface text-muted-foreground",
-                )}
-              >
-                <p className="font-medium text-foreground">{selectionRecovery.title}</p>
-                <p className="mt-1">{selectionRecovery.message}</p>
-              </div>
-            ) : null}
-
-            {isDefinitionsLoading && !definitions ? (
-              <div className="mt-4 rounded-[0.9rem] border border-border bg-surface px-4 py-5 text-sm text-muted-foreground">
-                Loading canonical definitions...
-              </div>
-            ) : null}
-
-            {!isDefinitionsLoading && (definitions?.length ?? 0) === 0 ? (
-              <div className="mt-4 rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-5 text-sm text-muted-foreground">
-                No canonical definitions are available yet.
-              </div>
-            ) : null}
-
-            {pinnedDefinition ? (
-              <div className="mt-4 space-y-2">
+              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Pinned active definition
+                  Definition Id
                 </p>
-                <CatalogCard
-                  createdAt={pinnedDefinition.created_at}
-                  definitionId={pinnedDefinition.definition_id}
-                  elementCount={pinnedDefinition.element_count}
-                  isActive
-                  isAttachedSnapshot={activeDefinition?.definition_id === pinnedDefinition.definition_id}
-                  isPinned
-                  name={pinnedDefinition.name}
-                  onSelect={replaceDefinitionId}
-                  previewArtifactCount={pinnedDefinition.preview_artifact_count}
-                  validationStatus={pinnedDefinition.validation_status}
-                />
-              </div>
-            ) : null}
-
-            {filteredDefinitions.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {filteredDefinitions.map((definition) => (
-                  <CatalogCard
-                    key={definition.definition_id}
-                    createdAt={definition.created_at}
-                    definitionId={definition.definition_id}
-                    elementCount={definition.element_count}
-                    isActive={definition.definition_id === resolvedDefinitionId}
-                    isAttachedSnapshot={activeDefinition?.definition_id === definition.definition_id}
-                    isPinned={false}
-                    name={definition.name}
-                    onSelect={replaceDefinitionId}
-                    previewArtifactCount={definition.preview_artifact_count}
-                    validationStatus={definition.validation_status}
-                  />
-                ))}
-              </div>
-            ) : null}
-
-            {filteredDefinitions.length === 0 && (definitions?.length ?? 0) > 0 ? (
-              <div className="mt-4 rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-5 text-sm text-muted-foreground">
-                No definitions match the current catalog controls. Reset the filters or search for a
-                different canonical definition.
-              </div>
-            ) : null}
-          </SurfacePanel>
-        </div>
-
-        <div className="space-y-4">
-          <SurfacePanel
-            title="Selection / Recovery"
-            description="The URL remains shareable, but the attached canonical definition detail is the live source for this schemdraw workspace."
-            actions={
-              <button
-                type="button"
-                onClick={() => {
-                  void handleRefreshDefinition();
-                }}
-                disabled={isRefreshingDefinition}
-                className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RefreshCcw className={cx("h-3.5 w-3.5", isRefreshingDefinition && "animate-spin")} />
-                Refresh snapshot
-              </button>
-            }
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Target Definition
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{targetDefinitionName}</p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  URL Selection
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
+                <p className="mt-2 text-sm font-semibold text-foreground">
                   {resolvedDefinitionId ?? "--"}
                 </p>
               </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Attached Snapshot
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {activeDefinition?.definition_id ?? "--"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Preview Keys
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {structuredPreview.topLevelCount}
-                </p>
-              </div>
-            </div>
 
-            {activeDefinitionError ? (
-              <div className="mt-4 rounded-[0.9rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
-                Unable to load definition detail. {activeDefinitionErrorMessage}
-              </div>
-            ) : null}
-
-            {attachmentState.isStaleSnapshot && activeDefinition ? (
-              <div className="mt-4 rounded-[0.9rem] border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-foreground">
-                Retaining definition #{activeDefinition.definition_id} while definition #
-                {resolvedDefinitionId} attaches. The previous snapshot stays visible so the preview
-                surface remains readable during navigation.
-              </div>
-            ) : null}
-
-            {isDefinitionTransitioning && resolvedDefinitionId !== null ? (
-              <div className="mt-4 flex items-center gap-3 rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                Refreshing canonical definition detail...
-              </div>
-            ) : null}
-
-            {!activeDefinition && !isDefinitionsLoading ? (
-              <div className="mt-4 rounded-[0.9rem] border border-dashed border-border bg-surface px-4 py-5 text-sm text-muted-foreground">
-                Select a definition to attach a canonical schemdraw snapshot.
-              </div>
-            ) : null}
-          </SurfacePanel>
-
-          <SurfacePanel
-            title="Schematic Readiness"
-            description="Readiness is inferred from normalized output, validation notices, and preview artifacts on the selected canonical definition."
-            actions={<SurfaceTag tone={readinessTone(readiness.status)}>{readiness.label}</SurfaceTag>}
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
+              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
                 <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Notice Count
+                  Source State
                 </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{readiness.noticeCount}</p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Warning Count
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{readiness.warningCount}</p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Artifacts
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{readiness.artifactCount}</p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Ports
-                </p>
-                <p className="mt-2 text-lg font-semibold text-foreground">
-                  {readiness.normalizedOutput?.ports ?? "not declared"}
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {isDefinitionTransitioning ? "Refreshing" : "Attached"}
                 </p>
               </div>
             </div>
 
             <div className="mt-4 rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-              {readiness.summary}
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Migration Warnings
-                  </p>
-                  <SurfaceTag tone="warning">{noticeGroups.warnings.length}</SurfaceTag>
-                </div>
-                {noticeGroups.warnings.length > 0 ? (
-                  noticeGroups.warnings.map((notice, index) => (
-                    <div
-                      key={`${notice.level}-${index}`}
-                      className="flex items-start gap-3 rounded-[0.9rem] border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-foreground"
-                    >
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                      <span>{notice.message}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                    No schemdraw-blocking warnings are attached to the current definition.
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Structural Checks
-                  </p>
-                  <SurfaceTag tone="success">{noticeGroups.checks.length}</SurfaceTag>
-                </div>
-                {noticeGroups.checks.length > 0 ? (
-                  noticeGroups.checks.map((notice, index) => (
-                    <div
-                      key={`${notice.level}-${index}`}
-                      className="flex items-start gap-3 rounded-[0.9rem] border border-border bg-surface px-4 py-3 text-sm text-muted-foreground"
-                    >
-                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                      <span>{notice.message}</span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                    No clean validation checks are attached to the current definition.
-                  </div>
-                )}
+              <p className="font-medium text-foreground">
+                {selectedDefinitionSummary?.name ?? "No linked schema selected"}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                <span className="rounded-full border border-border px-3 py-1">
+                  {activeDefinition?.element_count ?? 0} elements
+                </span>
+                <span className="rounded-full border border-border px-3 py-1">
+                  {activeDefinition?.preview_artifact_count ?? 0} preview artifacts
+                </span>
+                <span className="rounded-full border border-border px-3 py-1">
+                  request/response preview only
+                </span>
               </div>
             </div>
-          </SurfacePanel>
+          </section>
 
-          <SurfacePanel
-            title="Normalized Output Preview"
-            description="Inspect the backend-provided canonical payload in structured form first, then fall back to raw JSON for contract-level debugging."
-            actions={
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPreviewMode("structured");
-                  }}
-                  className={cx(
-                    "cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                    previewMode === "structured"
-                      ? "border-primary/30 bg-primary/10 text-foreground"
-                      : "border-border bg-surface text-muted-foreground hover:border-primary/30 hover:bg-primary/10 hover:text-foreground",
-                  )}
-                >
-                  Structured
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPreviewMode("json");
-                  }}
-                  className={cx(
-                    "cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                    previewMode === "json"
-                      ? "border-primary/30 bg-primary/10 text-foreground"
-                      : "border-border bg-surface text-muted-foreground hover:border-primary/30 hover:bg-primary/10 hover:text-foreground",
-                  )}
-                >
-                  Raw JSON
-                </button>
+          <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Relation Config Editor
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Edit the JSON relation config that will be sent with the current Schemdraw source
+                  snapshot.
+                </p>
               </div>
-            }
-          >
-            {structuredPreview.parseError ? (
-              <div className="rounded-[0.9rem] border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-foreground">
-                {structuredPreview.parseError}
-              </div>
-            ) : null}
+              <button
+                type="button"
+                onClick={resetDraft}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
+              >
+                <RefreshCcw className="h-4 w-4" />
+                Reset Template
+              </button>
+            </div>
 
-            {previewMode === "structured" ? (
-              <div className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {structuredPreview.rows.map((row) => (
-                    <div
-                      key={row.key}
-                      className={cx(
-                        "rounded-[0.9rem] border px-4 py-4",
-                        row.tone === "success" && "border-emerald-500/25 bg-emerald-500/8",
-                        row.tone === "primary" && "border-primary/25 bg-primary/8",
-                        row.tone === "default" && "border-border bg-surface",
-                      )}
-                    >
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        {row.key}
-                      </p>
-                      <p className="mt-2 text-sm font-semibold text-foreground">{row.value}</p>
+            <div className="mt-4 overflow-hidden rounded-[0.8rem] border border-border bg-background">
+              <CodeMirror
+                value={draft.relationText}
+                height="240px"
+                theme="dark"
+                onChange={updateRelationText}
+                className="text-sm leading-6"
+              />
+            </div>
+          </section>
+
+          <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="border-b border-border/80 pb-4">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Backend Diagnostics
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Diagnostics always come from the latest backend render response or request error.
+                Older responses are ignored.
+              </p>
+            </div>
+
+            {renderSurface.diagnostics.length > 0 ? (
+              <div className="mt-4 space-y-3">
+                {renderSurface.diagnostics.map((diagnostic, index) => (
+                  <div
+                    key={`${diagnostic.code}-${index}`}
+                    className={cx(
+                      "rounded-[0.9rem] border px-4 py-3 text-sm",
+                      diagnostic.severity === "error"
+                        ? "border-rose-500/30 bg-rose-500/8 text-rose-100"
+                        : diagnostic.severity === "warning"
+                          ? "border-amber-500/30 bg-amber-500/8 text-foreground"
+                          : "border-border bg-surface text-muted-foreground",
+                    )}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.16em]">
+                      <span>{diagnostic.code}</span>
+                      <span>{diagnostic.source}</span>
+                      {diagnostic.blocking ? <span>blocking</span> : <span>non-blocking</span>}
+                      {diagnostic.line ? <span>line {diagnostic.line}</span> : null}
+                      {diagnostic.column ? <span>column {diagnostic.column}</span> : null}
                     </div>
-                  ))}
-                </div>
-
-                <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3 text-xs text-muted-foreground">
-                  {structuredPreview.topLevelCount} top-level keys ·{" "}
-                  {activeDefinition ? `${lineCount(activeDefinition.normalized_output)} lines` : "--"}
-                </div>
-
-                <div className="rounded-[0.9rem] border border-border bg-background">
-                  <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    <span>normalized_output.json</span>
-                    <span>canonical snapshot</span>
+                    <p className="mt-2">{diagnostic.message}</p>
                   </div>
-                  <pre className="max-h-[18rem] overflow-auto px-4 py-4 text-sm leading-6 text-foreground">
-                    {structuredPreview.formattedJson}
-                  </pre>
-                </div>
+                ))}
               </div>
             ) : (
-              <div className="rounded-[0.9rem] border border-border bg-background">
-                <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  <span>normalized_output.json</span>
-                  <span>{activeDefinition ? `${lineCount(activeDefinition.normalized_output)} lines` : "--"}</span>
-                </div>
-                <pre className="max-h-[28rem] overflow-auto px-4 py-4 text-sm leading-6 text-foreground">
-                  {activeDefinition?.normalized_output ?? "{\n  \"schemdraw_ready\": false\n}"}
-                </pre>
+              <div className="mt-4 rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
+                No diagnostics yet. Edit the source or click `Render Now` to request backend
+                validation.
               </div>
             )}
-          </SurfacePanel>
+          </section>
+        </div>
 
-          <section className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <SurfacePanel
-              title="Preview Artifacts"
-              description="Artifact names come from the selected definition detail and indicate what the current migration surface already exposes."
-            >
-              {activeDefinition?.preview_artifacts.length ? (
-                <div className="space-y-3">
-                  {activeDefinition.preview_artifacts.map((artifact, index) => (
-                    <div
-                      key={artifact}
-                      className="flex items-center justify-between rounded-[0.8rem] border border-border bg-surface px-4 py-3"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Package className="h-4 w-4 shrink-0 text-primary" />
-                        <div className="min-w-0">
-                          <span className="block truncate text-sm text-foreground">{artifact}</span>
-                          <span className="text-xs text-muted-foreground">Artifact {index + 1}</span>
-                        </div>
-                      </div>
-                      <SurfaceTag tone={artifactTone(artifact)}>
-                        {artifact.split(".").pop() ?? "current"}
-                      </SurfaceTag>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  No preview artifacts are attached to the current definition.
+        <div className="space-y-4">
+          <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="flex flex-col gap-4 border-b border-border/80 pb-4 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  Schemdraw Source Editor
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Any edit marks the current preview as stale. The frontend keeps the last SVG until
+                  a newer backend response is accepted.
                 </p>
-              )}
-            </SurfacePanel>
-
-            <SurfacePanel
-              title="Canonical Source Snapshot"
-              description="Keep the source definition and normalized output close together so schemdraw review stays grounded in the persisted backend contract."
-            >
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Definition
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">
-                    {activeDefinition?.name ?? "None selected"}
-                  </p>
-                </div>
-                <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Created At
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">
-                    {activeDefinition?.created_at ?? "--"}
-                  </p>
-                </div>
-                <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Source Lines
-                  </p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">
-                    {activeDefinition ? lineCount(activeDefinition.source_text) : 0}
-                  </p>
-                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void renderNow();
+                }}
+                disabled={isRendering}
+                className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRendering ? (
+                  <LoaderCircle className="h-4 w-4 animate-spin" />
+                ) : (
+                  <WandSparkles className="h-4 w-4" />
+                )}
+                Render Now
+              </button>
+            </div>
 
-              <div className="mt-4 rounded-[0.9rem] border border-border bg-background">
-                <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  <div className="flex items-center gap-2">
-                    <FileCode2 className="h-4 w-4" />
-                    <span>source_text.yml</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Waypoints className="h-4 w-4" />
-                    <span>canonical input</span>
-                  </div>
-                </div>
-                <pre className="max-h-[22rem] overflow-auto px-4 py-4 text-sm leading-6 text-foreground">
-                  {activeDefinition?.source_text ?? "circuit:\n  name: pending_selection\n"}
-                </pre>
+            <div className="mt-4 overflow-hidden rounded-[0.8rem] border border-border bg-background">
+              <CodeMirror
+                value={draft.sourceText}
+                height="360px"
+                theme="dark"
+                onChange={updateSourceText}
+                className="text-sm leading-6"
+              />
+            </div>
+          </section>
+
+          <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="flex items-start justify-between gap-3 border-b border-border/80 pb-4">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                  SVG Preview
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Latest-only apply is enforced by `request_id` and `document_version`. Stale
+                  previews stay visible until a newer successful response replaces them.
+                </p>
               </div>
-            </SurfacePanel>
+              <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span
+                  className={cx(
+                    "rounded-full px-3 py-1 font-medium",
+                    renderTone(renderSurface.phase) === "success" && "bg-emerald-500/12 text-emerald-300",
+                    renderTone(renderSurface.phase) === "primary" && "bg-primary/10 text-primary",
+                    renderTone(renderSurface.phase) === "warning" && "bg-amber-500/12 text-amber-300",
+                    renderTone(renderSurface.phase) === "default" && "bg-surface text-muted-foreground",
+                  )}
+                >
+                  {renderSurface.statusLabel}
+                </span>
+                {renderSurface.isStale ? (
+                  <span className="rounded-full bg-amber-500/12 px-3 py-1 text-amber-300">
+                    Stale preview
+                  </span>
+                ) : null}
+                {renderSurface.requestId ? (
+                  <span className="rounded-full bg-surface px-3 py-1 text-muted-foreground">
+                    {renderSurface.requestId}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Applied Version
+                </p>
+                <p className="mt-2 text-lg font-semibold text-foreground">
+                  {renderSurface.appliedDocumentVersion ?? "--"}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Preview Width
+                </p>
+                <p className="mt-2 text-lg font-semibold text-foreground">
+                  {renderSurface.previewMetadata?.width ?? "--"}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Preview Height
+                </p>
+                <p className="mt-2 text-lg font-semibold text-foreground">
+                  {renderSurface.previewMetadata?.height ?? "--"}
+                </p>
+              </div>
+            </div>
+
+            {renderSurface.svg ? (
+              <div className="mt-4 rounded-[0.8rem] border border-border bg-white p-4 text-slate-900">
+                <div
+                  className="overflow-auto"
+                  dangerouslySetInnerHTML={{ __html: renderSurface.svg }}
+                />
+              </div>
+            ) : (
+              <div className="mt-4 rounded-[0.8rem] border border-dashed border-border bg-surface px-4 py-5 text-sm text-muted-foreground">
+                No rendered SVG yet. The current draft will keep sending backend snapshots until a
+                successful render response arrives.
+              </div>
+            )}
+
+            <div className="mt-4 rounded-[0.8rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-foreground">
+                {renderSurface.phase === "rendered" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-amber-300" />
+                )}
+                <span>
+                  {renderSurface.phase === "rendered"
+                    ? "Latest backend response is applied to the preview."
+                    : "Preview is still awaiting a successful latest response."}
+                </span>
+              </div>
+              <p className="mt-3">
+                Current document version: {draft.documentVersion}. Older backend responses are
+                ignored even if they arrive later.
+              </p>
+              {renderSurface.previewMetadata?.view_box ? (
+                <p className="mt-2 font-mono text-xs">{renderSurface.previewMetadata.view_box}</p>
+              ) : null}
+            </div>
+          </section>
+
+          <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
+            <div className="border-b border-border/80 pb-4">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Linked Schema Snapshot
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                This is read-only context from the selected persisted definition. Schemdraw requests
+                can reference it, but this page does not save schema changes.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Schema
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {selectedDefinitionSummary?.name ?? "--"}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Validation
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {activeDefinition?.validation_status ?? "--"}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Preview Artifacts
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {activeDefinition?.preview_artifact_count ?? 0}
+                </p>
+              </div>
+              <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                  Source Lines
+                </p>
+                <p className="mt-2 text-sm font-semibold text-foreground">
+                  {activeDefinition?.source_text.split("\n").length ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[0.8rem] border border-border bg-surface px-4 py-4">
+              <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">
+                {activeDefinition?.normalized_output ?? '{\n  "linked_schema": "pending"\n}'}
+              </pre>
+            </div>
           </section>
         </div>
       </section>
