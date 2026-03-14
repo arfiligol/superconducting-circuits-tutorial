@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from sc_core.storage import STORAGE_CONTRACT_VERSION, TraceStoreLocator
+from sc_core.storage import STORAGE_CONTRACT_VERSION
 from src.app.infrastructure.runtime import reset_runtime_state
 from src.app.main import app
 
@@ -12,72 +12,201 @@ def reset_catalog_state() -> None:
     reset_runtime_state()
 
 
-def test_list_datasets_returns_seeded_summaries() -> None:
+def test_list_dataset_catalog_only_returns_visible_workspace_rows() -> None:
+    response = client.get("/datasets?limit=10")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert [row["dataset_id"] for row in payload["data"]["rows"]] == [
+        "fluxonium-2025-031",
+        "resonator-chip-002",
+    ]
+    assert payload["data"]["rows"][0]["allowed_actions"] == {
+        "select": True,
+        "update_profile": True,
+        "publish": True,
+        "archive": True,
+    }
+    assert payload["meta"]["limit"] == 10
+    assert payload["meta"]["has_more"] is False
+    assert payload["meta"]["next_cursor"] is None
+
+
+def test_list_dataset_catalog_rebinds_with_active_workspace() -> None:
+    client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
+
     response = client.get("/datasets")
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 2
-    assert payload[0]["dataset_id"] == "fluxonium-2025-031"
-    assert payload[0]["device_type"] == "Unspecified"
-    assert payload[0]["capability_count"] == 0
-    assert payload[0]["tag_count"] == 3
+    assert [row["dataset_id"] for row in payload["data"]["rows"]] == ["transmon-coupler-014"]
+    assert payload["data"]["rows"][0]["allowed_actions"] == {
+        "select": True,
+        "update_profile": True,
+        "publish": False,
+        "archive": False,
+    }
 
 
-def test_list_datasets_supports_family_filter_and_name_sort() -> None:
-    filtered = client.get("/datasets?family=Fluxonium")
-    assert filtered.status_code == 200
-    assert [item["dataset_id"] for item in filtered.json()] == ["fluxonium-2025-031"]
+def test_get_dataset_profile_and_metrics_return_dashboard_contract() -> None:
+    profile_response = client.get("/datasets/fluxonium-2025-031/profile")
 
-    sorted_response = client.get("/datasets?sort_by=name&sort_order=asc")
-    assert sorted_response.status_code == 200
-    assert [item["name"] for item in sorted_response.json()] == [
-        "Coupler detuning 014",
-        "Fluxonium sweep 031",
+    assert profile_response.status_code == 200
+    profile_payload = profile_response.json()
+    assert profile_payload["ok"] is True
+    assert profile_payload["data"] == {
+        "dataset_id": "fluxonium-2025-031",
+        "name": "Fluxonium sweep 031",
+        "family": "Fluxonium",
+        "owner_display_name": "Device Lab",
+        "owner_user_id": "researcher-01",
+        "workspace_id": "ws-device-lab",
+        "visibility_scope": "private",
+        "lifecycle_state": "active",
+        "updated_at": "2026-03-14T10:20:00Z",
+        "device_type": "Fluxonium",
+        "capabilities": ["characterization", "simulation_review"],
+        "source": "inferred",
+        "status": "Ready",
+        "allowed_actions": {
+            "select": True,
+            "update_profile": True,
+            "publish": True,
+            "archive": True,
+        },
+    }
+
+    metrics_response = client.get("/datasets/fluxonium-2025-031/metrics-summary")
+
+    assert metrics_response.status_code == 200
+    metrics_payload = metrics_response.json()
+    assert metrics_payload["data"]["rows"] == [
+        {
+            "metric_id": "metric-fluxonium-f01",
+            "label": "Qubit Transition",
+            "source_parameter": "Im(Y11)",
+            "designated_metric": "f01",
+            "tagged_at": "2026-03-14T11:05:00Z",
+        },
+        {
+            "metric_id": "metric-fluxonium-anharmonicity",
+            "label": "Anharmonicity",
+            "source_parameter": "Im(Y12)",
+            "designated_metric": "alpha",
+            "tagged_at": "2026-03-14T11:08:00Z",
+        },
     ]
 
 
-def test_get_dataset_returns_detail_payload() -> None:
-    response = client.get("/datasets/fluxonium-2025-031")
+def test_patch_dataset_profile_updates_canonical_profile_surface() -> None:
+    response = client.patch(
+        "/datasets/fluxonium-2025-031/profile",
+        json={
+            "device_type": "Fluxonium-X",
+            "capabilities": ["characterization", "comparison"],
+            "source": "manual",
+        },
+    )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["name"] == "Fluxonium sweep 031"
-    assert payload["preview_columns"] == ["frequency", "bias", "T1", "fit"]
-    assert payload["metrics"] == {
-        "capability_count": 0,
-        "tag_count": 3,
-        "preview_row_count": 3,
-        "artifact_count": 4,
-        "lineage_depth": 4,
-    }
-    assert payload["storage"]["metadata_record"] == {
-        "backend": "sqlite_metadata",
-        "record_type": "dataset",
-        "record_id": "dataset:fluxonium-2025-031",
-        "version": 3,
-        "schema_version": "sqlite_metadata.v1",
-    }
-    assert payload["storage"]["primary_trace"] == {
-        "contract_version": STORAGE_CONTRACT_VERSION,
-        "backend": "local_zarr",
-        "payload_role": "dataset_primary",
-        "store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr",
-        "store_uri": "trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
-        "group_path": "trace_batches/88",
-        "array_path": "signals/iq_real",
-        "dtype": "float64",
-        "shape": [184, 1024],
-        "chunk_shape": [16, 1024],
-        "schema_version": "1.0",
-    }
-    assert payload["storage"]["result_handles"][0]["contract_version"] == STORAGE_CONTRACT_VERSION
-    assert payload["storage"]["result_handles"][0]["kind"] == "fit_summary"
-    assert payload["storage"]["result_handles"][0]["payload_role"] == "report_artifact"
-    assert payload["storage"]["result_handles"][0]["payload_locator"] == (
-        "artifacts/fit-summary.json"
+    assert payload["ok"] is True
+    assert payload["data"]["updated_fields"] == ["device_type", "capabilities", "source"]
+    assert payload["data"]["dataset"]["device_type"] == "Fluxonium-X"
+    assert payload["data"]["dataset"]["capabilities"] == ["characterization", "comparison"]
+    assert payload["data"]["dataset"]["source"] == "manual"
+    assert payload["data"]["dataset"]["updated_at"] == "2026-03-15T00:30:00Z"
+
+
+def test_patch_dataset_profile_rejects_duplicate_capabilities_with_error_envelope() -> None:
+    response = client.patch(
+        "/datasets/fluxonium-2025-031/profile",
+        json={
+            "device_type": "Fluxonium-X",
+            "capabilities": ["characterization", "characterization"],
+            "source": "manual",
+        },
     )
-    assert payload["storage"]["result_handles"][0]["provenance"] == {
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "ok": False,
+        "error": {
+            "code": "request_validation_failed",
+            "category": "validation_error",
+            "message": "capabilities must not contain duplicates.",
+            "retryable": False,
+        },
+    }
+
+
+def test_list_designs_returns_dataset_local_design_scope_rows() -> None:
+    response = client.get("/datasets/fluxonium-2025-031/designs?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["rows"] == [
+        {
+            "design_id": "design_flux_scan_a",
+            "dataset_id": "fluxonium-2025-031",
+            "name": "Flux Scan A",
+            "source_coverage": {"measurement": 2, "layout_simulation": 1},
+            "compare_readiness": "ready",
+            "trace_count": 3,
+            "updated_at": "2026-03-14T10:24:00Z",
+        }
+    ]
+    assert payload["meta"]["next_cursor"] == "1"
+    assert payload["meta"]["prev_cursor"] is None
+    assert payload["meta"]["filter_echo"] == {
+        "dataset_id": "fluxonium-2025-031",
+        "search": None,
+    }
+
+
+def test_list_trace_metadata_keeps_summary_paths_small_and_filterable() -> None:
+    response = client.get(
+        "/datasets/fluxonium-2025-031/designs/design_flux_scan_a/traces"
+        "?family=y_matrix&source_kind=measurement"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert [row["trace_id"] for row in payload["data"]["rows"]] == [
+        "trace_flux_a_measurement",
+        "trace_flux_a_phase",
+    ]
+    assert "preview_payload" not in payload["data"]["rows"][0]
+    assert "payload_ref" not in payload["data"]["rows"][0]
+    assert payload["meta"]["filter_echo"] == {
+        "dataset_id": "fluxonium-2025-031",
+        "design_id": "design_flux_scan_a",
+        "search": None,
+        "family": "y_matrix",
+        "representation": None,
+        "source_kind": "measurement",
+        "trace_mode_group": None,
+    }
+
+
+def test_get_trace_detail_returns_preview_payload_and_provenance_handles() -> None:
+    response = client.get(
+        "/datasets/fluxonium-2025-031/designs/design_flux_scan_a/traces/trace_flux_a_measurement"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["axes"] == [
+        {"name": "frequency", "unit": "GHz", "length": 401},
+        {"name": "flux_bias", "unit": "Phi0", "length": 11},
+    ]
+    assert payload["data"]["preview_payload"]["kind"] == "sampled_series"
+    assert payload["data"]["payload_ref"]["contract_version"] == STORAGE_CONTRACT_VERSION
+    assert payload["data"]["result_handles"][0]["handle_id"] == "result:fluxonium-2025-031:fit-summary"
+    assert payload["data"]["result_handles"][0]["provenance"] == {
         "source_dataset_id": "fluxonium-2025-031",
         "source_task_id": 303,
         "trace_batch_record": {
@@ -90,139 +219,17 @@ def test_get_dataset_returns_detail_payload() -> None:
         "analysis_run_record": None,
     }
 
-    locator = TraceStoreLocator.from_mapping(payload["storage"]["primary_trace"])
-    assert locator.to_payload()["contract_version"] == STORAGE_CONTRACT_VERSION
 
+def test_dataset_surface_rejects_dataset_outside_active_workspace() -> None:
+    response = client.get("/datasets/transmon-coupler-014/profile")
 
-def test_patch_dataset_metadata_updates_seeded_dataset() -> None:
-    response = client.patch(
-        "/datasets/fluxonium-2025-031/metadata",
-        json={
-            "device_type": "Fluxonium",
-            "capabilities": ["t1", "spectroscopy"],
-            "source": "reviewed",
+    assert response.status_code == 403
+    assert response.json() == {
+        "ok": False,
+        "error": {
+            "code": "dataset_not_visible_in_workspace",
+            "category": "permission_denied",
+            "message": "The selected dataset is not visible in the active workspace.",
+            "retryable": False,
         },
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["updated_fields"] == ["device_type", "capabilities", "source"]
-    assert payload["dataset"]["device_type"] == "Fluxonium"
-    assert payload["dataset"]["capabilities"] == ["t1", "spectroscopy"]
-    assert payload["dataset"]["source"] == "reviewed"
-    assert payload["dataset"]["metrics"]["capability_count"] == 2
-    assert payload["dataset"]["storage"]["metadata_record"]["record_id"] == (
-        "dataset:fluxonium-2025-031"
-    )
-    assert payload["dataset"]["storage"]["metadata_record"]["schema_version"] == (
-        "sqlite_metadata.v1"
-    )
-
-
-def test_patch_dataset_metadata_rejects_duplicate_capabilities() -> None:
-    response = client.patch(
-        "/datasets/fluxonium-2025-031/metadata",
-        json={
-            "device_type": "Fluxonium",
-            "capabilities": ["t1", "t1"],
-            "source": "reviewed",
-        },
-    )
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "request_validation_failed"
-    assert response.json()["error"]["category"] == "validation"
-
-
-def test_get_dataset_returns_not_found_for_missing_id() -> None:
-    response = client.get("/datasets/missing-dataset")
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "dataset_not_found"
-
-
-def test_list_circuit_definitions_returns_seeded_summaries() -> None:
-    response = client.get("/circuit-definitions")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert len(payload) == 3
-    assert payload[0]["name"] == "FloatingQubitWithXYLine"
-    assert payload[0]["validation_status"] == "warning"
-    assert payload[0]["preview_artifact_count"] == 3
-
-
-def test_list_circuit_definitions_supports_search_and_sort() -> None:
-    response = client.get("/circuit-definitions?search=Fluxonium&sort_by=name&sort_order=asc")
-
-    assert response.status_code == 200
-    assert [item["name"] for item in response.json()] == ["FluxoniumReadoutChain"]
-
-
-def test_get_circuit_definition_returns_detail_payload() -> None:
-    response = client.get("/circuit-definitions/18")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["definition_id"] == 18
-    assert payload["preview_artifacts"] == [
-        "definition.normalized.json",
-        "schematic-input.yaml",
-        "parameter-bundle.toml",
-    ]
-    assert payload["validation_summary"] == {
-        "status": "warning",
-        "notice_count": 3,
-        "warning_count": 1,
     }
-    assert '"family": "fluxonium"' in payload["normalized_output"]
-
-
-def test_create_update_and_delete_circuit_definition_flow() -> None:
-    created = client.post(
-        "/circuit-definitions",
-        json={
-            "name": "ReadoutPreview",
-            "source_text": "circuit:\n  name: readout_preview\n  family: readout\n",
-        },
-    )
-
-    assert created.status_code == 201
-    created_payload = created.json()
-    definition_id = int(created_payload["definition"]["definition_id"])
-    assert created_payload["operation"] == "created"
-    assert created_payload["definition"]["name"] == "ReadoutPreview"
-    assert '"circuit": "readout_preview"' in created_payload["definition"]["normalized_output"]
-
-    updated = client.put(
-        f"/circuit-definitions/{definition_id}",
-        json={
-            "name": "ReadoutPreviewV2",
-            "source_text": "circuit:\n  name: readout_preview_v2\n  family: readout\n",
-        },
-    )
-    assert updated.status_code == 200
-    updated_payload = updated.json()
-    assert updated_payload["operation"] == "updated"
-    assert updated_payload["definition"]["name"] == "ReadoutPreviewV2"
-    assert '"circuit": "readout_preview_v2"' in updated_payload["definition"]["normalized_output"]
-
-    deleted = client.delete(f"/circuit-definitions/{definition_id}")
-    assert deleted.status_code == 204
-
-    missing = client.get(f"/circuit-definitions/{definition_id}")
-    assert missing.status_code == 404
-    assert missing.json()["error"]["code"] == "circuit_definition_not_found"
-
-
-def test_create_circuit_definition_rejects_blank_name() -> None:
-    response = client.post(
-        "/circuit-definitions",
-        json={
-            "name": "   ",
-            "source_text": "circuit:\n  name: readout_preview\n  family: readout\n",
-        },
-    )
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "request_validation_failed"

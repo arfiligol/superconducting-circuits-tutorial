@@ -1,75 +1,105 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  datasetDetailKey,
-  datasetMetadataKey,
-  datasetsListKey,
+  datasetCatalogKey,
+  datasetDesignsKey,
+  datasetMetricsKey,
+  datasetProfileKey,
+  traceDetailKey,
+  traceListKey,
 } from "../src/features/data-browser/lib/api";
-import {
-  parseDatasetIdParam,
-  resolveSelectedDatasetId,
-} from "../src/features/data-browser/lib/dataset-id";
+import { resolveSelectedDesignId, resolveSelectedTraceId } from "../src/features/data-browser/lib/selection";
 
-describe("data browser routing helpers", () => {
-  const datasets = [
-    {
-      dataset_id: "fluxonium-2025-031",
-      name: "Fluxonium sweep 031",
-      family: "Fluxonium",
-      owner: "Device Lab",
-      updated_at: "2026-02-26 13:40",
-      samples: 184,
-      status: "Ready",
-      device_type: "simulator",
-      source: "manual",
-      capability_count: 0,
-      tag_count: 0,
-    },
-    {
-      dataset_id: "transmon-coupler-014",
-      name: "Coupler detuning 014",
-      family: "Transmon",
-      owner: "Modeling",
-      updated_at: "2026-02-24 09:15",
-      samples: 76,
-      status: "Review",
-      device_type: "simulator",
-      source: "manual",
-      capability_count: 0,
-      tag_count: 0,
-    },
-  ] as const;
-
-  it("parses present dataset ids and drops empty values", () => {
-    expect(parseDatasetIdParam("fluxonium-2025-031")).toBe("fluxonium-2025-031");
-    expect(parseDatasetIdParam("   ")).toBeNull();
-    expect(parseDatasetIdParam(null)).toBeNull();
+describe("data browser api keys", () => {
+  it("keeps stable dashboard and raw-data endpoints", () => {
+    expect(datasetCatalogKey).toBe("/api/backend/datasets");
+    expect(datasetProfileKey("fluxonium-2025-031")).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/profile",
+    );
+    expect(datasetMetricsKey("fluxonium-2025-031")).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/metrics-summary",
+    );
+    expect(datasetDesignsKey("fluxonium-2025-031")).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/designs",
+    );
+    expect(traceListKey("fluxonium-2025-031", "design_flux_scan_a")).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/traces",
+    );
+    expect(
+      traceDetailKey("fluxonium-2025-031", "design_flux_scan_a", "trace_flux_a_measurement"),
+    ).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/traces/trace_flux_a_measurement",
+    );
   });
 
-  it("falls back to the first dataset when the selection is missing or invalid", () => {
-    expect(resolveSelectedDatasetId(null, datasets)).toBe("fluxonium-2025-031");
-    expect(resolveSelectedDatasetId("missing-id", datasets)).toBe("fluxonium-2025-031");
-  });
-
-  it("preserves a valid dataset selection", () => {
-    expect(resolveSelectedDatasetId("transmon-coupler-014", datasets)).toBe(
-      "transmon-coupler-014",
+  it("encodes ids when building nested dataset and trace paths", () => {
+    expect(datasetProfileKey("folder/a b")).toBe("/api/backend/datasets/folder%2Fa%20b/profile");
+    expect(traceDetailKey("dataset/a", "design b", "trace/c")).toBe(
+      "/api/backend/datasets/dataset%2Fa/designs/design%20b/traces/trace%2Fc",
     );
   });
 });
 
-describe("data browser api keys", () => {
-  it("keeps stable list, detail, and metadata paths", () => {
-    expect(datasetsListKey).toBe("/api/backend/datasets");
-    expect(datasetDetailKey("fluxonium-2025-031")).toBe(
-      "/api/backend/datasets/fluxonium-2025-031",
-    );
-    expect(datasetMetadataKey("fluxonium-2025-031")).toBe(
-      "/api/backend/datasets/fluxonium-2025-031/metadata",
-    );
+describe("raw-data selection helpers", () => {
+  const designs = [
+    {
+      design_id: "design_flux_scan_a",
+      dataset_id: "fluxonium-2025-031",
+      name: "Flux Scan A",
+      source_coverage: { measurement: 2 },
+      compare_readiness: "ready",
+      trace_count: 3,
+      updated_at: "2026-03-14T10:24:00Z",
+    },
+    {
+      design_id: "design_flux_scan_b",
+      dataset_id: "fluxonium-2025-031",
+      name: "Flux Scan B",
+      source_coverage: { measurement: 1 },
+      compare_readiness: "inspect_only",
+      trace_count: 1,
+      updated_at: "2026-03-14T09:50:00Z",
+    },
+  ] as const;
+
+  const traces = [
+    {
+      trace_id: "trace_flux_a_measurement",
+      dataset_id: "fluxonium-2025-031",
+      design_id: "design_flux_scan_a",
+      family: "y_matrix",
+      parameter: "Y11",
+      representation: "imaginary",
+      trace_mode_group: "base",
+      source_kind: "measurement",
+      stage_kind: "postprocess",
+      provenance_summary: "Measurement · Post-Processed · batch #4",
+    },
+    {
+      trace_id: "trace_flux_a_layout",
+      dataset_id: "fluxonium-2025-031",
+      design_id: "design_flux_scan_a",
+      family: "y_matrix",
+      parameter: "Y11",
+      representation: "imaginary",
+      trace_mode_group: "base",
+      source_kind: "layout_simulation",
+      stage_kind: "raw",
+      provenance_summary: "Layout Simulation · Raw · batch #2",
+    },
+  ] as const;
+
+  it("falls back to the first visible design or trace when selection is missing", () => {
+    expect(resolveSelectedDesignId(null, designs)).toBe("design_flux_scan_a");
+    expect(resolveSelectedTraceId(null, traces)).toBe("trace_flux_a_measurement");
   });
 
-  it("encodes dataset ids when building detail paths", () => {
-    expect(datasetDetailKey("folder/a b")).toBe("/api/backend/datasets/folder%2Fa%20b");
+  it("preserves valid selections and clears invalid ones", () => {
+    expect(resolveSelectedDesignId("design_flux_scan_b", designs)).toBe("design_flux_scan_b");
+    expect(resolveSelectedTraceId("trace_flux_a_layout", traces)).toBe("trace_flux_a_layout");
+    expect(resolveSelectedDesignId("missing", designs)).toBe("design_flux_scan_a");
+    expect(resolveSelectedTraceId("missing", traces)).toBe("trace_flux_a_measurement");
+    expect(resolveSelectedDesignId("missing", [])).toBeNull();
+    expect(resolveSelectedTraceId("missing", [])).toBeNull();
   });
 });

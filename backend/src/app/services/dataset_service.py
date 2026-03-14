@@ -2,93 +2,243 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from src.app.domain.datasets import (
+    DatasetAllowedActions,
+    DatasetCatalogRow,
     DatasetDetail,
-    DatasetListQuery,
-    DatasetMetadataField,
-    DatasetMetadataUpdate,
-    DatasetMetadataUpdateResult,
-    DatasetSummary,
+    DatasetProfileField,
+    DatasetProfileUpdate,
+    DatasetProfileUpdateResult,
+    DesignBrowseQuery,
+    DesignBrowseRow,
+    TaggedCoreMetricSummary,
+    TraceBrowseQuery,
+    TraceDetail,
+    TraceMetadataSummary,
 )
+from src.app.domain.session import SessionState
 from src.app.services.service_errors import service_error
 
 
 class DatasetRepository(Protocol):
-    def list_datasets(self) -> Sequence[DatasetSummary]: ...
+    def list_dataset_details(self) -> Sequence[DatasetDetail]: ...
 
     def get_dataset(self, dataset_id: str) -> DatasetDetail | None: ...
 
-    def update_dataset_metadata(
+    def update_dataset_profile(
         self,
         dataset_id: str,
-        update: DatasetMetadataUpdate,
+        update: DatasetProfileUpdate,
     ) -> DatasetDetail | None: ...
+
+    def list_tagged_core_metrics(
+        self,
+        dataset_id: str,
+    ) -> Sequence[TaggedCoreMetricSummary]: ...
+
+    def list_designs(
+        self,
+        dataset_id: str,
+    ) -> Sequence[DesignBrowseRow]: ...
+
+    def list_trace_metadata(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> Sequence[TraceMetadataSummary]: ...
+
+    def get_trace_detail(
+        self,
+        dataset_id: str,
+        design_id: str,
+        trace_id: str,
+    ) -> TraceDetail | None: ...
+
+
+class SessionRepository(Protocol):
+    def get_session_state(self) -> SessionState: ...
 
 
 class DatasetService:
-    def __init__(self, repository: DatasetRepository) -> None:
+    def __init__(
+        self,
+        repository: DatasetRepository,
+        session_repository: SessionRepository,
+    ) -> None:
         self._repository = repository
+        self._session_repository = session_repository
 
-    def list_datasets(self, query: DatasetListQuery) -> list[DatasetSummary]:
-        datasets = [
-            summary
-            for summary in self._repository.list_datasets()
-            if self._matches_query(summary, query)
+    def list_dataset_catalog(self) -> list[DatasetCatalogRow]:
+        state = self._session_repository.get_session_state()
+        return [
+            DatasetCatalogRow(
+                dataset_id=dataset.dataset_id,
+                name=dataset.name,
+                visibility_scope=dataset.visibility_scope,
+                lifecycle_state=dataset.lifecycle_state,
+                device_type=dataset.device_type,
+                updated_at=dataset.updated_at,
+                allowed_actions=self._allowed_actions(dataset, state),
+                family=dataset.family,
+                owner_display_name=dataset.owner,
+            )
+            for dataset in self._visible_datasets(state)
         ]
-        return self._sort_datasets(datasets, query)
 
-    def get_dataset(self, dataset_id: str) -> DatasetDetail:
-        detail = self._repository.get_dataset(dataset_id)
-        if detail is None:
+    def get_dataset_profile(self, dataset_id: str) -> DatasetDetail:
+        return self._require_visible_dataset(dataset_id)
+
+    def update_dataset_profile(
+        self,
+        dataset_id: str,
+        update: DatasetProfileUpdate,
+    ) -> DatasetProfileUpdateResult:
+        current = self._require_visible_dataset(dataset_id)
+        state = self._session_repository.get_session_state()
+        allowed_actions = self._allowed_actions(current, state)
+        if not allowed_actions.update_profile:
+            raise service_error(
+                403,
+                code="dataset_profile_update_denied",
+                category="permission_denied",
+                message="The active session cannot update this dataset profile.",
+            )
+
+        updated = self._repository.update_dataset_profile(dataset_id, update)
+        if updated is None:
             raise service_error(
                 404,
                 code="dataset_not_found",
                 category="not_found",
                 message=f"Dataset {dataset_id} was not found.",
+            )
+        updated = DatasetDetail(
+            **{
+                **updated.__dict__,
+                "allowed_actions": self._allowed_actions(updated, state),
+            }
+        )
+        return DatasetProfileUpdateResult(
+            dataset=updated,
+            updated_fields=self._updated_fields(current, updated),
+        )
+
+    def list_tagged_core_metrics(self, dataset_id: str) -> list[TaggedCoreMetricSummary]:
+        self._require_visible_dataset(dataset_id)
+        return list(self._repository.list_tagged_core_metrics(dataset_id))
+
+    def list_designs(
+        self,
+        dataset_id: str,
+        query: DesignBrowseQuery,
+    ) -> list[DesignBrowseRow]:
+        self._require_visible_dataset(dataset_id)
+        rows = list(self._repository.list_designs(dataset_id))
+        if query.search is None:
+            return rows
+        token = query.search.casefold()
+        return [row for row in rows if token in row.name.casefold()]
+
+    def list_trace_metadata(
+        self,
+        dataset_id: str,
+        design_id: str,
+        query: TraceBrowseQuery,
+    ) -> list[TraceMetadataSummary]:
+        self._require_visible_dataset(dataset_id)
+        rows = list(self._repository.list_trace_metadata(dataset_id, design_id))
+        filtered = rows
+        if query.search is not None:
+            token = query.search.casefold()
+            filtered = [
+                row
+                for row in filtered
+                if token in row.parameter.casefold() or token in row.provenance_summary.casefold()
+            ]
+        if query.family is not None:
+            filtered = [row for row in filtered if row.family == query.family]
+        if query.representation is not None:
+            normalized = query.representation.casefold()
+            filtered = [
+                row for row in filtered if row.representation.casefold() == normalized
+            ]
+        if query.source_kind is not None:
+            filtered = [row for row in filtered if row.source_kind == query.source_kind]
+        if query.trace_mode_group is not None:
+            filtered = [row for row in filtered if row.trace_mode_group == query.trace_mode_group]
+        return filtered
+
+    def get_trace_detail(
+        self,
+        dataset_id: str,
+        design_id: str,
+        trace_id: str,
+    ) -> TraceDetail:
+        self._require_visible_dataset(dataset_id)
+        detail = self._repository.get_trace_detail(dataset_id, design_id, trace_id)
+        if detail is None:
+            raise service_error(
+                404,
+                code="trace_not_found",
+                category="not_found",
+                message="The requested trace is not available in the selected design scope.",
             )
         return detail
 
-    def update_dataset_metadata(
-        self,
-        dataset_id: str,
-        update: DatasetMetadataUpdate,
-    ) -> DatasetMetadataUpdateResult:
-        current = self.get_dataset(dataset_id)
-        detail = self._repository.update_dataset_metadata(dataset_id, update)
-        if detail is None:
+    def _require_visible_dataset(self, dataset_id: str) -> DatasetDetail:
+        state = self._session_repository.get_session_state()
+        dataset = self._repository.get_dataset(dataset_id)
+        if dataset is None:
             raise service_error(
                 404,
                 code="dataset_not_found",
                 category="not_found",
                 message=f"Dataset {dataset_id} was not found.",
             )
-        return DatasetMetadataUpdateResult(
-            dataset=detail,
-            updated_fields=self._updated_fields(current, detail),
+        if not _dataset_is_visible_to_state(dataset, state):
+            raise service_error(
+                403,
+                code="dataset_not_visible_in_workspace",
+                category="permission_denied",
+                message="The selected dataset is not visible in the active workspace.",
+            )
+        return DatasetDetail(
+            **{
+                **dataset.__dict__,
+                "allowed_actions": self._allowed_actions(dataset, state),
+            }
         )
 
-    def _matches_query(self, summary: DatasetSummary, query: DatasetListQuery) -> bool:
-        if query.family is not None and summary.family.casefold() != query.family.casefold():
-            return False
-        return query.status is None or summary.status == query.status
+    def _visible_datasets(self, state: SessionState) -> list[DatasetDetail]:
+        rows = [
+            dataset
+            for dataset in self._repository.list_dataset_details()
+            if _dataset_is_visible_to_state(dataset, state)
+        ]
+        return sorted(rows, key=lambda dataset: dataset.updated_at, reverse=True)
 
-    def _sort_datasets(
+    def _allowed_actions(
         self,
-        datasets: list[DatasetSummary],
-        query: DatasetListQuery,
-    ) -> list[DatasetSummary]:
-        reverse = query.sort_order == "desc"
-        if query.sort_by == "name":
-            return sorted(datasets, key=lambda summary: summary.name.casefold(), reverse=reverse)
-        if query.sort_by == "samples":
-            return sorted(datasets, key=lambda summary: summary.samples, reverse=reverse)
-        return sorted(datasets, key=lambda summary: summary.updated_at, reverse=reverse)
+        dataset: DatasetDetail,
+        state: SessionState,
+    ) -> DatasetAllowedActions:
+        membership = _membership_role_for_workspace(state, dataset.workspace_id)
+        is_admin = state.user is not None and state.user.platform_role == "admin"
+        can_manage = membership in {"owner", "member"} or is_admin
+        can_archive = membership == "owner" or is_admin
+        can_publish = (membership == "owner" or is_admin) and dataset.visibility_scope == "private"
+        return DatasetAllowedActions(
+            select=dataset.lifecycle_state == "active",
+            update_profile=dataset.lifecycle_state == "active" and can_manage,
+            publish=dataset.lifecycle_state == "active" and can_publish,
+            archive=dataset.lifecycle_state == "active" and can_archive,
+        )
 
     def _updated_fields(
         self,
         current: DatasetDetail,
         updated: DatasetDetail,
-    ) -> tuple[DatasetMetadataField, ...]:
-        changed_fields: list[DatasetMetadataField] = []
+    ) -> tuple[DatasetProfileField, ...]:
+        changed_fields: list[DatasetProfileField] = []
         if current.device_type != updated.device_type:
             changed_fields.append("device_type")
         if current.capabilities != updated.capabilities:
@@ -96,3 +246,28 @@ class DatasetService:
         if current.source != updated.source:
             changed_fields.append("source")
         return tuple(changed_fields)
+
+
+def _membership_role_for_workspace(
+    state: SessionState,
+    workspace_id: str,
+) -> str | None:
+    for membership in state.memberships:
+        if membership.workspace_id == workspace_id:
+            return membership.role
+    return None
+
+
+def _dataset_is_visible_to_state(dataset: DatasetDetail, state: SessionState) -> bool:
+    if dataset.workspace_id != state.workspace_id or dataset.lifecycle_state != "active":
+        return False
+    if dataset.visibility_scope == "workspace":
+        return True
+    if state.user is None:
+        return False
+    if state.user.platform_role == "admin":
+        return True
+    membership_role = _membership_role_for_workspace(state, state.workspace_id)
+    if membership_role == "owner":
+        return True
+    return dataset.owner_user_id == state.user.user_id

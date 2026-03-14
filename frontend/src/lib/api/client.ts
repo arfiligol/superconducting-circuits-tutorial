@@ -1,12 +1,19 @@
 "use client";
 
 type ApiErrorEnvelope = Readonly<{
+  code?: string;
   error_code?: string;
   category?: string;
   message?: string;
   retryable?: boolean;
   details?: unknown;
   debug_ref?: string;
+}>;
+
+type ApiSuccessEnvelope<T> = Readonly<{
+  ok: true;
+  data: T;
+  meta?: unknown;
 }>;
 
 export class ApiError extends Error {
@@ -44,6 +51,36 @@ type ApiRequestInit = Omit<RequestInit, "body"> & {
 };
 
 export async function apiRequest<T>(path: string, init?: ApiRequestInit): Promise<T> {
+  const payload = await apiRequestRaw(path, init);
+  if (isSuccessEnvelope<T>(payload)) {
+    return payload.data;
+  }
+  return payload as T;
+}
+
+export async function apiRequestEnvelope<TData, TMeta = unknown>(
+  path: string,
+  init?: ApiRequestInit,
+): Promise<
+  Readonly<{
+    data: TData;
+    meta: TMeta | undefined;
+  }>
+> {
+  const payload = await apiRequestRaw(path, init);
+  if (isSuccessEnvelope<TData>(payload)) {
+    return {
+      data: payload.data,
+      meta: payload.meta as TMeta | undefined,
+    };
+  }
+  return {
+    data: payload as TData,
+    meta: undefined,
+  };
+}
+
+async function apiRequestRaw(path: string, init?: ApiRequestInit): Promise<unknown> {
   const { body, headers, ...requestInit } = init ?? {};
   const isJsonBody = body !== undefined && body !== null && !(body instanceof FormData);
 
@@ -68,10 +105,10 @@ export async function apiRequest<T>(path: string, init?: ApiRequestInit): Promis
   }
 
   if (response.status === 204) {
-    return undefined as T;
+    return undefined;
   }
 
-  return (await response.json()) as T;
+  return await response.json();
 }
 
 async function getApiErrorPayload(response: Response): Promise<
@@ -88,26 +125,35 @@ async function getApiErrorPayload(response: Response): Promise<
     const data = (await response.json()) as
       | ({
           detail?: string | ApiErrorEnvelope;
+          error?: ApiErrorEnvelope;
           message?: string;
         } & ApiErrorEnvelope)
       | null;
+    const errorEnvelope = data?.error && typeof data.error === "object" ? data.error : undefined;
     const detailEnvelope =
       data?.detail && typeof data.detail === "object" ? data.detail : undefined;
     const message =
       typeof data?.detail === "string"
         ? data.detail
-        : (detailEnvelope?.message ??
+        : (errorEnvelope?.message ??
+            detailEnvelope?.message ??
             data?.message ??
             response.statusText ??
             "Unexpected API error");
 
     return {
       message,
-      errorCode: detailEnvelope?.error_code ?? data?.error_code ?? null,
-      category: detailEnvelope?.category ?? data?.category ?? null,
-      retryable: detailEnvelope?.retryable ?? data?.retryable ?? null,
-      details: detailEnvelope?.details ?? data?.details,
-      debugRef: detailEnvelope?.debug_ref ?? data?.debug_ref ?? null,
+      errorCode:
+        errorEnvelope?.code ??
+        errorEnvelope?.error_code ??
+        detailEnvelope?.error_code ??
+        data?.error_code ??
+        null,
+      category: errorEnvelope?.category ?? detailEnvelope?.category ?? data?.category ?? null,
+      retryable: errorEnvelope?.retryable ?? detailEnvelope?.retryable ?? data?.retryable ?? null,
+      details: errorEnvelope?.details ?? detailEnvelope?.details ?? data?.details,
+      debugRef:
+        errorEnvelope?.debug_ref ?? detailEnvelope?.debug_ref ?? data?.debug_ref ?? null,
     };
   } catch {
     return {
@@ -119,4 +165,14 @@ async function getApiErrorPayload(response: Response): Promise<
       debugRef: null,
     };
   }
+}
+
+function isSuccessEnvelope<T>(payload: unknown): payload is ApiSuccessEnvelope<T> {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "ok" in payload &&
+    (payload as { ok?: unknown }).ok === true &&
+    "data" in payload
+  );
 }

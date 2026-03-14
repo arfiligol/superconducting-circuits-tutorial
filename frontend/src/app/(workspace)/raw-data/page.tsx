@@ -1,17 +1,17 @@
 import { Suspense } from "react";
 
-import { DashboardWorkspace } from "@/features/data-browser/components/dashboard-workspace";
+import { RawDataBrowserWorkspace } from "@/features/data-browser/components/raw-data-browser-workspace";
 
-export default function DashboardPage() {
+export default function RawDataPage() {
   return (
     <Suspense
       fallback={
         <div className="rounded-[1rem] border border-border bg-card px-5 py-5 text-sm text-muted-foreground">
-          Loading dashboard...
+          Loading raw-data browser...
         </div>
       }
     >
-      <DashboardWorkspace />
+      <RawDataBrowserWorkspace />
     </Suspense>
   );
 }

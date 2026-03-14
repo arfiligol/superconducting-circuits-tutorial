@@ -1,35 +1,170 @@
-import { apiRequest } from "@/lib/api/client";
+import { apiRequest, apiRequestEnvelope } from "@/lib/api/client";
 
 import type {
-  DatasetDetail,
-  DatasetMetadataUpdate,
-  DatasetSummary,
+  DatasetCatalogRow,
+  DatasetProfile,
+  DatasetProfileUpdate,
+  DatasetProfileUpdateResult,
+  DesignBrowseRow,
+  PagedRows,
+  TaggedCoreMetricSummary,
+  TraceDetail,
+  TraceMetadataRow,
 } from "@/features/data-browser/lib/contracts";
 
-export const datasetsListKey = "/api/backend/datasets";
+export const datasetCatalogKey = "/api/backend/datasets";
 
-export function datasetDetailKey(datasetId: string) {
-  return `/api/backend/datasets/${encodeURIComponent(datasetId)}`;
+export function datasetProfileKey(datasetId: string) {
+  return `/api/backend/datasets/${encodeURIComponent(datasetId)}/profile`;
 }
 
-export function datasetMetadataKey(datasetId: string) {
-  return `${datasetDetailKey(datasetId)}/metadata`;
+export function datasetMetricsKey(datasetId: string) {
+  return `/api/backend/datasets/${encodeURIComponent(datasetId)}/metrics-summary`;
 }
 
-export async function listDatasets() {
-  return apiRequest<DatasetSummary[]>(datasetsListKey);
+export function datasetDesignsKey(datasetId: string, search?: string | null, cursor?: string | null) {
+  const params = new URLSearchParams();
+  if (search) {
+    params.set("search", search);
+  }
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  return withQuery(
+    `/api/backend/datasets/${encodeURIComponent(datasetId)}/designs`,
+    params,
+  );
 }
 
-export async function getDataset(datasetId: string) {
-  return apiRequest<DatasetDetail>(datasetDetailKey(datasetId));
-}
-
-export async function updateDatasetMetadata(
+export function traceListKey(
   datasetId: string,
-  payload: DatasetMetadataUpdate,
+  designId: string,
+  options?: Readonly<{
+    cursor?: string | null;
+    search?: string | null;
+    family?: string | null;
+    representation?: string | null;
+    sourceKind?: string | null;
+    traceModeGroup?: string | null;
+  }>,
 ) {
-  return apiRequest<DatasetDetail>(datasetMetadataKey(datasetId), {
+  const params = new URLSearchParams();
+  if (options?.cursor) {
+    params.set("cursor", options.cursor);
+  }
+  if (options?.search) {
+    params.set("search", options.search);
+  }
+  if (options?.family) {
+    params.set("family", options.family);
+  }
+  if (options?.representation) {
+    params.set("representation", options.representation);
+  }
+  if (options?.sourceKind) {
+    params.set("source_kind", options.sourceKind);
+  }
+  if (options?.traceModeGroup) {
+    params.set("trace_mode_group", options.traceModeGroup);
+  }
+  return withQuery(
+    `/api/backend/datasets/${encodeURIComponent(datasetId)}/designs/${encodeURIComponent(
+      designId,
+    )}/traces`,
+    params,
+  );
+}
+
+export function traceDetailKey(datasetId: string, designId: string, traceId: string) {
+  return `/api/backend/datasets/${encodeURIComponent(datasetId)}/designs/${encodeURIComponent(
+    designId,
+  )}/traces/${encodeURIComponent(traceId)}`;
+}
+
+export async function listDatasetCatalog(): Promise<PagedRows<DatasetCatalogRow>> {
+  const response = await apiRequestEnvelope<
+    { rows: DatasetCatalogRow[] },
+    PagedRows<DatasetCatalogRow>["meta"]
+  >(datasetCatalogKey);
+  return {
+    rows: response.data.rows,
+    meta: response.meta,
+  };
+}
+
+export async function getDatasetProfile(datasetId: string): Promise<DatasetProfile> {
+  return apiRequest<DatasetProfile>(datasetProfileKey(datasetId));
+}
+
+export async function updateDatasetProfile(
+  datasetId: string,
+  payload: DatasetProfileUpdate,
+): Promise<DatasetProfileUpdateResult> {
+  return apiRequest<DatasetProfileUpdateResult>(datasetProfileKey(datasetId), {
     method: "PATCH",
     body: payload,
   });
+}
+
+export async function listTaggedCoreMetrics(
+  datasetId: string,
+): Promise<TaggedCoreMetricSummary[]> {
+  const response = await apiRequest<{ rows: TaggedCoreMetricSummary[] }>(datasetMetricsKey(datasetId));
+  return response.rows;
+}
+
+export async function listDesignBrowseRows(
+  datasetId: string,
+  options?: Readonly<{
+    search?: string | null;
+    cursor?: string | null;
+  }>,
+): Promise<PagedRows<DesignBrowseRow>> {
+  const response = await apiRequestEnvelope<
+    { rows: DesignBrowseRow[] },
+    PagedRows<DesignBrowseRow>["meta"]
+  >(
+    datasetDesignsKey(datasetId, options?.search, options?.cursor),
+  );
+  return {
+    rows: response.data.rows,
+    meta: response.meta,
+  };
+}
+
+export async function listTraceMetadata(
+  datasetId: string,
+  designId: string,
+  options?: Readonly<{
+    cursor?: string | null;
+    search?: string | null;
+    family?: string | null;
+    representation?: string | null;
+    sourceKind?: string | null;
+    traceModeGroup?: string | null;
+  }>,
+): Promise<PagedRows<TraceMetadataRow>> {
+  const response = await apiRequestEnvelope<
+    { rows: TraceMetadataRow[] },
+    PagedRows<TraceMetadataRow>["meta"]
+  >(
+    traceListKey(datasetId, designId, options),
+  );
+  return {
+    rows: response.data.rows,
+    meta: response.meta,
+  };
+}
+
+export async function getTraceDetail(
+  datasetId: string,
+  designId: string,
+  traceId: string,
+): Promise<TraceDetail> {
+  return apiRequest<TraceDetail>(traceDetailKey(datasetId, designId, traceId));
+}
+
+function withQuery(path: string, params: URLSearchParams) {
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }

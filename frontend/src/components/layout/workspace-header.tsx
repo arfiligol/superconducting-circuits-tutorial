@@ -90,7 +90,7 @@ export function WorkspaceHeader() {
                 </p>
                 <p className="mt-2 text-sm text-foreground">
                   {workspace?.displayName ?? "Workspace pending"} session with{" "}
-                  {session?.scopes.length ?? 0} exposed scopes.
+                  {session?.memberships.length ?? 0} workspace memberships.
                 </p>
               </div>
 

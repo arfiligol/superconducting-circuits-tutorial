@@ -11,7 +11,7 @@ describe("workspaceNavigation", () => {
     expect(workspaceNavigation).toHaveLength(6);
     expect(workspaceNavigation.map((item) => item.label)).toEqual([
       "Dashboard",
-      "Data Browser",
+      "Raw Data",
       "Schemas",
       "Schemdraw",
       "Simulation",
@@ -51,10 +51,10 @@ describe("workspaceNavigation", () => {
       pageTitle: "Schema Editor",
       summary: "Edit canonical circuit definitions with validation-ready structure.",
     });
-    expect(resolveWorkspacePageIdentity("/data-browser")).toEqual({
+    expect(resolveWorkspacePageIdentity("/raw-data")).toEqual({
       routeFamily: "Pipeline",
       pageTitle: "Raw Data Browser",
-      summary: "Inspect dataset catalogs, metadata summaries, and lineage within the active workspace.",
+      summary: "Browse design scopes and trace summaries inside the session-owned active dataset.",
     });
   });
 });

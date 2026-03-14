@@ -4,8 +4,8 @@ import { createContext, useContext, useEffect, useEffectEvent, useState } from "
 import useSWR from "swr";
 
 import {
-  datasetDetailKey,
-  getDataset,
+  datasetProfileKey,
+  getDatasetProfile,
 } from "@/lib/api/datasets";
 import { patchActiveDataset } from "@/lib/api/session";
 import {
@@ -75,9 +75,9 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
   const sessionDatasetId = session?.activeDataset?.datasetId ?? null;
   const resolvedDatasetId = resolveActiveDatasetId(routeDatasetId, sessionDatasetId);
   const source = resolveActiveDatasetSource(routeDatasetId, sessionDatasetId);
-  const detailKey = resolvedDatasetId ? datasetDetailKey(resolvedDatasetId) : null;
+  const detailKey = resolvedDatasetId ? datasetProfileKey(resolvedDatasetId) : null;
   const detailQuery = useSWR(detailKey, () =>
-    resolvedDatasetId ? getDataset(resolvedDatasetId) : Promise.resolve(undefined),
+    resolvedDatasetId ? getDatasetProfile(resolvedDatasetId) : Promise.resolve(undefined),
   );
   const isRouteSyncPending = routeSyncState.status === "syncing";
   const canRetryRouteSyncNow = canRetryRouteDatasetSync(
@@ -183,7 +183,7 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
           owner:
             session?.activeDataset?.datasetId === resolvedDatasetId
               ? session.activeDataset.owner
-              : (detailQuery.data?.owner ?? null),
+              : (detailQuery.data?.owner_display_name ?? null),
           family:
             session?.activeDataset?.datasetId === resolvedDatasetId
               ? session.activeDataset.family

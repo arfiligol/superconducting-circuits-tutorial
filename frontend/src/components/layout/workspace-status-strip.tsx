@@ -205,7 +205,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
   const workspaceDetail = sessionError
     ? getStatusErrorDetail(sessionError)
     : workspace
-      ? `${workspace.role} role · ${session?.scopes.length ?? 0} scopes · session authority`
+      ? `${workspace.role} role · ${session?.memberships.length ?? 0} memberships · session authority`
       : "Waiting for session authority";
 
   const datasetValue =
@@ -220,7 +220,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         ? "Route selection is attached to the session"
         : source === "session"
           ? "Session-backed dataset context"
-          : "Select a dataset from Data Browser";
+          : "Select a dataset from Raw Data";
 
   const queueValue =
     isTaskQueueLoading && summary.total === 0
@@ -407,10 +407,10 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
                 </button>
               ) : null}
               <Link
-                href="/data-browser"
+                href="/raw-data"
                 className="inline-flex items-center rounded-md border border-border px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground transition hover:border-primary/40 hover:bg-primary/10"
               >
-                Open Data Browser
+                Open Raw Data
               </Link>
             </div>
           </div>

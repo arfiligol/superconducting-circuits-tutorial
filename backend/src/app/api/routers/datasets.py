@@ -1,120 +1,415 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
+from fastapi.responses import JSONResponse
 
-from src.app.api.presenters.storage import (
-    build_metadata_record_ref_response,
-    build_result_handle_ref_response,
-    build_trace_payload_ref_response,
-)
-from src.app.api.schemas.datasets import (
-    DatasetDetailResponse,
-    DatasetMetadataUpdateRequest,
-    DatasetMetadataUpdateResponse,
-    DatasetMetricsResponse,
-    DatasetStorageResponse,
-    DatasetSummaryResponse,
-)
 from src.app.domain.datasets import (
     DatasetDetail,
-    DatasetListQuery,
-    DatasetMetadataUpdate,
-    DatasetSortBy,
-    DatasetStatus,
-    DatasetSummary,
-    SortOrder,
+    DatasetProfileUpdate,
+    DesignBrowseQuery,
+    TraceBrowseQuery,
 )
 from src.app.infrastructure.runtime import get_dataset_service
 from src.app.services.dataset_service import DatasetService
+from src.app.services.service_errors import ServiceError, service_error
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
-@router.get("", response_model=list[DatasetSummaryResponse])
-def list_datasets(
+@router.get("")
+def list_dataset_catalog(
     dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
-    family: Annotated[str | None, Query(min_length=1)] = None,
-    status: Annotated[DatasetStatus | None, Query()] = None,
-    sort_by: Annotated[DatasetSortBy, Query()] = "updated_at",
-    sort_order: Annotated[SortOrder, Query()] = "desc",
-) -> list[DatasetSummaryResponse]:
-    return [
-        _build_dataset_summary_response(summary)
-        for summary in dataset_service.list_datasets(
-            DatasetListQuery(
-                family=family,
-                status=status,
-                sort_by=sort_by,
-                sort_order=sort_order,
+    limit: Annotated[str | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    try:
+        resolved_limit = _parse_limit(limit)
+        rows = [asdict(row) for row in dataset_service.list_dataset_catalog()]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+
+    page_rows, meta = _paginate_rows(
+        rows,
+        limit=resolved_limit,
+        cursor=cursor,
+        filter_echo={},
+    )
+    return _success_response(data={"rows": page_rows}, meta=meta)
+
+
+@router.get("/{dataset_id}/profile")
+def get_dataset_profile(
+    dataset_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> JSONResponse:
+    try:
+        detail = dataset_service.get_dataset_profile(dataset_id)
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(data=_serialize_dataset_profile(detail))
+
+
+@router.patch("/{dataset_id}/profile")
+def update_dataset_profile(
+    dataset_id: str,
+    payload: Annotated[object, Body(...)],
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> JSONResponse:
+    try:
+        update = _parse_dataset_profile_payload(payload)
+        result = dataset_service.update_dataset_profile(dataset_id, update)
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(
+        data={
+            "dataset": _serialize_dataset_profile(result.dataset),
+            "updated_fields": list(result.updated_fields),
+        }
+    )
+
+
+@router.get("/{dataset_id}/metrics-summary")
+def list_tagged_core_metrics(
+    dataset_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> JSONResponse:
+    try:
+        rows = [asdict(row) for row in dataset_service.list_tagged_core_metrics(dataset_id)]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(data={"rows": rows})
+
+
+@router.get("/{dataset_id}/designs")
+def list_designs(
+    dataset_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    limit: Annotated[str | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    try:
+        resolved_limit = _parse_limit(limit)
+        rows = [
+            asdict(row)
+            for row in dataset_service.list_designs(
+                dataset_id,
+                DesignBrowseQuery(search=_normalize_optional_text(search)),
+            )
+        ]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+
+    page_rows, meta = _paginate_rows(
+        rows,
+        limit=resolved_limit,
+        cursor=cursor,
+        filter_echo={
+            "dataset_id": dataset_id,
+            "search": _normalize_optional_text(search),
+        },
+    )
+    return _success_response(data={"rows": page_rows}, meta=meta)
+
+
+@router.get("/{dataset_id}/designs/{design_id}/traces")
+def list_trace_metadata(
+    dataset_id: str,
+    design_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    limit: Annotated[str | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    family: Annotated[str | None, Query()] = None,
+    representation: Annotated[str | None, Query()] = None,
+    source_kind: Annotated[str | None, Query()] = None,
+    trace_mode_group: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    try:
+        resolved_limit = _parse_limit(limit)
+        rows = [
+            asdict(row)
+            for row in dataset_service.list_trace_metadata(
+                dataset_id,
+                design_id,
+                TraceBrowseQuery(
+                    search=_normalize_optional_text(search),
+                    family=_normalize_family(family),
+                    representation=_normalize_optional_text(representation),
+                    source_kind=_normalize_source_kind(source_kind),
+                    trace_mode_group=_normalize_trace_mode_group(trace_mode_group),
+                ),
+            )
+        ]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+
+    page_rows, meta = _paginate_rows(
+        rows,
+        limit=resolved_limit,
+        cursor=cursor,
+        filter_echo={
+            "dataset_id": dataset_id,
+            "design_id": design_id,
+            "search": _normalize_optional_text(search),
+            "family": _normalize_family(family),
+            "representation": _normalize_optional_text(representation),
+            "source_kind": _normalize_source_kind(source_kind),
+            "trace_mode_group": _normalize_trace_mode_group(trace_mode_group),
+        },
+    )
+    return _success_response(data={"rows": page_rows}, meta=meta)
+
+
+@router.get("/{dataset_id}/designs/{design_id}/traces/{trace_id}")
+def get_trace_detail(
+    dataset_id: str,
+    design_id: str,
+    trace_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> JSONResponse:
+    try:
+        detail = dataset_service.get_trace_detail(dataset_id, design_id, trace_id)
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(
+        data={
+            "trace_id": detail.trace_id,
+            "dataset_id": detail.dataset_id,
+            "design_id": detail.design_id,
+            "axes": [asdict(axis) for axis in detail.axes],
+            "preview_payload": detail.preview_payload,
+            "payload_ref": asdict(detail.payload_ref) if detail.payload_ref is not None else None,
+            "result_handles": [asdict(handle) for handle in detail.result_handles],
+        }
+    )
+
+
+def _serialize_dataset_profile(detail: DatasetDetail) -> dict[str, object]:
+    return {
+        "dataset_id": detail.dataset_id,
+        "name": detail.name,
+        "family": detail.family,
+        "owner_display_name": detail.owner,
+        "owner_user_id": detail.owner_user_id,
+        "workspace_id": detail.workspace_id,
+        "visibility_scope": detail.visibility_scope,
+        "lifecycle_state": detail.lifecycle_state,
+        "updated_at": detail.updated_at,
+        "device_type": detail.device_type,
+        "capabilities": list(detail.capabilities),
+        "source": detail.source,
+        "status": detail.status,
+        "allowed_actions": asdict(detail.allowed_actions),
+    }
+
+
+def _parse_dataset_profile_payload(payload: object) -> DatasetProfileUpdate:
+    body = _as_mapping(payload)
+    device_type = _require_text(body.get("device_type"), field="device_type")
+    source = _require_text(body.get("source"), field="source")
+    raw_capabilities = body.get("capabilities", [])
+    if not isinstance(raw_capabilities, list) or any(
+        not isinstance(item, str) or len(item.strip()) == 0 for item in raw_capabilities
+    ):
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="capabilities must be an array of non-empty strings.",
+        )
+    capabilities = tuple(item.strip() for item in raw_capabilities)
+    if len(capabilities) != len(set(capabilities)):
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="capabilities must not contain duplicates.",
+        )
+    return DatasetProfileUpdate(
+        device_type=device_type,
+        capabilities=capabilities,
+        source=source,
+    )
+
+
+def _as_mapping(payload: object) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="Request body must be an object.",
+        )
+    return payload
+
+
+def _require_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or len(value.strip()) == 0:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message=f"{field} must be a non-empty string.",
+        )
+    return value.strip()
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized if normalized else None
+
+
+def _normalize_family(value: str | None) -> str | None:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
+        return None
+    if normalized not in {"s_matrix", "y_matrix", "z_matrix"}:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="family must be one of s_matrix, y_matrix, or z_matrix.",
+        )
+    return normalized
+
+
+def _normalize_source_kind(value: str | None) -> str | None:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
+        return None
+    if normalized not in {"circuit_simulation", "layout_simulation", "measurement"}:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message=(
+                "source_kind must be one of circuit_simulation, layout_simulation, "
+                "or measurement."
             ),
         )
-    ]
+    return normalized
 
 
-@router.get("/{dataset_id}", response_model=DatasetDetailResponse)
-def get_dataset(
-    dataset_id: str,
-    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
-) -> DatasetDetailResponse:
-    detail = dataset_service.get_dataset(dataset_id)
-    return _build_dataset_detail_response(detail)
+def _normalize_trace_mode_group(value: str | None) -> str | None:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
+        return None
+    if normalized not in {"base", "sideband", "all"}:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="trace_mode_group must be one of base, sideband, or all.",
+        )
+    return normalized
 
 
-@router.patch("/{dataset_id}/metadata", response_model=DatasetMetadataUpdateResponse)
-def update_dataset_metadata(
-    dataset_id: str,
-    payload: DatasetMetadataUpdateRequest,
-    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
-) -> DatasetMetadataUpdateResponse:
-    result = dataset_service.update_dataset_metadata(
-        dataset_id,
-        DatasetMetadataUpdate(
-            device_type=payload.device_type,
-            capabilities=tuple(payload.capabilities),
-            source=payload.source,
-        ),
+def _parse_limit(value: str | None) -> int:
+    if value is None:
+        return 20
+    try:
+        limit = int(value)
+    except ValueError as exc:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="limit must be a positive integer.",
+        ) from exc
+    if limit <= 0 or limit > 100:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="limit must be between 1 and 100.",
+        )
+    return limit
+
+
+def _paginate_rows(
+    rows: list[dict[str, object]],
+    *,
+    limit: int,
+    cursor: str | None,
+    filter_echo: dict[str, object],
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    offset = _parse_cursor(cursor)
+    if offset > len(rows):
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="cursor is out of range for the requested collection.",
+        )
+    page_rows = rows[offset : offset + limit]
+    next_offset = offset + len(page_rows)
+    prev_offset = max(offset - limit, 0)
+    has_more = next_offset < len(rows)
+    return page_rows, {
+        "generated_at": _generated_at(),
+        "limit": limit,
+        "next_cursor": str(next_offset) if has_more else None,
+        "prev_cursor": str(prev_offset) if offset > 0 else None,
+        "has_more": has_more,
+        "filter_echo": filter_echo,
+    }
+
+
+def _parse_cursor(cursor: str | None) -> int:
+    if cursor is None:
+        return 0
+    try:
+        value = int(cursor)
+    except ValueError as exc:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="cursor must be an integer offset.",
+        ) from exc
+    if value < 0:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="cursor must be zero or a positive integer.",
+        )
+    return value
+
+
+def _success_response(
+    *,
+    data: dict[str, object],
+    status_code: int = 200,
+    meta: dict[str, object] | None = None,
+) -> JSONResponse:
+    content: dict[str, object] = {"ok": True, "data": data}
+    if meta is not None:
+        content["meta"] = meta
+    return JSONResponse(status_code=status_code, content=content)
+
+
+def _service_error_response(exc: ServiceError) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "ok": False,
+            "error": {
+                "code": exc.code,
+                "category": exc.category,
+                "message": exc.message,
+                "retryable": exc.category == "internal_error",
+            },
+        },
     )
-    return DatasetMetadataUpdateResponse(
-        dataset=_build_dataset_detail_response(result.dataset),
-        updated_fields=list(result.updated_fields),
-    )
 
 
-def _build_dataset_summary_response(summary: DatasetSummary) -> DatasetSummaryResponse:
-    return DatasetSummaryResponse.model_validate(summary.__dict__)
-
-
-def _build_dataset_detail_response(detail: DatasetDetail) -> DatasetDetailResponse:
-    return DatasetDetailResponse(
-        dataset_id=detail.dataset_id,
-        name=detail.name,
-        family=detail.family,
-        owner=detail.owner,
-        updated_at=detail.updated_at,
-        device_type=detail.device_type,
-        source=detail.source,
-        samples=detail.samples,
-        status=detail.status,
-        capability_count=len(detail.capabilities),
-        tag_count=len(detail.tags),
-        capabilities=list(detail.capabilities),
-        tags=list(detail.tags),
-        preview_columns=list(detail.preview_columns),
-        preview_rows=[list(row) for row in detail.preview_rows],
-        artifacts=list(detail.artifacts),
-        lineage=list(detail.lineage),
-        metrics=DatasetMetricsResponse(
-            capability_count=len(detail.capabilities),
-            tag_count=len(detail.tags),
-            preview_row_count=len(detail.preview_rows),
-            artifact_count=len(detail.artifacts),
-            lineage_depth=len(detail.lineage),
-        ),
-        storage=DatasetStorageResponse(
-            metadata_record=build_metadata_record_ref_response(detail.metadata_record),
-            primary_trace=build_trace_payload_ref_response(detail.primary_trace),
-            result_handles=[
-                build_result_handle_ref_response(handle) for handle in detail.result_handles
-            ],
-        ),
-    )
+def _generated_at() -> str:
+    return datetime.now(timezone.utc).isoformat()

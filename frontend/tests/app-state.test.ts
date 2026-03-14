@@ -79,8 +79,8 @@ describe("url state snapshot helpers", () => {
       pathname: "/circuit-simulation",
       search: "?definitionId=24",
     });
-    expect(resolveUrlSnapshot(snapshot, "/data-browser", "?datasetId=fluxonium-2025-031")).toEqual({
-      pathname: "/data-browser",
+    expect(resolveUrlSnapshot(snapshot, "/raw-data", "?datasetId=fluxonium-2025-031")).toEqual({
+      pathname: "/raw-data",
       search: "?datasetId=fluxonium-2025-031",
     });
   });
@@ -93,43 +93,80 @@ describe("session contract mapping", () => {
         session_id: "session-dev-001",
         auth: {
           state: "authenticated",
-          mode: "development_stub",
-          scopes: ["tasks:submit", "datasets:manage"],
-          can_submit_tasks: true,
-          can_manage_datasets: true,
+          mode: "local_stub",
         },
-        identity: {
-          user_id: "user-dev-01",
+        user: {
+          id: "user-dev-01",
           display_name: "Device Lab",
           email: "device-lab@example.com",
+          platform_role: "user",
         },
         workspace: {
-          workspace_id: "workspace-lab",
+          id: "workspace-lab",
           slug: "device-lab",
-          display_name: "Device Lab",
+          name: "Device Lab",
           role: "owner",
           default_task_scope: "workspace",
-          active_dataset: {
-            dataset_id: "fluxonium-2025-031",
-            name: "Fluxonium sweep 031",
-            family: "Fluxonium",
-            status: "Ready",
-            owner: "Device Lab",
-            access_scope: "workspace",
+          allowed_actions: {
+            switch_to: true,
+            activate_dataset: true,
+            invite_members: true,
+            remove_members: true,
+            transfer_owner: true,
           },
+        },
+        memberships: [
+          {
+            id: "workspace-lab",
+            slug: "device-lab",
+            name: "Device Lab",
+            role: "owner",
+            default_task_scope: "workspace",
+            is_active: true,
+            allowed_actions: {
+              switch_to: true,
+              activate_dataset: true,
+              invite_members: true,
+              remove_members: true,
+              transfer_owner: true,
+            },
+          },
+        ],
+        active_dataset: {
+          id: "fluxonium-2025-031",
+          name: "Fluxonium sweep 031",
+          family: "Fluxonium",
+          status: "Ready",
+          owner_user_id: "user-dev-01",
+          owner_display_name: "Device Lab",
+          workspace_id: "workspace-lab",
+          visibility_scope: "workspace",
+          lifecycle_state: "active",
+        },
+        capabilities: {
+          can_switch_workspace: false,
+          can_switch_dataset: true,
+          can_invite_members: true,
+          can_remove_members: true,
+          can_transfer_workspace_owner: true,
+          can_submit_tasks: true,
+          can_manage_workspace_tasks: true,
+          can_manage_definitions: true,
+          can_manage_datasets: true,
+          can_view_audit_logs: false,
         },
       }),
     ).toEqual({
       sessionId: "session-dev-001",
       authState: "authenticated",
-      authMode: "development_stub",
-      scopes: ["tasks:submit", "datasets:manage"],
+      authMode: "local_stub",
       canSubmitTasks: true,
       canManageDatasets: true,
       user: {
         userId: "user-dev-01",
         displayName: "Device Lab",
         email: "device-lab@example.com",
+        platformRole: "user",
       },
       workspace: {
         workspaceId: "workspace-lab",
@@ -138,13 +175,26 @@ describe("session contract mapping", () => {
         role: "owner",
         defaultTaskScope: "workspace",
       },
+      memberships: [
+        {
+          workspaceId: "workspace-lab",
+          slug: "device-lab",
+          displayName: "Device Lab",
+          role: "owner",
+          defaultTaskScope: "workspace",
+          isActive: true,
+        },
+      ],
       activeDataset: {
         datasetId: "fluxonium-2025-031",
         name: "Fluxonium sweep 031",
         family: "Fluxonium",
         status: "Ready",
+        ownerUserId: "user-dev-01",
         owner: "Device Lab",
-        accessScope: "workspace",
+        workspaceId: "workspace-lab",
+        visibilityScope: "workspace",
+        lifecycleState: "active",
       },
     });
   });

@@ -16,7 +16,16 @@ from src.app.domain.circuit_definitions import (
     ValidationLevel,
     ValidationNotice,
 )
-from src.app.domain.datasets import DatasetDetail, DatasetMetadataUpdate, DatasetSummary
+from src.app.domain.datasets import (
+    DatasetAllowedActions,
+    DatasetDetail,
+    DatasetProfileUpdate,
+    DesignBrowseRow,
+    TaggedCoreMetricSummary,
+    TraceAxis,
+    TraceDetail,
+    TraceMetadataSummary,
+)
 from src.app.infrastructure.storage_reference_factory import (
     build_metadata_record_ref,
     build_result_handle_ref,
@@ -28,32 +37,14 @@ from src.app.infrastructure.storage_reference_factory import (
 class InMemoryRewriteCatalogRepository:
     def __init__(self) -> None:
         self._datasets = {dataset.dataset_id: dataset for dataset in _seed_datasets()}
+        self._tagged_core_metrics = _seed_tagged_core_metrics()
+        self._designs = _seed_designs()
+        self._trace_summaries = _seed_trace_summaries()
+        self._trace_details = _seed_trace_details()
         self._circuit_definitions = {
             definition.definition_id: definition for definition in _seed_circuit_definitions()
         }
         self._next_definition_id = max(self._circuit_definitions) + 1
-
-    def list_datasets(self) -> list[DatasetSummary]:
-        return [
-            DatasetSummary(
-                dataset_id=dataset.dataset_id,
-                name=dataset.name,
-                family=dataset.family,
-                owner=dataset.owner,
-                owner_user_id=dataset.owner_user_id,
-                workspace_id=dataset.workspace_id,
-                visibility_scope=dataset.visibility_scope,
-                lifecycle_state=dataset.lifecycle_state,
-                updated_at=dataset.updated_at,
-                device_type=dataset.device_type,
-                source=dataset.source,
-                samples=dataset.samples,
-                status=dataset.status,
-                capability_count=len(dataset.capabilities),
-                tag_count=len(dataset.tags),
-            )
-            for dataset in self._datasets.values()
-        ]
 
     def list_dataset_details(self) -> list[DatasetDetail]:
         return list(self._datasets.values())
@@ -61,10 +52,10 @@ class InMemoryRewriteCatalogRepository:
     def get_dataset(self, dataset_id: str) -> DatasetDetail | None:
         return self._datasets.get(dataset_id)
 
-    def update_dataset_metadata(
+    def update_dataset_profile(
         self,
         dataset_id: str,
-        update: DatasetMetadataUpdate,
+        update: DatasetProfileUpdate,
     ) -> DatasetDetail | None:
         dataset = self._datasets.get(dataset_id)
         if dataset is None:
@@ -75,9 +66,37 @@ class InMemoryRewriteCatalogRepository:
             device_type=update.device_type,
             capabilities=update.capabilities,
             source=update.source,
+            updated_at="2026-03-15T00:30:00Z",
         )
         self._datasets[dataset_id] = updated_dataset
         return updated_dataset
+
+    def list_tagged_core_metrics(
+        self,
+        dataset_id: str,
+    ) -> tuple[TaggedCoreMetricSummary, ...]:
+        return self._tagged_core_metrics.get(dataset_id, ())
+
+    def list_designs(
+        self,
+        dataset_id: str,
+    ) -> tuple[DesignBrowseRow, ...]:
+        return self._designs.get(dataset_id, ())
+
+    def list_trace_metadata(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> tuple[TraceMetadataSummary, ...]:
+        return self._trace_summaries.get((dataset_id, design_id), ())
+
+    def get_trace_detail(
+        self,
+        dataset_id: str,
+        design_id: str,
+        trace_id: str,
+    ) -> TraceDetail | None:
+        return self._trace_details.get((dataset_id, design_id, trace_id))
 
     def list_circuit_definitions(self) -> list[CircuitDefinitionSummary]:
         return [
@@ -180,40 +199,281 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
             workspace_id="ws-device-lab",
             visibility_scope="private",
             lifecycle_state="active",
-            updated_at="2026-02-26 13:40",
-            device_type="Unspecified",
-            capabilities=(),
+            updated_at="2026-03-14T10:20:00Z",
+            device_type="Fluxonium",
+            capabilities=("characterization", "simulation_review"),
             source="inferred",
-            samples=184,
             status="Ready",
-            tags=("sweet-spot", "multi-tone", "validated"),
-            preview_columns=("frequency", "bias", "T1", "fit"),
-            preview_rows=(
-                ("5.812 GHz", "0.120", "18.4 us", "pass"),
-                ("5.824 GHz", "0.126", "17.8 us", "pass"),
-                ("5.839 GHz", "0.132", "16.2 us", "review"),
+            allowed_actions=DatasetAllowedActions(
+                select=True,
+                update_profile=True,
+                publish=True,
+                archive=True,
             ),
-            artifacts=("raw.h5", "metadata.yaml", "fit-summary.json", "plot-bundle.zip"),
-            lineage=(
-                "capture/2026-02-25",
-                "normalize/v2",
-                "fit/transmon-loss",
-                "review/device-lab",
+        ),
+        DatasetDetail(
+            dataset_id="resonator-chip-002",
+            name="Readout resonator validation 002",
+            family="Resonator",
+            owner="Device Lab",
+            owner_user_id="researcher-02",
+            workspace_id="ws-device-lab",
+            visibility_scope="workspace",
+            lifecycle_state="active",
+            updated_at="2026-03-13T16:45:00Z",
+            device_type="Resonator",
+            capabilities=("measurement_review",),
+            source="manual",
+            status="Queued",
+            allowed_actions=DatasetAllowedActions(
+                select=True,
+                update_profile=True,
+                publish=False,
+                archive=True,
             ),
-            metadata_record=build_metadata_record_ref(
-                "dataset",
-                "dataset:fluxonium-2025-031",
-                version=3,
+        ),
+        DatasetDetail(
+            dataset_id="transmon-coupler-014",
+            name="Coupler detuning 014",
+            family="Transmon",
+            owner="Modeling",
+            owner_user_id="modeler-07",
+            workspace_id="ws-modeling",
+            visibility_scope="workspace",
+            lifecycle_state="active",
+            updated_at="2026-03-14T09:10:00Z",
+            device_type="Transmon",
+            capabilities=("cross-resonance",),
+            source="imported",
+            status="Review",
+            allowed_actions=DatasetAllowedActions(
+                select=True,
+                update_profile=True,
+                publish=False,
+                archive=False,
             ),
-            primary_trace=build_trace_payload_ref(
+        ),
+    )
+
+
+def _seed_tagged_core_metrics() -> dict[str, tuple[TaggedCoreMetricSummary, ...]]:
+    return {
+        "fluxonium-2025-031": (
+            TaggedCoreMetricSummary(
+                metric_id="metric-fluxonium-f01",
+                label="Qubit Transition",
+                source_parameter="Im(Y11)",
+                designated_metric="f01",
+                tagged_at="2026-03-14T11:05:00Z",
+            ),
+            TaggedCoreMetricSummary(
+                metric_id="metric-fluxonium-anharmonicity",
+                label="Anharmonicity",
+                source_parameter="Im(Y12)",
+                designated_metric="alpha",
+                tagged_at="2026-03-14T11:08:00Z",
+            ),
+        ),
+        "resonator-chip-002": (),
+        "transmon-coupler-014": (
+            TaggedCoreMetricSummary(
+                metric_id="metric-coupler-chi",
+                label="Coupler Shift",
+                source_parameter="chi_fit",
+                designated_metric="chi",
+                tagged_at="2026-03-14T09:30:00Z",
+            ),
+        ),
+    }
+
+
+def _seed_designs() -> dict[str, tuple[DesignBrowseRow, ...]]:
+    return {
+        "fluxonium-2025-031": (
+            DesignBrowseRow(
+                design_id="design_flux_scan_a",
+                dataset_id="fluxonium-2025-031",
+                name="Flux Scan A",
+                source_coverage={"measurement": 2, "layout_simulation": 1},
+                compare_readiness="ready",
+                trace_count=3,
+                updated_at="2026-03-14T10:24:00Z",
+            ),
+            DesignBrowseRow(
+                design_id="design_flux_scan_b",
+                dataset_id="fluxonium-2025-031",
+                name="Flux Scan B",
+                source_coverage={"measurement": 1},
+                compare_readiness="inspect_only",
+                trace_count=1,
+                updated_at="2026-03-14T09:50:00Z",
+            ),
+        ),
+        "resonator-chip-002": (
+            DesignBrowseRow(
+                design_id="design_resonator_temp",
+                dataset_id="resonator-chip-002",
+                name="Temperature Sweep",
+                source_coverage={"measurement": 1},
+                compare_readiness="blocked",
+                trace_count=1,
+                updated_at="2026-03-13T16:00:00Z",
+            ),
+        ),
+        "transmon-coupler-014": (
+            DesignBrowseRow(
+                design_id="design_coupler_detuning",
+                dataset_id="transmon-coupler-014",
+                name="Coupler Detuning",
+                source_coverage={"circuit_simulation": 1, "measurement": 1},
+                compare_readiness="ready",
+                trace_count=2,
+                updated_at="2026-03-14T09:20:00Z",
+            ),
+        ),
+    }
+
+
+def _seed_trace_summaries() -> dict[tuple[str, str], tuple[TraceMetadataSummary, ...]]:
+    return {
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+        ): (
+            TraceMetadataSummary(
+                trace_id="trace_flux_a_measurement",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                family="y_matrix",
+                parameter="Y11",
+                representation="imaginary",
+                trace_mode_group="base",
+                source_kind="measurement",
+                stage_kind="postprocess",
+                provenance_summary="Measurement · Post-Processed · batch #4",
+            ),
+            TraceMetadataSummary(
+                trace_id="trace_flux_a_layout",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                family="y_matrix",
+                parameter="Y11",
+                representation="imaginary",
+                trace_mode_group="base",
+                source_kind="layout_simulation",
+                stage_kind="raw",
+                provenance_summary="Layout Simulation · Raw · batch #2",
+            ),
+            TraceMetadataSummary(
+                trace_id="trace_flux_a_phase",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                family="y_matrix",
+                parameter="Y11",
+                representation="phase",
+                trace_mode_group="sideband",
+                source_kind="measurement",
+                stage_kind="postprocess",
+                provenance_summary="Measurement · Phase Projection · batch #4",
+            ),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_b",
+        ): (
+            TraceMetadataSummary(
+                trace_id="trace_flux_b_measurement",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_b",
+                family="s_matrix",
+                parameter="S21",
+                representation="magnitude",
+                trace_mode_group="base",
+                source_kind="measurement",
+                stage_kind="raw",
+                provenance_summary="Measurement · Raw · batch #7",
+            ),
+        ),
+        (
+            "resonator-chip-002",
+            "design_resonator_temp",
+        ): (
+            TraceMetadataSummary(
+                trace_id="trace_res_temp_measurement",
+                dataset_id="resonator-chip-002",
+                design_id="design_resonator_temp",
+                family="s_matrix",
+                parameter="S21",
+                representation="magnitude",
+                trace_mode_group="base",
+                source_kind="measurement",
+                stage_kind="raw",
+                provenance_summary="Measurement · Raw · batch #12",
+            ),
+        ),
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+        ): (
+            TraceMetadataSummary(
+                trace_id="trace_coupler_measurement",
+                dataset_id="transmon-coupler-014",
+                design_id="design_coupler_detuning",
+                family="z_matrix",
+                parameter="Z21",
+                representation="real",
+                trace_mode_group="base",
+                source_kind="measurement",
+                stage_kind="postprocess",
+                provenance_summary="Measurement · Fit Input · batch #12",
+            ),
+            TraceMetadataSummary(
+                trace_id="trace_coupler_simulation",
+                dataset_id="transmon-coupler-014",
+                design_id="design_coupler_detuning",
+                family="z_matrix",
+                parameter="Z21",
+                representation="real",
+                trace_mode_group="base",
+                source_kind="circuit_simulation",
+                stage_kind="raw",
+                provenance_summary="Circuit Simulation · Raw · batch #5",
+            ),
+        ),
+    }
+
+
+def _seed_trace_details() -> dict[tuple[str, str, str], TraceDetail]:
+    return {
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+            "trace_flux_a_measurement",
+        ): TraceDetail(
+            trace_id="trace_flux_a_measurement",
+            dataset_id="fluxonium-2025-031",
+            design_id="design_flux_scan_a",
+            axes=(
+                TraceAxis(name="frequency", unit="GHz", length=401),
+                TraceAxis(name="flux_bias", unit="Phi0", length=11),
+            ),
+            preview_payload={
+                "kind": "sampled_series",
+                "points": [
+                    [5.71, 0.013],
+                    [5.78, 0.018],
+                    [5.84, 0.015],
+                ],
+            },
+            payload_ref=build_trace_payload_ref(
                 payload_role="dataset_primary",
-                store_key="datasets/fluxonium-2025-031/trace-batches/88.zarr",
-                store_uri="trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
-                group_path="trace_batches/88",
-                array_path="signals/iq_real",
+                store_key="datasets/fluxonium-2025-031/designs/design_flux_scan_a/batches/batch_4.zarr",
+                store_uri="trace_store/datasets/fluxonium-2025-031/designs/design_flux_scan_a/batches/batch_4.zarr",
+                group_path="/traces/trace_flux_a_measurement",
+                array_path="values",
                 dtype="float64",
-                shape=(184, 1024),
-                chunk_shape=(16, 1024),
+                shape=(401, 11),
+                chunk_shape=(401, 1),
             ),
             result_handles=(
                 build_result_handle_ref(
@@ -241,70 +501,109 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
                         ),
                     ),
                 ),
-                build_result_handle_ref(
-                    handle_id="result:fluxonium-2025-031:plot-bundle",
-                    kind="plot_bundle",
-                    status="materialized",
-                    label="Fluxonium plot bundle",
-                    metadata_record=build_metadata_record_ref(
-                        "result_handle",
-                        "result_handle:502",
-                        version=1,
-                    ),
-                    payload_backend="bundle_archive",
-                    payload_format="zip",
-                    payload_role="bundle_artifact",
-                    payload_locator="artifacts/plot-bundle.zip",
-                    provenance_task_id=303,
-                    provenance=build_result_provenance_ref(
-                        source_dataset_id="fluxonium-2025-031",
-                        source_task_id=303,
-                        trace_batch_record=build_metadata_record_ref(
-                            "trace_batch",
-                            "trace_batch:88",
-                            version=1,
-                        ),
-                    ),
-                ),
             ),
         ),
-        DatasetDetail(
-            dataset_id="transmon-coupler-014",
-            name="Coupler detuning 014",
-            family="Transmon",
-            owner="Modeling",
-            owner_user_id="modeler-07",
-            workspace_id="ws-modeling",
-            visibility_scope="workspace",
-            lifecycle_state="active",
-            updated_at="2026-02-24 09:15",
-            device_type="Transmon",
-            capabilities=("cross-resonance",),
-            source="imported",
-            samples=76,
-            status="Review",
-            tags=("coupler", "cross-resonance"),
-            preview_columns=("bias", "coupling", "chi", "note"),
-            preview_rows=(
-                ("-0.280", "11.2 MHz", "0.41", "re-fit"),
-                ("-0.265", "10.8 MHz", "0.39", "queued"),
-            ),
-            artifacts=("detuning.csv", "fit-report.md"),
-            lineage=("import/legacy", "regrid/v1", "fit/manual"),
-            metadata_record=build_metadata_record_ref(
-                "dataset",
-                "dataset:transmon-coupler-014",
-                version=5,
-            ),
-            primary_trace=build_trace_payload_ref(
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+            "trace_flux_a_layout",
+        ): TraceDetail(
+            trace_id="trace_flux_a_layout",
+            dataset_id="fluxonium-2025-031",
+            design_id="design_flux_scan_a",
+            axes=(TraceAxis(name="frequency", unit="GHz", length=401),),
+            preview_payload={
+                "kind": "sampled_series",
+                "points": [
+                    [5.71, 0.011],
+                    [5.78, 0.017],
+                    [5.84, 0.014],
+                ],
+            },
+            payload_ref=build_trace_payload_ref(
                 payload_role="dataset_primary",
-                store_key="datasets/transmon-coupler-014/analysis-runs/12.zarr",
-                store_uri="trace_store/datasets/transmon-coupler-014/analysis-runs/12.zarr",
-                group_path="analysis_runs/12",
-                array_path="derived/chi_fit",
+                store_key="datasets/fluxonium-2025-031/designs/design_flux_scan_a/batches/batch_2.zarr",
+                store_uri="trace_store/datasets/fluxonium-2025-031/designs/design_flux_scan_a/batches/batch_2.zarr",
+                group_path="/traces/trace_flux_a_layout",
+                array_path="values",
                 dtype="float64",
-                shape=(76, 64),
-                chunk_shape=(16, 64),
+                shape=(401,),
+                chunk_shape=(401,),
+            ),
+            result_handles=(),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_b",
+            "trace_flux_b_measurement",
+        ): TraceDetail(
+            trace_id="trace_flux_b_measurement",
+            dataset_id="fluxonium-2025-031",
+            design_id="design_flux_scan_b",
+            axes=(TraceAxis(name="frequency", unit="GHz", length=201),),
+            preview_payload={
+                "kind": "sampled_series",
+                "points": [[6.1, 0.42], [6.18, 0.51], [6.24, 0.47]],
+            },
+            payload_ref=build_trace_payload_ref(
+                payload_role="dataset_primary",
+                store_key="datasets/fluxonium-2025-031/designs/design_flux_scan_b/batches/batch_7.zarr",
+                store_uri="trace_store/datasets/fluxonium-2025-031/designs/design_flux_scan_b/batches/batch_7.zarr",
+                group_path="/traces/trace_flux_b_measurement",
+                array_path="values",
+                dtype="float64",
+                shape=(201,),
+                chunk_shape=(201,),
+            ),
+            result_handles=(),
+        ),
+        (
+            "resonator-chip-002",
+            "design_resonator_temp",
+            "trace_res_temp_measurement",
+        ): TraceDetail(
+            trace_id="trace_res_temp_measurement",
+            dataset_id="resonator-chip-002",
+            design_id="design_resonator_temp",
+            axes=(TraceAxis(name="temperature", unit="mK", length=31),),
+            preview_payload={
+                "kind": "sampled_series",
+                "points": [[10, 0.91], [20, 0.88], [30, 0.81]],
+            },
+            payload_ref=build_trace_payload_ref(
+                payload_role="dataset_primary",
+                store_key="datasets/resonator-chip-002/designs/design_resonator_temp/batches/batch_12.zarr",
+                store_uri="trace_store/datasets/resonator-chip-002/designs/design_resonator_temp/batches/batch_12.zarr",
+                group_path="/traces/trace_res_temp_measurement",
+                array_path="values",
+                dtype="float64",
+                shape=(31,),
+                chunk_shape=(31,),
+            ),
+            result_handles=(),
+        ),
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+            "trace_coupler_measurement",
+        ): TraceDetail(
+            trace_id="trace_coupler_measurement",
+            dataset_id="transmon-coupler-014",
+            design_id="design_coupler_detuning",
+            axes=(TraceAxis(name="bias", unit="V", length=76),),
+            preview_payload={
+                "kind": "sampled_series",
+                "points": [[-0.28, 11.2], [-0.265, 10.8], [-0.25, 10.4]],
+            },
+            payload_ref=build_trace_payload_ref(
+                payload_role="dataset_primary",
+                store_key="datasets/transmon-coupler-014/designs/design_coupler_detuning/batches/batch_12.zarr",
+                store_uri="trace_store/datasets/transmon-coupler-014/designs/design_coupler_detuning/batches/batch_12.zarr",
+                group_path="/traces/trace_coupler_measurement",
+                array_path="values",
+                dtype="float64",
+                shape=(76,),
+                chunk_shape=(76,),
             ),
             result_handles=(
                 build_result_handle_ref(
@@ -334,7 +633,32 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
                 ),
             ),
         ),
-    )
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+            "trace_coupler_simulation",
+        ): TraceDetail(
+            trace_id="trace_coupler_simulation",
+            dataset_id="transmon-coupler-014",
+            design_id="design_coupler_detuning",
+            axes=(TraceAxis(name="bias", unit="V", length=76),),
+            preview_payload={
+                "kind": "sampled_series",
+                "points": [[-0.28, 11.0], [-0.265, 10.7], [-0.25, 10.3]],
+            },
+            payload_ref=build_trace_payload_ref(
+                payload_role="dataset_primary",
+                store_key="datasets/transmon-coupler-014/designs/design_coupler_detuning/batches/batch_5.zarr",
+                store_uri="trace_store/datasets/transmon-coupler-014/designs/design_coupler_detuning/batches/batch_5.zarr",
+                group_path="/traces/trace_coupler_simulation",
+                array_path="values",
+                dtype="float64",
+                shape=(76,),
+                chunk_shape=(76,),
+            ),
+            result_handles=(),
+        ),
+    }
 
 
 def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:

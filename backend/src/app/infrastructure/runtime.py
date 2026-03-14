@@ -66,7 +66,10 @@ def get_health_service() -> HealthService:
 
 @lru_cache(maxsize=1)
 def get_dataset_service() -> DatasetService:
-    return DatasetService(repository=get_rewrite_catalog_repository())
+    return DatasetService(
+        repository=get_rewrite_catalog_repository(),
+        session_repository=get_rewrite_app_state_repository(),
+    )
 
 
 @lru_cache(maxsize=1)

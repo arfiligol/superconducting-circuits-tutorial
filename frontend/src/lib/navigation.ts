@@ -29,12 +29,13 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     aliases: ["/"],
   },
   {
-    href: "/data-browser",
-    label: "Data Browser",
+    href: "/raw-data",
+    label: "Raw Data",
     pageTitle: "Raw Data Browser",
-    summary: "Inspect dataset catalogs, metadata summaries, and lineage within the active workspace.",
+    summary: "Browse design scopes and trace summaries inside the session-owned active dataset.",
     group: "pipeline",
     icon: Database,
+    aliases: ["/data-browser"],
   },
   {
     href: "/circuit-definition-editor",

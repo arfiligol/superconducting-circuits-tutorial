@@ -11,10 +11,14 @@ from src.app.services.task_service import TaskService
 
 
 def test_dataset_service_raises_framework_agnostic_error_for_missing_dataset() -> None:
-    service = DatasetService(repository=InMemoryRewriteCatalogRepository())
+    app_state_repository = InMemoryRewriteAppStateRepository()
+    service = DatasetService(
+        repository=InMemoryRewriteCatalogRepository(),
+        session_repository=app_state_repository,
+    )
 
     with pytest.raises(ServiceError) as exc_info:
-        service.get_dataset("missing-dataset")
+        service.get_dataset_profile("missing-dataset")
 
     assert not isinstance(exc_info.value, HTTPException)
     assert exc_info.value.status_code == 404
