@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: rewrite branch 的技術選型、desktop 包裝方向與共享工具規範。
-version: v2.1.0
-last_updated: 2026-03-11
-updated_by: docs-team
+version: v2.2.0
+last_updated: 2026-03-14
+updated_by: codex
 ---
 
 # Tech Stack
@@ -31,6 +31,7 @@ updated_by: docs-team
 | `fastapi` | API framework |
 | `pydantic` | schema / validation |
 | `sqlmodel`, `sqlalchemy` | metadata persistence |
+| `casbin` | app backend authorization baseline |
 | `typer` | CLI framework |
 | `numpy`, `pandas`, `scipy`, `lmfit` | 數值、分析、擬合 |
 | `plotly`, `schemdraw` | 視覺化與電路圖生成 |
@@ -83,6 +84,8 @@ updated_by: docs-team
 - FastAPI + Pydantic
 - 服務層與資料存取分離
 - API 層只做 I/O、驗證、mapping、授權與回應
+- multi-user app authorization baseline 採 `Casbin`
+- `JWT` / refresh token 負責 authentication；capabilities 與 allowed actions 由 backend authorization engine materialize
 
 ### CLI
 
@@ -129,6 +132,7 @@ updated_by: docs-team
     - FastAPI
     - Pydantic
     - SQLModel / SQLAlchemy
+    - Casbin as the backend authorization baseline for the multi-user app
     - Rich-compatible logging
 - **CLI**:
     - Typer

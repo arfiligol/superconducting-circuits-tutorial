@@ -10,7 +10,7 @@ status: draft
 owner: docs-team
 audience: team
 scope: Backend session、workspace membership、active workspace、active dataset、collaboration mutations 與 capability exposure surface
-version: v0.9.0
+version: v0.10.0
 last_updated: 2026-03-14
 updated_by: codex
 ---
@@ -26,6 +26,10 @@ updated_by: codex
 !!! warning "Single Context Authority"
     app shell 顯示的 `Active Workspace`、`Active Dataset`、`Workspace Role`、`User Menu Summary`
     與 collaboration controls 必須來自同一份 backend session authority。
+
+!!! info "Authorization baseline"
+    本頁所有 capability flags、membership mutation permission 與 collaboration control 都以 backend authorization engine 為準。
+    正式 baseline 採 `Casbin`，由 backend service 先整理 resource envelope，再回傳 materialized `capabilities` 與 `allowed_actions`。
 
 ## Coverage
 
@@ -57,6 +61,16 @@ backend session surface 至少必須提供：
 | `workspace.default_task_scope` | queue default visibility scope |
 | `active_dataset.id` / `name` | global dataset context |
 | `capabilities` | capability flags summary |
+
+## Authorization Resolution Rules
+
+| Rule | Meaning |
+| --- | --- |
+| Session never trusts JWT claims for permissions | JWT 只提供 authentication continuity |
+| Workspace role is backend-resolved | active workspace role 由 membership lookup + authorization engine 決定 |
+| Capability flags are materialized decisions | frontend 不需自行重建 role matrix |
+| Mutation availability is echoed | invite / revoke / leave / remove / transfer 等 controls 必須回傳 `allowed_actions` 或等價 flags |
+| Casbin policy is implementation baseline | policy engine 可替換，但對 frontend 暴露的 contract 不變 |
 
 ## Active Workspace Switching
 

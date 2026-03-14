@@ -12,9 +12,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: multi-user session、workspace membership、invitation accept flow、active workspace、capability exposure 與 task-management permission contract
-version: v0.3.0
+version: v0.4.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Authentication & Authorization
@@ -55,6 +55,45 @@ updated_by: team
 !!! warning "JWT Is Not Permission Authority"
     JWT 用來證明 `user identity` 與 `session continuity`。
     workspace role、task-management permission 與 capability flags 必須以 backend session lookup 為準，避免 token 內嵌權限過期。
+
+## Authorization Engine Baseline
+
+!!! info "Backend-owned authorization engine"
+    App backend 正式採 `Casbin` 作為 authorization baseline。
+    frontend、Electron shell、standalone CLI 與 core 不直接持有 role matrix，也不直接解讀 JWT 內的權限宣稱。
+
+| Concern | Rule |
+|---|---|
+| Authentication | `JWT access token + rotating refresh token` 證明使用者身份與 session continuity |
+| Authorization | backend 以 `Casbin` policy evaluation 決定 action 是否允許 |
+| Policy shape | baseline 採 `RBAC with workspace domain`，必要時再帶入 resource envelope |
+| Resource envelope | 至少包含 `workspace_id`、`owner_user_id`、`visibility_scope` |
+| Frontend contract | UI 只消費 backend 回傳的 `capabilities` 與 `allowed_actions` |
+| Source of truth | shared app docs 定義權限語意；Casbin policy 負責實作，不取代文件本身 |
+
+!!! warning "Do not hardcode role logic in clients"
+    Header、Task Queue、page CTA 與 destructive actions 必須依 backend echo 的 `capabilities` / `allowed_actions` 呈現。
+    frontend 不可自行用 `owner/member/viewer` 推導完整 permission matrix。
+
+### Casbin Modeling Baseline
+
+| Casbin concept | App meaning |
+|---|---|
+| `sub` | authenticated user |
+| `dom` | active workspace 或 target workspace |
+| `obj` | resource type 或 resource identity |
+| `act` | requested action，例如 `submit_task`, `archive_schema`, `view_audit_log` |
+
+| Baseline rule | Meaning |
+|---|---|
+| Workspace membership drives domain role | 使用者在不同 workspace 可有不同 role |
+| Admin override remains backend-owned | `admin` 為 backend service 的 global override，不由 frontend 推導 |
+| Resource visibility is evaluated before policy allow | backend 先解析 resource envelope，再交給 Casbin 做 action decision |
+| Backend emits materialized permissions | session surface、queue rows、resource detail 應回傳已算好的 `allowed_actions` |
+
+??? info "Why not pure Casbin-only logic"
+    `private` / `workspace` visibility、resource owner 與 active workspace rebinding 仍需要 backend service 先整理成穩定的 authorization context。
+    正式 baseline 不是把所有規則都硬塞進 policy expression，而是 `service-owned resource resolution + Casbin decision engine`。
 
 ## Capability Families
 
