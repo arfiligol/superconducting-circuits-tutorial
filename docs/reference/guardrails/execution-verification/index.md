@@ -10,9 +10,9 @@ tags:
 status: stable
 owner: docs-team
 audience: contributor
-scope: build、lint、test、CI 與 migration phase 驗收規範索引。
-version: v1.1.0
-last_updated: 2026-03-12
+scope: build、lint、test、CI、multi-agent workflow 與 migration phase 驗收規範索引。
+version: v1.2.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -24,10 +24,12 @@ updated_by: codex
 - [Build Commands](./build-commands.md)
 - [Linting & Formatting](./linting.md)
 - [Testing](./testing.md)
-- [CI Gates](./ci-gates.md)
 - [Commit Standards](./commit-standards.md)
+- [CI Gates](./ci-gates.md)
 - [Phase Gates](./phase-gates.md)
 - [Prompt Grading](./prompt-grading.md)
+- [Multiple Agent Collaboration](./multi-agent-collaboration.md)
+- [Agent Handoff Formats](./contributor-reporting.md)
 
 ## Agent Rule { #agent-rule }
 
@@ -36,5 +38,5 @@ updated_by: codex
 - 定義 build、lint、type-check、test、CI 的 workspace 基線。
 - 變更程式碼時，優先執行與 touched area 直接相關的檢查。
 - rewrite branch 最終基線包含 frontend、backend、CLI、docs 四條驗證線。
-- migration phases 需搭配 Phase Gates 與 parity matrix 驗收。
+- migration phases 需搭配 Phase Gates、Prompt Grading 與 multi-agent collaboration rules 驗收。
 ```

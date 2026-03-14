@@ -2,176 +2,207 @@
 aliases:
   - "多 Agent 協作"
   - "Multiple Agent Collaboration"
+  - "Agent Collaboration Framework"
 tags:
   - audience/team
   - sot/true
 status: stable
 owner: docs-team
 audience: team
-scope: "本地多 Agent 並行開發的隔離、整合與衝突避免規範"
-version: v1.4.0
-last_updated: 2026-03-12
+scope: "Documentation / Planning / Implementation / Review / Test Agents 的責任分工、交接順序與並行協作規範"
+version: v2.0.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
 # 多 Agent 協作
 
-規範本地多 Agent 並行工作時的責任分工與防衝突流程。
+規範本專案的多 Agent 協作框架，確保文件、計劃、實作、驗收與測試有明確 owner。
 
-!!! important "單一整合者原則（Mandatory）"
-    同一條交付線（同一主題/PR）在同一時間只允許 **1 位 Integrator Agent**。
-    其餘 Agent 僅負責各自子任務，不得自行整合他人變更。
+!!! important "Single Review Authority"
+    同一條交付線（同一主題 / PR / milestone）在同一時間只允許 **1 位 active Review Agent** 負責整合與主線回收。
+    可以同時有多位 Documentation / Planning / Implementation / Test Agents，但不可同時有多位 Review Agents 對同一交付線做最終整合。
 
-## 角色定義
+!!! info "Document-first execution"
+    正式流程是：先收斂文件，再寫計劃，再做實作，再補 integration / E2E，最後由 Review Agent 收回主線。
 
-- **Integrator Agent**：
-  - 唯一可進行整合動作（cherry-pick、resolve conflict、最終 merge 準備）
-  - 負責整體驗收與回歸結果彙整
-  - 負責把 Contributor 在各自 `worktree + branch` 產出的變更整合回主交付 branch
-  - 若使用者平常工作的 branch 是 `main`，預設整合回 `main`
-  - 若使用者明確在另一條開發 branch / IDE 所在 branch 上工作，則整合回該 branch，而不是只停留在 Integrator 自己的隔離 branch
-  - 負責決定每輪任務的拆分方式、Prompt 結構、驗收條件、整合順序
-  - 負責判斷何時應維持固定 Contributor Agent 模式，何時需要臨時增派專項 Agent
-- **Contributor Agent**：
-  - 只在被分派範圍內修改
-  - 只能產出可被整合的原子 commits 與交接說明
+## Agent Families
 
-## Fixed Agent Pool
+| Agent family | Primary responsibility | Not responsible for |
+|---|---|---|
+| Documentation Agents | 與人類開發者討論需求、整理決策、把 SoT 寫進 docs、先定義 architecture / contracts / page specs | 大量 feature code、integration / E2E |
+| Planning Agents | 比對文件與現有程式碼、找出缺漏、撰寫 plan artifact、拆 implementation slices、列出缺的 integration / E2E coverage | 大量產品實作、最終整合 |
+| Implementation Agents | 依計劃撰寫 `Frontend / Backend / Core / CLI` 實作與 unit tests | integration tests、E2E tests、最終主線整合 |
+| Review Agents | 回收 implementation/test deliverables、做 cherry-pick / conflict resolution / final verification、收回主線 | 日常 feature 開發、繞過計劃直接大幅擴張 scope |
+| Test Agents | 依計劃撰寫 integration / E2E tests、補 test fixtures 與 cross-surface verification | feature unit work、最終 merge authority |
 
-本專案當前固定使用下列 Agent 身份：
+## Role Boundaries
 
-1. **Integration Agent**
-   - 唯一的整合者
-   - 只負責 task split、prompt 發派、contributor 回收、cherry-pick、conflict resolution、驗證與最終整合
-   - 不負責日常 feature 開發，除非使用者明確要求例外
-2. **Frontend Contributor Agent**
-   - 負責 `frontend/` 與前端 UI/API integration 任務
-3. **Backend Contributor Agent**
-   - 負責 `backend/` 與 API/service/infrastructure 任務
-4. **Core Contributor Agent**
-   - 負責 `src/core/` 與共享科學邏輯、shared workflow 任務
-5. **CLI Contributor Agent**
-   - 負責 `cli/` 與正式 CLI adapter / command surface 任務
+### Documentation Agents
 
-!!! important "Contributor identities are fixed"
-    除了 `Frontend Contributor Agent`、`Backend Contributor Agent`、`Core Contributor Agent`、`CLI Contributor Agent` 之外，
-    不應再建立其他 Contributor 身份。
-    若某項工作跨越多個領域，應由 Integration Agent 重新切分任務，或分派給上述既有角色之一，而不是臨時發明新的 Contributor 類型。
+- 負責與人類開發者對齊需求、語意、owner boundary 與 acceptance。
+- 若新功能或重構涉及 contract / workflow / shell context / permission model，必須先補或更新 SoT。
+- 可直接修改文件，但不得把未確認的設計假設寫成既成事實。
 
-## Integrator First Workflow
+### Planning Agents
 
-每次開一位新的 Integrator Agent，都應先做以下流程：
+- 必須讀 SoT 與現有 code，再產出可交付的 plan artifact。
+- plan artifact 至少要回答：
+  - 哪些文件已定義、哪些尚未落地
+  - 哪些 implementation slices 需要前端 / 後端 / core / CLI Agents
+  - 哪些功能尚未具備 integration tests / E2E tests
+  - 每個 slice 的 verification 與 non-goals
+- 不應在沒有 plan artifact 的情況下直接大規模派工。
 
-1. **讀 SoT**
-   - 先讀本文件與當前主題的 architecture / guardrail SoT。
-   - 先判斷目前是延續既有交付線，還是開啟新的一輪 phase。
+### Implementation Agents
 
-2. **盤點主線狀態**
-   - 確認使用者實際工作的 delivery branch（通常是 `main`）。
-   - 盤點目前已整合、未整合、已過時的 branches / worktrees。
-   - 不得把「僅存在 Integrator 隔離 branch」誤當成已完成整合。
+- 固定分成四條 implementation lanes：
+  - `Frontend Agent`
+  - `Backend Agent`
+  - `Core Agent`
+  - `CLI Agent`
+- 只負責自己的領域實作與 unit tests。
+- 若需要跨界改檔，必須回交 Planning 或 Review Agent 重新切分。
+- 不負責 integration / E2E test。
 
-3. **決定任務切分**
-   - 先決定哪些工作必須由 Integrator 自己處理：
-     - cherry-pick / conflict resolution
-     - cross-agent overlap 熱區
-     - 最終 regression / acceptance
-   - 再決定哪些工作可外包給 Contributors。
+### Review Agents
 
-4. **先文件、再程式**
-   - 若任務涉及新 contract / architecture / semantics，先要求 contributor 讀 guardrails，先補文件，再一次性改程式碼。
-   - Integrator 本人也應遵守同一原則。
+- 是唯一可把 accepted changes 收回主交付 branch 的角色。
+- 負責：
+  - 回收 implementation 與 test deliverables
+  - conflict resolution
+  - final verification
+  - 回主線後的 regression summary
+- 若使用者的 delivery branch 是 `main`，預設整回 `main`。
+- 若使用者明確在其他 branch 工作，Review Agent 必須整回該 branch。
 
-5. **發派 Prompt**
-   - 每個任務都必須明確提供：
-     - `Task ID / Topic`
-     - `Goal`
-     - `Allowed Files`
-     - `Non-Goals` / `Constraints`
-     - `Verification`
-     - `Contributor Report v1`
-   - `Allowed Files` 由 Integrator 每輪任務明確定義，而不是由文件永久釘死。
+### Test Agents
 
-6. **整合與驗證**
-   - 只整合真正的增量 commit。
-   - 若 contributor report 不完整、越界、或只有 dirty worktree 沒有 commit，Integrator 不應直接視為合格交付。
-   - 最後一定要把 accepted changes 整回使用者的 delivery branch。
+- 只負責 integration tests、E2E tests、cross-surface verification。
+- 必須直接依 Planning Agent 的 test backlog 與 SoT 撰寫測試。
+- 不應把 integration / E2E 缺口留給 Implementation Agents 臨時補。
 
-## Role Policy
+## Delivery Flow
 
-- Contributor 角色集合固定為：
-  - `Frontend Contributor Agent`
-  - `Backend Contributor Agent`
-  - `Core Contributor Agent`
-  - `CLI Contributor Agent`
-- Integrator 若遇到額外需求，應重新切分 `Allowed Files` 與 task scope，而不是新增新角色名稱。
-- 若未來真的需要新增或替換 Contributor 類型，必須先更新本 SoT，再開始使用新身份。
+1. **Documentation**
+   - Documentation Agent 與人類對齊需求。
+   - 必要時先更新 SoT。
 
-## 必須遵守的協作流程
+2. **Planning**
+   - Planning Agent 讀文件與程式碼。
+   - 產出 plan artifact 與 test backlog。
 
-1. **Preflight 檢查**
-   - 開工前必須回報 `git status --porcelain`。
-   - 若工作樹存在非本人任務變更，必須停下並回報處理選項，不得直接覆蓋。
+3. **Implementation**
+   - Frontend / Backend / Core / CLI Agents 依 slice 開發。
+   - 每條 implementation lane 只做 code + unit tests。
 
-2. **隔離工作區**
-   - 每位 Agent 必須使用獨立 `git worktree` + branch（Mandatory）。
-   - 禁止多位 Agent 共用同一個髒工作樹同時編輯。
+4. **Test**
+   - Test Agent 根據同一份 plan 補 integration / E2E tests。
 
-3. **檔案所有權**
-   - 每個任務必須有 `Allowed Files`（允許修改清單）。
-   - 需要跨界改檔時，先交由 Integrator 重新分派，不得直接越界編輯。
+5. **Review**
+   - Review Agent 回收所有 deliverables。
+   - 做整合、驗證、主線回收與最終摘要。
 
-4. **交接**
-   - Contributor 必須提供：
-     - commit hashes
-     - 變更檔案清單
-     - 測試結果
-     - 已知風險
-   - Integrator 才可進行最終整合。
-   - `最終整合` 的完成定義是：相關變更已從 contributor worktrees 整合回主交付 branch
-     （通常是 `main`；若使用者正在另一條明確指定的開發 branch 上工作，則為該 branch）。
+!!! warning "No direct jump from idea to code"
+    若需求仍在變、authority boundary 未定、或 SoT 尚未更新，Implementation Agents 不得直接把設計猜進程式碼。
 
-## 禁止事項
+## Required Artifacts
 
-- 禁止覆寫或回退其他 Agent 的未整合變更。
-- 禁止使用 destructive git 指令清空他人工作（例如 `git reset --hard`）。
-- 禁止在未分派檔案上「順手修」。
+| Stage | Required artifact |
+|---|---|
+| Documentation | updated SoT pages / decision notes |
+| Planning | `Plan Artifact`，含 implementation slices 與 test backlog |
+| Implementation | `Delivery Report`，含 commits、changed files、unit test results、known risks |
+| Test | `Test Report`，含 scenarios、evidence、integration / E2E results |
+| Review | `Review Merge Report`，含 accepted commits、conflicts、final verification、mainline status |
 
----
+## Plan Artifact Minimum Content
+
+Planning Agent 產出的 plan artifact 至少必須包含：
+
+- `Task ID / Topic`
+- `Goal`
+- `Source of Truth`
+- `Current Implementation State`
+- `Gap List`
+- `Implementation Slices`
+- `Test Backlog`
+- `Verification Matrix`
+- `Open Decisions / Risks`
+
+!!! tip "Plan artifacts are first-class docs"
+    若該計劃需要被持續追蹤或多人共同引用，應把它寫成可保存的文件紀錄，而不是只留在短訊息或臨時聊天上下文中。
+
+## Parallelism Rules
+
+1. 同一時間可並行：
+   - 多位 Documentation Agents
+   - 多位 Planning Agents
+   - 多位 Implementation Agents
+   - 多位 Test Agents
+2. 但同一交付線只能有一位 active Review Agent。
+3. 同一 implementation slice 不得同時交給兩位 Implementation Agents。
+4. 同一 integration / E2E scenario 不得同時交給兩位 Test Agents。
+
+## Isolation Rules
+
+1. 每位 Agent 必須使用獨立 `git worktree` + branch。
+2. 開工前必須執行 `git status --porcelain`。
+3. 若工作樹有非本人任務的 dirty changes，不得直接覆蓋。
+4. `Allowed Files` 必須在 plan 或 review prompt 中明確列出。
+
+## Escalation Rules
+
+| Situation | Required escalation |
+|---|---|
+| SoT 缺頁或語意衝突 | 回 Documentation Agent |
+| slice 邊界不穩或跨多領域 | 回 Planning Agent 重新拆分 |
+| integration / E2E 缺口被 implementation 發現 | 回 Planning Agent，並轉交 Test Agent |
+| deliverables 彼此衝突 | 交 Review Agent 做整合與裁決 |
+
+## Forbidden Moves
+
+- Implementation Agent 不得直接宣告 integration / E2E 已完成，除非該工作明確由 Test Agent 交回。
+- Test Agent 不得順手重寫 feature implementation。
+- Review Agent 不得在未回收 handoff 的情況下假設某工作已完成。
+- Documentation Agent 不得把未確認的未來功能寫成現況。
+- Planning Agent 不得只給口頭方向而沒有可追蹤的 plan artifact。
+
+## Related
+
+- [Prompt Grading](./prompt-grading.md)
+- [Agent Handoff Formats](./contributor-reporting.md)
+- [Phase Gates](./phase-gates.md)
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Multiple Agent Collaboration
-- **Single Integrator (Mandatory)**:
-    - One delivery line/PR MUST have exactly one Integrator Agent at a time.
-    - Only Integrator may perform final integration (cherry-pick/conflict resolution/merge prep).
-    - Integrator MUST carry accepted contributor changes back to the delivery branch used by the user.
-    - The default delivery branch is `main`; if the user is actively working on another explicit branch, integrate back to that branch instead.
-    - Integrator MUST define the task split, prompt structure, `Allowed Files`, and acceptance criteria for each round.
-    - Integrator MUST treat prompt design as part of the integration job, not as an optional extra.
-- **Fixed Agent Pool**:
-    - The contributor pool is restricted to exactly four contributor identities:
-        - Frontend Contributor Agent
-        - Backend Contributor Agent
-        - Core Contributor Agent
-        - CLI Contributor Agent
-    - Integration Agent is the only integrator identity.
-    - Do not invent temporary contributor role names without updating this source-of-truth first.
-    - Exact file boundaries are still defined per task by the Integrator.
-- **Contributor Boundaries**:
-    - Contributors MUST edit only assigned files (`Allowed Files`).
-    - If required changes exceed scope, stop and hand off to Integrator.
-- **Preflight**:
-    - Before editing, run `git status --porcelain`.
-    - If unrelated dirty changes exist, do not proceed blindly; report and wait.
-- **Isolation**:
-    - MUST use one `git worktree` + one branch per agent/task.
-    - Do not let multiple agents co-edit the same dirty worktree.
-- **Handoff Required**:
-    - Provide commit hashes, changed files, test results, and known risks.
-    - Dirty worktree changes without a committed handoff are not a complete contributor deliverable.
-- **Never**:
-    - Never revert/overwrite others' unintegrated work.
-    - Never use destructive git cleanup on shared work.
+- Use five agent families:
+    - Documentation Agents
+    - Planning Agents
+    - Implementation Agents
+    - Review Agents
+    - Test Agents
+- Documentation Agents:
+    - discuss with humans
+    - update SoT and architecture/contracts before coding when needed
+- Planning Agents:
+    - compare docs and code
+    - produce a written plan artifact
+    - split implementation slices
+    - enumerate missing integration/E2E coverage for Test Agents
+- Implementation Agents:
+    - restricted to Frontend / Backend / Core / CLI lanes
+    - own code + unit tests only
+    - do not own integration/E2E or final branch integration
+- Review Agents:
+    - one active Review Agent per delivery line
+    - own cherry-pick, conflict resolution, final verification, and mainline integration
+- Test Agents:
+    - own integration tests and E2E tests
+    - execute against the plan artifact and SoT
+- Every agent must use an isolated worktree + branch and run `git status --porcelain` before editing.
+- Do not skip the order:
+    - docs -> planning -> implementation -> test -> review
 ```

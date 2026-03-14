@@ -11,14 +11,14 @@ status: stable
 owner: docs-team
 audience: team
 scope: "定義 migration 過程中 reference docs、shared core、adapter、legacy behavior 的裁決順序"
-version: v1.3.0
+version: v1.3.1
 last_updated: 2026-03-14
 updated_by: codex
 ---
 
 # Source of Truth Order
 
-本文件定義目前 reference 體系的裁決順序，避免 Contributor Agent 在 shared contract、backend authority、page spec、CLI surface 與 implementation 之間自行猜測。
+本文件定義目前 reference 體系的裁決順序，避免 Planning / Implementation / Test / Review Agents 在 shared contract、backend authority、page spec、CLI surface 與 implementation 之間自行猜測。
 
 !!! warning "Concern-first resolution"
     不可只看「哪個檔案層級比較前面」就裁決衝突。

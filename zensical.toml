@@ -204,7 +204,7 @@ nav = [
         { "Phase Gates" = "reference/guardrails/execution-verification/phase-gates.md" },
         { "Prompt Grading" = "reference/guardrails/execution-verification/prompt-grading.md" },
         { "Multiple Agent Collaboration" = "reference/guardrails/execution-verification/multi-agent-collaboration.md" },
-        { "Contributor Reporting Format" = "reference/guardrails/execution-verification/contributor-reporting.md" },
+        { "Agent Handoff Formats" = "reference/guardrails/execution-verification/contributor-reporting.md" },
       ] },
       { "Code Quality" = [
         { "Code Style" = "reference/guardrails/code-quality/code-style.md" },

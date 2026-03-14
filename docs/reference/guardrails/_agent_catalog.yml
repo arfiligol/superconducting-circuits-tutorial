@@ -139,6 +139,33 @@ rules:
     triggers: ["ci", "github actions", "workflow", "pipeline", "gate"]
     touched_paths: [".github/**", ".github/workflows/**", "frontend/**", "backend/**", "cli/**", "desktop/**", "docs/**"]
 
+  - id: multi-agent-collaboration
+    file: execution-verification/multi-agent-collaboration.md
+    tier: critical
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks involve agent roles, planning, handoff, review, or multi-agent delivery flow.
+    triggers: ["agent", "agents", "planning", "review", "implementation", "test agent", "handoff", "collaboration", "multi-agent"]
+    touched_paths: ["docs/reference/guardrails/**", "docs/**", "frontend/**", "backend/**", "cli/**", "src/**", "tests/**"]
+
+  - id: contributor-reporting
+    file: execution-verification/contributor-reporting.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks require planning artifacts, delivery reports, or review merge summaries.
+    triggers: ["report", "handoff", "delivery report", "plan artifact", "merge report"]
+    touched_paths: ["docs/reference/guardrails/**", "docs/**", "frontend/**", "backend/**", "cli/**", "src/**", "tests/**"]
+
+  - id: prompt-grading
+    file: execution-verification/prompt-grading.md
+    tier: standard
+    load: on_demand
+    activation_mode: model_decision
+    description: Apply when tasks involve prompt sizing, work slicing, or planning/review task decomposition.
+    triggers: ["prompt", "slice", "milestone", "phase push", "task decomposition", "planning"]
+    touched_paths: ["docs/reference/guardrails/**", "docs/**", "frontend/**", "backend/**", "cli/**", "src/**", "tests/**"]
+
   - id: ui-ux-index
     file: ui-ux-quality/index.md
     tier: standard

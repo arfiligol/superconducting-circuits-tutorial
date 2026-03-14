@@ -10,9 +10,9 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "定義 migration phases 最低驗收條件與對應測試類型"
-version: v1.1.0
-last_updated: 2026-03-12
+scope: "定義 migration phases 最低驗收條件、對應測試類型與深度並行前置條件"
+version: v1.2.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -28,8 +28,9 @@ updated_by: codex
 - canonical contract registry
 - source-of-truth ordering
 - identity/workspace minimal model
-- task semantics contract
+- task runtime / processor contract
 - error model
+- planning artifact format
 
 ## Minimum Gates by Phase
 
@@ -56,7 +57,7 @@ updated_by: codex
 
 ## Entry Criteria for Deep Implementation
 
-在 Contributor Agent 可以大規模並行開工前，至少要有：
+在 Implementation Agents 與 Test Agents 可以大規模並行開工前，至少要有：
 
 - [Source of Truth Order](../project-basics/source-of-truth-order.md)
 - [Contract Versioning](../code-quality/contract-versioning.md)
@@ -65,6 +66,8 @@ updated_by: codex
 - [App / Backend / Tasks & Execution](../../app/backend/tasks-execution.md)
 - [Parity Matrix](../../architecture/parity-matrix.md)
 - [Canonical Contract Registry](../../architecture/canonical-contract-registry.md)
+- [Multiple Agent Collaboration](./multi-agent-collaboration.md)
+- [Agent Handoff Formats](./contributor-reporting.md)
 
 ## Agent Rule { #agent-rule }
 
@@ -76,8 +79,9 @@ updated_by: codex
     - canonical contract registry
     - source-of-truth ordering
     - identity/workspace minimal model
-    - task semantics contract
+    - task runtime / processor contract
     - error model
+    - planning artifact format
 - If a public contract changes during any phase, update the parity matrix, contract registry, and relevant tests in the same delivery line.
 - Treat recovery/reattach tests as mandatory for workflow-parity phases, not optional polish.
 ```

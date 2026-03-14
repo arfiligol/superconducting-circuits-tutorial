@@ -2,38 +2,102 @@
 aliases:
   - "Contributor Agent 回報格式"
   - "Contributor Reporting"
+  - "Agent Handoff Formats"
 tags:
   - audience/team
   - sot/true
 status: stable
 owner: docs-team
 audience: team
-scope: "Contributor Agent 標準回報格式，供 Integrator 與 PM 直接複製貼上使用"
-version: v1.1.0
-last_updated: 2026-03-05
-updated_by: docs-team
+scope: "Planning / Implementation / Test / Review Agents 的標準交接格式"
+version: v2.0.0
+last_updated: 2026-03-14
+updated_by: codex
 ---
 
-# Contributor Agent 回報格式
+# Agent Handoff Formats
 
-規範 Contributor Agent 的回報結構，讓使用者可直接閱讀，且可直接複製貼上給 Integrator Agent 進行整合判斷。
+規範 Planning / Implementation / Test / Review Agents 的交接結構，讓人類與其他 agents 可以直接消費。
 
-!!! important "目標"
-    回報必須同時滿足兩件事：
+!!! important "Goal"
+    handoff 必須同時滿足兩件事：
     1) 人類可快速看懂成果與風險
-    2) Integrator Agent 可直接機器化提取 commit / 檔案 / 測試 / 風險
+    2) 下一個 agent 可直接提取 commits、檔案、測試、風險與待決策事項
 
-## 標準回報模板（必須使用）
+## Plan Artifact v1
 
 ```markdown
-## Contributor Report v1
+## Plan Artifact v1
 
 ### 0) 任務資訊
 - Agent: <name>
 - Task ID / Topic: <id-or-title>
+- 狀態: <draft|ready|blocked>
+
+### 1) Goal
+- 目標: <what was requested>
+- 使用者成功條件: <what must become true>
+
+### 2) Source of Truth
+- Primary docs:
+  - <path>
+  - <path>
+- Current authority owner: <doc or surface>
+
+### 3) Current Implementation State
+- Existing code paths:
+  - <path>: <state>
+- Current gaps:
+  - <gap-1>
+  - <gap-2>
+
+### 4) Implementation Slices
+- Frontend:
+  - Allowed Files: <summary>
+  - Goal: <slice goal>
+- Backend:
+  - Allowed Files: <summary>
+  - Goal: <slice goal>
+- Core:
+  - Allowed Files: <summary>
+  - Goal: <slice goal>
+- CLI:
+  - Allowed Files: <summary>
+  - Goal: <slice goal>
+
+### 5) Test Backlog
+- Integration:
+  - <scenario-1>
+  - <scenario-2>
+- E2E:
+  - <scenario-1>
+  - <scenario-2>
+
+### 6) Verification Matrix
+- Unit:
+  - <command>
+- Integration:
+  - <command or planned owner>
+- E2E:
+  - <command or planned owner>
+
+### 7) Risks / Open Decisions
+- <risk-1>
+- <risk-2>
+```
+
+## Delivery Report v1
+
+```markdown
+## Delivery Report v1
+
+### 0) 任務資訊
+- Agent: <name>
+- Role: <frontend|backend|core|cli|test>
+- Task ID / Topic: <id-or-title>
 - Branch / Worktree: <branch-or-path>
 - Scope (Allowed Files): <summary>
-- 狀態: <done|blocked|needs-integrator>
+- 狀態: <done|blocked|needs-review>
 
 ### 1) Summary
 - 目標: <what was requested>
@@ -42,14 +106,12 @@ updated_by: docs-team
 ### 2) Preflight 與邊界遵守
 - 開工前 `git status --porcelain`: <clean|dirty + note>
 - 是否遇到跨界需求: <no|yes + reason>
-- 跨界處理方式: <n/a|handoff-to-integrator>
+- 跨界處理方式: <n/a|handoff-to-planning-or-review>
 
 ### 3) 變更內容
 - Commit(s):
   - `<hash>` `<message>`
-  - `<hash>` `<message>`
 - Changed Files:
-  - `<path>`: <why changed>
   - `<path>`: <why changed>
 
 ### 4) 文件更新（若有）
@@ -58,71 +120,93 @@ updated_by: docs-team
 ### 5) 測試結果
 - Commands:
   - `<command>`
-  - `<command>`
 - Results:
   - `<pass/fail + key output>`
 
-### 6) API Touched Matrix（必填）
+### 6) API / Contract Touched Matrix
 - Public APIs touched:
   - `<module.path.symbol>`: `<added|changed|removed|none>`
-  - `<module.path.symbol>`: `<impact summary>`
 - Downstream callers checked:
   - `<caller-path-or-n/a>`
 
-### 7) Playwright / E2E（若任務要求）
-- Scenarios:
-  - <scenario-1>
-  - <scenario-2>
-- Evidence:
-  - `<screenshot-abs-path>`
-  - `<log-or-report-abs-path>`
-- 結果: <pass/fail>
+### 7) Integration / E2E Impact
+- Needed but not owned here:
+  - <integration gap>
+  - <e2e gap>
 
-### 8) 已知風險與限制
+### 8) Known Risks
 - <risk-1>
 - <risk-2>
 
-### 9) 需要 Integrator 決策的事項（若有）
+### 9) Needs Review Agent Decision
 - <decision-needed-1>
-- <decision-needed-2>
-
-### 10) 回退資訊
-- 建議回退 commit: `<hash>`（若需要）
 ```
 
-## 必填欄位
+## Review Merge Report v1
 
-- 必須包含：`Commit(s)`、`Changed Files`、`測試結果`、`已知風險`、`API Touched Matrix`
-- 若任務要求 Playwright，必須包含：`Scenarios` + `Evidence` + `結果`
-- `Changed Files` 必須附上每檔案變更理由，不可只有路徑清單
+```markdown
+## Review Merge Report v1
 
-## 可讀性規範
+### 0) Delivery Line
+- Topic: <topic>
+- Target Branch: <main-or-other>
+- Review Agent: <name>
+
+### 1) Accepted Inputs
+- Planning artifact:
+  - <path or link>
+- Delivery reports:
+  - <source-1>
+  - <source-2>
+
+### 2) Integrated Commits
+- `<hash>` `<message>`
+- `<hash>` `<message>`
+
+### 3) Conflict Resolution
+- <none or summary>
+
+### 4) Final Verification
+- `<command>`: <result>
+- `<command>`: <result>
+
+### 5) Remaining Risks
+- <risk-1>
+
+### 6) Mainline Status
+- <merged|queued|blocked>
+```
+
+## Required Sections
+
+- Planning handoff 必須包含：`Source of Truth`、`Current Implementation State`、`Implementation Slices`、`Test Backlog`
+- Delivery handoff 必須包含：`Commit(s)`、`Changed Files`、`測試結果`、`Known Risks`、`API / Contract Touched Matrix`
+- Review handoff 必須包含：`Integrated Commits`、`Final Verification`、`Mainline Status`
+
+## Readability Rules
 
 - 先給結論，再給證據
 - 不要貼整段長 log，改為「指令 + 結果摘要 + 證據路徑」
 - 回報用語必須區分：
   - **已完成**
   - **已驗證**
-  - **待 Integrator 決策**
-
----
+  - **待 Review / Planning 決策**
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
-## Contributor Reporting Format
-- Contributors MUST use `Contributor Report v1` structure for handoff.
-- Mandatory sections:
-    - Task info
-    - Commit hashes
-    - Changed files with reason
-    - Test commands and results
-    - API touched matrix
-    - Known risks
-- If Playwright is required:
-    - MUST include scenarios, evidence paths, and pass/fail result.
+## Agent Handoff Formats
+- Planning Agents MUST produce a written `Plan Artifact v1`.
+- Implementation Agents and Test Agents MUST hand off using `Delivery Report v1`.
+- Review Agents MUST summarize integration and verification using `Review Merge Report v1`.
+- Delivery reports MUST include:
+    - commit hashes
+    - changed files with reason
+    - test commands and results
+    - API / contract touched matrix
+    - known risks
 - Reporting quality rules:
-    - Lead with conclusion, then evidence.
-    - Summarize logs; do not dump long raw logs.
-    - Explicitly separate completed work vs verified work vs items needing integrator decision.
+    - lead with conclusion, then evidence
+    - summarize logs instead of dumping long raw output
+    - explicitly separate completed work, verified work, and items needing review/planning decisions
 ```
