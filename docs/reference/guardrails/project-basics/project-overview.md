@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite branch 的產品使命、功能範疇、desktop 支援與 migration 方向。
-version: v2.2.0
-last_updated: 2026-03-12
+version: v2.3.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -20,6 +20,18 @@ updated_by: codex
 
 本專案不再把 NiceGUI 視為主要產品落點。
 當前 branch 的目標是把既有需求重構為 **前後端分離的超導電路工作台**，同時保留 CLI 與科學計算核心，並支援本地 desktop runtime。
+
+!!! info "How to read this page"
+    先用這頁確認產品使命與核心 surface，再去看 `Tech Stack`、`Folder Structure`、`Backend Architecture` 等執行層 guardrails。這頁定的是產品邊界，不是實作細節。
+
+## Overview Map
+
+| 區塊 | 回答的問題 |
+| --- | --- |
+| Mission | 這個產品在解什麼問題 |
+| Product Goals | 這次 rewrite 真正要交付什麼 |
+| Research Workflow Goals | 研究流程要怎麼被整合成同一個產品 |
+| System Success Criteria | 什麼狀態才算 rewrite 成功 |
 
 ## Mission
 
@@ -69,6 +81,9 @@ updated_by: codex
 - Electron 只作為 desktop shell，不改變系統邊界
 - task / dataset / result 可在 refresh、reconnect、重開後重新 attach 與重建
 
+!!! success "Success bar"
+    rewrite 的完成條件不是「畫面換成 Next.js」，而是 canonical definition、task/result recovery、資料 provenance、CLI 與 desktop shell 都能在同一套邊界下成立。
+
 ## Scope
 
 ### Core Product Surfaces
@@ -96,6 +111,9 @@ updated_by: codex
 - CLI：維持一級公民，與 API/核心服務共用規則而非複製邏輯
 - Desktop：允許使用 **Electron** 包裝 frontend，形成可本地執行的 desktop app
 - Legacy：既有 NiceGUI 僅作為 migration 參考，不再作為新功能預設實作層
+
+??? note "CLI position"
+    CLI 仍是正式產品 surface，但已收斂為 standalone-first。這不改變 workbench 的核心產品定位，只是避免把 app collaboration model 硬套到 CLI。
 
 ## Target Audience
 

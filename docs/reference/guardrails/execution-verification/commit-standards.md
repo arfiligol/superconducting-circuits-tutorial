@@ -9,14 +9,25 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Commit 時機、粒度、格式規範"
-version: v1.0.0
-last_updated: 2026-01-27
+version: v1.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # Commit Standards
 
 規範 **何時** 以及 **如何** 提交程式碼。
+
+!!! info "Use this page before creating a commit"
+    先判斷這是不是單一邏輯單元，再確認檢查是否已通過。若你需要寫很長的說明來解釋「為什麼這個 commit 同時改很多不相關的東西」，通常就代表 commit 粒度太大。
+
+## Decision Map
+
+| 問題 | 合格答案 |
+| --- | --- |
+| 這是單一邏輯單元嗎？ | 一個 feature、一個 bugfix、一個 refactor |
+| 現在適合 commit 嗎？ | 編譯、型別、測試、必要檢查都已通過 |
+| 這個 commit 能獨立 revert 嗎？ | 可以，不會讓其他功能一起壞掉 |
 
 ## 何時應該 Commit
 
@@ -42,6 +53,9 @@ updated_by: docs-team
 | `test:` | 測試新增/修改 | `test: add unit tests for UoW` |
 | `chore:` | 維護任務 | `chore: update dependencies` |
 
+!!! warning "Do not hide mixed changes"
+    如果同一個 commit 同時混了 feature、bugfix、格式化與文件整理，review 與 revert 成本都會上升。拆開比一次塞完更重要。
+
 ## Commit Message 格式
 
 ```
@@ -63,6 +77,9 @@ feat: add colored logging with Rich
 
 Closes #42
 ```
+
+??? note "WIP commits"
+    只有在團隊流程明確接受、且 commit message 有清楚 `WIP:` 前綴時，才允許未完成但需要保存現場的 commit。
 
 ---
 

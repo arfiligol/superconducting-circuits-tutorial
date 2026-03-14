@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite branch 中 frontend/backend/cli/desktop/core 的放置邊界。
-version: v2.2.0
-last_updated: 2026-03-12
+version: v2.3.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -20,6 +20,9 @@ updated_by: codex
 
 本 branch 的目標結構是為了支援前後端分離，同時保留現有科學計算核心與文件系統。
 舊的 NiceGUI 程式碼暫時保留在 legacy 區，但不應再作為新功能落點。
+
+!!! info "How to use this page"
+    當你不確定新檔案該放哪裡時，先看 placement rules，而不是先照習慣找最近的資料夾塞進去。這頁的重點是 owner boundary，不是完整檔案樹教學。
 
 ## Target Layout
 
@@ -70,6 +73,9 @@ superconducting-circuits-tutorial/
 | 舊 NiceGUI 修補 | `src/app/`，且需明確標註為 migration-only |
 | committed OpenAPI contract snapshot | root `openapi.json` |
 
+!!! warning "Do not invent new top-level homes"
+    若現有邊界已能表達責任，就不要再新增新的 top-level package 或平行資料夾。先修正 placement，再考慮目錄擴張。
+
 ## Related Blueprints
 
 - backend 的責任分層與模組邊界，參見 [Backend Architecture](./backend-architecture.md)
@@ -83,6 +89,9 @@ superconducting-circuits-tutorial/
 4. CLI 直接依賴共享 services/core，不複製業務邏輯
 5. `backend/sc_backend/` 是 backend 對 CLI 暴露的穩定 facade，CLI 不得直接 import `backend/src/app/*`
 6. `src/core/` 不得依賴 Next.js、FastAPI、Electron 或 CLI framework
+
+??? note "Why the full tree is still shown"
+    這頁保留完整 target layout，是因為 folder boundary 本身就是 reference contract。其餘 guardrails 不需要都像這樣展開。
 
 ## Agent Rule { #agent-rule }
 

@@ -11,14 +11,26 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: frontend theme system、semantic tokens 與 dark mode 規範。
-version: v2.0.0
-last_updated: 2026-03-11
+version: v2.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # Theming
 
 主題系統必須為 Next.js frontend 服務，而不是把顏色散落在 component 內。
+
+!!! info "Use this page for theme decisions"
+    這頁定的是 theme ownership 與 token baseline。若只是單一元件的視覺調整，仍應回到 semantic token，而不是直接硬編碼色值。
+
+## Theme Map
+
+| concern | baseline |
+| --- | --- |
+| theme runtime | `next-themes` |
+| supported modes | `light` / `dark` / `system` |
+| color semantics | 用 token，不用 raw utility 或 hex 當產品語意 |
+| state preservation | theme switch 不得清空表單或選取狀態 |
 
 ## Theme Management
 
@@ -39,6 +51,9 @@ updated_by: docs-team
 - `destructive`
 
 禁止直接把 `bg-white`、`text-black`、硬編碼 hex 當成產品語意。
+
+!!! warning "Semantic tokens first"
+    Tailwind utility 可以表達佈局與狀態，但產品色彩語意必須先經過 token。不要讓 component 自己決定整個產品的色彩語言。
 
 ## Rules
 

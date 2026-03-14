@@ -11,14 +11,25 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: CLI 指令的放置位置、責任邊界與文件規範。
-version: v1.0.0
-last_updated: 2026-03-11
+version: v1.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # Script Authoring
 
 CLI 在本專案中不是附屬工具，而是正式產品介面之一。
+
+!!! info "Use this page for CLI boundary decisions"
+    這頁回答新 command 應放哪裡、command 本身該負責什麼，以及 legacy script 只應保留到什麼程度。
+
+## Placement Map
+
+| 如果要做 | 應放位置 |
+| --- | --- |
+| 新的正式 CLI workflow | `cli/` |
+| migration bridge 或舊入口維護 | legacy `src/scripts/`，且不得繼續長新 workflow |
+| 真正業務邏輯 | shared service 或 `src/core/` |
 
 ## Placement
 
@@ -31,6 +42,9 @@ CLI 在本專案中不是附屬工具，而是正式產品介面之一。
 - 每個 command 只處理參數、輸入/輸出、錯誤顯示
 - 真正的 workflow 呼叫共享 service 或 `src/core/`
 - command 名稱使用 `kebab-case`
+
+!!! warning "Do not duplicate workflow logic"
+    CLI command 可以組裝輸入與輸出，但不能把 API handler 或 service 內部的業務流程整段複製過來。
 
 ## Rules
 

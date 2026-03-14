@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "文件設計規範索引：Standards / Macro Style / Micro Style / Maintenance / Domain Extensions"
-version: v1.2.0
-last_updated: 2026-03-13
+version: v1.3.0
+last_updated: 2026-03-14
 updated_by: team
 ---
 
@@ -20,7 +20,18 @@ updated_by: team
 
 文件設計規範索引，確保文件的一致性與可維護性（對齊本專案 `Native zh-TW Build` 架構）。
 
----
+!!! info "How to read this section"
+    先看 `Standards` 與 `Macro/Micro Style` 建立共通語法，再看 `Maintenance` 與 `Domain Extensions`。這頁是 documentation design 的入口，不是把每份子規範再重寫一次。
+
+## Page Map
+
+| 先讀什麼 | 目的 |
+| --- | --- |
+| Standards | 定義文件分類、frontmatter、核心邊界 |
+| Macro Style / Information Layout | 決定頁面編排、資訊分層、overview/index 節奏 |
+| Micro Style / Writing & Visual Elements | 決定語氣、段落、admonitions、tabs 等元件使用 |
+| Maintenance | 定義來源樹、更新流程、build/check |
+| Domain Extensions | 對特定類型文件補更多專用寫法 |
 
 ## 快速參考
 
@@ -33,8 +44,6 @@ updated_by: team
 | [Explanation Physics](explanation-physics.md) | Explanation/Physics 教學定位、章節骨架與跨文件引用規則 | [#agent-rule](explanation-physics.md#agent-rule) |
 | [Page Reference Specs](page-reference-specs.md) | App frontend pages 技術文件的固定骨架、命名與驗收規則 | [#agent-rule](page-reference-specs.md#agent-rule) |
 
----
-
 ## 層級分工
 
 | 規範 | 負責什麼 | 不負責什麼 |
@@ -45,7 +54,8 @@ updated_by: team
 | Maintenance | 單語來源樹、frontmatter 更新、build/check 流程 | 文件內容本身的結構設計 |
 | Page Reference Specs | App frontend page 規格的固定骨架與驗收方式 | 其他類型文件的通用編排 |
 
----
+!!! tip "Read order"
+    若你只想快速把一頁寫對，通常的順序是 `Standards -> Macro Style -> Micro Style -> 該領域的 extension page`。
 
 ## Domain Extensions
 
@@ -57,8 +67,6 @@ updated_by: team
 | [Explanation Physics](explanation-physics.md) | Physics explanation 的敘事骨架、引用與邊界 |
 | [Circuit Diagrams](../../../how-to/contributing/circuit-diagrams.md) | Schemdraw → SVG 的圖表寫作與輸出流程 |
 | [CLI Docs Automation](../../../how-to/contributing/cli-docs-automation.md) | CLI 文件頁的自動化與同步流程 |
-
----
 
 ## 正式術語
 
@@ -72,8 +80,6 @@ updated_by: team
 - 使用單一 build，輸出到 `/`
 - 編輯來源為 `docs/`，建置前產生 `docs/docs_zhtw/` staging tree
 - 不再維護英文站點與 `.en.md` 對應頁
-
----
 
 ## Related
 

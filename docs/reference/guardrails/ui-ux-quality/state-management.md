@@ -11,12 +11,15 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: frontend server/client/form state 的策略。
-version: v1.0.0
-last_updated: 2026-03-11
+version: v1.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # State Management
+
+!!! info "How to read this page"
+    先判斷狀態屬於 server、UI、form 還是 URL，再選工具。不要從工具喜好反推狀態邊界。
 
 ## State Categories
 
@@ -26,6 +29,9 @@ updated_by: docs-team
 | Client UI State | React Context 或局部 state | shell 狀態、選取狀態、暫時 UI 狀態 |
 | Form State | React Hook Form + Zod | 表單驗證與提交 |
 | URL State | route params / search params | 可分享、可重播的頁面狀態 |
+
+!!! warning "Do not hide shareable state"
+    如果某個狀態能影響使用者看到的資料集合或頁面結果，而且需要可重播/可分享，就不應被偷偷藏在 global context 或 local component state。
 
 ## Rules
 

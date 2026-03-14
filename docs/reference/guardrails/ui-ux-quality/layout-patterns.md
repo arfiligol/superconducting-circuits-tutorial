@@ -11,12 +11,23 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: App Router layout、workspace shell 與 data-dense 頁面結構規範。
-version: v2.0.0
-last_updated: 2026-03-11
+version: v2.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # Layout Patterns
+
+!!! info "Use this page for shell and page-structure decisions"
+    這頁回答 layout boundary 應該放在哪一層，以及 data-dense 頁面應該怎麼排。它不替代 page-level spec。
+
+## Layout Map
+
+| 層級 | 主要責任 |
+| --- | --- |
+| Root layout | providers、theme、fonts、global styles |
+| Workspace layout | sidebar、top bar、shared workspace context |
+| Feature layout | tabs、breadcrumb、sub-navigation |
 
 ## App Router Responsibilities
 
@@ -37,6 +48,9 @@ updated_by: docs-team
 - 左側：table / list / search / filters
 - 右側：detail panel / chart / analysis output
 - mobile 下需可堆疊
+
+!!! tip "Good default"
+    若頁面同時有列表、搜尋、過濾與 detail/preview，優先從 master-detail 開始，而不是先把所有東西往單欄直堆。
 
 ## Spacing
 

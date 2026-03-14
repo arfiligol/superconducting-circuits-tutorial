@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "定義 API、CLI、worker 與 recovery flow 的統一錯誤分類與處理規範"
-version: v1.1.0
-last_updated: 2026-03-12
+version: v1.2.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -20,18 +20,24 @@ updated_by: codex
 
 本專案的錯誤處理必須可被 frontend、backend、CLI、worker 共用理解，而不是每一層各自發明一套訊息。
 
+!!! warning "Code, not message text"
+    對外 surface 必須依穩定 `error_code` / `category` 工作。
+    frontend、CLI 與 recovery flow 不得依賴 message text matching。
+
 ## Required Error Categories
 
-- `auth_required`
-- `permission_denied`
-- `validation_error`
-- `not_found`
-- `conflict`
-- `task_not_ready`
-- `task_execution_failed`
-- `persistence_error`
-- `trace_store_error`
-- `internal_error`
+| Category | Meaning |
+| --- | --- |
+| `auth_required` | 缺少有效身份或 session |
+| `permission_denied` | 身份存在，但不允許該操作 |
+| `validation_error` | 輸入、payload 或 contract 不合法 |
+| `not_found` | 目標資源不存在或不可解析 |
+| `conflict` | 資源版本、狀態或 lifecycle 衝突 |
+| `task_not_ready` | 依賴的 task / artifact 尚未到可讀狀態 |
+| `task_execution_failed` | execution 已跑完但以失敗狀態結束 |
+| `persistence_error` | metadata store / relational store 問題 |
+| `trace_store_error` | numeric trace / artifact store 問題 |
+| `internal_error` | 未分類的內部錯誤 |
 
 ## Public Error Envelope
 
@@ -48,10 +54,12 @@ updated_by: codex
 
 ## Surface Mapping
 
-- backend API：回傳穩定 HTTP status + error envelope
-- CLI：stderr message 應保留 `error_code` 或等價 machine-readable signal
-- worker：structured log / result error payload 必須可對應到 public category
-- frontend：以 `error_code` 與 `retryable` 驅動 UI，而不是靠 message text
+| Surface | Rule |
+| --- | --- |
+| backend API | 回傳穩定 HTTP status + error envelope |
+| CLI | stderr message 應保留 `error_code` 或等價 machine-readable signal |
+| worker | structured log / result error payload 必須可對應到 public category |
+| frontend | 以 `error_code` 與 `retryable` 驅動 UI，而不是靠 message text |
 
 ## Retryability Rules
 
@@ -68,11 +76,17 @@ updated_by: codex
 | `trace_store_error` | 視 storage 層；需標記 |
 | `internal_error` | 否，除非明確標記可重試 |
 
+!!! tip "Retryability is part of the contract"
+    `retryable` 不是 logging 補充資訊，而是 consumer decision signal。
+    只要 surface 允許 retry / resume / reattach，就必須明確標記。
+
 ## Recovery-specific Rules
 
-- task submit 失敗、result attach 失敗、recovery attach 失敗必須有獨立 `error_code`
-- 不可把 reconnect / recovery 失敗全部折疊成 generic `internal_error`
-- `debug_ref` 優先重用 `task_id`、request id 或 trace/result ref
+| Rule | Meaning |
+| --- | --- |
+| task submit 失敗、result attach 失敗、recovery attach 失敗必須有獨立 `error_code` | 不可全部折疊成 generic runtime failure |
+| reconnect / recovery 失敗不可全部折疊成 generic `internal_error` | recovery path 需要可診斷 |
+| `debug_ref` 優先重用 `task_id`、request id 或 trace/result ref | 讓 logs、queue、UI 可交叉追蹤 |
 
 ## Agent Rule { #agent-rule }
 

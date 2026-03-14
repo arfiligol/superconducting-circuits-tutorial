@@ -9,14 +9,25 @@ status: stable
 owner: docs-team
 audience: team
 scope: "數據處理規範：原始數據唯讀、metadata DB / TraceStore 分工、Unit of Work、Zarr backend 邊界"
-version: v2.0.0
-last_updated: 2026-03-08
+version: v2.1.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
 # Data Handling
 
 數據處理與儲存規範。
+
+!!! info "What this page answers"
+    這頁回答資料應該放哪裡、誰可以寫哪一層、以及 raw data、metadata、numeric payload 之間的責任邊界。
+
+## Storage Map
+
+| 區塊 | 用途 | 不該放什麼 |
+| --- | --- | --- |
+| `data/raw/` | 原始輸入資料，唯讀保存 | import、simulation、post-processing 的輸出 |
+| metadata DB | 索引、lineage、查詢、setup metadata | 大型 numeric payload |
+| TraceStore | trace values、axes arrays、sweep arrays | UI/CLI 自己解析出的 backend 細節 |
 
 ## Directory Structure
 
@@ -44,16 +55,19 @@ data/
 
 資料責任分工必須明確：
 
-- **Metadata DB**
-  - `DesignRecord`
-  - `TraceRecord`
-  - `TraceBatchRecord`
-  - `AnalysisRunRecord`
-  - `DerivedParameterRecord`
-- **TraceStore**
-  - trace numeric payload
-  - axes arrays
-  - sweep ND arrays
+=== "Metadata DB"
+
+    - `DesignRecord`
+    - `TraceRecord`
+    - `TraceBatchRecord`
+    - `AnalysisRunRecord`
+    - `DerivedParameterRecord`
+
+=== "TraceStore"
+
+    - trace numeric payload
+    - axes arrays
+    - sweep ND arrays
 
 !!! important "No large numeric payload in metadata DB"
     大型 trace values 不應作為主要 payload 存入 SQLite/PostgreSQL JSON/BLOB。
@@ -70,14 +84,15 @@ data/
 
 所有 metadata DB 存取必須透過 Unit of Work：
 
-```python
-from core.shared.persistence import get_unit_of_work
+!!! example "Metadata write flow"
+    ```python
+    from core.shared.persistence import get_unit_of_work
 
-with get_unit_of_work() as uow:
-    design = uow.designs.get_by_name("PF6FQ_Q0")
-    uow.traces.add(new_trace)
-    uow.commit()
-```
+    with get_unit_of_work() as uow:
+        design = uow.designs.get_by_name("PF6FQ_Q0")
+        uow.traces.add(new_trace)
+        uow.commit()
+    ```
 
 ### 5. TraceStore Access
 
@@ -115,6 +130,9 @@ Trace numeric payload 的讀寫必須經由 TraceStore abstraction，而不是 U
 - [Design / Trace Schema](../../data-formats/dataset-record.md)
 - [Raw Data Layout](../../data-formats/raw-data-layout.md)
 - [Data Storage](../../../explanation/architecture/data-storage.md)
+
+??? note "Why this page does not describe every backend"
+    這頁只定 storage split 與 access boundary。若未來新增 PostgreSQL、S3-compatible Zarr 或其他 backend，仍必須保持相同 canonical contract，而不是改寫這裡的責任邊界。
 
 ---
 

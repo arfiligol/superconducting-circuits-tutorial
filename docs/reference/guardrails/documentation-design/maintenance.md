@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "文件維護規範：單語文件來源樹/暫存樹邊界、版本與 Frontmatter 更新、Zensical 檢查"
-version: v0.9.0
-last_updated: 2026-03-12
+version: v1.0.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -20,16 +20,18 @@ updated_by: codex
 
 本文件定義文件維護流程（單語來源、更新規則、檢查清單）。
 
----
+!!! info "What this page answers"
+    這頁處理的是 docs source tree、staging tree、frontmatter 更新與 build/check 流程。
+    若你要的是寫作語氣或頁面編排，請回到 `Documentation Design` 的 `Style` 規範。
 
-## 單語文件來源（必須）
+## Source Tree Map
 
-本專案目前僅維護 **單語 zh-TW 文件**：
-
-- 設定檔：`zensical.toml`
-- 主編輯來源：`docs/`
-- staging 來源：`docs/docs_zhtw/`（由 `./scripts/prepare_docs_locales.sh` 自動重建）
-- 網站輸出：`docs/site/`
+| Location | Role |
+| --- | --- |
+| `zensical.toml` | site-level config SoT |
+| `docs/` | primary edit source |
+| `docs/docs_zhtw/` | generated staging tree |
+| `docs/site/` | built output |
 
 !!! info "原生 Zensical 寫法"
     文件規範全面採用 Zensical 原生 TOML 設定。
@@ -41,9 +43,13 @@ updated_by: codex
     - 刪除/移動頁面時，必須同步更新 `zensical.toml` 導覽與相對連結
     - build/serve 前，必須先跑 `./scripts/prepare_docs_locales.sh`
 
----
-
 ## Frontmatter 更新
+
+| Change type | Minimum update |
+| --- | --- |
+| content changed | `last_updated`, `updated_by` |
+| rule/page scope changed | `version` minor or major bump |
+| typo / formatting only | patch bump |
 
 內容有改動時，至少更新：
 
@@ -56,8 +62,6 @@ updated_by: codex
 - `v0.X.0`：結構/內容新增（新增段落、規則調整）
 - `vX.0.0`：重大重組（重新分章、移動/合併文件）
 
----
-
 ## 原生 Zensical 盤點（文件層）
 
 從文件維護角度，單語文件站至少必須維持以下四類資訊一致：
@@ -67,8 +71,6 @@ updated_by: codex
 3. 所有文件修改都在 `docs/`，不得把 `docs/docs_zhtw/` 當成主編輯來源。
 4. 所有 CI / README / Contributing 文件必須與上述流程一致。
 
----
-
 ## 導覽與連結維護
 
 新增/移動文件時：
@@ -77,8 +79,6 @@ updated_by: codex
 2. 檢查所有相對連結
 3. 若文件為 SoT，確認 `tags` 含 `sot/true`
 4. 先跑 `uv run python scripts/check_docs_nav_routes.py --check-source`，避免 nav 指向不存在檔案
-
----
 
 ## Native zh-TW Build
 
@@ -98,29 +98,27 @@ updated_by: codex
     - 若修改內容後未先跑 `prepare_docs_locales.sh` 就直接 build，可能看到舊頁或 404。
     - 若修改導覽但未同步更新 `zensical.toml`，Sidebar 會出現失效路由。
 
----
-
 ## 檢查流程
 
-### 本地預覽
+=== "本地預覽"
 
-```bash
-uv run --group dev zensical serve -f zensical.toml
-```
+    ```bash
+    uv run --group dev zensical serve -f zensical.toml
+    ```
 
-### 建置檢查
+=== "建置檢查"
 
-```bash
-./scripts/prepare_docs_locales.sh
+    ```bash
+    ./scripts/prepare_docs_locales.sh
 
-uv run --group dev zensical build -f zensical.toml
+    uv run --group dev zensical build -f zensical.toml
 
-# 或使用正式靜態建置腳本
-./scripts/build_docs_sites.sh
+    # 或使用正式靜態建置腳本
+    ./scripts/build_docs_sites.sh
 
-# 檢查 nav 是否都能對應到 built html
-uv run python scripts/check_docs_nav_routes.py --check-built
-```
+    # 檢查 nav 是否都能對應到 built html
+    uv run python scripts/check_docs_nav_routes.py --check-built
+    ```
 
 !!! tip "常見問題"
     - 若本地無法直接執行 `zensical serve/build`，先確認專案根目錄存在 `zensical.toml`。

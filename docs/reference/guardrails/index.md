@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 目前 workspace 的 guardrails 總索引，供人類與 AI Agent 載入任務相關規則。
-version: v2.2.0
-last_updated: 2026-03-12
+version: v2.3.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -21,17 +21,39 @@ updated_by: codex
 本區是目前 workspace 的開發規範單一真理來源。
 這個 branch 的核心方向已改為以 **Next.js + FastAPI + CLI** 重寫既有 NiceGUI 能力，並保留科學計算核心與單語 zh-TW 文件系統。
 
-## 如何使用
+!!! info "How to read this section"
+    先看 `Project Basics`，再依工作性質進入 `Code Quality`、`UI/UX Quality`、`Execution & Verification` 或 `Documentation Design`。
+    不要把整個 guardrails tree 當成一次性必讀清單；先找 owner section，再讀子頁。
 
-- 人類開發者：先讀對應主題頁面，理解設計邊界與品質門檻。
-- AI Agent：依任務載入必要的 guardrails，不要一次全載；優先使用 `_agent_catalog.yml` 選擇。
-- 規則同步：`docs/reference/guardrails/` 是 SoT，`.agent/rules/` 是已安裝版本，需與 Agent Rule 區塊同步。
+=== "Human Developers"
 
-## 快速參考
+    - 先確認目前任務屬於哪一個 concern。
+    - 只打開與當前修改直接相關的 section。
+    - 若要改變架構方向、合作方式或 SoT，先回到 `Project Basics` 或 `Execution & Verification`。
 
-### Project Basics
+=== "AI Agents"
 
-| 規範 | 說明 | Agent Rule |
+    - 先用 `_agent_catalog.yml` 選擇規則，不要一次全載。
+    - 先讀 concern owner，再讀 touched-area rules。
+    - 若 owner docs 與 consumer docs 衝突，以 [Source of Truth Order](./project-basics/source-of-truth-order.md) 裁決。
+
+!!! warning "Guardrails are owner documents"
+    Guardrails 不是風格建議集，也不是可以自由略過的提示。
+    若任務牽涉到這裡定義的 concern，相關規則必須先被載入，再進行設計或實作。
+
+## Section Map
+
+| Section | Use this when | Primary focus |
+| --- | --- | --- |
+| [Project Basics](./project-basics/index.md) | 任務會改變產品方向、技術選型、資料權威或 repo 結構 | mission、stack、folder layout、SoT ordering |
+| [Code Quality](./code-quality/index.md) | 任務會改變實作邊界、service pattern、contract handling 或 error/logging behavior | implementation discipline |
+| [UI/UX Quality](./ui-ux-quality/index.md) | 任務會改變 frontend shell、layout、state、routing、component interaction | app frontend quality baseline |
+| [Execution & Verification](./execution-verification/index.md) | 任務需要 build、test、CI、handoff、multi-agent planning 或 phase acceptance | delivery and verification rules |
+| [Documentation Design](./documentation-design/documentation.md) | 任務直接在寫 docs、改 docs IA、frontmatter 或 page specs | documentation writing and layout |
+
+## Project Basics
+
+| Page | Focus | Agent Rule |
 | --- | --- | --- |
 | [Project Basics](./project-basics/index.md) | 專案目標、技術方向、目錄結構索引 | [#agent-rule](./project-basics/index.md#agent-rule) |
 | [Project Overview](./project-basics/project-overview.md) | Data Browser / Editor / Simulation / Characterization & Analysis / CLI 範疇 | [#agent-rule](./project-basics/project-overview.md#agent-rule) |
@@ -40,9 +62,9 @@ updated_by: codex
 | [Backend Architecture](./project-basics/backend-architecture.md) | headless backend 的責任邊界與分層 | [#agent-rule](./project-basics/backend-architecture.md#agent-rule) |
 | [Source of Truth Order](./project-basics/source-of-truth-order.md) | reference、shared core、adapter、legacy 衝突時的裁決順序 | [#agent-rule](./project-basics/source-of-truth-order.md#agent-rule) |
 
-### Code Quality
+## Code Quality
 
-| 規範 | 說明 | Agent Rule |
+| Page | Focus | Agent Rule |
 | --- | --- | --- |
 | [Code Quality](./code-quality/index.md) | 程式品質總覽 | [#agent-rule](./code-quality/index.md#agent-rule) |
 | [Code Style](./code-quality/code-style.md) | Python / TypeScript 的共同撰寫原則 | [#agent-rule](./code-quality/code-style.md#agent-rule) |
@@ -54,9 +76,9 @@ updated_by: codex
 | [Contract Versioning](./code-quality/contract-versioning.md) | canonical contracts 的版本與相容性策略 | [#agent-rule](./code-quality/contract-versioning.md#agent-rule) |
 | [Error Handling](./code-quality/error-handling.md) | API、CLI、worker 與 recovery flow 共用錯誤模型 | [#agent-rule](./code-quality/error-handling.md#agent-rule) |
 
-### UI/UX Quality
+## UI/UX Quality
 
-| 規範 | 說明 | Agent Rule |
+| Page | Focus | Agent Rule |
 | --- | --- | --- |
 | [UI/UX Quality](./ui-ux-quality/index.md) | Next.js frontend 的 UI/UX 總覽 | [#agent-rule](./ui-ux-quality/index.md#agent-rule) |
 | [Theming](./ui-ux-quality/theming.md) | semantic tokens、dark mode、theme provider | [#agent-rule](./ui-ux-quality/theming.md#agent-rule) |
@@ -66,9 +88,9 @@ updated_by: codex
 | [Accessibility](./ui-ux-quality/accessibility.md) | a11y 與 keyboard/ARIA 規則 | [#agent-rule](./ui-ux-quality/accessibility.md#agent-rule) |
 | [Routing](./ui-ux-quality/routing.md) | Next.js App Router 路由策略 | [#agent-rule](./ui-ux-quality/routing.md#agent-rule) |
 
-### Execution & Verification
+## Execution & Verification
 
-| 規範 | 說明 | Agent Rule |
+| Page | Focus | Agent Rule |
 | --- | --- | --- |
 | [Execution & Verification](./execution-verification/index.md) | build / lint / test / CI 索引 | [#agent-rule](./execution-verification/index.md#agent-rule) |
 | [Build Commands](./execution-verification/build-commands.md) | frontend / backend / CLI / docs 常用指令 | [#agent-rule](./execution-verification/build-commands.md#agent-rule) |
@@ -76,16 +98,23 @@ updated_by: codex
 | [Testing](./execution-verification/testing.md) | pytest / Vitest / Playwright / docs checks | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI Gates](./execution-verification/ci-gates.md) | rewrite branch 的合併品質門檻 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
 | [Phase Gates](./execution-verification/phase-gates.md) | migration phase 的最低驗收條件與測試對照 | [#agent-rule](./execution-verification/phase-gates.md#agent-rule) |
-| [Prompt Grading](./execution-verification/prompt-grading.md) | Integrator 發派 Contributor Prompt 時的任務粒度與升降級規則 | [#agent-rule](./execution-verification/prompt-grading.md#agent-rule) |
+| [Prompt Grading](./execution-verification/prompt-grading.md) | Planning / Review 發派任務時的粒度與升降級規則 | [#agent-rule](./execution-verification/prompt-grading.md#agent-rule) |
+| [Multiple Agent Collaboration](./execution-verification/multi-agent-collaboration.md) | Documentation / Planning / Implementation / Review / Test Agents 協作框架 | [#agent-rule](./execution-verification/multi-agent-collaboration.md#agent-rule) |
+| [Agent Handoff Formats](./execution-verification/contributor-reporting.md) | plan / delivery / review handoff 模板 | [#agent-rule](./execution-verification/contributor-reporting.md#agent-rule) |
 | [Commit Standards](./execution-verification/commit-standards.md) | commit 邊界與訊息規範 | [#agent-rule](./execution-verification/commit-standards.md#agent-rule) |
 
-### Documentation Design
+## Documentation Design
 
-| 規範 | 說明 | Agent Rule |
+| Page | Focus | Agent Rule |
 | --- | --- | --- |
 | [Documentation Design](./documentation-design/documentation.md) | 文件規範索引 | [#agent-rule](./documentation-design/documentation.md#agent-rule) |
 | [Documentation Standards](./documentation-design/standards.md) | Diataxis 與 frontmatter | [#agent-rule](./documentation-design/standards.md#agent-rule) |
 | [Documentation Maintenance](./documentation-design/maintenance.md) | 單語文件來源與 build 流程 | [#agent-rule](./documentation-design/maintenance.md#agent-rule) |
+
+??? info "Installed vs loaded rules"
+    `docs/reference/guardrails/` 是 SoT。
+    `.agent/rules/` 是安裝後給 agent 使用的同步結果。
+    安裝與載入是兩件不同的事；任務中通常只需要載入少數必要規則。
 
 ## 驗證指令
 

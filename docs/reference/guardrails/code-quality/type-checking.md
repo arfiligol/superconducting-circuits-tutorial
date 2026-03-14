@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: Python 與 TypeScript 的型別檢查規範。
-version: v2.0.0
-last_updated: 2026-03-11
+version: v2.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
@@ -20,30 +20,45 @@ updated_by: docs-team
 
 型別規範的目的不是追求表面上的零警告，而是讓 UI、API、CLI 與科學核心的資料契約保持穩定。
 
-## Python
+!!! info "How to read this page"
+    先看語言對應規則，再看例外與修復策略。若你想用 ignore 或放寬型別，先確認是否真的只剩第三方套件缺型別這一種理由。
 
-- 工具：`basedpyright`
-- 基線：`basic`，但視為 mandatory
-- 所有函式都要標註參數與回傳值
-- 使用 `list[str]`、`dict[str, float]`、`str | None`
-- 非必要不使用 `Any`
+## Type Map
 
-### Allowed Exceptions
+| 語言 | 工具 | 主要目標 |
+| --- | --- | --- |
+| Python | `basedpyright` | 守住 service、core、persistence 的資料契約 |
+| TypeScript | `strict: true` + schema validation | 守住 frontend service、hook、component 的可信資料邊界 |
+
+## Language Rules
+
+=== "Python"
+
+    - 工具：`basedpyright`
+    - 基線：`basic`，但視為 mandatory
+    - 所有函式都要標註參數與回傳值
+    - 使用 `list[str]`、`dict[str, float]`、`str | None`
+    - 非必要不使用 `Any`
+
+=== "TypeScript"
+
+    - 使用 `strict: true`
+    - service、schema、component props、hook 回傳值需有清楚型別
+    - 禁止把未驗證的 API payload 直接當成可信任資料
+    - `zod` 或等效 schema 驗證後的型別，才可進入 UI 業務流程
+
+## Allowed Exceptions
 
 - 第三方科學套件無型別時，可使用最小範圍 `# type: ignore`
 - 需要附上原因，不可整檔大面積忽略
-
-## TypeScript
-
-- 使用 `strict: true`
-- service、schema、component props、hook 回傳值需有清楚型別
-- 禁止把未驗證的 API payload 直接當成可信任資料
-- `zod` 或等效 schema 驗證後的型別，才可進入 UI 業務流程
 
 ## Fix Policy
 
 - 有型別錯誤時先修正程式碼
 - 只有在第三方型別缺失且修復成本不合理時，才接受局部忽略
+
+!!! tip "Good default"
+    若你不知道該把型別放在哪一層，優先把 schema、service 回傳值、hook 回傳值定清楚，再讓 component 只吃已驗證資料。
 
 ## Agent Rule { #agent-rule }
 

@@ -11,14 +11,26 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: rewrite branch 的服務邊界、依賴方向與共享邏輯規範。
-version: v1.0.0
-last_updated: 2026-03-11
+version: v1.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # Design Patterns
 
 本專案的設計模式重點是把共享規則放在穩定的位置，而不是讓每個入口層各自長出一份邏輯。
+
+!!! info "Use this page for boundary and ownership decisions"
+    這頁回答 workflow logic、dependency injection、canonical definition 與 API layer responsibility 應該放在哪裡。它不取代 folder structure 或 backend architecture，而是補 owner pattern。
+
+## Pattern Map
+
+| pattern | 回答的問題 |
+| --- | --- |
+| Dependency Direction | 哪一層可以擁有 workflow |
+| Dependency Injection | service / repository / adapter 應怎麼被組裝 |
+| Canonical Definition | 哪裡才是定義格式的真正 owner |
+| API Layer Responsibility | API handler 可以做什麼、不可以做什麼 |
 
 ## Core Rules
 
@@ -52,6 +64,9 @@ updated_by: docs-team
 - 長流程業務判斷
 - persistence 細節
 - 跨多模組重複的轉換邏輯
+
+!!! warning "Do not let entry layers fork the workflow"
+    若 component、router、CLI command 各自偷偷長出一份相似但不完全相同的流程，最後一定會漂移。這頁的重點就是避免這種局部合理、全域失控的設計。
 
 ## Agent Rule { #agent-rule }
 

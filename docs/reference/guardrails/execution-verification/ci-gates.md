@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: rewrite branch 的 PR 合併品質門檻，含 desktop shell 與 docs route validation。
-version: v2.2.0
-last_updated: 2026-03-11
+version: v2.3.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -20,19 +20,45 @@ updated_by: codex
 
 所有 PR 在 merge 前必須通過與 touched area 對應的必要檢查。
 
+!!! info "How to use this page"
+    先依 touched area 找對應 gate，再確認是否還需要 docs 或 desktop 的補充檢查。這頁定的是最低 merge bar，不是每次本地開發都要全跑。
+
+## Gate Map
+
+| touched area | 至少要過的 gate |
+| --- | --- |
+| rewrite root orchestration | install + check + build |
+| backend | startup smoke + backend pytest |
+| frontend | lint + typecheck + test + build |
+| desktop | lint + build |
+| docs | source route check + docs build + built route check |
+
 ## Mandatory Gates
 
-- rewrite root orchestration：`npm run rewrite:install`、`npm run rewrite:check`、`npm run rewrite:build`
-- backend foundation：startup smoke 與 `cd backend && uv run pytest`
-- frontend：`npm run lint --prefix frontend`、`npm run typecheck --prefix frontend`、`npm run test --prefix frontend`、`npm run build --prefix frontend`
-- desktop：`npm run lint --prefix desktop`、`npm run build --prefix desktop`
-- docs：`uv run python scripts/check_docs_nav_routes.py --check-source`、`./scripts/build_docs_sites.sh`、`uv run python scripts/check_docs_nav_routes.py --check-built`（docs touched 時）
-- 至少一位 reviewer approve
+=== "Rewrite Root"
+
+    - `npm run rewrite:install`
+    - `npm run rewrite:check`
+    - `npm run rewrite:build`
+
+=== "Backend / Frontend / Desktop"
+
+    - backend foundation：startup smoke 與 `cd backend && uv run pytest`
+    - frontend：`npm run lint --prefix frontend`、`npm run typecheck --prefix frontend`、`npm run test --prefix frontend`、`npm run build --prefix frontend`
+    - desktop：`npm run lint --prefix desktop`、`npm run build --prefix desktop`
+
+=== "Docs / Review"
+
+    - docs：`uv run python scripts/check_docs_nav_routes.py --check-source`、`./scripts/build_docs_sites.sh`、`uv run python scripts/check_docs_nav_routes.py --check-built`（docs touched 時）
+    - 至少一位 reviewer approve
 
 ## Notes
 
 - `zensical build` 預覽流程中的良性 `404` 警告不視為 CI 失敗
 - backend 專用 lint / type-check gate 之後可再提升；目前 foundation gate 先以 startup smoke + pytest 為主
+
+!!! warning "Merge blocking rule"
+    任何 failing required check 都直接阻擋 merge；不要用「這次看起來只是小改」當作跳過 CI gate 的理由。
 
 ## Branch Policy
 

@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite branch 的專案目標、技術方向、結構與單一真理順序索引。
-version: v1.2.0
-last_updated: 2026-03-12
+version: v1.3.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -21,11 +21,23 @@ updated_by: codex
 本區定義目前 branch 的基礎共識：產品範疇、技術選型與 repo 結構。
 任何會影響整體開發方向的修改，都應先更新這些文件。
 
-- [Project Overview](./project-overview.md)
-- [Tech Stack](./tech-stack.md)
-- [Folder Structure](./folder-structure.md)
-- [Backend Architecture](./backend-architecture.md)
-- [Source of Truth Order](./source-of-truth-order.md)
+!!! info "What this section owns"
+    `Project Basics` 定義整個 workspace 的共同前提。
+    如果問題在問「我們到底在做什麼、用什麼做、檔案應該放哪、衝突時誰說了算」，答案都應該先從這裡找。
+
+## Page Map
+
+| Page | Read this when | Core question |
+| --- | --- | --- |
+| [Project Overview](./project-overview.md) | 你要確認產品邊界、主要 workflows、重寫方向 | 這個平台到底要做什麼？ |
+| [Tech Stack](./tech-stack.md) | 你要確認 framework、dependency 或 runtime baseline | 我們正式採用哪些技術？ |
+| [Folder Structure](./folder-structure.md) | 你要新增檔案、搬動模組、重整目錄 | 這種變更應該落在哪裡？ |
+| [Backend Architecture](./backend-architecture.md) | 你要改 API / services / persistence / facade 邊界 | backend 應如何分層？ |
+| [Source of Truth Order](./source-of-truth-order.md) | 你遇到 docs、backend、frontend、CLI 說法衝突 | 衝突時誰說了算？ |
+
+!!! tip "Read order"
+    先看 `Project Overview`，再看 `Tech Stack` 與 `Folder Structure`。
+    若任務直接碰到 contract 衝突、owner boundary 或 migration 對齊，再補看 `Source of Truth Order` 與 `Backend Architecture`。
 
 ## Agent Rule { #agent-rule }
 

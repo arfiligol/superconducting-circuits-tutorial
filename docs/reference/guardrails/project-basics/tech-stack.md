@@ -21,6 +21,19 @@ updated_by: codex
 本 branch 的目標技術棧是 **Next.js + FastAPI + CLI + Electron + Julia simulation core**。
 原則上，UI、API、CLI 必須共用同一套核心定義與驗證規則，不再把 NiceGUI 作為主要實作方向。
 
+!!! info "How to use this page"
+    這頁用來確認正式 baseline stack，不用來討論可選替代方案。若某個技術還沒被列進來，就不應被當成預設依賴。
+
+## Stack Map
+
+| layer | baseline |
+| --- | --- |
+| Frontend | Next.js App Router + React 19 + TypeScript |
+| Backend | FastAPI + Pydantic + SQLModel/SQLAlchemy + Casbin |
+| CLI | Typer |
+| Scientific core | JosephsonCircuits.jl via juliacall |
+| Desktop shell | Electron |
+
 ## Shared Languages
 
 ### Python
@@ -87,6 +100,9 @@ updated_by: codex
 - multi-user app authorization baseline 採 `Casbin`
 - `JWT` / refresh token 負責 authentication；capabilities 與 allowed actions 由 backend authorization engine materialize
 
+!!! warning "Do not bypass the backend authorization path"
+    frontend、desktop、CLI 都不應自行重建 app authorization matrix。多使用者 app 權限的 baseline 在 backend，並由 backend materialize `capabilities` 與 `allowed_actions`。
+
 ### CLI
 
 - Typer 作為主要命令列框架
@@ -107,6 +123,9 @@ updated_by: codex
 - numeric traces：
   - baseline: `Zarr`
   - backend abstraction required for future extension
+
+??? note "Why alternatives are not listed"
+    這頁只記錄正式 baseline，不列出所有曾考慮過的框架。若之後真的更換 stack，應先更新這頁，再讓實作跟上。
 
 ## Dependency Management
 

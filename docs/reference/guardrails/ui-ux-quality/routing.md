@@ -11,12 +11,24 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: Next.js App Router 的 route groups、dynamic routes 與 layout 邊界。
-version: v1.0.0
-last_updated: 2026-03-11
+version: v1.1.0
+last_updated: 2026-03-14
 updated_by: docs-team
 ---
 
 # Routing
+
+!!! info "Use this page for route shape decisions"
+    這頁先定 route group、dynamic route 與 layout boundary 的最低規則。需要知道每一頁具體 route 時，應回到 frontend page reference。
+
+## Routing Map
+
+| concern | baseline |
+| --- | --- |
+| route groups | 用來組織 workspace 與非 workspace 區 |
+| dynamic routes | 優先 `[id]` 或 `[resourceId]` |
+| URL ownership | 不要讓 URL string 散落在 component |
+| nesting | 超過四層時要先檢討資訊架構 |
 
 ## Rules
 

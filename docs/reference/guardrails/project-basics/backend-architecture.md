@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 定義 rewrite backend 的責任邊界、模組分層與對 sc_core 的依賴方向。
-version: v1.1.0
-last_updated: 2026-03-12
+version: v1.2.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -21,23 +21,31 @@ updated_by: codex
 rewrite backend 的目標不是單純 CRUD API，而是可獨立運作的 headless application backend。
 即使 frontend 尚未完成，backend 也應能提供穩定的 auth、CRUD、TraceStore、task、result 與 execution contracts。
 
+!!! info "Use this page for boundary decisions"
+    當問題在問「這段 backend code 應該放哪一層、誰可以依賴誰、哪裡才是 owner」時，先回到本頁。
+    這頁不是 API endpoint 清單，而是 backend 內部責任分層的藍圖。
+
 ## Responsibilities
 
-backend 必須承擔：
+=== "Backend must own"
 
-- auth / session / workspace context
-- metadata CRUD
-- TraceStore-facing contracts 與 payload locator
-- task submission / status / result access
-- execution orchestration 與 service composition
-- 對 `sc_core` canonical contracts 的 adapter 與 transport mapping
+    - auth / session / workspace context
+    - metadata CRUD
+    - TraceStore-facing contracts 與 payload locator
+    - task submission / status / result access
+    - execution orchestration 與 service composition
+    - 對 `sc_core` canonical contracts 的 adapter 與 transport mapping
 
-backend 不得承擔：
+=== "Backend must not own"
 
-- UI state
-- Electron-specific behavior
-- duplicated scientific invariants
-- frontend-only display state
+    - UI state
+    - Electron-specific behavior
+    - duplicated scientific invariants
+    - frontend-only display state
+
+!!! warning "Common failure mode"
+    最常見的 backend drift 不是少一層 abstraction，而是把 UI state、transport detail 或 duplicated scientific rules 偷塞進 services。
+    一旦出現這種情況，先回來檢查 layer boundary，而不是只補 helper。
 
 ## Target Internal Structure
 
@@ -60,62 +68,16 @@ backend/src/app/
 
 ## Layer Boundaries
 
-### API
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| API | request parsing、auth gate、service invocation、response mapping、transport error translation | business workflow、persistence details |
+| Services | use case orchestration、repository coordination、task submission flow、framework-agnostic application errors | FastAPI transport exceptions、web concerns |
+| Domain | backend-owned models for auth/session/task/storage adapters | HTTP schema concerns、framework bootstrapping |
+| Infrastructure | persistence / TraceStore / execution adapters、composition root wiring | canonical scientific contracts、frontend state |
 
-責任：
-
-- request parsing
-- auth / permission gate
-- service invocation
-- response mapping
-- transport-layer error translation
-
-不得承擔：
-
-- business workflow
-- persistence details
-- duplicated data shaping already owned by presenters / `sc_core`
-
-### Services
-
-責任：
-
-- use case orchestration
-- repository coordination
-- task submission flow
-- service-level validation與 framework-agnostic application errors
-
-不得承擔：
-
-- FastAPI transport exceptions
-- direct web concerns
-- duplicated canonical rules already owned by `sc_core`
-
-### Domain
-
-責任：
-
-- backend-owned models for auth/session/task/storage adapters
-- service-facing rule boundaries that are not yet elevated to `sc_core`
-
-不得承擔：
-
-- HTTP schema concerns
-- framework bootstrapping
-
-### Infrastructure
-
-責任：
-
-- persistence adapters
-- TraceStore adapters
-- execution/runtime adapters
-- composition root wiring
-
-不得承擔：
-
-- canonical scientific contracts
-- frontend/UI workflow state
+??? info "Why the table is enough here"
+    本頁要先讓讀者快速判斷 owner boundary。
+    若需要更細的 transport / request-response 規格，應去看 `App / Backend` 的對應 reference，而不是在這頁重複 endpoint-level 細節。
 
 ## Dependency Direction
 
@@ -127,34 +89,29 @@ backend/src/app/
 
 ## Integration With sc_core
 
-backend 應把下列 canonical concerns 優先視為 `sc_core` 的 owner：
+=== "Prefer `sc_core` as owner for"
 
-- circuit definition invariants
-- task routing / execution contracts
-- storage / provenance canonical handles
-- shared scientific compute orchestration
+    - circuit definition invariants
+    - task routing / execution contracts
+    - storage / provenance canonical handles
+    - shared scientific compute orchestration
 
-backend 的角色是：
+=== "Backend still owns"
 
-- 暴露 API contract
-- 管理 persistence / auth / task / workspace semantics
-- 將 backend-owned adapter state 映射到 `sc_core` canonical surfaces
+    - API contract exposure
+    - persistence / auth / task / workspace semantics
+    - adapter state mapping to `sc_core` canonical surfaces
 
 ## CLI Facade Boundary
 
 `backend/sc_backend/` 是 backend 對 `cli/` 暴露的穩定 facade package。
 
-它的責任是：
-
-- 以 package-safe 的方式重用 backend service/runtime contract
-- 對 CLI 提供穩定的 request validation 與 structured error translation 邊界
-- 避免 CLI 直接 import `backend/src/app/*`
-
-它不得承擔：
-
-- CLI command parsing 或呈現格式
-- 新的業務規則 owner
-- 繞過 backend service / schema validation 的捷徑
+| Facade rule | Meaning |
+| --- | --- |
+| package-safe reuse | CLI 重用 backend service/runtime contract，但不直接 import `backend/src/app/*` |
+| stable validation boundary | 對 CLI 暴露穩定 request validation 與 structured error translation |
+| no new business ownership | 不在 facade 重新發明 workflow owner |
+| no CLI parsing inside facade | command parsing 與呈現格式仍屬於 CLI 本身 |
 
 ## Agent Rule { #agent-rule }
 

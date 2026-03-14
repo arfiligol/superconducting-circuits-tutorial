@@ -20,6 +20,9 @@ updated_by: codex
 
 本文件定義 migration 各 phase 最低驗收門檻。
 
+!!! info "How to read this page"
+    先看 planning prerequisites，再看 phase 對應的最低 gate。這頁是「可不可以宣告進下一階段」的判準，不是每次小改動都要完整走一遍的 checklist。
+
 ## Required Planning Artifacts
 
 在深入 `Phase 4` 以前，必須已有：
@@ -31,6 +34,15 @@ updated_by: codex
 - task runtime / processor contract
 - error model
 - planning artifact format
+
+## Gate Map
+
+| phase concern | 主要看哪一節 |
+| --- | --- |
+| 進入深度 implementation 前需要哪些前置物？ | Required Planning Artifacts |
+| 每個 phase 至少要過哪些測試？ | Minimum Gates by Phase |
+| 各層應搭配哪些測試類型？ | Phase-to-Test Mapping |
+| 何時可以讓 Implementation/Test Agents 大規模並行？ | Entry Criteria for Deep Implementation |
 
 ## Minimum Gates by Phase
 
@@ -68,6 +80,9 @@ updated_by: codex
 - [Canonical Contract Registry](../../architecture/canonical-contract-registry.md)
 - [Multiple Agent Collaboration](./multi-agent-collaboration.md)
 - [Agent Handoff Formats](./contributor-reporting.md)
+
+!!! warning "Do not declare phase completion early"
+    若 contract registry、parity matrix、tests 與 workflow recovery 還沒有對上，就不能只因為畫面能跑或 API 回資料就宣告 phase 完成。
 
 ## Agent Rule { #agent-rule }
 
