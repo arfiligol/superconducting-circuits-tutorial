@@ -10,7 +10,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Documentation / Planning & Reviewing / Implementation / Test Agents 的責任分工、交接順序與並行協作規範"
-version: v2.1.0
+version: v2.2.0
 last_updated: 2026-03-15
 updated_by: codex
 ---
@@ -32,7 +32,7 @@ updated_by: codex
 | --- | --- | --- |
 | Documentation | Documentation Agent | updated SoT / decision notes |
 | Planning & Reviewing (plan pass) | Planning & Reviewing Agent | plan artifact + test backlog |
-| Implementation | Frontend / Backend / Core / CLI Agent | code + unit tests + delivery report |
+| Implementation | Implementation Agent | code + unit tests + delivery report |
 | Test | Test Agent | integration / E2E tests + evidence |
 | Planning & Reviewing (merge pass) | Planning & Reviewing Agent | integrated delivery + final verification |
 
@@ -42,7 +42,7 @@ updated_by: codex
 |---|---|---|
 | Documentation Agents | 與人類開發者討論需求、整理決策、把 SoT 寫進 docs、先定義 architecture / contracts / page specs | 大量 feature code、integration / E2E |
 | Planning & Reviewing Agents | 讀 SoT 與現有程式碼、撰寫 plan artifact、拆 implementation slices、列出缺的 integration / E2E coverage、回收 deliverables、做 final verification | 正式文件編輯、大量產品實作 |
-| Implementation Agents | 依計劃撰寫 `Frontend / Backend / Core / CLI` 實作與 unit tests | integration tests、E2E tests、最終主線整合 |
+| Implementation Agents | 依計劃撰寫實作與 unit tests，可覆蓋 frontend / backend / core / CLI 任一 slice | integration tests、E2E tests、最終主線整合、正式文件編輯 |
 | Test Agents | 依計劃撰寫 integration / E2E tests、補 test fixtures 與 cross-surface verification | feature unit work、最終 merge authority |
 
 ## Role Boundaries
@@ -60,7 +60,7 @@ updated_by: codex
 - 若發現 SoT 缺頁、需要改規格或 owner boundary 有衝突，必須回交 `Documentation Agent`。
 - plan artifact 至少要回答：
   - 哪些文件已定義、哪些尚未落地
-  - 哪些 implementation slices 需要前端 / 後端 / core / CLI Agents
+  - 哪些 implementation slices 需要交給 Implementation Agents
   - 哪些功能尚未具備 integration tests / E2E tests
   - 每個 slice 的 verification 與 non-goals
 - 不應在沒有 plan artifact 的情況下直接大規模派工。
@@ -71,13 +71,10 @@ updated_by: codex
 
 ### Implementation Agents
 
-- 固定分成四條 implementation lanes：
-  - `Frontend Agent`
-  - `Backend Agent`
-  - `Core Agent`
-  - `CLI Agent`
-- 只負責自己的領域實作與 unit tests。
-- 若需要跨界改檔，必須回交 Planning & Reviewing Agent 重新切分。
+- 是單一 agent family，由 `Planning & Reviewing Agent` 透過 prompt 指派特定 `slice / area / allowed files`。
+- 可被指派 frontend、backend、core、CLI 或 cross-layer 的 implementation slice。
+- 只負責被指派 slice 的實作與 unit tests。
+- 若任務超出 prompt 的 `Allowed Files` 或 slice 邊界，必須回交 Planning & Reviewing Agent 重新切分。
 - 不負責 integration / E2E test。
 
 ### Test Agents
@@ -97,8 +94,8 @@ updated_by: codex
    - 產出 plan artifact 與 test backlog。
 
 3. **Implementation**
-   - Frontend / Backend / Core / CLI Agents 依 slice 開發。
-   - 每條 implementation lane 只做 code + unit tests。
+   - Implementation Agents 依 slice 開發。
+   - 每位 agent 只做自己被指派 slice 的 code + unit tests。
 
 4. **Test**
    - Test Agent 根據同一份 plan 補 integration / E2E tests。
@@ -167,6 +164,7 @@ Planning & Reviewing Agent 產出的 plan artifact 至少必須包含：
 ## Forbidden Moves
 
 - Implementation Agent 不得直接宣告 integration / E2E 已完成，除非該工作明確由 Test Agent 交回。
+- Implementation Agent 不得自行擴張 slice 邊界或跨出 `Allowed Files`。
 - Test Agent 不得順手重寫 feature implementation。
 - Planning & Reviewing Agent 不得在未回收 handoff 的情況下假設某工作已完成。
 - Documentation Agent 不得把未確認的未來功能寫成現況。
@@ -198,7 +196,8 @@ Planning & Reviewing Agent 產出的 plan artifact 至少必須包含：
     - own final verification and mainline integration for the delivery line
     - may edit `Plans/` artifacts only; if SoT must change, hand off to Documentation Agents
 - Implementation Agents:
-    - restricted to Frontend / Backend / Core / CLI lanes
+    - form one agent family for all code areas
+    - receive assigned slices via prompt (`Allowed Files` + worktree + verification)
     - own code + unit tests only
     - do not own integration/E2E or final branch integration
 - Test Agents:
