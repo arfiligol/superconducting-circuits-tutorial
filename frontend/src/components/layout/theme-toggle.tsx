@@ -8,7 +8,11 @@ import { useTheme } from "next-themes";
 const themeOrder = ["light", "dark", "system"] as const;
 const noopSubscribe = () => () => undefined;
 
-export function ThemeToggle() {
+type ThemeToggleProps = Readonly<{
+  className?: string;
+}>;
+
+export function ThemeToggle({ className }: ThemeToggleProps) {
   const { resolvedTheme, setTheme, theme } = useTheme();
   const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
 
@@ -31,7 +35,12 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={cycleTheme}
-      className="inline-flex h-10 w-10 items-center justify-center rounded-full text-primary transition hover:bg-surface-elevated hover:text-primary-foreground"
+      className={[
+        "inline-flex h-10 w-10 items-center justify-center rounded-full text-primary transition hover:bg-surface-elevated hover:text-primary-foreground",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       aria-label={`Theme: ${displayTheme}. Switch to ${nextTheme}.`}
       title={`Theme: ${displayTheme}. Switch to ${nextTheme}.`}
     >

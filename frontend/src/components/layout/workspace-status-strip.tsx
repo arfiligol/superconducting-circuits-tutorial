@@ -1,13 +1,30 @@
 "use client";
 
-import { Database, LoaderCircle, RefreshCw, Shield, Workflow, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  ChevronDown,
+  Database,
+  FolderKanban,
+  LoaderCircle,
+  RefreshCw,
+  ServerCog,
+  Workflow,
+  X,
+} from "lucide-react";
 
+import {
+  resolveShellTaskHref,
+  resolveShellTaskLabel,
+  resolveShellWorkerSummary,
+} from "@/components/layout/workspace-shell-contract";
 import { cx } from "@/features/shared/components/surface-kit";
 import {
   useActiveDataset,
+  useActiveTask,
   useAppSession,
   useTaskQueue,
-  useActiveTask,
 } from "@/lib/app-state";
 import { ApiError } from "@/lib/api/client";
 
@@ -15,20 +32,16 @@ type WorkspaceStatusStripProps = Readonly<{
   compact?: boolean;
 }>;
 
-type StatusCardProps = Readonly<{
+type ShellPanel = "workspace" | "dataset" | "queue" | null;
+
+type TriggerCardProps = Readonly<{
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   detail: string;
-  action?: React.ReactNode;
-}>;
-
-type StatusActionButtonProps = Readonly<{
-  label: string;
+  active?: boolean;
   onClick?: () => void;
-  icon: React.ComponentType<{ className?: string }>;
-  disabled?: boolean;
-  spinning?: boolean;
+  trailing?: React.ReactNode;
 }>;
 
 function getStatusErrorDetail(error: Error): string {
@@ -49,46 +62,93 @@ function isRetryableError(error: Error | undefined): boolean {
   return !(error instanceof ApiError) || error.retryable !== false;
 }
 
-function StatusCard({ icon: Icon, label, value, detail, action }: StatusCardProps) {
-  return (
-    <div className="flex min-h-[48px] items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3 py-2">
+function TriggerCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  active = false,
+  onClick,
+  trailing,
+}: TriggerCardProps) {
+  const content = (
+    <>
       <div className="flex min-w-0 items-center gap-3">
-        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-elevated text-primary">
+        <span
+          className={cx(
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            active ? "bg-primary/12 text-primary" : "bg-surface-elevated text-primary/80",
+          )}
+        >
           <Icon className="h-4 w-4" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {label}
+          </p>
           <p className="truncate text-sm font-medium text-foreground">{value}</p>
           <p className="truncate text-[11px] text-muted-foreground">{detail}</p>
         </div>
       </div>
-      {action}
-    </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {trailing}
+        {onClick ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : null}
+      </div>
+    </>
   );
-}
 
-function StatusActionButton({
-  label,
-  onClick,
-  icon: Icon,
-  disabled = false,
-  spinning = false,
-}: StatusActionButtonProps) {
+  if (!onClick) {
+    return (
+      <div className="flex min-h-[58px] items-center justify-between gap-3 rounded-[0.95rem] border border-border bg-surface px-3 py-3">
+        {content}
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
-      aria-label={label}
-      title={label}
-      disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground transition hover:border-primary/40 hover:bg-primary/10 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+      className={cx(
+        "flex min-h-[58px] w-full cursor-pointer items-center justify-between gap-3 rounded-[0.95rem] border px-3 py-3 text-left transition",
+        active
+          ? "border-primary/35 bg-primary/10"
+          : "border-border bg-surface hover:border-primary/20 hover:bg-surface-elevated",
+      )}
     >
-      <Icon className={cx("h-4 w-4", spinning ? "animate-spin" : undefined)} />
+      {content}
+    </button>
+  );
+}
+
+function PanelActionButton({
+  label,
+  onClick,
+  spinning = false,
+  disabled = false,
+}: Readonly<{
+  label: string;
+  onClick: () => void;
+  spinning?: boolean;
+  disabled?: boolean;
+}>) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+    >
+      <RefreshCw className={cx("h-3.5 w-3.5", spinning ? "animate-spin" : undefined)} />
+      {label}
     </button>
   );
 }
 
 export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripProps) {
+  const pathname = usePathname();
+  const [openPanel, setOpenPanel] = useState<ShellPanel>(null);
+
   const {
     session,
     workspace,
@@ -114,170 +174,356 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
     clearActiveDataset,
   } = useActiveDataset();
   const {
+    tasks,
     activeTasks,
+    latestTask,
     summary,
-    status: taskQueueStatus,
+    taskQueueError,
     isTaskQueueLoading,
     isTaskQueueRefreshing,
-    taskQueueError,
     refreshTaskQueue,
   } = useTaskQueue();
   const {
     activeTaskDetail,
     activeTaskError,
-    status: activeTaskStatus,
     resolvedTaskId,
     isActiveTaskLoading,
     refreshActiveTask,
   } = useActiveTask();
 
-  const datasetLabel =
+  useEffect(() => {
+    setOpenPanel(null);
+  }, [pathname]);
+
+  const workerSummary = resolveShellWorkerSummary(workspace);
+  const queueRows = (activeTasks.length > 0 ? activeTasks : tasks).slice(0, 5);
+
+  const workspaceValue =
+    sessionStatus === "loading"
+      ? "Loading workspace..."
+      : workspace?.displayName ?? "Workspace unavailable";
+  const workspaceDetail = sessionError
+    ? getStatusErrorDetail(sessionError)
+    : workspace
+      ? `${workspace.role} role · ${session?.scopes.length ?? 0} scopes · session authority`
+      : "Waiting for session authority";
+
+  const datasetValue =
     activeDatasetStatus === "syncing-route" || isUpdatingActiveDataset
-      ? "Restoring active dataset..."
-      : activeDatasetStatus === "loading"
-        ? "Loading active dataset..."
-        : activeDatasetStatus === "error" && !activeDataset
-          ? "Active dataset unavailable"
-          : activeDatasetStatus === "empty"
-            ? "No active dataset"
-            : activeDataset?.name ?? activeDataset?.datasetId ?? "No active dataset";
+      ? "Syncing active dataset..."
+      : activeDataset?.name ?? "No active dataset";
   const datasetDetail = activeDatasetError
     ? getStatusErrorDetail(activeDatasetError)
-    : activeDatasetStatus === "loading"
-      ? "Waiting for GET /session"
-      : activeDatasetStatus === "syncing-route"
-        ? "Reattaching the URL-selected dataset to the backend session"
-        : source === "url" && routeDatasetId === sessionDatasetId
-          ? "URL selection is attached to the session contract"
-          : source === "url"
-            ? "URL-selected dataset has not attached to the session yet"
-            : source === "session" && workspace
-              ? `${workspace.displayName} session-backed dataset`
-              : "No active dataset has been restored for this session";
-  const datasetAction = isDatasetDetailLoading ? (
-    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface-elevated text-muted-foreground">
-      <LoaderCircle className="h-4 w-4 animate-spin" />
-    </span>
-  ) : (
-    <div className="flex shrink-0 items-center gap-2">
-      <StatusActionButton
-        label="Refresh active dataset state"
-        icon={RefreshCw}
-        spinning={isUpdatingActiveDataset || isRouteSyncPending}
-        disabled={isUpdatingActiveDataset || isRouteSyncPending}
-        onClick={() => {
-          void refreshActiveDataset();
-        }}
-      />
-      {canRetryRouteSync && isRetryableError(activeDatasetError) ? (
-        <StatusActionButton
-          label="Retry dataset restore"
-          icon={RefreshCw}
-          onClick={() => {
-            void retryRouteSync();
-          }}
-        />
-      ) : null}
-      {source === "session" && activeDataset ? (
-        <StatusActionButton
-          label="Clear active dataset"
-          icon={X}
-          disabled={isUpdatingActiveDataset}
-          onClick={() => {
-            void clearActiveDataset();
-          }}
-        />
-      ) : null}
-    </div>
-  );
+    : source === "url" && routeDatasetId !== sessionDatasetId
+      ? "URL-selected dataset is waiting to attach to the session"
+      : source === "url"
+        ? "Route selection is attached to the session"
+        : source === "session"
+          ? "Session-backed dataset context"
+          : "Select a dataset from Data Browser";
 
-  const sessionValue =
-    sessionStatus === "loading"
-      ? "Loading session..."
-      : sessionStatus === "error" && !session
-        ? "Session unavailable"
-        : session?.user?.displayName ?? "Anonymous session";
-  const sessionDetail = sessionError
-    ? getStatusErrorDetail(sessionError)
-    : !session
-      ? "Waiting for GET /session"
-      : isSessionRefreshing
-        ? "Refreshing backend session state"
-        : `${workspace?.displayName ?? "Unknown workspace"} · ${session.authMode} · ${session.scopes.length} scopes`;
-
-  const taskValue =
-    taskQueueStatus === "loading"
-      ? "Loading tasks..."
-      : taskQueueStatus === "error" && summary.total === 0
-        ? "Task queue unavailable"
-        : summary.total === 0
-          ? "Queue idle"
-          : activeTasks.length > 0
-            ? `${activeTasks.length} active · ${summary.failedCount} failed`
-            : `${summary.completedCount} completed · ${summary.failedCount} failed`;
-  const taskDetail = taskQueueError
+  const queueValue =
+    isTaskQueueLoading && summary.total === 0
+      ? "Loading queue..."
+      : activeTasks.length > 0
+        ? `${activeTasks.length} active task${activeTasks.length === 1 ? "" : "s"}`
+        : summary.total > 0
+          ? `${summary.completedCount} completed · ${summary.failedCount} failed`
+          : "Queue idle";
+  const queueDetail = taskQueueError
     ? getStatusErrorDetail(taskQueueError)
     : activeTaskError
-      ? `Failed to load detailed state for task #${resolvedTaskId}: ${getStatusErrorDetail(activeTaskError)}`
-      : isActiveTaskLoading
-        ? `Fetching task #${resolvedTaskId} details...`
-        : activeTaskStatus === "empty" || !activeTaskDetail
-          ? "No task history returned from GET /tasks"
-          : activeTaskDetail.status === "queued" || activeTaskDetail.status === "running"
-            ? `Recovered #${activeTaskDetail.taskId} · ${activeTaskDetail.progress.phase} · ${Math.round(activeTaskDetail.progress.percentComplete)}% · ${activeTaskDetail.progress.summary}`
-            : `Latest #${activeTaskDetail.taskId} · ${activeTaskDetail.status} · ${activeTaskDetail.summary}`;
+      ? getStatusErrorDetail(activeTaskError)
+      : activeTaskDetail
+        ? `Attached #${activeTaskDetail.taskId} · ${activeTaskDetail.progress.phase}`
+        : latestTask
+          ? `Latest #${latestTask.taskId} · ${latestTask.status}`
+          : "Open queue to inspect workspace-visible tasks";
 
   return (
-    <div
-      className={cx(
-        "grid gap-3",
-        compact ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,1fr)]" : "grid-cols-1",
-      )}
-    >
-      <StatusCard
-        icon={Database}
-        label="Active Dataset"
-        value={datasetLabel}
-        detail={datasetDetail}
-        action={datasetAction}
-      />
+    <div className="space-y-3">
+      <div
+        className={cx(
+          "grid gap-3",
+          compact
+            ? "xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]"
+            : "md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.9fr)]",
+        )}
+      >
+        <TriggerCard
+          icon={FolderKanban}
+          label="Active Workspace"
+          value={workspaceValue}
+          detail={workspaceDetail}
+          active={openPanel === "workspace"}
+          onClick={() => {
+            setOpenPanel((current) => (current === "workspace" ? null : "workspace"));
+          }}
+          trailing={
+            isSessionRefreshing ? <LoaderCircle className="h-4 w-4 animate-spin text-primary" /> : null
+          }
+        />
 
-      <StatusCard
-        icon={Workflow}
-        label="Task Queue"
-        value={taskValue}
-        detail={taskDetail}
-        action={
-          <StatusActionButton
-            label="Refresh task queue"
-            icon={RefreshCw}
-            spinning={isTaskQueueRefreshing || isActiveTaskLoading}
-            disabled={isTaskQueueLoading || isActiveTaskLoading}
-            onClick={() => {
-              void refreshTaskQueue();
-              void refreshActiveTask();
-            }}
-          />
-        }
-      />
+        <TriggerCard
+          icon={Database}
+          label="Active Dataset"
+          value={datasetValue}
+          detail={datasetDetail}
+          active={openPanel === "dataset"}
+          onClick={() => {
+            setOpenPanel((current) => (current === "dataset" ? null : "dataset"));
+          }}
+          trailing={
+            isDatasetDetailLoading || isRouteSyncPending ? (
+              <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+            ) : null
+          }
+        />
 
-      <StatusCard
-        icon={Shield}
-        label="Session"
-        value={sessionValue}
-        detail={sessionDetail}
-        action={
-          <StatusActionButton
-            label="Refresh session"
-            icon={RefreshCw}
-            spinning={isSessionRefreshing}
-            disabled={isSessionLoading}
-            onClick={() => {
-              void refreshSession();
-            }}
-          />
-        }
-      />
+        <TriggerCard
+          icon={Workflow}
+          label="Tasks Queue"
+          value={queueValue}
+          detail={queueDetail}
+          active={openPanel === "queue"}
+          onClick={() => {
+            setOpenPanel((current) => (current === "queue" ? null : "queue"));
+          }}
+          trailing={
+            isTaskQueueRefreshing || isActiveTaskLoading ? (
+              <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+            ) : null
+          }
+        />
+
+        <TriggerCard
+          icon={ServerCog}
+          label={workerSummary.label}
+          value={workerSummary.value}
+          detail={workerSummary.detail}
+          trailing={
+            <span
+              className={cx(
+                "rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]",
+                workerSummary.tone === "success"
+                  ? "bg-emerald-500/12 text-emerald-300"
+                  : "bg-amber-500/12 text-amber-300",
+              )}
+            >
+              {workerSummary.tone}
+            </span>
+          }
+        />
+      </div>
+
+      {openPanel === "workspace" ? (
+        <section className="rounded-[1rem] border border-border bg-card p-4 shadow-[0_12px_35px_rgba(15,23,42,0.18)]">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 pb-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Active Workspace Trigger
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Workspace context is session-backed. The switcher adapter is intentionally kept
+                separate until membership and dirty-state confirmation contracts are available.
+              </p>
+            </div>
+            <PanelActionButton
+              label="Refresh session"
+              spinning={isSessionRefreshing}
+              disabled={isSessionLoading}
+              onClick={() => {
+                void refreshSession();
+              }}
+            />
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Workspace
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {workspace?.displayName ?? "Unavailable"}
+              </p>
+            </div>
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Role</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {workspace?.role ?? "Pending"}
+              </p>
+            </div>
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Task Scope
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {workspace?.defaultTaskScope ?? "Pending"}
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {openPanel === "dataset" ? (
+        <section className="rounded-[1rem] border border-border bg-card p-4 shadow-[0_12px_35px_rgba(15,23,42,0.18)]">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 pb-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Active Dataset Trigger
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Dataset context follows session authority. Selection and search stay in Data
+                Browser; the shell only surfaces the current active dataset and recovery actions.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <PanelActionButton
+                label="Refresh dataset"
+                spinning={isUpdatingActiveDataset || isRouteSyncPending}
+                disabled={isUpdatingActiveDataset}
+                onClick={() => {
+                  void refreshActiveDataset();
+                }}
+              />
+              {canRetryRouteSync && isRetryableError(activeDatasetError) ? (
+                <PanelActionButton
+                  label="Retry attach"
+                  onClick={() => {
+                    void retryRouteSync();
+                  }}
+                />
+              ) : null}
+              {source === "session" && activeDataset ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void clearActiveDataset();
+                  }}
+                  className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground transition hover:border-primary/40 hover:bg-primary/10"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Clear dataset
+                </button>
+              ) : null}
+              <Link
+                href="/data-browser"
+                className="inline-flex items-center rounded-md border border-border px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-foreground transition hover:border-primary/40 hover:bg-primary/10"
+              >
+                Open Data Browser
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Dataset
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {activeDataset?.name ?? "None selected"}
+              </p>
+            </div>
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Family
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {activeDataset?.family ?? "Pending"}
+              </p>
+            </div>
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Status
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {activeDataset?.status ?? "Pending"}
+              </p>
+            </div>
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Source
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {source === "none" ? "No selection" : source}
+              </p>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {openPanel === "queue" ? (
+        <section className="rounded-[1rem] border border-border bg-card p-4 shadow-[0_12px_35px_rgba(15,23,42,0.18)]">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 pb-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                Tasks Queue Trigger
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Queue visibility comes from persisted task authority. The shell exposes attachable
+                entries and the latest attached task summary without taking over task-row workflows.
+              </p>
+            </div>
+            <PanelActionButton
+              label="Refresh queue"
+              spinning={isTaskQueueRefreshing || isActiveTaskLoading}
+              disabled={isTaskQueueLoading}
+              onClick={() => {
+                void refreshTaskQueue();
+                void refreshActiveTask();
+              }}
+            />
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Attached Task
+              </p>
+              <p className="mt-2 text-sm font-semibold text-foreground">
+                {activeTaskDetail ? `#${activeTaskDetail.taskId}` : "No attached task"}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {activeTaskDetail
+                  ? `${activeTaskDetail.progress.phase} · ${Math.round(activeTaskDetail.progress.percentComplete)}% · ${activeTaskDetail.progress.summary}`
+                  : resolvedTaskId
+                    ? `Waiting for task #${resolvedTaskId} detail`
+                    : "Open a workflow surface or use queue links below to attach a task."}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {queueRows.length > 0 ? (
+                queueRows.map((task) => (
+                  <Link
+                    key={task.taskId}
+                    href={resolveShellTaskHref(task)}
+                    className="block rounded-[0.9rem] border border-border bg-surface px-4 py-3 transition hover:border-primary/25 hover:bg-surface-elevated"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">
+                          #{task.taskId} · {resolveShellTaskLabel(task)}
+                        </p>
+                        <p className="mt-1 truncate text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          {task.status} · {task.summary}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-border px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                        {task.lane}
+                      </span>
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
+                  No workspace-visible tasks are available yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
