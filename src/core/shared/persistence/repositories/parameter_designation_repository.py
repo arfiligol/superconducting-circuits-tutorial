@@ -13,19 +13,43 @@ class ParameterDesignationRepository:
     def __init__(self, session: Session):
         self._session = session
 
-    def list_by_dataset(self, dataset_id: int) -> list[ParameterDesignation]:
-        """List all designations for one dataset."""
+    def list_by_design(self, design_id: int) -> list[ParameterDesignation]:
+        """List all designations for one design scope."""
         statement = (
             select(ParameterDesignation)
-            .where(ParameterDesignation.dataset_id == dataset_id)
+            .where(ParameterDesignation.dataset_id == design_id)
             .order_by(cast(Any, ParameterDesignation.id))
         )
         return list(self._session.exec(statement).all())
+
+    def list_by_dataset(self, dataset_id: int) -> list[ParameterDesignation]:
+        """Legacy dataset-scoped wrapper."""
+        return self.list_by_design(dataset_id)
 
     def list_all(self) -> list[ParameterDesignation]:
         """List all designations."""
         statement = select(ParameterDesignation).order_by(cast(Any, ParameterDesignation.id))
         return list(self._session.exec(statement).all())
+
+    def find_unique_by_design(
+        self,
+        *,
+        design_id: int,
+        designated_name: str,
+        source_analysis_type: str,
+        source_parameter_name: str,
+        exclude_id: int | None = None,
+    ) -> ParameterDesignation | None:
+        """Find one designation by its logical uniqueness key."""
+        statement = select(ParameterDesignation).where(
+            ParameterDesignation.dataset_id == design_id,
+            ParameterDesignation.designated_name == designated_name,
+            ParameterDesignation.source_analysis_type == source_analysis_type,
+            ParameterDesignation.source_parameter_name == source_parameter_name,
+        )
+        if exclude_id is not None:
+            statement = statement.where(ParameterDesignation.id != exclude_id)
+        return self._session.exec(statement).first()
 
     def find_unique(
         self,
@@ -36,16 +60,14 @@ class ParameterDesignationRepository:
         source_parameter_name: str,
         exclude_id: int | None = None,
     ) -> ParameterDesignation | None:
-        """Find one designation by its logical uniqueness key."""
-        statement = select(ParameterDesignation).where(
-            ParameterDesignation.dataset_id == dataset_id,
-            ParameterDesignation.designated_name == designated_name,
-            ParameterDesignation.source_analysis_type == source_analysis_type,
-            ParameterDesignation.source_parameter_name == source_parameter_name,
+        """Legacy dataset-scoped wrapper."""
+        return self.find_unique_by_design(
+            design_id=dataset_id,
+            designated_name=designated_name,
+            source_analysis_type=source_analysis_type,
+            source_parameter_name=source_parameter_name,
+            exclude_id=exclude_id,
         )
-        if exclude_id is not None:
-            statement = statement.where(ParameterDesignation.id != exclude_id)
-        return self._session.exec(statement).first()
 
     def add(self, designation: ParameterDesignation) -> ParameterDesignation:
         """Add one designation."""

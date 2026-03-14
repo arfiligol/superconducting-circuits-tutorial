@@ -323,14 +323,14 @@ class TraceRepository:
         if not records:
             return []
 
-        dataset_ids = {record.dataset_id for record in records}
-        hidden_dataset_ids = {
+        design_ids = {record.design_id for record in records}
+        hidden_design_ids = {
             design.id
             for design in self._session.exec(select(DesignRecord)).all()
             if design.id is not None and design.source_meta.get("system_hidden")
-            if design.id in dataset_ids
+            if design.id in design_ids
         }
-        return [record for record in records if record.dataset_id not in hidden_dataset_ids]
+        return [record for record in records if record.design_id not in hidden_design_ids]
 
     def delete(self, trace: TraceRecord) -> None:
         """Delete a trace."""

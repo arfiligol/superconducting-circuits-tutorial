@@ -100,7 +100,7 @@ class TraceBatchRepository:
             TraceBatchSnapshot,
             {
                 "id": int(batch.id),
-                "design_id": int(batch.dataset_id),
+                "design_id": int(batch.design_id),
                 "status": str(batch.status),
                 "parent_batch_id": batch.parent_batch_id,
                 **lifecycle_payload.to_snapshot_payload(),
@@ -116,7 +116,7 @@ class TraceBatchRepository:
             return None
         return {
             "id": int(batch.id),
-            "dataset_id": int(batch.dataset_id),
+            "dataset_id": int(batch.design_id),
             "bundle_type": str(batch.bundle_type),
             "role": str(batch.role),
             "status": str(batch.status),

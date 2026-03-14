@@ -129,6 +129,15 @@ class TraceRecord(SQLModel, table=True):
     )
 
     @property
+    def design_id(self) -> int:
+        """Return the canonical dataset-local design scope identifier."""
+        return int(self.dataset_id)
+
+    @design_id.setter
+    def design_id(self, value: int) -> None:
+        self.dataset_id = int(value)
+
+    @property
     def family(self) -> str:
         """Canonical alias for the observable family."""
         return self.data_type
@@ -204,6 +213,15 @@ class TraceBatchRecord(SQLModel, table=True):
         back_populates="result_bundles",
         link_model=TraceBatchTraceLink,
     )
+
+    @property
+    def design_id(self) -> int:
+        """Return the canonical dataset-local design scope identifier."""
+        return int(self.dataset_id)
+
+    @design_id.setter
+    def design_id(self, value: int) -> None:
+        self.dataset_id = int(value)
 
     @property
     def provenance_payload(self) -> dict:
@@ -355,6 +373,15 @@ class DerivedParameter(SQLModel, table=True):
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="derived_params")
 
+    @property
+    def design_id(self) -> int:
+        """Return the canonical dataset-local design scope identifier."""
+        return int(self.dataset_id)
+
+    @design_id.setter
+    def design_id(self, value: int) -> None:
+        self.dataset_id = int(value)
+
 
 class ParameterDesignation(SQLModel, table=True):
     """Semantic designation for an extracted parameter."""
@@ -370,6 +397,15 @@ class ParameterDesignation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="designations")
+
+    @property
+    def design_id(self) -> int:
+        """Return the canonical dataset-local design scope identifier."""
+        return int(self.dataset_id)
+
+    @design_id.setter
+    def design_id(self, value: int) -> None:
+        self.dataset_id = int(value)
 
 
 class CircuitRecord(SQLModel, table=True):
