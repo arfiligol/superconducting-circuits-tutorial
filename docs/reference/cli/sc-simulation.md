@@ -12,9 +12,9 @@ status: stable
 owner: docs-team
 audience: user
 scope: "`sc simulation` standalone CLI simulation-lane local run 操作指令。"
-version: v0.1.0
-last_updated: 2026-03-13
-updated_by: team
+version: v0.2.0
+last_updated: 2026-03-14
+updated_by: codex
 title: sc simulation
 ---
 
@@ -48,7 +48,7 @@ title: sc simulation
     |---|---|---|
     | `show` | 顯示單筆 simulation-lane task detail | `TASK_ID` |
     | `inspect` | 顯示 operator-oriented detail | `TASK_ID` |
-    | `latest` | 顯示符合條件的最新 simulation-lane task | `--status`, `--scope`, `--dataset-id` |
+    | `latest` | 顯示符合條件的最新 simulation-lane task | `--status`, `--dataset-id` |
     | `wait` | 等待單筆 task 達到目標狀態 | `TASK_ID`, `--until-status`, `--interval`, `--timeout` |
 
 ## Shared Option
@@ -62,7 +62,6 @@ title: sc simulation
 | Option | Values | Default |
 |---|---|---|
 | `--status` | `queued`, `running`, `completed`, `failed` | `None` (`latest`) |
-| `--scope` | `workspace`, `owned` | `workspace` (`latest`) |
 | `--dataset-id` | free text | `None` |
 
 !!! example "Common Usage"

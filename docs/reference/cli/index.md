@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: 目前正式支援的 standalone-first `sc` 命令列介面，說明 CLI 如何以 local runtime 與 `sc_core` 實踐研究 workflow。
-version: v0.4.0
-last_updated: 2026-03-13
-updated_by: team
+version: v0.5.0
+last_updated: 2026-03-14
+updated_by: codex
 ---
 
 # CLI Options
@@ -40,8 +40,14 @@ updated_by: team
     |---|---|---|
     | [Standalone Runtime](standalone-runtime.md) | local profile、local workspace、active dataset、local run registry | [Core / Python Core](../core/python-core.md), [Data Formats](../data-formats/index.md) |
     | [sc session](sc-session.md) | local context、active dataset fallback、workspace root | [Standalone Runtime](standalone-runtime.md) |
-    | [sc datasets](sc-datasets.md) | local dataset catalog、dataset detail、metadata mutation | [Standalone Runtime](standalone-runtime.md), [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md) |
+    | [sc datasets](sc-datasets.md) | local dataset catalog、dataset detail、metadata mutation | [Standalone Runtime](standalone-runtime.md), [Data Formats / Dataset / Design / Trace Schema](../data-formats/dataset-record.md) |
     | [sc circuit-definition](sc-circuit-definition.md) | canonical definition inspection、local definition catalog CRUD | [Standalone Runtime](standalone-runtime.md), [Core / Python Core](../core/python-core.md), [Data Formats / Circuit Netlist](../data-formats/circuit-netlist.md) |
+
+=== "Interchange"
+
+    | Command or contract | 核心聚焦 | Authority Pair |
+    |---|---|---|
+    | [Local / App Interchange](local-app-interchange.md) | local bundle 與 app bundle 的正式交換邊界 | [Standalone Runtime](standalone-runtime.md), [App / Shared / Resource Ownership & Visibility](../app/shared/resource-ownership-and-visibility.md), [Data Formats](../data-formats/index.md) |
 
 === "Run Registry"
 
@@ -85,6 +91,7 @@ updated_by: team
 ## Related
 
 - [Standalone Runtime](standalone-runtime.md) - local execution 與 local run registry
+- [Local / App Interchange](local-app-interchange.md) - local-first CLI 與 app surfaces 的交換邊界
 - [Core Reference](../core/index.md) - 核心能力與 Python/Julia 邊界
 - [Data Formats](../data-formats/index.md) - 共享 payload 與 schema rules
 - [How-to Guides](../../how-to/index.md) - 操作指南

@@ -12,9 +12,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: standalone-first CLI 的 local context、local catalogs、local run registry、local artifacts 與 direct execution model
-version: v0.1.0
+version: v0.2.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 title: Standalone Runtime
 ---
 
@@ -66,7 +66,7 @@ title: Standalone Runtime
 | Concern | SoT |
 |---|---|
 | circuit-definition source / preview artifact semantics | [Core / Python Core](../core/python-core.md), [Data Formats / Circuit Netlist](../data-formats/circuit-netlist.md) |
-| dataset / trace metadata compatibility | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md) |
+| dataset / trace metadata compatibility | [Data Formats / Dataset / Design / Trace Schema](../data-formats/dataset-record.md) |
 | result payload / artifact compatibility | [Data Formats / Analysis Result](../data-formats/analysis-result.md) |
 
 ## Related Commands
@@ -83,5 +83,6 @@ title: Standalone Runtime
 ## Related
 
 - [CLI Options](index.md)
+- [Local / App Interchange](local-app-interchange.md)
 - [Core Reference](../core/index.md)
 - [Data Formats](../data-formats/index.md)

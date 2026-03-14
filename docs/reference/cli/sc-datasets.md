@@ -12,9 +12,9 @@ status: stable
 owner: docs-team
 audience: user
 scope: "`sc datasets` standalone CLI local dataset catalog 查詢與 metadata mutation 指令。"
-version: v0.2.0
-last_updated: 2026-03-13
-updated_by: team
+version: v0.2.1
+last_updated: 2026-03-14
+updated_by: codex
 title: sc datasets
 ---
 
@@ -79,10 +79,10 @@ title: sc datasets
 | Concern | Authority |
 |---|---|
 | local dataset catalog / detail | [Standalone Runtime](standalone-runtime.md) |
-| dataset metadata contract | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md) |
+| dataset metadata contract | [Data Formats / Dataset / Design / Trace Schema](../data-formats/dataset-record.md) |
 
 ## Related
 
 - [CLI Options](index.md)
 - [Standalone Runtime](standalone-runtime.md)
-- [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md)
+- [Data Formats / Dataset / Design / Trace Schema](../data-formats/dataset-record.md)

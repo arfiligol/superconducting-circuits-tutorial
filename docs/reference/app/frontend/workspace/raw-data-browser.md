@@ -14,9 +14,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: "/raw-data 的 design list、trace preview、filtering、cursor-based browse 與 summary-only browse contract"
-version: v0.6.0
+version: v0.7.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Raw Data Browser
@@ -30,6 +30,10 @@ updated_by: team
 !!! tip "Shared Shell"
     本頁使用 shared [Header](../shared-shell/header.md) 與 [Sidebar](../shared-shell/sidebar.md)。
     selected design context 是 page-local，但 active dataset context 仍由 shared shell 提供。
+
+!!! warning "Dataset-local design scope"
+    本頁選擇的是 active dataset 內的 `design_id`。
+    design row 不能取代 active dataset，也不能跨出目前 dataset 單獨存在。
 
 ---
 

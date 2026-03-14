@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: team
 scope: 系統目前 published canonical contracts 的 owner、SoT 與主要消費者
-version: v0.7.0
+version: v0.8.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Canonical Contract Registry
@@ -36,16 +36,17 @@ updated_by: team
 | App Session / Workspace Context | app/shared + backend | [App / Shared / Identity & Workspace Model](../app/shared/identity-workspace-model.md), [App / Backend / Session & Workspace](../app/backend/session-workspace.md) | frontend shell, workspace pages | active dataset / workspace semantics 必須跨頁一致 |
 | App Resource Ownership / Visibility | app/shared + backend | [App / Shared / Resource Ownership & Visibility](../app/shared/resource-ownership-and-visibility.md), [App / Backend / Session & Workspace](../app/backend/session-workspace.md) | datasets, definitions, tasks, results, audit logging | 每筆 resource 只屬於一個 workspace |
 | App Authentication / Authorization Context | app/shared + backend | [App / Shared / Authentication & Authorization](../app/shared/authentication-and-authorization.md) | Header user menu, task queue controls, backend session surface, admin surfaces | role / capability flags 一旦 published 必須保持可解讀 |
-| Dataset Metadata / Dataset Profile | backend + `sc_core` | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md), [App / Backend / Datasets & Results](../app/backend/datasets-results.md) | dashboard, raw data browser, characterization, CLI datasets | mutation 與 read model 必須維持相容 |
-| Trace / Result / Provenance | backend + `sc_core` | [Data Formats / Design / Trace Schema](../data-formats/dataset-record.md), [Data Formats / Analysis Result](../data-formats/analysis-result.md) | raw data browser, characterization, worker, CLI results | persisted result / provenance contract 必須 version-aware |
+| Dataset / Design / Trace Model | data-formats + backend | [Data Formats / Dataset / Design / Trace Schema](../data-formats/dataset-record.md), [App / Backend / Datasets & Results](../app/backend/datasets-results.md) | dashboard, raw data browser, characterization, CLI datasets | `active_dataset` binds dataset；`design_id` is dataset-local |
+| Trace / Result / Provenance | data-formats + backend + `sc_core` | [Data Formats / Dataset / Design / Trace Schema](../data-formats/dataset-record.md), [Data Formats / Analysis Result](../data-formats/analysis-result.md), [App / Backend / Datasets & Results](../app/backend/datasets-results.md) | raw data browser, characterization, worker, CLI results | persisted result / provenance contract 必須 version-aware |
 | App Task Submission / Status / Result | app/backend + app/shared + `sc_core` | [App / Backend / Tasks & Execution](../app/backend/tasks-execution.md), [App / Shared / Task Runtime & Processors](../app/shared/task-runtime-and-processors.md) | simulation, characterization, worker | `task_id` immutable；retry 預設新 task |
 | App Processor Runtime Status | app/shared + backend adapter | [App / Shared / Task Runtime & Processors](../app/shared/task-runtime-and-processors.md) | Header worker summary, queue controls, runtime operators | health summary 需由 runtime heartbeat 派生 |
 | UI Shell Context | frontend + backend | [App / Frontend / Header](../app/frontend/shared-shell/header.md), [App / Frontend / Sidebar](../app/frontend/shared-shell/sidebar.md), [App / Backend / Session & Workspace](../app/backend/session-workspace.md) | all frontend pages | shell 顯示的 dataset / task / user context 不得分叉 |
 | UI Task Management Workflow | frontend + backend | [App / Frontend / Task Management](../app/frontend/shared-workflow/task-management.md), [App / Backend / Tasks & Execution](../app/backend/tasks-execution.md) | simulation, characterization | queue / attach / control / recovery 必須依 persisted task state |
 | Schemdraw Render Contract | backend + frontend | [App / Backend / Schemdraw Render](../app/backend/schemdraw-render.md), [App / Frontend / Schemdraw](../app/frontend/research-workflow/schemdraw.md) | schemdraw page | diagnostics code 一旦 published 應保持穩定 |
-| App Audit Log Contract | app/shared + backend adapters | [App / Shared / Audit Logging](../app/shared/audit-logging.md) | admins, task governance, runtime control review | append-only；不得與 app DB 綁在同一個 operational store |
+| App Audit Log Contract | app/shared + backend | [App / Shared / Audit Logging](../app/shared/audit-logging.md), [App / Backend / Audit Logs](../app/backend/audit-logs.md) | admins, task governance, runtime control review | append-only；不得與 app DB 綁在同一個 operational store |
 | CLI Local Runtime Context | CLI + `sc_core` | [CLI / Standalone Runtime](../cli/standalone-runtime.md), [CLI Options](../cli/index.md) | CLI, automation | CLI 不依賴 shared workspace / auth / queue semantics |
 | CLI Machine-readable Output | CLI + `sc_core` | [CLI Options](../cli/index.md) | CLI, automation | machine-readable changes 必須視為 contract change |
+| CLI / App Interchange | CLI + data-formats + app/shared | [CLI / Local / App Interchange](../cli/local-app-interchange.md), [App / Shared / Resource Ownership & Visibility](../app/shared/resource-ownership-and-visibility.md) | CLI, import/export flows, archive/restore | 不做 live sync；只做 import/export/copy-with-lineage |
 
 ## Related
 

@@ -9,10 +9,10 @@ tags:
 status: draft
 owner: docs-team
 audience: team
-scope: Backend session、workspace membership、active workspace、user summary、capability exposure 與 active dataset authority surface
-version: v0.8.0
+scope: Backend session、workspace membership、active workspace、active dataset、collaboration mutations 與 capability exposure surface
+version: v0.9.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Session & Workspace
@@ -20,30 +20,31 @@ updated_by: team
 本頁定義 frontend shell、workspace pages 與 shared app model 共用的 session / workspace authority surface。
 
 !!! info "Surface Boundary"
-    本頁負責 authenticated session、workspace membership、active workspace、user summary、active dataset、workspace role 與 capability exposure。
+    本頁負責 authenticated session、workspace membership、active workspace、active dataset、workspace invitation / membership management、user summary、workspace role 與 capability exposure。
     task lifecycle、definition preview、result artifact 與 audit query 不屬於本頁責任。
 
 !!! warning "Single Context Authority"
-    app shell 顯示的 `Active Dataset`、`Workspace Role`、`User Menu Summary` 必須來自同一份 backend session authority。
-    frontend 不得自行拼裝身份與權限。
+    app shell 顯示的 `Active Workspace`、`Active Dataset`、`Workspace Role`、`User Menu Summary`
+    與 collaboration controls 必須來自同一份 backend session authority。
 
 ## Coverage
 
 | Surface | Meaning |
-|---|---|
+| --- | --- |
 | Auth state | 使用者目前是 authenticated、anonymous 還是 degraded session |
-| User summary | Header user icon / menu 所需的 display data |
+| User summary | Header user icon / menu 所需 display data |
 | Workspace identity | active workspace、membership role、default queue scope |
 | Workspace membership list | user 可切換的 workspaces 與 roles |
 | Active dataset | shell-level global dataset context |
-| Capability flags | frontend 與 shared task-management surface 可直接使用的 permission summary |
+| Capability flags | frontend 與 shared task-management 可直接使用的 permission summary |
+| Collaboration mutations | invite、revoke、leave、remove member、transfer owner |
 
 ## Session Envelope
 
 backend session surface 至少必須提供：
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `auth.state` | `authenticated`, `anonymous`, `degraded` 等 session state |
 | `auth.mode` | auth transport or mode summary |
 | `user.id` | 目前使用者 identity |
@@ -60,7 +61,7 @@ backend session surface 至少必須提供：
 ## Active Workspace Switching
 
 | Rule | Meaning |
-|---|---|
+| --- | --- |
 | Session exposes memberships | Header 要能列出使用者可切換的 workspaces |
 | Switch mutates session | active workspace switch 是 session mutation，不是純 frontend state |
 | Dataset rebinding is required | workspace 切換後，active dataset 必須重新驗證或重選 |
@@ -69,16 +70,20 @@ backend session surface 至少必須提供：
 ## Mutation Surfaces
 
 | Mutation | Responsibility |
-|---|---|
-| `switch_active_workspace(workspace_id)` | 變更 session active workspace，回傳新 session envelope 與 rebind outcome |
+| --- | --- |
+| `switch_active_workspace(workspace_id)` | 變更 active workspace，回傳新 session envelope 與 rebind outcome |
 | `activate_dataset(dataset_id | null)` | 設定 active dataset，並驗證該 dataset 對目前 active workspace 可見 |
-| `accept_workspace_invitation(invite_token)` | 驗證 invite、建立 membership，並回傳 post-accept context suggestion |
-| `leave_workspace(workspace_id)` | 讓目前使用者主動退出 membership，並重新繫結 session context |
+| `create_workspace_invitation(workspace_id, email, role)` | 建立 pending invite 並觸發 outbound delivery |
+| `revoke_workspace_invitation(invite_id)` | 在 accept 前撤銷 pending / delivered invite |
+| `accept_workspace_invitation(invite_token)` | 驗證 invite、建立 membership，並回傳 post-accept suggestion |
+| `leave_workspace(workspace_id)` | 使用者主動退出 membership，並重新繫結 session context |
+| `remove_workspace_member(workspace_id, member_user_id)` | 移除其他 membership |
+| `transfer_workspace_owner(workspace_id, new_owner_user_id)` | 轉移 owner 權限並回傳更新後 membership summary |
 
 ## Workspace Switch Response
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `workspace.id` / `name` / `role` | 新的 active workspace |
 | `active_dataset_resolution` | `preserved`, `rebound`, `cleared` |
 | `active_dataset` | 重新繫結後的 dataset summary，或 `null` |
@@ -89,21 +94,42 @@ backend session surface 至少必須提供：
 ## Active Dataset Activation Rules
 
 | Rule | Meaning |
-|---|---|
+| --- | --- |
 | Must belong to active workspace | dataset 若不屬於或不可見於 active workspace，mutation 必須被拒絕 |
-| Explicit clear allowed | 允許把 active dataset 設為 `null`，供空 workspace 或等待手動選取使用 |
+| Explicit clear allowed | 允許把 active dataset 設為 `null` |
 | Session-wide propagation | mutation 成功後，所有 page consumers 看到同一 active dataset |
 | Rejection must explain why | 至少區分 `not_found`、`not_visible_in_workspace`、`archived` 等原因 |
 
-## Invitation Acceptance Surface
+## Invitation Surfaces
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
+| `invite_id` | invite identity |
+| `workspace_id` | target workspace |
+| `email` | invited email |
+| `role` | proposed workspace role |
+| `status` | `pending`, `delivered`, `accepted`, `revoked`, `expired`, `delivery_failed` |
+| `expires_at` | invite expiry |
+| `delivery.channel` | `smtp` or `manual_link` |
+
+### Invitation acceptance response
+
+| Field | Meaning |
+| --- | --- |
 | `invite.status` | `accepted`, `revoked`, `expired`, `rejected_account_mismatch` |
 | `workspace` | 受邀 workspace summary |
 | `membership.role` | 新 membership role |
 | `switch_available` | 若目前已有其他 active workspace，提示 frontend 顯示切換 CTA |
 | `recommended_next_action` | `switch_workspace`, `stay_current`, `reopen_invite` 等 |
+
+## Membership Management Rules
+
+| Rule | Meaning |
+| --- | --- |
+| Invite creation is explicit | 不存在靜默 auto-join |
+| Owner leave requires another owner | 否則必須先 transfer ownership |
+| Removing active member rebinds session | 若目標 user 正在使用此 workspace，session 必須清除 active workspace / dataset |
+| Transfer owner updates capabilities immediately | owner transfer 成功後，雙方 capability summary 都必須立即改變 |
 
 ## Request / Response Examples
 
@@ -143,6 +169,34 @@ backend session surface 至少必須提供：
     }
     ```
 
+!!! example "Create workspace invitation"
+    Request:
+    ```json
+    {
+      "workspace_id": "ws_lab_a",
+      "email": "researcher@example.com",
+      "role": "member"
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "invite_id": "inv_4d7c8f",
+        "workspace_id": "ws_lab_a",
+        "email": "researcher@example.com",
+        "role": "member",
+        "status": "delivered",
+        "expires_at": "2026-03-21T10:30:00Z",
+        "delivery": {
+          "channel": "smtp"
+        }
+      }
+    }
+    ```
+
 !!! example "Accept workspace invitation"
     Request:
     ```json
@@ -172,37 +226,68 @@ backend session surface 至少必須提供：
     }
     ```
 
+!!! example "Transfer workspace owner"
+    Request:
+    ```json
+    {
+      "workspace_id": "ws_lab_a",
+      "new_owner_user_id": "user_44"
+    }
+    ```
+
+    Response:
+    ```json
+    {
+      "ok": true,
+      "data": {
+        "workspace": {
+          "id": "ws_lab_a",
+          "name": "Lab A"
+        },
+        "previous_owner_user_id": "user_12",
+        "new_owner_user_id": "user_44",
+        "memberships_updated": true
+      }
+    }
+    ```
+
 ## Error Code Contract
 
 | Code | Category | When it applies |
-|---|---|---|
+| --- | --- | --- |
 | `auth_required` | `auth_required` | session 無效或未登入 |
 | `workspace_membership_required` | `permission_denied` | 目標 workspace 不屬於目前 memberships |
 | `dataset_not_visible_in_workspace` | `permission_denied` | activate dataset 指向不可見 dataset |
-| `dataset_archived` | `conflict` | active dataset 已 archive，不能作為 current context |
+| `dataset_archived` | `conflict` | active dataset 已 archive |
 | `workspace_invite_expired` | `conflict` | invite token 已過期 |
 | `workspace_invite_revoked` | `conflict` | invite 已撤銷 |
 | `workspace_invite_account_mismatch` | `permission_denied` | invite email 與目前帳號不符 |
+| `workspace_invite_create_denied` | `permission_denied` | session 無 invite 權限 |
+| `workspace_invite_not_found` | `not_found` | invite identity 不存在 |
+| `workspace_member_remove_denied` | `permission_denied` | session 無移除 member 權限 |
+| `workspace_owner_transfer_denied` | `permission_denied` | session 無 transfer owner 權限 |
+| `workspace_owner_transfer_invalid` | `validation_error` | 目標 user 不符合 owner transfer 條件 |
 | `context_rebind_required` | `conflict` | session 切換後需重新選 dataset / task |
 
 ## Capability Flags
 
 | Capability | Why frontend needs it |
-|---|---|
+| --- | --- |
+| `can_switch_workspace` | 顯示 workspace switcher |
+| `can_switch_dataset` | 顯示 active dataset switcher |
+| `can_invite_members` | 顯示 invite entry point |
+| `can_remove_members` | 顯示 member removal action |
+| `can_transfer_workspace_owner` | 顯示 owner transfer action |
 | `can_submit_tasks` | 決定 Simulation / Characterization 是否可送出 task |
 | `can_manage_workspace_tasks` | 決定 Header queue 是否顯示 `Cancel` / `Terminate` / `Retry` |
 | `can_manage_definitions` | 決定 `Schemas` / `Schema Editor` 是否可建立、儲存、刪除 |
 | `can_manage_datasets` | 決定 `Dashboard` metadata editing 是否可寫入 |
-| `can_view_audit_logs` | 決定 admin / governance surfaces 是否可顯示 audit entry points |
-
-!!! tip "User Menu Pairing"
-    Header user menu 顯示 `Profile Summary`、`Settings`、`Appearance`、`Sign out` 時，
-    其中 `Profile Summary`、role label 與 capability-driven menu visibility 都依賴本頁定義的 session envelope。
+| `can_view_audit_logs` | 決定 governance surfaces 是否可顯示 audit entry points |
 
 ## Delivery Rules
 
 | Rule | Meaning |
-|---|---|
+| --- | --- |
 | Dataset switch is global | active dataset 一旦切換，所有 page consumers 應看到同一版本 |
 | Role is workspace-scoped | shell 與 pages 看到的 action availability 必須依 workspace role 決定 |
 | Capability beats guessing | frontend page 不得自己推斷是否可 submit / manage / delete |
@@ -211,16 +296,17 @@ backend session surface 至少必須提供：
 ## Pairing
 
 | Consumer | Why it depends on this surface |
-|---|---|
+| --- | --- |
 | [Header](../frontend/shared-shell/header.md) | 顯示 active workspace、active dataset 與 user menu |
-| [Sidebar](../frontend/shared-shell/sidebar.md) | 需要知道 route family 與 shell-level context propagation |
+| [Sidebar](../frontend/shared-shell/sidebar.md) | 需要知道 shell-level context propagation |
 | [Dashboard](../frontend/workspace/dashboard.md) | dataset metadata editing 依賴 capability flags |
-| [Task Management](../frontend/shared-workflow/task-management.md) | queue visibility 與 queue filter 依賴 workspace role / default scope |
+| [Task Management](../frontend/shared-workflow/task-management.md) | queue visibility 與 row actions 依賴 workspace role / capability |
 
 ## Related
 
-* [Shared / Resource Ownership & Visibility](../shared/resource-ownership-and-visibility.md)
-* [Shared / Authentication & Authorization](../shared/authentication-and-authorization.md)
-* [Header](../frontend/shared-shell/header.md)
-* [Sidebar](../frontend/shared-shell/sidebar.md)
-* [Tasks & Execution](tasks-execution.md)
+- [Shared / Identity & Workspace Model](../shared/identity-workspace-model.md)
+- [Shared / Resource Ownership & Visibility](../shared/resource-ownership-and-visibility.md)
+- [Shared / Authentication & Authorization](../shared/authentication-and-authorization.md)
+- [Shared / Outbound Email Delivery](../shared/outbound-email-delivery.md)
+- [Header](../frontend/shared-shell/header.md)
+- [Tasks & Execution](tasks-execution.md)

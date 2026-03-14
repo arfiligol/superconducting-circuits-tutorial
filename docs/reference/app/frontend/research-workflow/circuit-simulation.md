@@ -14,9 +14,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: "/circuit-simulation 的 canonical definition 選擇、simulation setup、task submission、attached-task review 與 post-processing 契約"
-version: v0.19.0
+version: v0.19.1
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Circuit Simulation
@@ -145,6 +145,5 @@ graph TD
 * [Header](../shared-shell/header.md)
 * [Sidebar](../shared-shell/sidebar.md)
 * [Task Management](../shared-workflow/task-management.md)
-* [Backend / Tasks & Execution](../../app/backend/tasks-execution.md)
 * [Backend: Tasks & Execution](../../backend/tasks-execution.md)
 * [Backend: Datasets & Results](../../backend/datasets-results.md)

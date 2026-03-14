@@ -222,8 +222,8 @@ frontmatter 建議至少包含：
 例如：
 
 - Session / Workspace Contract
-- Task Semantics
-- Design / Trace Schema
+- Task Runtime / Task Execution Contract
+- Dataset / Design / Trace Schema
 - Analysis Result Contract
 
 ### Runtime Notes

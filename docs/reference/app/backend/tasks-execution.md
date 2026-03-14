@@ -10,9 +10,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: Backend task queue read model、control actions、worker summary、event history 與 result attachment surface
-version: v0.9.0
+version: v0.10.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Tasks & Execution
@@ -48,7 +48,7 @@ task submit response 至少必須提供：
 | `task_kind` | simulation / characterization / processing 等 |
 | `lane` | workflow lane |
 | `status` | 初始 lifecycle status |
-| `visibility_scope` | `workspace` / `owned` |
+| `visibility_scope` | `workspace` / `private` |
 | `owner_user_id` | task owner |
 | `dataset_id` / `definition_id` / design context | 與 page context 相關的 binding |
 
@@ -116,7 +116,7 @@ Header queue rows 至少必須能讀到：
 
 | Input | Baseline |
 |---|---|
-| `scope_filter` | `workspace`, `mine` |
+    | `scope_filter` | `workspace`, `mine` |
 | `status_filter` | `active`, `recent`, `all` |
 | `lane_filter` | optional |
 | `search_query` | optional，對 `summary`、owner display name、`task_id` 生效 |

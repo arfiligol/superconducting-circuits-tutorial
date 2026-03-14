@@ -11,9 +11,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: user / session / workspace / role / active workspace / active dataset / task visibility 與 active-context switching 的 app 共享模型
-version: v0.2.0
+version: v0.3.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Identity & Workspace Model
@@ -38,6 +38,7 @@ updated_by: team
 | `Workspace Role` | `owner`、`member`、`viewer` 等 workspace-scoped role |
 | `Active Workspace` | session 目前正在操作的單一 workspace |
 | `Active Dataset` | 目前 workflow 預設作用的 dataset context |
+| `Design Scope` | active dataset 內的 page-local analytical boundary，不是第二個 global context |
 | `Task Visibility` | 哪些 persisted tasks 對哪些 session / workspace 可見 |
 
 ## Authority Rules
@@ -66,6 +67,7 @@ updated_by: team
 |---|---|---|
 | `Active Workspace` | session | 最高 |
 | `Active Dataset` | session | 次高 |
+| selected `Design Scope` | page + backend browse/read model | 受前兩者約束 |
 | `Attached Task` | page + persisted task state | 受前兩者約束 |
 | page-local filters / selections | page-local UI state | 最低 |
 

@@ -14,9 +14,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: "/characterization 的 design scope、run analysis、attached task、run history、result view 與 identify mode 契約"
-version: v0.14.0
+version: v0.15.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Characterization
@@ -42,6 +42,10 @@ updated_by: team
 | active workspace | design list、trace visibility、run history 與 queue 都受其限制 |
 | active dataset | design scope 必須來自 active dataset；本頁不得自行擁有另一份 dataset authority |
 | attached task | 只要 task 對目前 session 仍可見，就可從 queue 或 refresh recovery 重建 |
+
+!!! info "Design selector meaning"
+    本頁的 Design Selector 選的是 active dataset 內的 dataset-local `design_id`。
+    它不是第二個 global dataset context。
 
 ## 核心職責
 

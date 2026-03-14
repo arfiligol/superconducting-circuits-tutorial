@@ -12,9 +12,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: dataset / schema / task / result / artifact 的 workspace ownership、visibility 與 cross-workspace sharing 規則
-version: v0.2.0
+version: v0.3.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Resource Ownership & Visibility
@@ -56,6 +56,7 @@ updated_by: team
 | Resource | Ownership rule |
 |---|---|
 | Dataset | 屬於一個 workspace；可為 `private` 或 `workspace` |
+| Design scope | 屬於單一 dataset；不單獨擁有另一組 workspace visibility |
 | Circuit Schema | 屬於一個 workspace；預設繼承建立時的 active workspace |
 | Task | 預設繼承提交時的 active workspace 與來源資源 scope |
 | Result / Artifact | 預設繼承 source task 的 workspace 與 visibility |

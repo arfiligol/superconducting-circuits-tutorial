@@ -1,120 +1,170 @@
 ---
 aliases:
   - Analysis Result Schema
+  - Analysis Artifact Schema
   - 分析結果格式
 tags:
   - diataxis/reference
   - audience/team
   - sot/true
-  - topic/data
+  - topic/data-format
 status: stable
 owner: docs-team
 audience: team
-scope: Characterization analysis run 的 persistence / provenance 契約
-version: v0.3.2
-last_updated: 2026-03-06
+scope: Characterization analysis run、artifact-first result view、derived parameter 與 tagged metric persistence contract
+version: v1.0.0
+last_updated: 2026-03-14
 updated_by: codex
+title: Analysis Result
 ---
 
-# Analysis Result Schema
+# Analysis Result
 
-本頁定義 Characterization 分析結果在資料層的正式契約。
+本頁定義 Characterization 與其他 trace-consuming analysis 的 persisted result contract。
 
-!!! note "Boundary"
-    本頁只描述 `characterization` analysis run 契約。
-    `circuit_simulation` / `parameter_sweep` 的 payload 結構與欄位，請看
-    [Dataset Record Schema](dataset-record.md)。
+!!! info "Artifact-first result view"
+    frontend result view 應依賴 `artifact_manifest` 與 `artifact payload`。
+    page 不得直接解析 scalar rows 拼裝出自己的結果視圖規則。
 
-!!! note "Current implementation（2026-03-04）"
-    目前分析結果主要由兩層組成：
-    1) `ResultBundleRecord(bundle_type=characterization, role=analysis_run)` 記錄一次 run 的 provenance
-    2) `DerivedParameter` 以 method 分組保存可顯示結果
+!!! warning "Run is not enough"
+    analysis run 完成不代表一定已有可展示結果。
+    `AnalysisRunRecord.status=completed` 與 `artifact_manifest` 必須分開判斷。
 
-!!! important "Contract"
-    Analysis run authority 採 trace-first：
-    - 必須有 compatible traces
-    - 必須有 selected trace ids
-    - `dataset_profile` 僅作推薦/提示，不能單獨阻擋 run
+## Canonical Objects
 
-## Run Bundle Contract
+| Object | Meaning |
+| --- | --- |
+| `AnalysisRunRecord` | 一次 trace-consuming analysis run 的 persisted identity |
+| `ResultArtifactRecord` | result view 可切換的 table / plot / text / summary artifact |
+| `DerivedParameterRecord` | 從 run 萃取出的命名物理量與 tagged metrics 基礎資料 |
 
-每次成功 run 必須建立新的 `ResultBundleRecord`：
+## AnalysisRunRecord
 
-| Field | Required | Contract |
-|---|---|---|
-| `bundle_type` | ✅ | `characterization` |
-| `role` | ✅ | `analysis_run` |
-| `status` | ✅ | `completed` |
-| `source_meta.origin` | ✅ | `characterization` |
-| `source_meta.analysis_id` | ✅ | registry analysis id |
-| `source_meta.input_bundle_id` | ✅ | 內部 provenance 的來源 bundle id；dataset-level scope 時可為 `null` |
-| `config_snapshot` | ✅ | 必須含 selected trace ids 與本次 analysis config |
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | required | run identity |
+| `dataset_id` | required | parent dataset |
+| `design_id` | required | parent design scope |
+| `workspace_id` | required | owning workspace |
+| `owner_user_id` | required | owner identity |
+| `visibility_scope` | required | inherited `private` / `workspace` |
+| `lifecycle_state` | required | `active`, `archived`, `deleted` |
+| `analysis_id` | required | registry analysis id |
+| `status` | required | `queued`, `running`, `completed`, `failed`, `cancelled`, `terminated` |
+| `input_trace_ids` | required | explicit selected trace ids |
+| `input_batch_ids` | optional | source batch refs |
+| `config_payload` | required | analysis configuration snapshot |
+| `artifact_manifest` | optional | result artifact summary |
+| `created_at` | required | creation time |
+| `completed_at` | optional | terminal time |
 
-### `config_snapshot` minimum fields
+!!! important "Trace-first authority"
+    analysis availability 與 re-entry 都必須由 `input_trace_ids` 與 compatible traces 驅動。
+    dataset profile 只提供提示，不是唯一 gate。
 
-- `selected_trace_ids: list[int]`
-- `selected_trace_mode_group: "base" | "sideband"`
-- analysis-specific config fields（例如 `fit_model`, `f_min`, `f_max`）
+## ResultArtifactRecord
 
-!!! warning "Provenance completeness"
-    只要缺少 `input_bundle_id` 或 `selected_trace_ids`，就無法完整回推 analysis input scope，視為違反契約。
+`ResultArtifactRecord` 是 Result View 的正式切換單位。
 
-## Result Parameter Contract
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `artifact_id` | required | artifact identity |
+| `analysis_run_id` | required | parent run |
+| `dataset_id` | required | parent dataset |
+| `design_id` | required | parent design scope |
+| `category` | required | `resonance`, `fit_table`, `plot`, `summary` 等 |
+| `view_kind` | required | `table`, `plot`, `text`, `json` |
+| `title` | required | display title |
+| `trace_mode_group` | optional | `base`, `sideband`, `all` |
+| `query_spec` | optional | artifact payload query baseline |
+| `payload_ref` | required | payload locator or handle |
 
-分析輸出由 `DerivedParameter` 持久化，最小要求：
-
-- `dataset_id`
-- `method`（需與 `analysis_registry.completed_methods` 對齊）
-- `name` / `value` / `unit`
-- `extra.trace_mode_group`（`base` / `sideband`）
-
-!!! important "Result View filter contract"
-    Result View 的 `Trace Mode Filter`（All/Base/Sideband）必須直接依賴
-    `DerivedParameter.extra.trace_mode_group`，不可使用第二套推論器。
-
-## Scope Bridge Contract（Simulation -> Characterization）
-
-!!! note "Current behavior（2026-03-04）"
-    既有資料模型仍可記錄 bundle 層級來源（`input_bundle_id`）。
-
-!!! important "Contract（Dataset-centric UI, bundle provenance internal）"
-    Characterization UI 以 dataset 為主，不暴露「手動選 Characterization bundle 作為輸入」流程。
-    run 候選 traces 由 dataset-level trace index 做 trace-first 篩選；
-    provenance 仍可在內部保存 `input_bundle_id` 以支援追溯。
-
-!!! warning "Input hygiene"
-    `analysis_result` 型資料不得被當作下一輪 trace 輸入，除非特定 analysis 有明確契約宣告。
-
-!!! note "Simulation post-process HFSS metadata"
-    `hfss_comparable` 與 `input_y_source` 屬於 `simulation_postprocess` bundle 的 provenance 欄位，
-    定義於 `Dataset Record Schema`。
-    Characterization `analysis_run` bundle 不應重複宣告這些欄位作為 authority。
-
-## JSON Example（characterization run bundle）
+### Artifact manifest minimum fields
 
 ```json
-{
-  "bundle_type": "characterization",
-  "role": "analysis_run",
-  "status": "completed",
-  "source_meta": {
-    "origin": "characterization",
-    "analysis_id": "squid_fitting",
-    "analysis_label": "SQUID Fitting",
-    "input_bundle_id": 42
-  },
-  "config_snapshot": {
-    "fit_model": "WITH_LS",
-    "fit_min_nh": 0.5,
-    "fit_max_nh": 5.0,
-    "selected_trace_ids": [101, 118, 120],
-    "selected_trace_mode_group": "base"
+[
+  {
+    "artifact_id": "artifact_mode_vs_lq",
+    "category": "resonance",
+    "view_kind": "table",
+    "title": "Mode vs L_q",
+    "trace_mode_group": "base"
   }
-}
+]
 ```
+
+## DerivedParameterRecord
+
+`DerivedParameterRecord` 是分析輸出的 canonical scalar layer。
+
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `id` | required | parameter identity |
+| `dataset_id` | required | parent dataset |
+| `design_id` | required | parent design scope |
+| `analysis_run_id` | required | source run |
+| `name` | required | parameter name |
+| `value` | required | scalar value |
+| `unit` | optional | unit |
+| `extra.trace_mode_group` | optional | `base`, `sideband`, `all` |
+| `extra.method` | optional | source method / fit model |
+| `extra.lineage` | optional | redaction-safe provenance payload |
+
+!!! important "Tagged metrics resolve from derived parameters"
+    Dashboard 的 `Tagged Core Metrics` 讀取必須透過 backend resolution contract，
+    不可由 UI 或 CLI 直接拼接 derived parameter rows。
+
+## Provenance Rules
+
+| Rule | Meaning |
+| --- | --- |
+| Dataset and design are both required | result 必須同時能回溯到 dataset 與 dataset-local design scope |
+| Result inherits task visibility | result / artifact 不得比 source task 更公開 |
+| Run history is persisted | refresh 後必須能只靠 persisted rows 重建 |
+| No implicit rerun | artifact payload query 不得觸發 analysis 重跑 |
+
+## Result View Contract
+
+| Concern | Required behavior |
+| --- | --- |
+| Category filter | 依 `artifact.category` 驅動 |
+| Table / Plot toggle | 依 `artifact.view_kind` 與 payload capability 決定 |
+| Trace Mode Filter | 依 `trace_mode_group` 驅動，而非前端自行推論 |
+| Empty completed run | 必須回傳顯式 empty diagnostics，不得靜默顯示空白 |
+
+## JSON Example
+
+!!! example "Analysis run with artifact manifest"
+    ```json
+    {
+      "id": "run_20",
+      "dataset_id": "ds_xy_001",
+      "design_id": "design_flux_scan_a",
+      "workspace_id": "ws_lab_a",
+      "owner_user_id": "user_12",
+      "visibility_scope": "workspace",
+      "lifecycle_state": "active",
+      "analysis_id": "admittance_extraction",
+      "status": "completed",
+      "input_trace_ids": ["trace_101"],
+      "config_payload": {
+        "selected_trace_ids": ["trace_101"],
+        "selected_trace_mode_group": "base"
+      },
+      "artifact_manifest": [
+        {
+          "artifact_id": "artifact_mode_vs_lq",
+          "category": "resonance",
+          "view_kind": "table",
+          "title": "Mode vs L_q",
+          "trace_mode_group": "base"
+        }
+      ]
+    }
+    ```
 
 ## Related
 
-- [Dataset Record Schema](dataset-record.md)
+- [Dataset / Design / Trace Schema](dataset-record.md)
 - [Characterization](../app/frontend/research-workflow/characterization.md)
-- [Circuit Simulation UI](../app/frontend/research-workflow/circuit-simulation.md) - Simulation sweep/post-process provenance 邊界
+- [Characterization Results](../app/backend/characterization-results.md)

@@ -12,9 +12,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: persisted audit trail、separate audit store、query/redaction/retention contract
-version: v0.3.0
+version: v0.4.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Audit Logging
@@ -82,3 +82,4 @@ updated_by: team
 * [Authentication & Authorization](authentication-and-authorization.md)
 * [Task Runtime & Processors](task-runtime-and-processors.md)
 * [Backend / Tasks & Execution](../backend/tasks-execution.md)
+* [Backend / Audit Logs](../backend/audit-logs.md)

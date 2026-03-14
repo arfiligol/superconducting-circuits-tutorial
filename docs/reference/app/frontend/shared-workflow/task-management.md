@@ -13,9 +13,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: Frontend shared header task queue、task attachment、worker summary、control actions 與 refresh recovery contract
-version: v0.4.0
+version: v0.5.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Task Management
@@ -54,7 +54,7 @@ updated_by: team
 | `status` | lifecycle status summary |
 | `summary` | 人類可讀的 task 摘要 |
 | `owner_display_name` | 多使用者 queue 中辨識 task owner |
-| `visibility_scope` | `workspace` / `owned` 等共享可見性語意 |
+| `visibility_scope` | `workspace` / `private` 等共享可見性語意 |
 | `dataset_id` / `definition_id` / design context | 提供與目前頁面 context 的關聯 |
 | `updated_at` | 幫助排序最近活動 |
 | `Attach` action | 明確將 page body 切到指定 persisted task |
@@ -72,6 +72,10 @@ updated_by: team
 | Terminal retention in panel | 保留最近 terminal tasks，避免 queue 只剩 active rows |
 | Search | 以 `summary`、`task_id`、owner 顯示名做輕量搜尋 |
 | Authority | filter availability 與 row actions 以 backend `allowed_actions` 與 session capabilities 為準 |
+
+!!! tip "`Mine` is a filter, not a visibility scope"
+    queue 的 `Mine` 來自 owner-based filter。
+    persisted `visibility_scope` 仍只有 `private` 與 `workspace`。
 
 ## Worker Summary Contract
 

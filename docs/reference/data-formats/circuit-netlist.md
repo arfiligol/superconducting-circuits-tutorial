@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "CircuitDefinition Netlist 規格：components-first、topology、optional parameters"
-version: v1.4.0
-last_updated: 2026-03-06
+version: v1.5.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
@@ -211,14 +211,20 @@ Live Preview 顯示值時，必須先用 topology 第 4 欄解析 component，�
 - `K*` row 參照不存在 inductor/component
 - 拓樸造成奇異矩陣（數值層）
 
+## Consumer Map
+
+| Consumer | Why it depends on this contract |
+| --- | --- |
+| [Circuit Definitions](/Users/arfiligol/Github/superconducting-circuits-tutorial/docs/reference/app/backend/circuit-definitions.md) | persisted source / validation / preview authority |
+| [Schema Editor](/Users/arfiligol/Github/superconducting-circuits-tutorial/docs/reference/app/frontend/definition/schema-editor.md) | source editing、auto-format、hint table、persisted preview |
+| [Circuit Simulation](/Users/arfiligol/Github/superconducting-circuits-tutorial/docs/reference/app/frontend/research-workflow/circuit-simulation.md) | canonical definition selection、expanded preview、setup binding |
+| [sc circuit-definition](/Users/arfiligol/Github/superconducting-circuits-tutorial/docs/reference/cli/sc-circuit-definition.md) | standalone inspection / preview of local definition sources |
+
 ## Code Reference Map
 
-- Parser / validator:
-  - [`circuit.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/simulation/domain/circuit.py)
-- Simulation page expanded preview:
-  - [`simulation/__init__.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/simulation/__init__.py)
-- Schema editor source/preview binding:
-  - [`schema_editor.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/app/pages/schema_editor.py)
+| Concern | Reference |
+| --- | --- |
+| Parser / validator | [`circuit.py`](/Users/arfiligol/Github/superconducting-circuits-tutorial/src/core/simulation/domain/circuit.py) |
 
 ## Runtime Parity Checklist
 

@@ -10,16 +10,16 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: raw source layout 與 Design/Trace ingest 邊界
-version: v1.0.0
-last_updated: 2026-03-08
+scope: raw source layout 與 dataset/design ingest boundary
+version: v1.1.0
+last_updated: 2026-03-14
 updated_by: codex
 ---
 
 # Raw Data Layout
 
-`data/raw/` 只保存外部來源檔案。  
-它不是 UI/Characterization 的直接讀取格式；trace-first 流程的正式輸入必須是 ingest 後的 `TraceRecord`。
+`data/raw/` 只保存外部來源檔案。
+它不是 UI / Characterization 的直接讀取格式；trace-first 流程的正式輸入必須是 ingest 後的 `TraceRecord`。
 
 ## Source Categories
 
@@ -34,30 +34,37 @@ data/raw/
     `circuit_simulation` 通常由應用內部產生 `TraceBatchRecord + TraceRecord + TraceStore payload`，
     而不是先落到 `data/raw/` 再二次 ingest。
 
-## Project-first / Design-first layout
+## Dataset-first / Design-scoped Layout
 
-建議以 design/project 為主做外部來源彙整：
+建議以 dataset 為主、design 為子目錄做外部來源彙整：
 
 ```text
 data/raw/
-└── <design_name>/
-    ├── layout/
-    │   ├── *.csv
-    │   └── *.txt
-    └── measurement/
-        ├── *.csv
-        └── *.s2p
+└── <dataset_name>/
+    └── designs/
+        └── <design_name>/
+            ├── layout/
+            │   ├── *.csv
+            │   └── *.txt
+            └── measurement/
+                ├── *.csv
+                └── *.s2p
 ```
 
 ## Ingest Boundary
 
 ingest/import 完成後應產生：
 
-1. `DesignRecord`
-2. `DesignAssetRecord`
-3. `TraceBatchRecord`
-4. `TraceRecord`
-5. `TraceStore` numeric payload
+1. `DatasetRecord`
+2. dataset-local `DesignScope`
+3. `DesignAssetRecord`
+4. `TraceBatchRecord`
+5. `TraceRecord`
+6. `TraceStore` numeric payload
+
+!!! warning "Do not skip dataset scope"
+    原始來源即使只有單一 design，也必須先歸入一個 `DatasetRecord`。
+    `design` 不能直接取代 dataset，否則無法與 active dataset、workspace visibility 與 publish lifecycle 對齊。
 
 !!! important "Raw file is provenance, not the working trace authority"
     raw 檔負責保留來源完整性；
@@ -68,6 +75,7 @@ ingest/import 完成後應產生：
 ### Layout HFSS ingest contract
 
 - layout CSV preprocess 完成後，必須先 materialize 成 canonical ND `TraceRecord`
+- materialized trace 必須同時帶上 `dataset_id` 與 `design_id`
 - `TraceRecord.axes` 在 metadata DB 只保留 `name/unit/length`
 - `TraceRecord.store_ref` 指向正式 numeric authority
 - frequency / bias axis arrays 與 trace values 都必須寫進 `TraceStore`
@@ -76,5 +84,5 @@ ingest/import 完成後應產生：
 
 ## Related
 
-- [Design / Trace Schema](dataset-record.md)
+- [Dataset / Design / Trace Schema](dataset-record.md)
 - [Data Storage](../../explanation/architecture/data-storage.md)

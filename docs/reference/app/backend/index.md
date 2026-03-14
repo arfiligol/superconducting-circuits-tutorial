@@ -10,9 +10,9 @@ status: draft
 owner: docs-team
 audience: team
 scope: Backend app reference 索引，收錄 frontend 與 app-shared model 依賴的 backend authority surfaces
-version: v0.7.0
+version: v0.8.0
 last_updated: 2026-03-14
-updated_by: team
+updated_by: codex
 ---
 
 # Backend Reference
@@ -35,7 +35,8 @@ updated_by: team
     |---|---|---|
     | [Session & Workspace](session-workspace.md) | Header, Dashboard, Raw Data Browser, Task Management | session、workspace、user summary、active dataset、capabilities |
     | [Circuit Definitions](circuit-definitions.md) | Schemas, Schema Editor, Schemdraw, Circuit Simulation | catalog、detail、mutation、persisted preview |
-    | [Datasets & Results](datasets-results.md) | Dashboard, Raw Data Browser, Characterization, Circuit Simulation | dataset profile、trace preview、tagged metrics summary、result handles |
+    | [Datasets & Results](datasets-results.md) | Header, Dashboard, Raw Data Browser, Characterization, Circuit Simulation | dataset catalog、dataset profile、design browse、trace preview、tagged metrics summary、result handles |
+    | [Audit Logs](audit-logs.md) | governance surfaces, admin tools | audit query、detail、export summary |
 
 === "Workflow"
 
@@ -52,6 +53,7 @@ updated_by: team
 | session role / capability / user menu visibility | [Session & Workspace](session-workspace.md) | [Authentication & Authorization](../shared/authentication-and-authorization.md) |
 | queue actions / worker summary / lifecycle control | [Tasks & Execution](tasks-execution.md) | [Task Runtime & Processors](../shared/task-runtime-and-processors.md) |
 | privileged task controls / audit trail | [Tasks & Execution](tasks-execution.md) | [Audit Logging](../shared/audit-logging.md) |
+| audit read model / governance query | [Audit Logs](audit-logs.md) | [Audit Logging](../shared/audit-logging.md) |
 | resource visibility / workspace binding | [Session & Workspace](session-workspace.md), [Tasks & Execution](tasks-execution.md) | [Resource Ownership & Visibility](../shared/resource-ownership-and-visibility.md) |
 
 ## Related
