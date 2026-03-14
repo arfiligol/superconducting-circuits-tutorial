@@ -174,55 +174,105 @@ function differential_mode_weights(component_values)
 end
 
 """
-    differential_mode_input_admittance(y_cube, component_values)
+    build_cm_dm_coordinate_transform(component_values)
 
-這一步做兩件事：
-1. 先對 port 3 做 Neumann-Kron reduction，把 XY line 自由度消掉
-2. 再把剩下的雙端口轉到 differential-mode basis，抽出差模看到的輸入導納 Yin_dm
+建立從 `(port1, port2, port3)` 到 `(cm, dm, port3)` 的座標轉換矩陣 A，
+使得：
+
+    [V_cm, V_dm, V_3]' = A * [V_1, V_2, V_3]'
 """
-function differential_mode_input_admittance(y_cube, component_values)
-    y11 = vec(y_cube[1, 1, :])
-    y12 = vec(y_cube[1, 2, :])
-    y22 = vec(y_cube[2, 2, :])
-    y13 = vec(y_cube[1, 3, :])
-    y23 = vec(y_cube[2, 3, :])
-    y33 = vec(y_cube[3, 3, :])
-
+function build_cm_dm_coordinate_transform(component_values)
     weights = differential_mode_weights(component_values)
     alpha = weights.alpha
     beta = weights.beta
+    return [
+        alpha beta 0.0
+        1.0 -1.0 0.0
+        0.0 0.0 1.0
+    ]
+end
 
-    # Step 1: eliminate the XY line port (port 3).
-    a = y11 .- ((y13 .* y13) ./ y33)
-    b = y22 .- ((y23 .* y23) ./ y33)
-    c = -(y12 .- ((y13 .* y23) ./ y33))
+"""
+    apply_coordinate_transformation(y_cube, transform_matrix)
 
-    # Step 2: project the reduced network into the differential/common-mode basis.
-    y_eff_11 = a .- (2 .* c) .+ b
-    y_eff_12 = beta .* (a .- c) .- alpha .* (-c .+ b)
-    y_eff_21 = y_eff_12
-    y_eff_22 = beta^2 .* a .+ (2 .* alpha .* beta .* c) .+ alpha^2 .* b
+對每個頻點的 Y 矩陣施作：
 
-    n_freq = length(y_eff_11)
-    y_eff = Array{ComplexF64}(undef, 2, 2, n_freq)
+    Y_m = A^(-T) * Y * A^(-1)
+
+其中 A 定義的是 `V_m = A * V_port`。
+"""
+function apply_coordinate_transformation(y_cube, transform_matrix)
+    _, _, n_freq = size(y_cube)
+    transformed = Array{ComplexF64}(undef, size(y_cube))
+    a_inv = inv(Matrix{Float64}(transform_matrix))
+    a_inv_t = transpose(a_inv)
+
     for k in 1:n_freq
-        y_eff[:, :, k] = [
-            y_eff_11[k] y_eff_12[k];
-            y_eff_21[k] y_eff_22[k]
-        ]
+        transformed[:, :, k] = a_inv_t * Matrix(@view y_cube[:, :, k]) * a_inv
     end
 
-    # 對 2x2 有效導納矩陣再做一次 Schur complement，
-    # 取得 differential mode 看到的單一輸入導納 Yin_dm。
-    yin_dm = y_eff_22 .- ((y_eff_21 .* y_eff_12) ./ y_eff_11)
+    return transformed
+end
+
+"""
+    kron_reduce_y_cube(y_cube; keep_ports, drop_ports)
+
+在每個頻點對 Y 矩陣做 Schur complement / Kron reduction：
+
+    Y_eff = Y_kk - Y_kd * Y_dd^(-1) * Y_dk
+
+這裡 `keep_ports` / `drop_ports` 對應目前矩陣座標系下的索引。
+"""
+function kron_reduce_y_cube(y_cube; keep_ports, drop_ports)
+    n_ports, _, n_freq = size(y_cube)
+    keep = collect(keep_ports)
+    drop = collect(drop_ports)
+
+    isempty(keep) && error("keep_ports must contain at least one port.")
+    length(union(keep, drop)) == length(keep) + length(drop) ||
+        error("keep_ports and drop_ports must be disjoint.")
+    sort(union(keep, drop)) == collect(1:n_ports) ||
+        error("keep_ports and drop_ports must partition all $n_ports ports.")
+
+    reduced = Array{ComplexF64}(undef, length(keep), length(keep), n_freq)
+
+    for k in 1:n_freq
+        yk = Matrix(@view y_cube[:, :, k])
+        y_kk = yk[keep, keep]
+
+        if isempty(drop)
+            reduced[:, :, k] = y_kk
+            continue
+        end
+
+        y_kd = yk[keep, drop]
+        y_dd = yk[drop, drop]
+        y_dk = yk[drop, keep]
+        reduced[:, :, k] = y_kk - (y_kd * (y_dd \ y_dk))
+    end
+
+    return reduced
+end
+
+"""
+    differential_mode_input_admittance(y_cube, component_values)
+
+依照目前 notebook 契約做：
+1. 先把 PTC 後的 port-basis Y 轉到 `(cm, dm, port3)` basis
+2. 再用一次 Kron reduction 同時消掉 `cm` 與 `port3`
+3. 最後留下 differential mode 的 driving-point admittance Yin_dm
+"""
+function differential_mode_input_admittance(y_cube, component_values)
+    transform_matrix = build_cm_dm_coordinate_transform(component_values)
+    y_modal = apply_coordinate_transformation(y_cube, transform_matrix)
+    y_dm_only = kron_reduce_y_cube(y_modal; keep_ports=(2,), drop_ports=(1, 3))
+    yin_dm = vec(y_dm_only[1, 1, :])
 
     return (
         Yin_dm=yin_dm,
-        Y_m_eff=y_eff,
-        Y_m_eff_11=y_eff_11,
-        Y_m_eff_12=y_eff_12,
-        Y_m_eff_21=y_eff_21,
-        Y_m_eff_22=y_eff_22,
+        Y_modal=y_modal,
+        Y_dm_only=y_dm_only,
+        coordinate_transform=transform_matrix,
     )
 end
 
