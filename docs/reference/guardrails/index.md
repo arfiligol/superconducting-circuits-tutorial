@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: 目前 workspace 的 guardrails 總索引，供人類與 AI Agent 載入任務相關規則。
-version: v2.3.0
-last_updated: 2026-03-14
+version: v2.3.1
+last_updated: 2026-03-15
 updated_by: codex
 ---
 
@@ -98,9 +98,9 @@ updated_by: codex
 | [Testing](./execution-verification/testing.md) | pytest / Vitest / Playwright / docs checks | [#agent-rule](./execution-verification/testing.md#agent-rule) |
 | [CI Gates](./execution-verification/ci-gates.md) | rewrite branch 的合併品質門檻 | [#agent-rule](./execution-verification/ci-gates.md#agent-rule) |
 | [Phase Gates](./execution-verification/phase-gates.md) | migration phase 的最低驗收條件與測試對照 | [#agent-rule](./execution-verification/phase-gates.md#agent-rule) |
-| [Prompt Grading](./execution-verification/prompt-grading.md) | Planning / Review 發派任務時的粒度與升降級規則 | [#agent-rule](./execution-verification/prompt-grading.md#agent-rule) |
-| [Multiple Agent Collaboration](./execution-verification/multi-agent-collaboration.md) | Documentation / Planning / Implementation / Review / Test Agents 協作框架 | [#agent-rule](./execution-verification/multi-agent-collaboration.md#agent-rule) |
-| [Agent Handoff Formats](./execution-verification/contributor-reporting.md) | plan / delivery / review handoff 模板 | [#agent-rule](./execution-verification/contributor-reporting.md#agent-rule) |
+| [Prompt Grading](./execution-verification/prompt-grading.md) | Planning & Reviewing 發派任務時的粒度與升降級規則 | [#agent-rule](./execution-verification/prompt-grading.md#agent-rule) |
+| [Multiple Agent Collaboration](./execution-verification/multi-agent-collaboration.md) | Documentation / Planning & Reviewing / Implementation / Test Agents 協作框架 | [#agent-rule](./execution-verification/multi-agent-collaboration.md#agent-rule) |
+| [Agent Handoff Formats](./execution-verification/contributor-reporting.md) | plan / delivery / merge handoff 模板 | [#agent-rule](./execution-verification/contributor-reporting.md#agent-rule) |
 | [Commit Standards](./execution-verification/commit-standards.md) | commit 邊界與訊息規範 | [#agent-rule](./execution-verification/commit-standards.md#agent-rule) |
 
 ## Documentation Design

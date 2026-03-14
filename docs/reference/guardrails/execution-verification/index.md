@@ -37,7 +37,7 @@ updated_by: codex
 | [Phase Gates](./phase-gates.md) | 你在推 migration milestone | milestone-level readiness |
 | [Prompt Grading](./prompt-grading.md) | 你在拆 implementation / test slices | task sizing |
 | [Multiple Agent Collaboration](./multi-agent-collaboration.md) | 你在定義 agent roles 與交接順序 | collaboration framework |
-| [Agent Handoff Formats](./contributor-reporting.md) | 你要撰寫 plan / delivery / review reports | handoff structure |
+| [Agent Handoff Formats](./contributor-reporting.md) | 你要撰寫 plan / delivery / merge reports | handoff structure |
 
 !!! warning "Do not skip verification ownership"
     `Implementation` 完成不等於整條交付線完成。

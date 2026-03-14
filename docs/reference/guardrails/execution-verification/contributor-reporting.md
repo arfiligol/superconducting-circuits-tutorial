@@ -9,15 +9,15 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "Planning / Implementation / Test / Review Agents 的標準交接格式"
-version: v2.0.0
-last_updated: 2026-03-14
+scope: "Planning & Reviewing / Implementation / Test Agents 的標準交接格式"
+version: v2.1.0
+last_updated: 2026-03-15
 updated_by: codex
 ---
 
 # Agent Handoff Formats
 
-規範 Planning / Implementation / Test / Review Agents 的交接結構，讓人類與其他 agents 可以直接消費。
+規範 Documentation Agent 產出的正式 SoT 與 `Planning & Reviewing / Implementation / Test Agents` 之間的交接結構，讓人類與其他 agents 可以直接消費。
 
 !!! important "Goal"
     handoff 必須同時滿足兩件事：
@@ -28,9 +28,9 @@ updated_by: codex
 
 | handoff type | owner | 主要用途 |
 | --- | --- | --- |
-| Plan Artifact v1 | Planning Agent | 定義 slice、test backlog、verification |
+| Plan Artifact v1 | Planning & Reviewing Agent | 定義 slice、test backlog、verification |
 | Delivery Report v1 | Implementation / Test Agent | 回報 commits、changed files、測試、風險 |
-| Review Merge Report v1 | Review Agent | 整合 accepted inputs、驗證結果、主線狀態 |
+| Review Merge Report v1 | Planning & Reviewing Agent | 整合 accepted inputs、驗證結果、主線狀態 |
 
 ## Plan Artifact v1
 
@@ -112,9 +112,10 @@ updated_by: codex
 - 結果: <what is now true>
 
 ### 2) Preflight 與邊界遵守
+- 指派的 `Branch / Worktree` 是否存在且專屬: <yes|no + note>
 - 開工前 `git status --porcelain`: <clean|dirty + note>
 - 是否遇到跨界需求: <no|yes + reason>
-- 跨界處理方式: <n/a|handoff-to-planning-or-review>
+- 跨界處理方式: <n/a|handoff-to-planning-and-reviewing>
 
 ### 3) 變更內容
 - Commit(s):
@@ -146,7 +147,7 @@ updated_by: codex
 - <risk-1>
 - <risk-2>
 
-### 9) Needs Review Agent Decision
+### 9) Needs Planning & Reviewing Agent Decision
 - <decision-needed-1>
 ```
 
@@ -158,7 +159,7 @@ updated_by: codex
 ### 0) Delivery Line
 - Topic: <topic>
 - Target Branch: <main-or-other>
-- Review Agent: <name>
+- Planning & Reviewing Agent: <name>
 
 ### 1) Accepted Inputs
 - Planning artifact:
@@ -189,7 +190,7 @@ updated_by: codex
 
 - Planning handoff 必須包含：`Source of Truth`、`Current Implementation State`、`Implementation Slices`、`Test Backlog`
 - Delivery handoff 必須包含：`Commit(s)`、`Changed Files`、`測試結果`、`Known Risks`、`API / Contract Touched Matrix`
-- Review handoff 必須包含：`Integrated Commits`、`Final Verification`、`Mainline Status`
+- Merge handoff 必須包含：`Integrated Commits`、`Final Verification`、`Mainline Status`
 
 ## Readability Rules
 
@@ -198,16 +199,17 @@ updated_by: codex
 - 回報用語必須區分：
   - **已完成**
   - **已驗證**
-  - **待 Review / Planning 決策**
+  - **待 Planning & Reviewing 決策**
 
 ## Agent Rule { #agent-rule }
 
 ```markdown
 ## Agent Handoff Formats
-- Planning Agents MUST produce a written `Plan Artifact v1`.
+- Planning & Reviewing Agents MUST produce a written `Plan Artifact v1`.
 - Implementation Agents and Test Agents MUST hand off using `Delivery Report v1`.
-- Review Agents MUST summarize integration and verification using `Review Merge Report v1`.
+- Planning & Reviewing Agents MUST summarize integration and verification using `Review Merge Report v1`.
 - Delivery reports MUST include:
+    - assigned branch/worktree
     - commit hashes
     - changed files with reason
     - test commands and results
@@ -216,5 +218,5 @@ updated_by: codex
 - Reporting quality rules:
     - lead with conclusion, then evidence
     - summarize logs instead of dumping long raw output
-    - explicitly separate completed work, verified work, and items needing review/planning decisions
+    - explicitly separate completed work, verified work, and items needing planning/reviewing decisions
 ```

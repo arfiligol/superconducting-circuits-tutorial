@@ -10,20 +10,24 @@ tags:
 status: stable
 owner: docs-team
 audience: team
-scope: "定義 Planning / Review Agents 在多 Agent 協作時使用的 prompt 分級、適用時機與驗收要求"
-version: v1.1.0
-last_updated: 2026-03-14
+scope: "定義 Planning & Reviewing Agents 在多 Agent 協作時使用的 prompt 分級、適用時機與驗收要求"
+version: v1.2.0
+last_updated: 2026-03-15
 updated_by: codex
 ---
 
 # Prompt Grading
 
-本文件定義 Planning / Review Agents 發派 Implementation 或 Test 任務時使用的 prompt 分級。
+本文件定義 `Planning & Reviewing Agent` 發派 Implementation 或 Test 任務時使用的 prompt 分級。
 目標不是讓 prompt 變得複雜，而是讓任務粒度、整合風險、驗收方式有一致標準。
 
 !!! important "When to use"
-    Planning Agent 在產出 implementation plan、或 Review Agent 在發出補件任務前，必須先決定本輪任務屬於哪個 Prompt Level。
+    `Planning & Reviewing Agent` 在產出 implementation plan、或在發出補件任務前，必須先決定本輪任務屬於哪個 Prompt Level。
     不得在同一輪同一工作流上同時混用多個互相矛盾的粒度。
+
+!!! warning "Dedicated worktree is mandatory"
+    發給 `Implementation Agent` 或 `Test Agent` 的 prompt，必須明確指定專屬 `Branch / Worktree`。
+    若 prompt 沒有專屬 worktree，agent 不得直接在共享工作樹或 `main` 上開工。
 
 ## Prompt Map
 
@@ -38,7 +42,7 @@ updated_by: codex
 
 - Prompt 應該使用「**能完成一個有意義交付的最小等級**」。
 - 若共享契約、邊界、驗收條件仍不穩，應降級，不應硬開大任務。
-- 若共享契約、邊界、驗收條件已穩，且 Review Agent 能承擔整合成本，應升級，不要把里程碑拆成大量零碎小修。
+- 若共享契約、邊界、驗收條件已穩，且 `Planning & Reviewing Agent` 能承擔整合成本，應升級，不要把里程碑拆成大量零碎小修。
 - 新一輪 prompt 只能在前一輪相關 report 已回收、review、整合、驗證完成後再發出。
 
 ## Prompt Levels
@@ -95,7 +99,7 @@ Done Definition：
 Done Definition：
 
 - 對應 phase 的一段核心子目標被完成
-- Review Agent 能以 phase gate 或 parity 條目驗收
+- `Planning & Reviewing Agent` 能以 phase gate 或 parity 條目驗收
 
 ## Escalation / De-escalation
 
@@ -110,7 +114,7 @@ Done Definition：
 - backend/frontend/core/cli 共享契約仍常變
 - 前一輪剛發生重大 review finding 或 integration conflict
 - 同一區塊存在高風險 runtime 問題尚未釐清
-- Review Agent 尚未把前一輪報告整合完畢
+- `Planning & Reviewing Agent` 尚未把前一輪報告整合完畢
 
 ## Required Prompt Fields
 
@@ -128,11 +132,17 @@ Done Definition：
 - `Verification`
 - `Handoff`
 
-## Planning / Review Rules
+`Branch / Worktree` 不是可選欄位：
+
+- 必須對應獨立 `git worktree` + branch
+- 不得只寫 branch name 而沒有 worktree path
+- 若 prompt 缺少這個欄位，應視為 prompt 不完整，先補齊再派工
+
+## Planning & Reviewing Rules
 
 - 同一 workstream 在同一時間只應有一份 active prompt。
 - 前一輪該 workstream 的 report 未回收前，不得先開下一輪。
-- 如果 context compact 或回話中斷，Planning / Review 端必須先重述：
+- 如果 context compact 或回話中斷，`Planning & Reviewing Agent` 必須先重述：
   - 目前已整合的輪次
   - 尚未回收的輪次
   - 現在要開的是哪個 Prompt Level
@@ -143,7 +153,7 @@ Done Definition：
 - 把一個明顯應該是 `L2 Slice` 的工作拆成多輪 `L1 Fixup`
 - 在共享契約還不穩時直接開 `L4 Phase Push`
 - 上一輪 report 還沒收回，就先發下一輪 prompt
-- 一份 prompt 同時跨越多個不穩定邊界，導致 Review Agent 無法可靠驗收
+- 一份 prompt 同時跨越多個不穩定邊界，導致 `Planning & Reviewing Agent` 無法可靠驗收
 - 把多個不相關的小修補打包成假 `Milestone`
 
 ## Related
@@ -156,7 +166,7 @@ Done Definition：
 
 ```markdown
 ## Prompt Grading
-- Planning or Review Agents MUST assign a Prompt Level before issuing any Implementation/Test prompt.
+- Planning & Reviewing Agents MUST assign a Prompt Level before issuing any Implementation/Test prompt.
 - Prompt Levels:
     - `L1 Fixup`: one bug / one contract mismatch / one runtime issue.
     - `L2 Slice`: one coherent workflow or command/persistence slice.
@@ -168,8 +178,11 @@ Done Definition：
     - if repeated small prompts are slowing down a stable workstream, escalate from `L1`/`L2` to `L2`/`L3`.
 - Safety rule:
     - if shared boundaries are unstable or recent integration revealed major issues, downgrade prompt size.
-- Planning/Review sequencing rule:
+- Planning & Reviewing sequencing rule:
     - do not issue the next prompt for a workstream until the previous report has been reviewed, integrated, and verified.
+- Worktree rule:
+    - every Implementation/Test prompt must assign a dedicated worktree + branch.
+    - Implementation/Test Agents must not start work without that assignment.
 - Required prompt fields:
     - Task ID / Topic
     - Prompt Level
