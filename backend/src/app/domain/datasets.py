@@ -4,6 +4,8 @@ from typing import Literal
 from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayloadRef
 
 DatasetStatus = Literal["Ready", "Queued", "Review"]
+DatasetVisibilityScope = Literal["private", "workspace"]
+DatasetLifecycleState = Literal["active", "archived", "deleted"]
 DatasetSortBy = Literal["updated_at", "name", "samples"]
 SortOrder = Literal["asc", "desc"]
 DatasetMetadataField = Literal["device_type", "capabilities", "source"]
@@ -15,6 +17,10 @@ class DatasetSummary:
     name: str
     family: str
     owner: str
+    owner_user_id: str
+    workspace_id: str
+    visibility_scope: DatasetVisibilityScope
+    lifecycle_state: DatasetLifecycleState
     updated_at: str
     device_type: str
     source: str
@@ -30,6 +36,10 @@ class DatasetDetail:
     name: str
     family: str
     owner: str
+    owner_user_id: str
+    workspace_id: str
+    visibility_scope: DatasetVisibilityScope
+    lifecycle_state: DatasetLifecycleState
     updated_at: str
     device_type: str
     capabilities: tuple[str, ...]

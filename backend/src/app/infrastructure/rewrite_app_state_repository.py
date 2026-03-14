@@ -3,7 +3,12 @@ from typing import Protocol
 
 from sc_core.execution import TaskResultHandle
 
-from src.app.domain.session import SessionState, SessionUser
+from src.app.domain.session import (
+    SessionState,
+    SessionUser,
+    WorkspaceAllowedActions,
+    WorkspaceMembership,
+)
 from src.app.domain.storage import (
     MetadataRecordRef,
     ResultHandleKind,
@@ -75,6 +80,14 @@ class InMemoryRewriteAppStateRepository:
         self._storage_metadata_repository = storage_metadata_repository
         self._task_snapshot_repository = task_snapshot_repository
         self._session_state = _seed_session_state()
+        self._default_dataset_ids = {
+            "ws-device-lab": "fluxonium-2025-031",
+            "ws-modeling": "transmon-coupler-014",
+        }
+        self._last_active_dataset_ids = {
+            "ws-device-lab": "fluxonium-2025-031",
+            "ws-modeling": "transmon-coupler-014",
+        }
         self._tasks = (
             {task.task_id: task for task in build_seed_tasks()} if include_task_scaffold else {}
         )
@@ -85,9 +98,52 @@ class InMemoryRewriteAppStateRepository:
     def get_session_state(self) -> SessionState:
         return self._session_state
 
+    def set_active_workspace_id(self, workspace_id: str) -> SessionState:
+        current_workspace_id = self._session_state.workspace_id
+        if self._session_state.active_dataset_id is not None:
+            self._last_active_dataset_ids[current_workspace_id] = self._session_state.active_dataset_id
+
+        membership = _membership_for_workspace(self._session_state.memberships, workspace_id)
+        if membership is None:
+            return self._session_state
+
+        memberships = tuple(
+            WorkspaceMembership(
+                workspace_id=item.workspace_id,
+                slug=item.slug,
+                display_name=item.display_name,
+                role=item.role,
+                default_task_scope=item.default_task_scope,
+                is_active=item.workspace_id == workspace_id,
+                allowed_actions=item.allowed_actions,
+            )
+            for item in self._session_state.memberships
+        )
+        self._session_state = replace(
+            self._session_state,
+            workspace_id=membership.workspace_id,
+            workspace_slug=membership.slug,
+            workspace_display_name=membership.display_name,
+            workspace_role=membership.role,
+            default_task_scope=membership.default_task_scope,
+            memberships=memberships,
+            active_dataset_id=None,
+        )
+        return self._session_state
+
     def set_active_dataset_id(self, dataset_id: str | None) -> SessionState:
         self._session_state = replace(self._session_state, active_dataset_id=dataset_id)
+        if dataset_id is None:
+            self._last_active_dataset_ids.pop(self._session_state.workspace_id, None)
+        else:
+            self._last_active_dataset_ids[self._session_state.workspace_id] = dataset_id
         return self._session_state
+
+    def get_last_active_dataset_id(self, workspace_id: str) -> str | None:
+        return self._last_active_dataset_ids.get(workspace_id)
+
+    def get_default_dataset_id(self, workspace_id: str) -> str | None:
+        return self._default_dataset_ids.get(workspace_id)
 
     def list_tasks(self) -> list[TaskDetail]:
         if self._task_snapshot_repository is not None:
@@ -312,23 +368,66 @@ class InMemoryRewriteAppStateRepository:
 
 
 def _seed_session_state() -> SessionState:
+    memberships = (
+        WorkspaceMembership(
+            workspace_id="ws-device-lab",
+            slug="device-lab",
+            display_name="Device Lab Workspace",
+            role="owner",
+            default_task_scope="workspace",
+            is_active=True,
+            allowed_actions=WorkspaceAllowedActions(
+                switch_to=True,
+                activate_dataset=True,
+                invite_members=True,
+                remove_members=True,
+                transfer_owner=True,
+            ),
+        ),
+        WorkspaceMembership(
+            workspace_id="ws-modeling",
+            slug="modeling",
+            display_name="Modeling Workspace",
+            role="member",
+            default_task_scope="owned",
+            is_active=False,
+            allowed_actions=WorkspaceAllowedActions(
+                switch_to=True,
+                activate_dataset=True,
+                invite_members=False,
+                remove_members=False,
+                transfer_owner=False,
+            ),
+        ),
+    )
     return SessionState(
         session_id="rewrite-local-session",
         auth_state="authenticated",
-        auth_mode="development_stub",
-        scopes=("datasets:read", "datasets:write", "tasks:read", "tasks:submit"),
+        auth_mode="local_stub",
         user=SessionUser(
             user_id="researcher-01",
             display_name="Rewrite Local User",
             email="rewrite.local@example.com",
+            platform_role="user",
         ),
         workspace_id="ws-device-lab",
         workspace_slug="device-lab",
         workspace_display_name="Device Lab Workspace",
         workspace_role="owner",
         default_task_scope="workspace",
+        memberships=memberships,
         active_dataset_id="fluxonium-2025-031",
     )
+
+
+def _membership_for_workspace(
+    memberships: tuple[WorkspaceMembership, ...],
+    workspace_id: str,
+) -> WorkspaceMembership | None:
+    for membership in memberships:
+        if membership.workspace_id == workspace_id:
+            return membership
+    return None
 
 
 def build_seed_tasks() -> tuple[TaskDetail, ...]:

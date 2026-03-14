@@ -40,6 +40,10 @@ class InMemoryRewriteCatalogRepository:
                 name=dataset.name,
                 family=dataset.family,
                 owner=dataset.owner,
+                owner_user_id=dataset.owner_user_id,
+                workspace_id=dataset.workspace_id,
+                visibility_scope=dataset.visibility_scope,
+                lifecycle_state=dataset.lifecycle_state,
                 updated_at=dataset.updated_at,
                 device_type=dataset.device_type,
                 source=dataset.source,
@@ -50,6 +54,9 @@ class InMemoryRewriteCatalogRepository:
             )
             for dataset in self._datasets.values()
         ]
+
+    def list_dataset_details(self) -> list[DatasetDetail]:
+        return list(self._datasets.values())
 
     def get_dataset(self, dataset_id: str) -> DatasetDetail | None:
         return self._datasets.get(dataset_id)
@@ -169,6 +176,10 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
             name="Fluxonium sweep 031",
             family="Fluxonium",
             owner="Device Lab",
+            owner_user_id="researcher-01",
+            workspace_id="ws-device-lab",
+            visibility_scope="private",
+            lifecycle_state="active",
             updated_at="2026-02-26 13:40",
             device_type="Unspecified",
             capabilities=(),
@@ -262,6 +273,10 @@ def _seed_datasets() -> tuple[DatasetDetail, ...]:
             name="Coupler detuning 014",
             family="Transmon",
             owner="Modeling",
+            owner_user_id="modeler-07",
+            workspace_id="ws-modeling",
+            visibility_scope="workspace",
+            lifecycle_state="active",
             updated_at="2026-02-24 09:15",
             device_type="Transmon",
             capabilities=("cross-resonance",),

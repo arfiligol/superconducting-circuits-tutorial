@@ -1,7 +1,15 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-ApiErrorCategory = Literal["not_found", "validation", "forbidden", "conflict"]
+ApiErrorCategory = Literal[
+    "auth_required",
+    "permission_denied",
+    "validation_error",
+    "not_found",
+    "conflict",
+    "validation",
+    "forbidden",
+]
 
 
 @dataclass(frozen=True)

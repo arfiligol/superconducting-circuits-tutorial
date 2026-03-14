@@ -19,42 +19,130 @@ def reset_app_state() -> None:
     reset_runtime_state()
 
 
-def test_get_session_returns_dev_stub_and_active_dataset() -> None:
+def test_get_session_returns_canonical_workspace_surface() -> None:
     response = client.get("/session")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["session_id"] == "rewrite-local-session"
-    assert payload["auth"]["state"] == "authenticated"
-    assert payload["auth"]["mode"] == "development_stub"
-    assert payload["auth"]["can_submit_tasks"] is True
-    assert payload["identity"]["user_id"] == "researcher-01"
-    assert payload["workspace"]["workspace_id"] == "ws-device-lab"
-    assert payload["workspace"]["default_task_scope"] == "workspace"
-    assert payload["workspace"]["active_dataset"]["dataset_id"] == "fluxonium-2025-031"
-    assert payload["workspace"]["active_dataset"]["owner"] == "Device Lab"
+    assert payload["ok"] is True
+    assert payload["data"]["session_id"] == "rewrite-local-session"
+    assert payload["data"]["auth"] == {
+        "state": "authenticated",
+        "mode": "local_stub",
+    }
+    assert payload["data"]["user"] == {
+        "id": "researcher-01",
+        "display_name": "Rewrite Local User",
+        "email": "rewrite.local@example.com",
+        "platform_role": "user",
+    }
+    assert payload["data"]["workspace"]["id"] == "ws-device-lab"
+    assert payload["data"]["workspace"]["default_task_scope"] == "workspace"
+    assert payload["data"]["workspace"]["allowed_actions"] == {
+        "switch_to": True,
+        "activate_dataset": True,
+        "invite_members": True,
+        "remove_members": True,
+        "transfer_owner": True,
+    }
+    assert payload["data"]["active_dataset"]["id"] == "fluxonium-2025-031"
+    assert payload["data"]["active_dataset"]["visibility_scope"] == "private"
+    assert payload["data"]["capabilities"]["can_submit_tasks"] is True
+    assert payload["data"]["capabilities"]["can_switch_workspace"] is True
+    assert payload["data"]["memberships"] == [
+        {
+            "id": "ws-device-lab",
+            "slug": "device-lab",
+            "name": "Device Lab Workspace",
+            "role": "owner",
+            "default_task_scope": "workspace",
+            "is_active": True,
+            "allowed_actions": {
+                "switch_to": True,
+                "activate_dataset": True,
+                "invite_members": True,
+                "remove_members": True,
+                "transfer_owner": True,
+            },
+        },
+        {
+            "id": "ws-modeling",
+            "slug": "modeling",
+            "name": "Modeling Workspace",
+            "role": "member",
+            "default_task_scope": "owned",
+            "is_active": False,
+            "allowed_actions": {
+                "switch_to": True,
+                "activate_dataset": True,
+                "invite_members": False,
+                "remove_members": False,
+                "transfer_owner": False,
+            },
+        },
+    ]
+    assert payload["meta"]["memberships_count"] == 2
+
+
+def test_patch_session_active_workspace_rebinds_dataset_and_capabilities() -> None:
+    response = client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["workspace"]["id"] == "ws-modeling"
+    assert payload["data"]["workspace"]["role"] == "member"
+    assert payload["data"]["active_dataset_resolution"] == "rebound"
+    assert payload["data"]["active_dataset"]["id"] == "transmon-coupler-014"
+    assert payload["data"]["active_dataset"]["family"] == "Transmon"
+    assert payload["data"]["capabilities"]["can_invite_members"] is False
+    assert payload["data"]["capabilities"]["can_manage_datasets"] is True
+    assert payload["data"]["detached_task_ids"] == []
+
+
+def test_patch_session_active_workspace_rejects_missing_membership() -> None:
+    response = client.patch("/session/active-workspace", json={"workspace_id": "ws-missing"})
+
+    assert response.status_code == 403
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "workspace_membership_required"
+    assert response.json()["error"]["category"] == "permission_denied"
 
 
 def test_patch_session_active_dataset_updates_context() -> None:
+    client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
+    client.patch("/session/active-dataset", json={"dataset_id": None})
+
     response = client.patch("/session/active-dataset", json={"dataset_id": "transmon-coupler-014"})
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["workspace"]["active_dataset"]["dataset_id"] == "transmon-coupler-014"
-    assert payload["workspace"]["active_dataset"]["family"] == "Transmon"
+    assert payload["data"]["workspace"]["id"] == "ws-modeling"
+    assert payload["data"]["active_dataset"]["id"] == "transmon-coupler-014"
+    assert payload["data"]["active_dataset"]["family"] == "Transmon"
 
 
 def test_patch_session_active_dataset_can_clear_selection() -> None:
     response = client.patch("/session/active-dataset", json={"dataset_id": None})
 
     assert response.status_code == 200
-    assert response.json()["workspace"]["active_dataset"] is None
+    assert response.json()["data"]["active_dataset"] is None
+
+
+def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> None:
+    response = client.patch("/session/active-dataset", json={"dataset_id": "transmon-coupler-014"})
+
+    assert response.status_code == 403
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "dataset_not_visible_in_workspace"
+    assert response.json()["error"]["category"] == "permission_denied"
 
 
 def test_patch_session_active_dataset_rejects_missing_dataset() -> None:
     response = client.patch("/session/active-dataset", json={"dataset_id": "missing-dataset"})
 
     assert response.status_code == 404
+    assert response.json()["ok"] is False
     assert response.json()["error"]["code"] == "dataset_not_found"
     assert response.json()["error"]["category"] == "not_found"
 
