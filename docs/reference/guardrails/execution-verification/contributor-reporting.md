@@ -24,6 +24,14 @@ updated_by: codex
     1) 人類可快速看懂成果與風險
     2) 下一個 agent 可直接提取 commits、檔案、測試、風險與待決策事項
 
+## Handoff Map
+
+| handoff type | owner | 主要用途 |
+| --- | --- | --- |
+| Plan Artifact v1 | Planning Agent | 定義 slice、test backlog、verification |
+| Delivery Report v1 | Implementation / Test Agent | 回報 commits、changed files、測試、風險 |
+| Review Merge Report v1 | Review Agent | 整合 accepted inputs、驗證結果、主線狀態 |
+
 ## Plan Artifact v1
 
 ```markdown

@@ -22,6 +22,20 @@ updated_by: team
 
 凡是寫在 `Reference` 的定義，都是程式碼、CLI、UI、backend 與核心能力需要對齊的 SoT。
 
+!!! info "How to read Reference"
+    先看 `App`、`CLI`、`Core`、`Data Formats` 這些 owner layer，再用 `Architecture` 看 cross-layer registry 與 parity。`Guardrails` 則回答開發流程與寫作規範，不直接定產品 surface。
+
+## Reading Map
+
+| 如果你想確認 | 先看哪裡 |
+| --- | --- |
+| App 的 shell、page、backend authority | `App / Shared / Frontend / Backend` |
+| CLI 的正式能力與 local/app bridge | `CLI Options` |
+| 核心科學模組與 Julia/Python 邊界 | `Core` |
+| persisted payload 與 canonical record schema | `Data Formats` |
+| 哪個 contract 由誰擁有 | `Architecture Reference` |
+| 開發與文件規範 | `Guardrails` |
+
 ## Categories
 
 | 類別 | 核心聚焦 |
@@ -35,6 +49,9 @@ updated_by: team
 | [Data Formats](data-formats/index.md) | 數據格式、record schema 與 canonical payload rules |
 | [Guardrails](guardrails/index.md) | workspace 開發規範、文件規範與執行驗證規則 |
 | [Contributors](contributors.md) | 貢獻者名錄與文件引用依據 |
+
+!!! tip "Owner-first rule"
+    若兩頁看起來都在談同一件事，優先回到真正擁有該 contract 的 layer，而不是先相信較靠近 consumer 的說明頁。
 
 ## Related
 

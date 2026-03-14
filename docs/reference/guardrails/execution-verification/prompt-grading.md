@@ -25,6 +25,15 @@ updated_by: codex
     Planning Agent 在產出 implementation plan、或 Review Agent 在發出補件任務前，必須先決定本輪任務屬於哪個 Prompt Level。
     不得在同一輪同一工作流上同時混用多個互相矛盾的粒度。
 
+## Prompt Map
+
+| level | 適合什麼 | 不該拿來做什麼 |
+| --- | --- | --- |
+| `L1 Fixup` | 單點 bug / mismatch / gate failure | 包整條 workflow |
+| `L2 Slice` | 一條完整可驗證的功能切片 | 零碎 helper 級小修 |
+| `L3 Milestone` | 同一 workstream 的明顯里程碑 | 把不相關小修硬綁成 milestone |
+| `L4 Phase Push` | phase 級推進，且 contracts/gates 已穩 | 在共享邊界未穩時硬推大任務 |
+
 ## Design Principles
 
 - Prompt 應該使用「**能完成一個有意義交付的最小等級**」。

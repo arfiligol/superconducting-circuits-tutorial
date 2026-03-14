@@ -20,6 +20,9 @@ updated_by: team
 
 正式的 plotting reference 內容已移至 [Core / Julia Plotting](core/julia-plotting.md)。
 
+!!! info "Moved page"
+    這頁只保留導引功能，不再承載正式 plotting contract。若你要找 canonical plotting reference，請直接進入 `Core / Julia Plotting`。
+
 ## Moved
 
 - [Julia Plotting](core/julia-plotting.md)

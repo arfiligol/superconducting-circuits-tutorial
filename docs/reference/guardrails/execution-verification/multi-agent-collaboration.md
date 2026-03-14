@@ -26,6 +26,16 @@ updated_by: codex
 !!! info "Document-first execution"
     正式流程是：先收斂文件，再寫計劃，再做實作，再補 integration / E2E，最後由 Review Agent 收回主線。
 
+## Collaboration Map
+
+| stage | primary owner | output |
+| --- | --- | --- |
+| Documentation | Documentation Agent | updated SoT / decision notes |
+| Planning | Planning Agent | plan artifact + test backlog |
+| Implementation | Frontend / Backend / Core / CLI Agent | code + unit tests + delivery report |
+| Test | Test Agent | integration / E2E tests + evidence |
+| Review | Review Agent | integrated delivery + final verification |
+
 ## Agent Families
 
 | Agent family | Primary responsibility | Not responsible for |

@@ -7,13 +7,28 @@ tags:
   - status/stable
   - audience/contributor
   - topic/governance
+owner: docs-team
+audience: contributor
+scope: Frontmatter 中人名欄位的正式驗證名錄
+version: v1.1.0
+last_updated: 2026-03-14
+updated_by: codex
 ---
 
 # 貢獻者名錄 (Contributors)
 
 本文件為專案貢獻者的官方記錄。所有在文件 Frontmatter 中提及的人名（如 `owner`, `last_updated_by`）**必須**存在於此名錄中。
 
----
+!!! info "How to use this page"
+    這頁不是感謝名單，而是 frontmatter 人名驗證的正式 registry。新增或引用新的人名之前，應先更新這裡。
+
+## Registry Map
+
+| category | 用途 |
+| --- | --- |
+| Primary Contributors | 核心開發、維護、文件撰寫 |
+| Secondary Contributors | 提供建議或指導，但不直接寫 code/docs |
+| Honorary Contributors | 過去曾是主要貢獻者，現已退出核心維護 |
 
 ## 主要貢獻者 (Primary Contributors)
 
@@ -43,7 +58,8 @@ tags:
 |------|-----------|--------|----------|
 | — | — | — | — |
 
----
+!!! warning "Name validation rule"
+    任何 frontmatter 裡出現的 `owner`、`updated_by`、`last_updated_by` 等人名欄位，都不應跳過這份名錄直接自由輸入。
 
 ## Agent Rule { #agent-rule }
 
