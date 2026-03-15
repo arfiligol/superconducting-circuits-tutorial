@@ -4,6 +4,8 @@ import pytest
 from fastapi.testclient import TestClient
 from src.app.domain.tasks import TaskLifecycleUpdate, TaskSubmissionDraft
 from src.app.infrastructure.runtime import (
+    get_rewrite_app_state_repository,
+    get_rewrite_catalog_repository,
     get_task_audit_repository,
     get_task_execution_runtime,
     get_task_service,
@@ -25,14 +27,37 @@ def test_get_session_returns_canonical_workspace_surface() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["data"]["session_id"] == "rewrite-local-session"
-    assert payload["data"]["auth"] == {
+    session = payload["data"]
+    assert session["session_id"] == "rewrite-local-session"
+    assert session["auth"] == {
         "state": "authenticated",
         "mode": "local_stub",
     }
-    assert payload["data"]["workspace"]["id"] == "ws-device-lab"
-    assert payload["data"]["active_dataset"]["id"] == "fluxonium-2025-031"
-    assert payload["data"]["capabilities"]["can_submit_tasks"] is True
+    assert session["user"] == {
+        "id": "researcher-01",
+        "display_name": "Rewrite Local User",
+        "email": "rewrite.local@example.com",
+        "platform_role": "user",
+    }
+    assert session["workspace"]["id"] == "ws-device-lab"
+    assert session["workspace"]["role"] == "owner"
+    assert session["workspace"]["default_task_scope"] == "workspace"
+    assert len(session["workspace"]["memberships"]) == 2
+    assert session["workspace"]["memberships"][0]["is_active"] is True
+    assert session["active_dataset"]["id"] == "fluxonium-2025-031"
+    assert session["capabilities"] == {
+        "can_switch_workspace": True,
+        "can_switch_dataset": True,
+        "can_invite_members": True,
+        "can_remove_members": True,
+        "can_transfer_workspace_owner": True,
+        "can_submit_tasks": True,
+        "can_manage_workspace_tasks": True,
+        "can_manage_definitions": True,
+        "can_manage_datasets": True,
+        "can_view_audit_logs": True,
+    }
+    assert "memberships" not in session
     assert payload["meta"]["memberships_count"] == 2
 
 
@@ -45,7 +70,9 @@ def test_patch_session_active_workspace_rebinds_dataset_and_capabilities() -> No
     assert payload["data"]["workspace"]["id"] == "ws-modeling"
     assert payload["data"]["active_dataset_resolution"] == "rebound"
     assert payload["data"]["active_dataset"]["id"] == "transmon-coupler-014"
+    assert payload["data"]["detached_task_ids"] == []
     assert payload["data"]["capabilities"]["can_invite_members"] is False
+    assert payload["data"]["workspace"]["memberships"][1]["is_active"] is True
 
 
 def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> None:
@@ -55,6 +82,67 @@ def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> Non
     assert response.json()["ok"] is False
     assert response.json()["error"]["code"] == "dataset_not_visible_in_workspace"
     assert response.json()["error"]["category"] == "permission_denied"
+
+
+def test_patch_session_active_dataset_can_clear_context() -> None:
+    response = client.patch("/session/active-dataset", json={"dataset_id": None})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["active_dataset"] is None
+    assert payload["data"]["capabilities"]["can_switch_dataset"] is True
+
+
+def test_get_session_requires_authenticated_session() -> None:
+    app_state_repository = get_rewrite_app_state_repository()
+    app_state_repository.override_session_state(
+        auth_state="anonymous",
+        user=None,
+    )
+
+    response = client.get("/session")
+
+    assert response.status_code == 401
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "auth_required"
+    assert response.json()["error"]["category"] == "auth_required"
+
+
+def test_get_session_requires_context_rebind_when_active_dataset_is_archived() -> None:
+    app_state_repository = get_rewrite_app_state_repository()
+    catalog_repository = get_rewrite_catalog_repository()
+    catalog_repository.set_dataset_lifecycle_state("fluxonium-2025-031", "archived")
+    app_state_repository.override_session_state(active_dataset_id="fluxonium-2025-031")
+
+    response = client.get("/session")
+
+    assert response.status_code == 409
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "context_rebind_required"
+    assert response.json()["error"]["category"] == "conflict"
+
+
+def test_switch_workspace_can_clear_active_dataset_when_target_has_no_visible_dataset() -> None:
+    catalog_repository = get_rewrite_catalog_repository()
+    catalog_repository.set_dataset_lifecycle_state("transmon-coupler-014", "archived")
+
+    response = client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["active_dataset_resolution"] == "cleared"
+    assert payload["data"]["active_dataset"] is None
+    assert payload["data"]["workspace"]["id"] == "ws-modeling"
+
+
+def test_switch_workspace_rejects_missing_membership() -> None:
+    response = client.patch("/session/active-workspace", json={"workspace_id": "ws-missing"})
+
+    assert response.status_code == 403
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "workspace_membership_required"
 
 
 def test_list_tasks_returns_backend_owned_queue_read_model() -> None:

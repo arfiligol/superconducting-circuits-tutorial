@@ -44,11 +44,11 @@ class SessionService:
         self._dataset_repository = dataset_repository
 
     def get_session(self) -> AppSession:
-        state = self._repository.get_session_state()
+        state = self._require_authenticated_session()
         return self._build_session(state)
 
     def switch_active_workspace(self, workspace_id: str) -> WorkspaceSwitchResult:
-        current_state = self._repository.get_session_state()
+        current_state = self._require_authenticated_session()
         target_membership = _membership_for_workspace(current_state, workspace_id)
         if target_membership is None:
             raise service_error(
@@ -72,7 +72,7 @@ class SessionService:
         )
 
     def set_active_dataset(self, dataset_id: str | None) -> AppSession:
-        state = self._repository.get_session_state()
+        state = self._require_authenticated_session()
         if dataset_id is None:
             return self._build_session(self._repository.set_active_dataset_id(None))
 
@@ -150,6 +150,14 @@ class SessionService:
         return visible_datasets[0].dataset_id, "rebound"
 
     def _build_session(self, state: SessionState) -> AppSession:
+        if state.auth_state != "authenticated" or state.user is None:
+            raise service_error(
+                401,
+                code="auth_required",
+                category="auth_required",
+                message="The current request requires an authenticated session.",
+            )
+
         membership = _membership_for_workspace(state, state.workspace_id)
         if membership is None:
             raise service_error(
@@ -162,22 +170,28 @@ class SessionService:
         active_dataset = None
         if state.active_dataset_id is not None:
             dataset = self._dataset_repository.get_dataset(state.active_dataset_id)
-            if dataset is not None and _dataset_is_visible_to_state(
+            if dataset is None or not _dataset_is_visible_to_state(
                 dataset,
                 state,
                 workspace_id=state.workspace_id,
             ):
-                active_dataset = ActiveDatasetContext(
-                    dataset_id=dataset.dataset_id,
-                    name=dataset.name,
-                    family=dataset.family,
-                    status=dataset.status,
-                    owner_user_id=dataset.owner_user_id,
-                    owner_display_name=dataset.owner,
-                    workspace_id=dataset.workspace_id,
-                    visibility_scope=dataset.visibility_scope,
-                    lifecycle_state=dataset.lifecycle_state,
+                raise service_error(
+                    409,
+                    code="context_rebind_required",
+                    category="conflict",
+                    message="Session context must be rebound before continuing.",
                 )
+            active_dataset = ActiveDatasetContext(
+                dataset_id=dataset.dataset_id,
+                name=dataset.name,
+                family=dataset.family,
+                status=dataset.status,
+                owner_user_id=dataset.owner_user_id,
+                owner_display_name=dataset.owner,
+                workspace_id=dataset.workspace_id,
+                visibility_scope=dataset.visibility_scope,
+                lifecycle_state=dataset.lifecycle_state,
+            )
 
         capabilities = _materialize_capabilities(state, membership)
         return AppSession(
@@ -203,6 +217,17 @@ class SessionService:
             active_dataset=active_dataset,
             capabilities=capabilities,
         )
+
+    def _require_authenticated_session(self) -> SessionState:
+        state = self._repository.get_session_state()
+        if state.auth_state != "authenticated" or state.user is None:
+            raise service_error(
+                401,
+                code="auth_required",
+                category="auth_required",
+                message="The current request requires an authenticated session.",
+            )
+        return state
 
 
 def _with_active_membership_flag(

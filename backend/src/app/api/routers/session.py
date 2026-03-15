@@ -140,8 +140,8 @@ def _serialize_session(session: AppSession) -> dict[str, object]:
                 "remove_members": session.workspace.allowed_actions.remove_members,
                 "transfer_owner": session.workspace.allowed_actions.transfer_owner,
             },
+            "memberships": [_serialize_membership(item) for item in session.memberships],
         },
-        "memberships": [_serialize_membership(item) for item in session.memberships],
         "active_dataset": _serialize_active_dataset(session.active_dataset),
         "capabilities": {
             "can_switch_workspace": session.capabilities.can_switch_workspace,

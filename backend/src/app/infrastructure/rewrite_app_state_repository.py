@@ -149,6 +149,10 @@ class InMemoryRewriteAppStateRepository:
     def get_default_dataset_id(self, workspace_id: str) -> str | None:
         return self._default_dataset_ids.get(workspace_id)
 
+    def override_session_state(self, **changes: object) -> SessionState:
+        self._session_state = replace(self._session_state, **changes)
+        return self._session_state
+
     def list_tasks(self) -> list[TaskDetail]:
         if self._task_snapshot_repository is not None:
             return [

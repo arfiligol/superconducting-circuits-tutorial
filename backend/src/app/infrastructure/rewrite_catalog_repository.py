@@ -77,6 +77,18 @@ class InMemoryRewriteCatalogRepository:
     def get_dataset(self, dataset_id: str) -> DatasetDetail | None:
         return self._datasets.get(dataset_id)
 
+    def set_dataset_lifecycle_state(
+        self,
+        dataset_id: str,
+        lifecycle_state: str,
+    ) -> DatasetDetail | None:
+        dataset = self._datasets.get(dataset_id)
+        if dataset is None:
+            return None
+        updated_dataset = replace(dataset, lifecycle_state=lifecycle_state)
+        self._datasets[dataset_id] = updated_dataset
+        return updated_dataset
+
     def update_dataset_profile(
         self,
         dataset_id: str,
