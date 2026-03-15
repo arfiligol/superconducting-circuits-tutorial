@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { describe, expect, it, vi } from "vitest";
 
 import {
   datasetCatalogKey,
@@ -9,6 +12,19 @@ import {
   traceListKey,
 } from "../src/features/data-browser/lib/api";
 import { resolveSelectedDesignId, resolveSelectedTraceId } from "../src/features/data-browser/lib/selection";
+
+const dashboardWorkspaceSource = readFileSync(
+  fileURLToPath(
+    new URL("../src/features/data-browser/components/dashboard-workspace.tsx", import.meta.url),
+  ),
+  "utf8",
+);
+const rawDataWorkspaceSource = readFileSync(
+  fileURLToPath(
+    new URL("../src/features/data-browser/components/raw-data-browser-workspace.tsx", import.meta.url),
+  ),
+  "utf8",
+);
 
 describe("data browser api keys", () => {
   it("keeps stable dashboard and raw-data endpoints", () => {
@@ -101,5 +117,36 @@ describe("raw-data selection helpers", () => {
     expect(resolveSelectedTraceId("missing", traces)).toBe("trace_flux_a_measurement");
     expect(resolveSelectedDesignId("missing", [])).toBeNull();
     expect(resolveSelectedTraceId("missing", [])).toBeNull();
+  });
+});
+
+describe("page-boundary source contracts", () => {
+  it("keeps dashboard as the only metadata write surface", () => {
+    expect(dashboardWorkspaceSource).toContain("saveProfile(");
+    expect(dashboardWorkspaceSource).toContain("Save Profile");
+    expect(dashboardWorkspaceSource).toContain("only metadata write surface");
+    expect(rawDataWorkspaceSource).not.toContain("saveProfile(");
+    expect(rawDataWorkspaceSource).not.toContain("Save Profile");
+    expect(rawDataWorkspaceSource).not.toContain("Dataset Profile");
+  });
+
+  it("keeps raw-data summary-first and metadata-read-only", () => {
+    expect(rawDataWorkspaceSource).toContain("summary-first");
+    expect(rawDataWorkspaceSource).toContain("metadata-only until one row is selected for preview");
+    expect(rawDataWorkspaceSource).toContain("Single Trace Preview");
+    expect(rawDataWorkspaceSource).not.toContain("setActiveDataset(");
+  });
+});
+
+describe("legacy data-browser route", () => {
+  it("redirects to /raw-data", async () => {
+    const redirect = vi.fn();
+    vi.doMock("next/navigation", () => ({ redirect }));
+
+    const module = await import("../src/app/(workspace)/data-browser/page");
+    module.default();
+
+    expect(redirect).toHaveBeenCalledWith("/raw-data");
+    vi.doUnmock("next/navigation");
   });
 });
