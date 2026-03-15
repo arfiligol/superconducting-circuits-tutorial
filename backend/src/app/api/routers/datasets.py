@@ -8,7 +8,9 @@ from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
 
 from src.app.domain.datasets import (
+    CharacterizationAnalysisRegistryQuery,
     CharacterizationResultBrowseQuery,
+    CharacterizationRunHistoryQuery,
     CharacterizationTaggingRequest,
     DatasetDetail,
     DatasetProfileUpdate,
@@ -234,6 +236,76 @@ def list_characterization_results(
     return _success_response(data={"rows": page_rows}, meta=meta)
 
 
+@router.get("/{dataset_id}/designs/{design_id}/characterization-analysis-registry")
+def list_characterization_analysis_registry(
+    dataset_id: str,
+    design_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    selected_trace_ids: Annotated[list[str] | None, Query()] = None,
+) -> JSONResponse:
+    try:
+        rows = [
+            asdict(row)
+            for row in dataset_service.list_characterization_analysis_registry(
+                dataset_id,
+                design_id,
+                CharacterizationAnalysisRegistryQuery(
+                    selected_trace_ids=_normalize_trace_ids(selected_trace_ids),
+                ),
+            )
+        ]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(
+        data={"rows": rows},
+        meta={
+            "generated_at": _generated_at(),
+            "filter_echo": {
+                "dataset_id": dataset_id,
+                "design_id": design_id,
+                "selected_trace_ids": list(_normalize_trace_ids(selected_trace_ids)),
+            },
+        },
+    )
+
+
+@router.get("/{dataset_id}/designs/{design_id}/characterization-run-history")
+def list_characterization_run_history(
+    dataset_id: str,
+    design_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    limit: Annotated[str | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    analysis_id: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    try:
+        resolved_limit = _parse_limit(limit)
+        rows = [
+            asdict(row)
+            for row in dataset_service.list_characterization_run_history(
+                dataset_id,
+                design_id,
+                CharacterizationRunHistoryQuery(
+                    analysis_id=_normalize_optional_text(analysis_id),
+                ),
+            )
+        ]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+
+    page_rows, meta = _paginate_rows(
+        rows,
+        limit=resolved_limit,
+        cursor=cursor,
+        filter_echo={
+            "dataset_id": dataset_id,
+            "design_id": design_id,
+            "analysis_id": _normalize_optional_text(analysis_id),
+        },
+    )
+    return _success_response(data={"rows": page_rows}, meta=meta)
+
+
 @router.get("/{dataset_id}/designs/{design_id}/characterization-results/{result_id}")
 def get_characterization_result(
     dataset_id: str,
@@ -372,6 +444,12 @@ def _parse_characterization_tagging_payload(payload: object) -> Characterization
             field="designated_metric",
         ),
     )
+
+
+def _normalize_trace_ids(values: list[str] | None) -> tuple[str, ...]:
+    if values is None:
+        return ()
+    return tuple(value.strip() for value in values if value.strip())
 
 
 def _as_mapping(payload: object) -> dict[str, object]:

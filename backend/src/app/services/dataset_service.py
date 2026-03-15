@@ -2,9 +2,14 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from src.app.domain.datasets import (
+    CharacterizationAnalysisTraceCompatibility,
+    CharacterizationAnalysisRegistryQuery,
+    CharacterizationAnalysisRegistryRow,
     CharacterizationResultBrowseQuery,
     CharacterizationResultDetail,
     CharacterizationResultSummary,
+    CharacterizationRunHistoryQuery,
+    CharacterizationRunHistoryRow,
     CharacterizationTaggingRequest,
     CharacterizationTaggingResult,
     DatasetAllowedActions,
@@ -63,6 +68,18 @@ class DatasetRepository(Protocol):
         dataset_id: str,
         design_id: str,
     ) -> Sequence[CharacterizationResultSummary]: ...
+
+    def list_characterization_analysis_registry(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> Sequence[CharacterizationAnalysisRegistryRow]: ...
+
+    def list_characterization_run_history(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> Sequence[CharacterizationRunHistoryRow]: ...
 
     def get_characterization_result(
         self,
@@ -236,6 +253,49 @@ class DatasetService:
                 row for row in filtered if row.analysis_id.casefold() == normalized_analysis_id
             ]
         return filtered
+
+    def list_characterization_analysis_registry(
+        self,
+        dataset_id: str,
+        design_id: str,
+        query: CharacterizationAnalysisRegistryQuery,
+    ) -> list[CharacterizationAnalysisRegistryRow]:
+        self._require_visible_dataset(dataset_id)
+        rows = list(self._repository.list_characterization_analysis_registry(dataset_id, design_id))
+        if len(query.selected_trace_ids) == 0:
+            return rows
+
+        selected_trace_count = len(query.selected_trace_ids)
+        return [
+            CharacterizationAnalysisRegistryRow(
+                analysis_id=row.analysis_id,
+                label=row.label,
+                availability_state=row.availability_state,
+                required_config_fields=row.required_config_fields,
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=row.trace_compatibility.matched_trace_count,
+                    selected_trace_count=selected_trace_count,
+                    recommended_trace_modes=row.trace_compatibility.recommended_trace_modes,
+                    summary=row.trace_compatibility.summary,
+                ),
+            )
+            for row in rows
+        ]
+
+    def list_characterization_run_history(
+        self,
+        dataset_id: str,
+        design_id: str,
+        query: CharacterizationRunHistoryQuery,
+    ) -> list[CharacterizationRunHistoryRow]:
+        self._require_visible_dataset(dataset_id)
+        rows = list(self._repository.list_characterization_run_history(dataset_id, design_id))
+        if query.analysis_id is None:
+            return rows
+        normalized_analysis_id = query.analysis_id.casefold()
+        return [
+            row for row in rows if row.analysis_id.casefold() == normalized_analysis_id
+        ]
 
     def get_characterization_result(
         self,

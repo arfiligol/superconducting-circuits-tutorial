@@ -1,8 +1,10 @@
 import { apiRequest, apiRequestEnvelope } from "@/lib/api/client";
 
 import type {
+  CharacterizationAnalysisRegistryRow,
   CharacterizationArtifactRef,
   CharacterizationAppliedTag,
+  CharacterizationAvailabilityState,
   CharacterizationDesignatedMetricOption,
   CharacterizationDiagnostic,
   CharacterizationIdentifySurface,
@@ -10,10 +12,39 @@ import type {
   CharacterizationResultDetail,
   CharacterizationResultStatus,
   CharacterizationResultSummary,
+  CharacterizationRunHistoryRow,
   CharacterizationSourceParameterOption,
   CharacterizationTaggingInput,
   CharacterizationTaggingResult,
 } from "@/features/characterization/lib/contracts";
+
+type CharacterizationAnalysisRegistryRowResponse = Readonly<{
+  analysis_id: string;
+  label: string;
+  availability_state: CharacterizationAvailabilityState;
+  required_config_fields: readonly string[];
+  trace_compatibility: Readonly<{
+    matched_trace_count: number;
+    selected_trace_count: number;
+    recommended_trace_modes: readonly string[];
+    summary: string;
+  }>;
+}>;
+
+type CharacterizationRunHistoryRowResponse = Readonly<{
+  run_id: string;
+  dataset_id: string;
+  design_id: string;
+  analysis_id: string;
+  label: string;
+  status: CharacterizationResultStatus;
+  scope: string;
+  trace_count: number;
+  sources_summary: string;
+  provenance_summary: string;
+  updated_at: string;
+  result_id: string | null;
+}>;
 
 type CharacterizationResultSummaryResponse = Readonly<{
   result_id: string;
@@ -120,6 +151,15 @@ type CharacterizationResultsListQuery = Readonly<{
   analysisId?: string | null;
 }>;
 
+type CharacterizationAnalysisRegistryQuery = Readonly<{
+  selectedTraceIds?: readonly string[] | null;
+}>;
+
+type CharacterizationRunHistoryQuery = Readonly<{
+  analysisId?: string | null;
+  cursor?: string | null;
+}>;
+
 export function characterizationResultsListKey(datasetId: string, designId: string) {
   return `/api/backend/datasets/${encodeURIComponent(datasetId)}/designs/${encodeURIComponent(
     designId,
@@ -140,6 +180,41 @@ export function characterizationTaggingsKey(
   resultId: string,
 ) {
   return `${characterizationResultDetailKey(datasetId, designId, resultId)}/taggings`;
+}
+
+export function characterizationAnalysisRegistryKey(
+  datasetId: string,
+  designId: string,
+  selectedTraceIds?: readonly string[] | null,
+) {
+  const params = new URLSearchParams();
+  for (const traceId of selectedTraceIds ?? []) {
+    params.append("selected_trace_ids", traceId);
+  }
+  const path = `/api/backend/datasets/${encodeURIComponent(datasetId)}/designs/${encodeURIComponent(
+    designId,
+  )}/characterization-analysis-registry`;
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
+}
+
+export function characterizationRunHistoryKey(
+  datasetId: string,
+  designId: string,
+  options?: CharacterizationRunHistoryQuery,
+) {
+  const params = new URLSearchParams();
+  if (options?.analysisId) {
+    params.set("analysis_id", options.analysisId);
+  }
+  if (options?.cursor) {
+    params.set("cursor", options.cursor);
+  }
+  const path = `/api/backend/datasets/${encodeURIComponent(datasetId)}/designs/${encodeURIComponent(
+    designId,
+  )}/characterization-run-history`;
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
 }
 
 function mapCharacterizationResultSummary(
@@ -272,6 +347,42 @@ function mapCharacterizationTaggingResult(
   };
 }
 
+function mapCharacterizationAnalysisRegistryRow(
+  payload: CharacterizationAnalysisRegistryRowResponse,
+): CharacterizationAnalysisRegistryRow {
+  return {
+    analysisId: payload.analysis_id,
+    label: payload.label,
+    availabilityState: payload.availability_state,
+    requiredConfigFields: [...payload.required_config_fields],
+    traceCompatibility: {
+      matchedTraceCount: payload.trace_compatibility.matched_trace_count,
+      selectedTraceCount: payload.trace_compatibility.selected_trace_count,
+      recommendedTraceModes: [...payload.trace_compatibility.recommended_trace_modes],
+      summary: payload.trace_compatibility.summary,
+    },
+  };
+}
+
+function mapCharacterizationRunHistoryRow(
+  payload: CharacterizationRunHistoryRowResponse,
+): CharacterizationRunHistoryRow {
+  return {
+    runId: payload.run_id,
+    datasetId: payload.dataset_id,
+    designId: payload.design_id,
+    analysisId: payload.analysis_id,
+    label: payload.label,
+    status: payload.status,
+    scope: payload.scope,
+    traceCount: payload.trace_count,
+    sourcesSummary: payload.sources_summary,
+    provenanceSummary: payload.provenance_summary,
+    updatedAt: payload.updated_at,
+    resultId: payload.result_id,
+  };
+}
+
 export async function listCharacterizationResults(
   datasetId: string,
   designId: string,
@@ -300,6 +411,40 @@ export async function listCharacterizationResults(
 
   return {
     rows: response.data.rows.map(mapCharacterizationResultSummary),
+    meta: {
+      generatedAt: response.meta?.generated_at ?? "",
+      limit: response.meta?.limit ?? response.data.rows.length,
+      nextCursor: response.meta?.next_cursor ?? null,
+      prevCursor: response.meta?.prev_cursor ?? null,
+      hasMore: response.meta?.has_more ?? false,
+      filterEcho: response.meta?.filter_echo ?? {},
+    },
+  };
+}
+
+export async function listCharacterizationAnalysisRegistry(
+  datasetId: string,
+  designId: string,
+  query?: CharacterizationAnalysisRegistryQuery,
+): Promise<readonly CharacterizationAnalysisRegistryRow[]> {
+  const response = await apiRequestEnvelope<
+    { rows: readonly CharacterizationAnalysisRegistryRowResponse[] },
+    unknown
+  >(characterizationAnalysisRegistryKey(datasetId, designId, query?.selectedTraceIds));
+  return response.data.rows.map(mapCharacterizationAnalysisRegistryRow);
+}
+
+export async function listCharacterizationRunHistory(
+  datasetId: string,
+  designId: string,
+  query?: CharacterizationRunHistoryQuery,
+): Promise<CharacterizationPagedRows<CharacterizationRunHistoryRow>> {
+  const response = await apiRequestEnvelope<
+    { rows: readonly CharacterizationRunHistoryRowResponse[] },
+    CharacterizationCursorMeta
+  >(characterizationRunHistoryKey(datasetId, designId, query));
+  return {
+    rows: response.data.rows.map(mapCharacterizationRunHistoryRow),
     meta: {
       generatedAt: response.meta?.generated_at ?? "",
       limit: response.meta?.limit ?? response.data.rows.length,

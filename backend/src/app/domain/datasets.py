@@ -14,6 +14,7 @@ TraceSourceKind = Literal["circuit_simulation", "layout_simulation", "measuremen
 TraceStageKind = Literal["raw", "preprocess", "postprocess"]
 CharacterizationResultStatus = Literal["completed", "failed", "blocked"]
 CharacterizationTaggingStatus = Literal["applied", "already_applied"]
+CharacterizationAvailabilityState = Literal["recommended", "available", "unavailable"]
 
 
 @dataclass(frozen=True)
@@ -153,6 +154,49 @@ class CharacterizationResultSummary:
 class CharacterizationResultBrowseQuery:
     search: str | None = None
     status: CharacterizationResultStatus | None = None
+    analysis_id: str | None = None
+
+
+@dataclass(frozen=True)
+class CharacterizationAnalysisTraceCompatibility:
+    matched_trace_count: int
+    selected_trace_count: int
+    recommended_trace_modes: tuple[str, ...]
+    summary: str
+
+
+@dataclass(frozen=True)
+class CharacterizationAnalysisRegistryRow:
+    analysis_id: str
+    label: str
+    availability_state: CharacterizationAvailabilityState
+    required_config_fields: tuple[str, ...]
+    trace_compatibility: CharacterizationAnalysisTraceCompatibility
+
+
+@dataclass(frozen=True)
+class CharacterizationAnalysisRegistryQuery:
+    selected_trace_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CharacterizationRunHistoryRow:
+    run_id: str
+    dataset_id: str
+    design_id: str
+    analysis_id: str
+    label: str
+    status: CharacterizationResultStatus
+    scope: str
+    trace_count: int
+    sources_summary: str
+    provenance_summary: str
+    updated_at: str
+    result_id: str | None = None
+
+
+@dataclass(frozen=True)
+class CharacterizationRunHistoryQuery:
     analysis_id: str | None = None
 
 

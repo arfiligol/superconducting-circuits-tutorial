@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  Search,
-} from "lucide-react";
+import { Search } from "lucide-react";
 
 import { useCharacterizationWorkflowData } from "@/features/characterization/hooks/use-characterization-workflow-data";
 import {
@@ -49,6 +47,34 @@ function formatCoverageLabel(sourceCoverage: Record<string, number>) {
   return segments.length > 0 ? segments.join(" · ") : "No indexed source coverage";
 }
 
+function formatTraceCompatibilityLabel(input: Readonly<{
+  matchedTraceCount: number;
+  selectedTraceCount: number;
+  recommendedTraceModes: readonly string[];
+  summary: string;
+}>) {
+  const modeLabel =
+    input.recommendedTraceModes.length > 0
+      ? input.recommendedTraceModes.join(", ")
+      : "No preferred trace modes";
+  const selectedLabel =
+    input.selectedTraceCount > 0
+      ? `${input.matchedTraceCount}/${input.selectedTraceCount} selected traces match`
+      : `${input.matchedTraceCount} matched traces available`;
+
+  return `${input.summary} · ${selectedLabel} · ${modeLabel}`;
+}
+
+function analysisAvailabilityTone(state: "recommended" | "available" | "unavailable") {
+  if (state === "recommended") {
+    return "primary" as const;
+  }
+  if (state === "unavailable") {
+    return "warning" as const;
+  }
+  return "default" as const;
+}
+
 function ResultPayloadPreview({ payload }: Readonly<{ payload: Readonly<Record<string, unknown>> }>) {
   return (
     <pre className="overflow-x-auto rounded-2xl border border-border bg-surface px-4 py-4 text-xs leading-6 text-muted-foreground">
@@ -76,6 +102,18 @@ export function CharacterizationWorkspace() {
     requestedDesignId,
     selectedDesignId,
     setSelectedDesignId,
+    analysisRegistry,
+    analysisRegistryError,
+    isAnalysisRegistryLoading,
+    selectedAnalysisId,
+    setSelectedAnalysisId,
+    runHistory,
+    runHistoryMeta,
+    runHistoryError,
+    isRunHistoryLoading,
+    goToNextRunHistoryPage,
+    goToPrevRunHistoryPage,
+    focusRunHistoryResult,
     results,
     resultsError,
     isResultsLoading,
@@ -99,8 +137,13 @@ export function CharacterizationWorkspace() {
     resolvedResultId: selectedResultId,
   });
   const resultSummary = summarizeCharacterizationResults(results);
+  const selectedAnalysisLabel =
+    analysisRegistry.find((analysis) => analysis.analysisId === selectedAnalysisId)?.label ??
+    selectedAnalysisId;
   const activeDatasetErrorMessage = describeApiError(activeDatasetState.activeDatasetError);
   const designsErrorMessage = describeApiError(designsError);
+  const analysisRegistryErrorMessage = describeApiError(analysisRegistryError);
+  const runHistoryErrorMessage = describeApiError(runHistoryError);
   const resultsErrorMessage = describeApiError(resultsError);
   const resultDetailErrorMessage = describeApiError(resultDetailError);
   const taggingStateTone =
@@ -145,14 +188,16 @@ export function CharacterizationWorkspace() {
       <SurfaceHeader
         eyebrow="Persisted Results"
         title="Characterization"
-        description="Browse dataset-scoped characterization summaries, then open one persisted result detail without reusing task queue or execution controls."
+        description="Browse dataset-scoped characterization registry summaries, run history, and persisted result detail without reusing queue or execution controls."
         actions={
           <>
             <SurfaceTag
               tone={
-                activeDatasetState.activeDataset ? "success" : activeDatasetState.status === "error"
-                  ? "warning"
-                  : "default"
+                activeDatasetState.activeDataset
+                  ? "success"
+                  : activeDatasetState.status === "error"
+                    ? "warning"
+                    : "default"
               }
             >
               {activeDatasetState.activeDataset?.name ?? "Dataset not attached"}
@@ -177,442 +222,638 @@ export function CharacterizationWorkspace() {
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
-        <SurfaceStat
-          label="Visible Designs"
-          value={String(designs.length)}
-          tone="primary"
-        />
-        <SurfaceStat label="Visible Results" value={String(resultSummary.total)} />
-        <SurfaceStat label="Completed" value={String(resultSummary.completedCount)} />
-        <SurfaceStat label="Artifact Refs" value={String(resultSummary.artifactCount)} />
+        <SurfaceStat label="Visible Designs" value={String(designs.length)} tone="primary" />
+        <SurfaceStat label="Analysis Registry" value={String(analysisRegistry.length)} />
+        <SurfaceStat label="Persisted Results" value={String(resultSummary.total)} />
+        <SurfaceStat label="Run History Rows" value={String(runHistory.length)} />
       </div>
 
       {!activeDatasetState.activeDataset ? (
         <SurfacePanel
           title="Attach Active Dataset"
-          description="Characterization results are always scoped to the shared shell active dataset. Attach one from the header before browsing persisted summaries."
+          description="Characterization surfaces always read from the shared shell active dataset before any design-scoped browse state is applied."
         >
           <p className="text-sm leading-6 text-muted-foreground">
             {activeDatasetErrorMessage ??
-              "This page keeps only page-local design/result browse state. Dataset authority continues to come from the shared shell context."}
+              "This page keeps only page-local design, analysis, and result browse state. Dataset authority continues to come from the shared shell context."}
           </p>
         </SurfacePanel>
       ) : (
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr_1.2fr]">
-          <SurfacePanel
-            title="Design Scope"
-            description="Pick one dataset-local design scope, then browse persisted characterization results within that scope."
-          >
-            <label className="relative block">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <input
-                value={designSearch}
-                onChange={(event) => {
-                  setDesignSearch(event.target.value);
-                }}
-                placeholder="Search designs"
-                className="w-full rounded-xl border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/40"
-              />
-            </label>
-
-            <div className="mt-4 space-y-3">
-              {designs.map((design) => (
-                <button
-                  key={design.design_id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedDesignId(design.design_id);
-                  }}
-                  className={cx(
-                    "w-full rounded-[1rem] border px-4 py-4 text-left transition",
-                    selectedDesignId === design.design_id
-                      ? "border-primary/35 bg-primary/10"
-                      : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-foreground">
-                        {design.name}
-                      </h3>
-                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                        {design.design_id}
-                      </p>
-                    </div>
-                    <SurfaceTag tone="default">{design.compare_readiness}</SurfaceTag>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                    <span>{design.trace_count} traces</span>
-                    <span>{formatCoverageLabel(design.source_coverage)}</span>
-                  </div>
-                </button>
-              ))}
-
-              {!isDesignsLoading && designs.length === 0 ? (
-                <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                  No visible design scope matches this dataset search.
-                </p>
-              ) : null}
-              {designsErrorMessage ? (
-                <p className="text-sm text-amber-700">{designsErrorMessage}</p>
-              ) : null}
-            </div>
-          </SurfacePanel>
-
-          <SurfacePanel
-            title="Result Summary List"
-            description="Summary-first browse surface for persisted characterization results. Select one row to expand diagnostics, payload, and artifact references."
-          >
-            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+        <div className="space-y-6">
+          <div className="grid gap-6 xl:grid-cols-[0.95fr_1fr_1fr]">
+            <SurfacePanel
+              title="Design Scope"
+              description="Pick one dataset-local design scope, then browse characterization registry, run history, and persisted result summaries within that scope."
+            >
               <label className="relative block">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <input
-                  value={resultSearch}
+                  value={designSearch}
                   onChange={(event) => {
-                    setResultSearch(event.target.value);
+                    setDesignSearch(event.target.value);
                   }}
-                  placeholder="Search results or analysis id"
+                  placeholder="Search designs"
                   className="w-full rounded-xl border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/40"
                 />
               </label>
-              <select
-                value={statusFilter}
-                onChange={(event) => {
-                  setStatusFilter(event.target.value as CharacterizationResultStatusFilter);
-                }}
-                className="rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary/40"
-              >
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
 
-            <div className="mt-4 space-y-3">
-              {results.map((result) => (
+              <div className="mt-4 space-y-3">
+                {designs.map((design) => (
+                  <button
+                    key={design.design_id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDesignId(design.design_id);
+                    }}
+                    className={cx(
+                      "w-full rounded-[1rem] border px-4 py-4 text-left transition",
+                      selectedDesignId === design.design_id
+                        ? "border-primary/35 bg-primary/10"
+                        : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {design.name}
+                        </h3>
+                        <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          {design.design_id}
+                        </p>
+                      </div>
+                      <SurfaceTag tone="default">{design.compare_readiness}</SurfaceTag>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                      <span>{design.trace_count} traces</span>
+                      <span>{formatCoverageLabel(design.source_coverage)}</span>
+                    </div>
+                  </button>
+                ))}
+
+                {!isDesignsLoading && designs.length === 0 ? (
+                  <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                    No visible design scope matches this dataset search.
+                  </p>
+                ) : null}
+                {designsErrorMessage ? (
+                  <p className="text-sm text-amber-700">{designsErrorMessage}</p>
+                ) : null}
+              </div>
+            </SurfacePanel>
+
+            <SurfacePanel
+              title="Analysis Registry"
+              description="Availability, compatibility, and required configuration summary only. This registry does not submit or attach analyses."
+            >
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  key={result.resultId}
                   type="button"
                   onClick={() => {
-                    setSelectedResultId(result.resultId);
+                    setSelectedAnalysisId(null);
                   }}
                   className={cx(
-                    "w-full rounded-[1rem] border px-4 py-4 text-left transition",
-                    selectedResultId === result.resultId
-                      ? "border-primary/35 bg-card"
-                      : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
+                    "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                    selectedAnalysisId === null
+                      ? "border-primary/35 bg-primary/10 text-foreground"
+                      : "border-border bg-surface text-muted-foreground hover:border-primary/25 hover:text-foreground",
                   )}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-foreground">
-                        {result.title}
-                      </h3>
-                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                        {result.analysisId}
-                      </p>
-                    </div>
-                    <SurfaceTag tone={characterizationStatusTone(result.status)}>
-                      {result.status}
-                    </SurfaceTag>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                    <SurfaceTag tone="default">{result.traceCount} traces</SurfaceTag>
-                    <SurfaceTag tone="default">{result.artifactCount} artifacts</SurfaceTag>
-                    <SurfaceTag tone="default">{result.updatedAt}</SurfaceTag>
-                  </div>
-
-                  <p className="mt-3 text-sm text-muted-foreground">{result.freshnessSummary}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{result.provenanceSummary}</p>
+                  All analyses
                 </button>
-              ))}
-
-              {!isResultsLoading && results.length === 0 ? (
-                <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                  No persisted characterization result matches this design scope and filter set.
-                </p>
-              ) : null}
-              {resultsErrorMessage ? (
-                <p className="text-sm text-amber-700">{resultsErrorMessage}</p>
-              ) : null}
-            </div>
-          </SurfacePanel>
-
-          <SurfacePanel
-            title="Persisted Result Detail"
-            description="Detail path only. Payload, diagnostics, and artifact references expand here after one persisted result summary row is selected."
-          >
-            {!selectedResultId ? (
-              <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                Select one persisted characterization result to inspect detail payload and artifact references.
-              </p>
-            ) : null}
-
-            {resultDetail ? (
-              <div className="space-y-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-foreground">
-                      {resultDetail.title}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {resultDetail.analysisId} · {resultDetail.updatedAt}
-                    </p>
-                  </div>
-                  <SurfaceTag tone={characterizationStatusTone(resultDetail.status)}>
-                    {resultDetail.status}
+                {resultDetail ? (
+                  <SurfaceTag tone="default">
+                    Trace context {resultDetail.inputTraceIds.length}
                   </SurfaceTag>
-                </div>
+                ) : (
+                  <SurfaceTag tone="default">No selected trace context</SurfaceTag>
+                )}
+              </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                      Freshness
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">{resultDetail.freshnessSummary}</p>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                      Provenance
-                    </p>
-                    <p className="mt-2 text-sm text-foreground">
-                      {resultDetail.provenanceSummary}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Input Trace Scope
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {resultDetail.inputTraceIds.map((traceId) => (
-                      <SurfaceTag key={traceId} tone="default">
-                        {traceId}
+              <div className="mt-4 space-y-3">
+                {analysisRegistry.map((analysis) => (
+                  <button
+                    key={analysis.analysisId}
+                    type="button"
+                    onClick={() => {
+                      setSelectedAnalysisId((current) =>
+                        current === analysis.analysisId ? null : analysis.analysisId,
+                      );
+                    }}
+                    className={cx(
+                      "w-full rounded-[1rem] border px-4 py-4 text-left transition",
+                      selectedAnalysisId === analysis.analysisId
+                        ? "border-primary/35 bg-card"
+                        : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {analysis.label}
+                        </h3>
+                        <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          {analysis.analysisId}
+                        </p>
+                      </div>
+                      <SurfaceTag tone={analysisAvailabilityTone(analysis.availabilityState)}>
+                        {analysis.availabilityState}
                       </SurfaceTag>
-                    ))}
-                  </div>
-                </div>
+                    </div>
 
-                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                      Diagnostics
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      {formatTraceCompatibilityLabel(analysis.traceCompatibility)}
                     </p>
-                    <SurfaceTag
-                      tone={
-                        resultDetail.diagnostics.some((diagnostic) => diagnostic.blocking)
-                          ? "warning"
-                          : "default"
-                      }
-                    >
-                      {resultDetail.diagnostics.length} entries
-                    </SurfaceTag>
-                  </div>
 
-                  <div className="mt-3 space-y-3">
-                    {resultDetail.diagnostics.map((diagnostic) => (
-                      <div
-                        key={`${diagnostic.code}-${diagnostic.message}`}
-                        className={cx(
-                          "rounded-xl border px-3 py-3",
-                          diagnostic.blocking
-                            ? "border-amber-500/25 bg-amber-500/10"
-                            : "border-border bg-card",
-                        )}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <SurfaceTag tone={diagnostic.blocking ? "warning" : "default"}>
-                            {diagnostic.severity}
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                      {analysis.requiredConfigFields.length > 0 ? (
+                        analysis.requiredConfigFields.map((field) => (
+                          <SurfaceTag key={field} tone="default">
+                            {field}
                           </SurfaceTag>
-                          <span className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                            {diagnostic.code}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm text-foreground">{diagnostic.message}</p>
-                      </div>
-                    ))}
-                    {resultDetail.diagnostics.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No diagnostics were attached to this persisted result detail.
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
+                        ))
+                      ) : (
+                        <SurfaceTag tone="default">No required config fields</SurfaceTag>
+                      )}
+                    </div>
+                  </button>
+                ))}
 
-                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                      Artifact References
-                    </p>
-                    <SurfaceTag tone="default">
-                      {resultDetail.artifactRefs.length} refs
-                    </SurfaceTag>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    {resultDetail.artifactRefs.map((artifact) => (
-                      <div
-                        key={artifact.artifactId}
-                        className="rounded-xl border border-border bg-card px-3 py-3"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <SurfaceTag tone="default">{artifact.category}</SurfaceTag>
-                          <SurfaceTag tone="default">{artifact.viewKind}</SurfaceTag>
-                          <SurfaceTag tone="default">{artifact.payloadFormat}</SurfaceTag>
-                        </div>
-                        <p className="mt-2 text-sm font-medium text-foreground">
-                          {artifact.title}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {artifact.payloadLocator ?? "No materialized locator available"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Payload Preview
+                {!isAnalysisRegistryLoading && analysisRegistry.length === 0 ? (
+                  <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                    No characterization analysis registry rows are visible for this design scope.
                   </p>
-                  <ResultPayloadPreview payload={resultDetail.payload} />
-                </div>
+                ) : null}
+                {analysisRegistryErrorMessage ? (
+                  <p className="text-sm text-amber-700">{analysisRegistryErrorMessage}</p>
+                ) : null}
+              </div>
+            </SurfacePanel>
 
-                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                        Identify & Tag
-                      </p>
-                      <p className="mt-2 text-sm text-foreground">
-                        Choose one source parameter from this persisted result detail and map it to a dataset-level designated metric.
-                      </p>
-                    </div>
-                    <SurfaceTag tone="primary">
-                      {resultDetail.identifySurface.appliedTags.length} applied
-                    </SurfaceTag>
-                  </div>
+            <SurfacePanel
+              title="Run History"
+              description="Persisted characterization run history only. This surface does not replace the shared task queue."
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                {selectedAnalysisId ? (
+                  <SurfaceTag tone="primary">{selectedAnalysisLabel}</SurfaceTag>
+                ) : (
+                  <SurfaceTag tone="default">All analyses</SurfaceTag>
+                )}
+                <SurfaceTag tone="default">
+                  {selectedAnalysisId ? "Filtered" : "Unfiltered"}
+                </SurfaceTag>
+              </div>
 
-                  {taggingMutationState.message ? (
-                    <div className={cx("mt-4 rounded-xl border px-4 py-3 text-sm text-foreground", taggingStateTone)}>
-                      {taggingMutationState.message}
-                    </div>
-                  ) : null}
-
-                  {resultDetail.identifySurface.sourceParameters.length > 0 &&
-                  resultDetail.identifySurface.designatedMetrics.length > 0 ? (
-                    <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-                      <label className="block rounded-xl border border-border bg-card px-4 py-3">
-                        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Source Parameter
-                        </span>
-                        <select
-                          value={selectedSourceSelection}
-                          onChange={(event) => {
-                            setSelectedSourceSelection(event.target.value);
-                          }}
-                          className="mt-2 w-full bg-transparent text-sm text-foreground outline-none"
-                        >
-                          {resultDetail.identifySurface.sourceParameters.map((option) => (
-                            <option
-                              key={`${option.artifactId}:${option.sourceParameter}`}
-                              value={buildSourceSelectionValue(
-                                option.artifactId,
-                                option.sourceParameter,
-                              )}
-                            >
-                              {option.artifactTitle} · {option.label}
-                              {option.currentDesignatedMetric
-                                ? ` (tagged: ${option.currentDesignatedMetric})`
-                                : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <label className="block rounded-xl border border-border bg-card px-4 py-3">
-                        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                          Designated Metric
-                        </span>
-                        <select
-                          value={selectedDesignatedMetric}
-                          onChange={(event) => {
-                            setSelectedDesignatedMetric(event.target.value);
-                          }}
-                          className="mt-2 w-full bg-transparent text-sm text-foreground outline-none"
-                        >
-                          {resultDetail.identifySurface.designatedMetrics.map((option) => (
-                            <option key={option.metricKey} value={option.metricKey}>
-                              {option.label} ({option.metricKey})
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleSubmitTagging();
-                        }}
-                        disabled={
-                          taggingMutationState.state === "submitting" ||
-                          !selectedSourceSelection ||
-                          !selectedDesignatedMetric
-                        }
-                        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {taggingMutationState.state === "submitting"
-                          ? "Tagging…"
-                          : "Tag Parameter"}
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-sm text-muted-foreground">
-                      No identify candidates are available for this persisted result detail yet.
-                    </p>
-                  )}
-
-                  <div className="mt-4 space-y-3">
-                    {resultDetail.identifySurface.appliedTags.map((tag) => (
-                      <div
-                        key={`${tag.artifactId}:${tag.sourceParameter}:${tag.designatedMetric}`}
-                        className="rounded-xl border border-border bg-card px-4 py-3"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <SurfaceTag tone="success">{tag.designatedMetric}</SurfaceTag>
-                          <SurfaceTag tone="default">{tag.sourceParameter}</SurfaceTag>
-                          <SurfaceTag tone="default">{tag.artifactId}</SurfaceTag>
-                        </div>
-                        <p className="mt-2 text-sm text-foreground">
-                          {tag.designatedMetricLabel}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          Tagged at {tag.taggedAt}
+              <div className="mt-4 space-y-3">
+                {runHistory.map((run) => (
+                  <button
+                    key={run.runId}
+                    type="button"
+                    onClick={() => {
+                      focusRunHistoryResult(run.resultId);
+                    }}
+                    disabled={!run.resultId}
+                    className={cx(
+                      "w-full rounded-[1rem] border px-4 py-4 text-left transition",
+                      run.resultId && selectedResultId === run.resultId
+                        ? "border-primary/35 bg-card"
+                        : "border-border bg-surface",
+                      run.resultId
+                        ? "hover:border-primary/25 hover:bg-primary/5"
+                        : "cursor-default opacity-80",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {run.label}
+                        </h3>
+                        <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          {run.analysisId} · {run.runId}
                         </p>
                       </div>
-                    ))}
-                    {resultDetail.identifySurface.appliedTags.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No parameter tags were applied from this result detail yet.
-                      </p>
-                    ) : null}
-                  </div>
+                      <SurfaceTag tone={characterizationStatusTone(run.status)}>
+                        {run.status}
+                      </SurfaceTag>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                      <SurfaceTag tone="default">{run.scope}</SurfaceTag>
+                      <SurfaceTag tone="default">{run.traceCount} traces</SurfaceTag>
+                      <SurfaceTag tone="default">{run.updatedAt}</SurfaceTag>
+                    </div>
+
+                    <p className="mt-3 text-sm text-muted-foreground">{run.sourcesSummary}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{run.provenanceSummary}</p>
+                    <p className="mt-3 text-xs font-medium text-foreground">
+                      {run.resultId
+                        ? `Open persisted detail ${run.resultId}`
+                        : "No persisted result detail is attached to this history row."}
+                    </p>
+                  </button>
+                ))}
+
+                {!isRunHistoryLoading && runHistory.length === 0 ? (
+                  <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                    {selectedAnalysisId
+                      ? "No persisted run history matches the selected analysis filter."
+                      : "No persisted run history is visible for this design scope yet."}
+                  </p>
+                ) : null}
+                {runHistoryErrorMessage ? (
+                  <p className="text-sm text-amber-700">{runHistoryErrorMessage}</p>
+                ) : null}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4 text-xs text-muted-foreground">
+                <span>
+                  {runHistory.length} row{runHistory.length === 1 ? "" : "s"} on this page
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={goToPrevRunHistoryPage}
+                    disabled={!runHistoryMeta?.prevCursor}
+                    className="rounded-full border border-border px-3 py-1.5 font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToNextRunHistoryPage}
+                    disabled={!runHistoryMeta?.nextCursor}
+                    className="rounded-full border border-border px-3 py-1.5 font-medium text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
                 </div>
               </div>
-            ) : null}
+            </SurfacePanel>
+          </div>
 
-            {isResultDetailLoading ? (
-              <p className="mt-4 text-sm text-muted-foreground">
-                Loading persisted result detail…
-              </p>
-            ) : null}
-            {resultDetailErrorMessage ? (
-              <p className="mt-4 text-sm text-amber-700">{resultDetailErrorMessage}</p>
-            ) : null}
-          </SurfacePanel>
+          <div className="grid gap-6 xl:grid-cols-[0.95fr_1.2fr]">
+            <SurfacePanel
+              title="Result Summary List"
+              description="Summary-first browse surface for persisted characterization results. Select one row to expand diagnostics, payload, and identify tagging detail."
+            >
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                <label className="relative block">
+                  <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <input
+                    value={resultSearch}
+                    onChange={(event) => {
+                      setResultSearch(event.target.value);
+                    }}
+                    placeholder="Search results or analysis id"
+                    className="w-full rounded-xl border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/40"
+                  />
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => {
+                    setStatusFilter(event.target.value as CharacterizationResultStatusFilter);
+                  }}
+                  className="rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary/40"
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {results.map((result) => (
+                  <button
+                    key={result.resultId}
+                    type="button"
+                    onClick={() => {
+                      setSelectedResultId(result.resultId);
+                    }}
+                    className={cx(
+                      "w-full rounded-[1rem] border px-4 py-4 text-left transition",
+                      selectedResultId === result.resultId
+                        ? "border-primary/35 bg-card"
+                        : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {result.title}
+                        </h3>
+                        <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                          {result.analysisId}
+                        </p>
+                      </div>
+                      <SurfaceTag tone={characterizationStatusTone(result.status)}>
+                        {result.status}
+                      </SurfaceTag>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                      <SurfaceTag tone="default">{result.traceCount} traces</SurfaceTag>
+                      <SurfaceTag tone="default">{result.artifactCount} artifacts</SurfaceTag>
+                      <SurfaceTag tone="default">{result.updatedAt}</SurfaceTag>
+                    </div>
+
+                    <p className="mt-3 text-sm text-muted-foreground">{result.freshnessSummary}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{result.provenanceSummary}</p>
+                  </button>
+                ))}
+
+                {!isResultsLoading && results.length === 0 ? (
+                  <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                    No persisted characterization result matches this design scope and filter set.
+                  </p>
+                ) : null}
+                {resultsErrorMessage ? (
+                  <p className="text-sm text-amber-700">{resultsErrorMessage}</p>
+                ) : null}
+              </div>
+            </SurfacePanel>
+
+            <SurfacePanel
+              title="Persisted Result Detail"
+              description="Detail path only. Payload, diagnostics, artifact references, and identify tagging stay scoped to one persisted result."
+            >
+              {!selectedResultId ? (
+                <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                  Select one persisted characterization result to inspect detail payload, diagnostics, and identify tagging affordances.
+                </p>
+              ) : null}
+
+              {resultDetail ? (
+                <div className="space-y-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground">
+                        {resultDetail.title}
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {resultDetail.analysisId} · {resultDetail.updatedAt}
+                      </p>
+                    </div>
+                    <SurfaceTag tone={characterizationStatusTone(resultDetail.status)}>
+                      {resultDetail.status}
+                    </SurfaceTag>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Freshness
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        {resultDetail.freshnessSummary}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Provenance
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        {resultDetail.provenanceSummary}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Input Trace Scope
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {resultDetail.inputTraceIds.map((traceId) => (
+                        <SurfaceTag key={traceId} tone="default">
+                          {traceId}
+                        </SurfaceTag>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Diagnostics
+                      </p>
+                      <SurfaceTag
+                        tone={
+                          resultDetail.diagnostics.some((diagnostic) => diagnostic.blocking)
+                            ? "warning"
+                            : "default"
+                        }
+                      >
+                        {resultDetail.diagnostics.length} entries
+                      </SurfaceTag>
+                    </div>
+
+                    <div className="mt-3 space-y-3">
+                      {resultDetail.diagnostics.map((diagnostic) => (
+                        <div
+                          key={`${diagnostic.code}-${diagnostic.message}`}
+                          className={cx(
+                            "rounded-xl border px-3 py-3",
+                            diagnostic.blocking
+                              ? "border-amber-500/25 bg-amber-500/10"
+                              : "border-border bg-card",
+                          )}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <SurfaceTag tone={diagnostic.blocking ? "warning" : "default"}>
+                              {diagnostic.severity}
+                            </SurfaceTag>
+                            <span className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                              {diagnostic.code}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-sm text-foreground">{diagnostic.message}</p>
+                        </div>
+                      ))}
+                      {resultDetail.diagnostics.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No diagnostics were attached to this persisted result detail.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Artifact References
+                      </p>
+                      <SurfaceTag tone="default">
+                        {resultDetail.artifactRefs.length} refs
+                      </SurfaceTag>
+                    </div>
+                    <div className="mt-3 space-y-3">
+                      {resultDetail.artifactRefs.map((artifact) => (
+                        <div
+                          key={artifact.artifactId}
+                          className="rounded-xl border border-border bg-card px-3 py-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <SurfaceTag tone="default">{artifact.category}</SurfaceTag>
+                            <SurfaceTag tone="default">{artifact.viewKind}</SurfaceTag>
+                            <SurfaceTag tone="default">{artifact.payloadFormat}</SurfaceTag>
+                          </div>
+                          <p className="mt-2 text-sm font-medium text-foreground">
+                            {artifact.title}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {artifact.payloadLocator ?? "No materialized locator available"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="mb-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Payload Preview
+                    </p>
+                    <ResultPayloadPreview payload={resultDetail.payload} />
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Identify & Tag
+                        </p>
+                        <p className="mt-2 text-sm text-foreground">
+                          Choose one source parameter from this persisted result detail and map it to a dataset-level designated metric.
+                        </p>
+                      </div>
+                      <SurfaceTag tone="primary">
+                        {resultDetail.identifySurface.appliedTags.length} applied
+                      </SurfaceTag>
+                    </div>
+
+                    {taggingMutationState.message ? (
+                      <div
+                        className={cx(
+                          "mt-4 rounded-xl border px-4 py-3 text-sm text-foreground",
+                          taggingStateTone,
+                        )}
+                      >
+                        {taggingMutationState.message}
+                      </div>
+                    ) : null}
+
+                    {resultDetail.identifySurface.sourceParameters.length > 0 &&
+                    resultDetail.identifySurface.designatedMetrics.length > 0 ? (
+                      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+                        <label className="block rounded-xl border border-border bg-card px-4 py-3">
+                          <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Source Parameter
+                          </span>
+                          <select
+                            value={selectedSourceSelection}
+                            onChange={(event) => {
+                              setSelectedSourceSelection(event.target.value);
+                            }}
+                            className="mt-2 w-full bg-transparent text-sm text-foreground outline-none"
+                          >
+                            {resultDetail.identifySurface.sourceParameters.map((option) => (
+                              <option
+                                key={`${option.artifactId}:${option.sourceParameter}`}
+                                value={buildSourceSelectionValue(
+                                  option.artifactId,
+                                  option.sourceParameter,
+                                )}
+                              >
+                                {option.artifactTitle} · {option.label}
+                                {option.currentDesignatedMetric
+                                  ? ` (tagged: ${option.currentDesignatedMetric})`
+                                  : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block rounded-xl border border-border bg-card px-4 py-3">
+                          <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                            Designated Metric
+                          </span>
+                          <select
+                            value={selectedDesignatedMetric}
+                            onChange={(event) => {
+                              setSelectedDesignatedMetric(event.target.value);
+                            }}
+                            className="mt-2 w-full bg-transparent text-sm text-foreground outline-none"
+                          >
+                            {resultDetail.identifySurface.designatedMetrics.map((option) => (
+                              <option key={option.metricKey} value={option.metricKey}>
+                                {option.label} ({option.metricKey})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleSubmitTagging();
+                          }}
+                          disabled={
+                            taggingMutationState.state === "submitting" ||
+                            !selectedSourceSelection ||
+                            !selectedDesignatedMetric
+                          }
+                          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {taggingMutationState.state === "submitting"
+                            ? "Tagging…"
+                            : "Tag Parameter"}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-muted-foreground">
+                        No identify candidates are available for this persisted result detail yet.
+                      </p>
+                    )}
+
+                    <div className="mt-4 space-y-3">
+                      {resultDetail.identifySurface.appliedTags.map((tag) => (
+                        <div
+                          key={`${tag.artifactId}:${tag.sourceParameter}:${tag.designatedMetric}`}
+                          className="rounded-xl border border-border bg-card px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <SurfaceTag tone="success">{tag.designatedMetric}</SurfaceTag>
+                            <SurfaceTag tone="default">{tag.sourceParameter}</SurfaceTag>
+                            <SurfaceTag tone="default">{tag.artifactId}</SurfaceTag>
+                          </div>
+                          <p className="mt-2 text-sm text-foreground">
+                            {tag.designatedMetricLabel}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Tagged at {tag.taggedAt}
+                          </p>
+                        </div>
+                      ))}
+                      {resultDetail.identifySurface.appliedTags.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          No parameter tags were applied from this result detail yet.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {isResultDetailLoading ? (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Loading persisted result detail…
+                </p>
+              ) : null}
+              {resultDetailErrorMessage ? (
+                <p className="mt-4 text-sm text-amber-700">{resultDetailErrorMessage}</p>
+              ) : null}
+            </SurfacePanel>
+          </div>
         </div>
       )}
     </div>

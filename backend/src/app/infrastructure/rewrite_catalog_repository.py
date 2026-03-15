@@ -17,6 +17,8 @@ from src.app.domain.circuit_definitions import (
     ValidationNotice,
 )
 from src.app.domain.datasets import (
+    CharacterizationAnalysisRegistryRow,
+    CharacterizationAnalysisTraceCompatibility,
     CharacterizationArtifactRef,
     CharacterizationDiagnostic,
     CharacterizationAppliedTag,
@@ -24,6 +26,7 @@ from src.app.domain.datasets import (
     CharacterizationIdentifySurface,
     CharacterizationResultDetail,
     CharacterizationResultSummary,
+    CharacterizationRunHistoryRow,
     CharacterizationSourceParameterOption,
     CharacterizationTaggingRequest,
     CharacterizationTaggingResult,
@@ -51,6 +54,8 @@ class InMemoryRewriteCatalogRepository:
         self._designs = _seed_designs()
         self._trace_summaries = _seed_trace_summaries()
         self._trace_details = _seed_trace_details()
+        self._characterization_analysis_registry = _seed_characterization_analysis_registry()
+        self._characterization_run_history = _seed_characterization_run_history()
         self._characterization_results = _seed_characterization_results()
         self._characterization_result_details = _seed_characterization_result_details()
         self._circuit_definitions = {
@@ -116,6 +121,20 @@ class InMemoryRewriteCatalogRepository:
         design_id: str,
     ) -> tuple[CharacterizationResultSummary, ...]:
         return self._characterization_results.get((dataset_id, design_id), ())
+
+    def list_characterization_analysis_registry(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> tuple[CharacterizationAnalysisRegistryRow, ...]:
+        return self._characterization_analysis_registry.get((dataset_id, design_id), ())
+
+    def list_characterization_run_history(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> tuple[CharacterizationRunHistoryRow, ...]:
+        return self._characterization_run_history.get((dataset_id, design_id), ())
 
     def get_characterization_result(
         self,
@@ -756,6 +775,216 @@ def _seed_trace_details() -> dict[tuple[str, str, str], TraceDetail]:
                 chunk_shape=(76,),
             ),
             result_handles=(),
+        ),
+    }
+
+
+def _seed_characterization_analysis_registry() -> dict[
+    tuple[str, str],
+    tuple[CharacterizationAnalysisRegistryRow, ...],
+]:
+    return {
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+        ): (
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="admittance_extraction",
+                label="Admittance Extraction",
+                availability_state="recommended",
+                required_config_fields=("fit_window", "residual_tolerance"),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=2,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("base",),
+                    summary="Two compatible base traces are ready for a stable admittance fit.",
+                ),
+            ),
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="sideband_comparison",
+                label="Sideband Comparison",
+                availability_state="available",
+                required_config_fields=("comparison_window",),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=1,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("sideband",),
+                    summary="One compatible sideband trace is visible, but comparison coverage remains thin.",
+                ),
+            ),
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="junction_parameter_identification",
+                label="Junction Parameter Identification",
+                availability_state="unavailable",
+                required_config_fields=("fit_window", "prior_family"),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=0,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("base", "sideband"),
+                    summary="No compatible trace bundle currently satisfies the identification prerequisites.",
+                ),
+            ),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_b",
+        ): (
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="screening_summary",
+                label="Screening Summary",
+                availability_state="available",
+                required_config_fields=("screening_mode",),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=1,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("base",),
+                    summary="A single base trace is available for summary-only screening.",
+                ),
+            ),
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="sideband_comparison",
+                label="Sideband Comparison",
+                availability_state="unavailable",
+                required_config_fields=("comparison_window",),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=0,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("sideband",),
+                    summary="No sideband trace is available in this design scope yet.",
+                ),
+            ),
+        ),
+        (
+            "resonator-chip-002",
+            "design_resonator_temp",
+        ): (
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="quality_factor_fit",
+                label="Quality Factor Fit",
+                availability_state="recommended",
+                required_config_fields=("temperature_window",),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=1,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("base",),
+                    summary="The temperature sweep exposes one high-quality base trace for resonator fitting.",
+                ),
+            ),
+        ),
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+        ): (
+            CharacterizationAnalysisRegistryRow(
+                analysis_id="coupler_shift_fit",
+                label="Coupler Shift Fit",
+                availability_state="recommended",
+                required_config_fields=("fit_window", "cross_check_mode"),
+                trace_compatibility=CharacterizationAnalysisTraceCompatibility(
+                    matched_trace_count=2,
+                    selected_trace_count=0,
+                    recommended_trace_modes=("base",),
+                    summary="Measurement and simulation traces are both visible for a coupled fit.",
+                ),
+            ),
+        ),
+    }
+
+
+def _seed_characterization_run_history() -> dict[
+    tuple[str, str],
+    tuple[CharacterizationRunHistoryRow, ...],
+]:
+    return {
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+        ): (
+            CharacterizationRunHistoryRow(
+                run_id="run-flux-a-004",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                analysis_id="sideband_comparison",
+                label="Flux Scan A sideband comparison",
+                status="failed",
+                scope="design_traces",
+                trace_count=1,
+                sources_summary="Y phase 1",
+                provenance_summary="Measurement sideband trace · batch #4",
+                updated_at="2026-03-14T11:20:00Z",
+                result_id="char-sideband-flux-a-02",
+            ),
+            CharacterizationRunHistoryRow(
+                run_id="run-flux-a-003",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                analysis_id="admittance_extraction",
+                label="Flux Scan A admittance fit",
+                status="completed",
+                scope="design_traces",
+                trace_count=2,
+                sources_summary="Y base 2",
+                provenance_summary="Measurement batch #4 + layout batch #2",
+                updated_at="2026-03-14T11:12:00Z",
+                result_id="char-fit-flux-a-01",
+            ),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_b",
+        ): (
+            CharacterizationRunHistoryRow(
+                run_id="run-flux-b-001",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_b",
+                analysis_id="screening_summary",
+                label="Flux Scan B screening summary",
+                status="blocked",
+                scope="design_traces",
+                trace_count=1,
+                sources_summary="S21 1",
+                provenance_summary="Measurement raw trace · batch #7",
+                updated_at="2026-03-14T09:54:00Z",
+                result_id="char-flux-b-screening",
+            ),
+        ),
+        (
+            "resonator-chip-002",
+            "design_resonator_temp",
+        ): (
+            CharacterizationRunHistoryRow(
+                run_id="run-res-temp-002",
+                dataset_id="resonator-chip-002",
+                design_id="design_resonator_temp",
+                analysis_id="quality_factor_fit",
+                label="Temperature sweep quality factor fit",
+                status="completed",
+                scope="design_traces",
+                trace_count=1,
+                sources_summary="Temperature sweep 1",
+                provenance_summary="Measurement batch #12",
+                updated_at="2026-03-13T18:00:00Z",
+                result_id="char-resonator-temp-qi",
+            ),
+        ),
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+        ): (
+            CharacterizationRunHistoryRow(
+                run_id="run-coupler-011",
+                dataset_id="transmon-coupler-014",
+                design_id="design_coupler_detuning",
+                analysis_id="coupler_shift_fit",
+                label="Coupler detuning chi fit",
+                status="completed",
+                scope="design_traces",
+                trace_count=2,
+                sources_summary="Measurement 1 + simulation 1",
+                provenance_summary="Measurement + simulation cross-check",
+                updated_at="2026-03-14T09:35:00Z",
+                result_id="char-coupler-detuning-chi",
+            ),
         ),
     }
 

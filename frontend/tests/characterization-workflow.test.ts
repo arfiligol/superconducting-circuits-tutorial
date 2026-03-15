@@ -4,8 +4,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  characterizationAnalysisRegistryKey,
   characterizationResultDetailKey,
   characterizationResultsListKey,
+  characterizationRunHistoryKey,
   characterizationTaggingsKey,
 } from "../src/features/characterization/lib/api";
 import {
@@ -34,8 +36,8 @@ const characterizationHookSource = readFileSync(
   "utf8",
 );
 
-describe("characterization results api keys", () => {
-  it("builds stable dataset and result detail paths", () => {
+describe("characterization api keys", () => {
+  it("builds stable dataset, result detail, and nested tagging paths", () => {
     expect(
       characterizationResultsListKey("fluxonium-2025-031", "design_flux_scan_a"),
     ).toBe(
@@ -58,6 +60,26 @@ describe("characterization results api keys", () => {
       ),
     ).toBe(
       "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/characterization-results/char-fit-flux-a-01/taggings",
+    );
+  });
+
+  it("builds registry and run history paths with nested dataset/design context", () => {
+    expect(
+      characterizationAnalysisRegistryKey(
+        "fluxonium-2025-031",
+        "design_flux_scan_a",
+        ["trace_flux_a_measurement", "trace_flux_a_layout"],
+      ),
+    ).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/characterization-analysis-registry?selected_trace_ids=trace_flux_a_measurement&selected_trace_ids=trace_flux_a_layout",
+    );
+    expect(
+      characterizationRunHistoryKey("fluxonium-2025-031", "design_flux_scan_a", {
+        analysisId: "admittance_extraction",
+        cursor: "cursor:2",
+      }),
+    ).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/characterization-run-history?analysis_id=admittance_extraction&cursor=cursor%3A2",
     );
   });
 
@@ -183,32 +205,42 @@ describe("characterization browse helpers", () => {
 });
 
 describe("characterization source contracts", () => {
-  it("keeps the page on dataset/design/result browse and read responsibilities", () => {
+  it("keeps the page on registry, run history, and persisted result read responsibilities", () => {
+    expect(characterizationWorkspaceSource).toContain("Analysis Registry");
+    expect(characterizationWorkspaceSource).toContain("Run History");
     expect(characterizationWorkspaceSource).toContain("Result Summary List");
     expect(characterizationWorkspaceSource).toContain("Persisted Result Detail");
     expect(characterizationWorkspaceSource).toContain("Payload Preview");
     expect(characterizationWorkspaceSource).toContain("Identify & Tag");
-    expect(characterizationWorkspaceSource).toContain("Tag Parameter");
+    expect(characterizationWorkspaceSource).not.toContain("Run Analysis");
     expect(characterizationWorkspaceSource).not.toContain("submitTask(");
     expect(characterizationWorkspaceSource).not.toContain("TaskLifecyclePanel");
     expect(characterizationWorkspaceSource).not.toContain("ResearchTaskQueuePanel");
-    expect(characterizationWorkspaceSource).not.toContain("Tasks Queue");
+    expect(characterizationWorkspaceSource).not.toContain("attached task");
   });
 
-  it("binds characterization data to the shared active dataset and page-local selection state", () => {
+  it("binds registry, run history, and result detail to the shared active dataset", () => {
     expect(characterizationHookSource).toContain(
       "const activeDatasetId = activeDatasetState.activeDataset?.datasetId ?? null",
     );
     expect(characterizationHookSource).toContain("listDesignBrowseRows(activeDatasetId");
-    expect(characterizationHookSource).toContain("listCharacterizationResults(activeDatasetId, resolvedDesignId");
+    expect(characterizationHookSource).toContain(
+      "listCharacterizationAnalysisRegistry(activeDatasetId, resolvedDesignId",
+    );
+    expect(characterizationHookSource).toContain(
+      "listCharacterizationRunHistory(activeDatasetId, resolvedDesignId",
+    );
+    expect(characterizationHookSource).toContain(
+      "listCharacterizationResults(activeDatasetId, resolvedDesignId",
+    );
     expect(characterizationHookSource).toContain(
       "getCharacterizationResult(activeDatasetId, resolvedDesignId, resolvedResultId)",
     );
+    expect(characterizationHookSource).toContain("setSelectedAnalysisId(null);");
+    expect(characterizationHookSource).toContain("setRunHistoryCursor(null);");
+    expect(characterizationHookSource).toContain("focusRunHistoryResult(resultId");
     expect(characterizationHookSource).toContain("applyCharacterizationTagging(");
-    expect(characterizationHookSource).toContain("mutate(datasetMetricsKey(activeDatasetId))");
-    expect(characterizationHookSource).toContain("setSelectedDesignId(null);");
-    expect(characterizationHookSource).toContain("setSelectedResultId(null);");
-    expect(characterizationHookSource).not.toContain("useTaskQueue");
     expect(characterizationHookSource).not.toContain("submitCharacterizationTask");
+    expect(characterizationHookSource).not.toContain("useTaskQueue");
   });
 });

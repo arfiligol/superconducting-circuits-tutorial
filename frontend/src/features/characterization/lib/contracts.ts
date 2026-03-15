@@ -1,6 +1,17 @@
 import type { DesignBrowseRow } from "@/lib/api/datasets";
 
 export type CharacterizationResultStatus = "completed" | "failed" | "blocked";
+export type CharacterizationAvailabilityState =
+  | "recommended"
+  | "available"
+  | "unavailable";
+
+export type CharacterizationAnalysisTraceCompatibility = Readonly<{
+  matchedTraceCount: number;
+  selectedTraceCount: number;
+  recommendedTraceModes: readonly string[];
+  summary: string;
+}>;
 
 export type CharacterizationResultSummary = Readonly<{
   resultId: string;
@@ -98,6 +109,29 @@ export type CharacterizationTaggingResult = Readonly<{
     designatedMetric: string;
     taggedAt: string;
   }>;
+}>;
+
+export type CharacterizationAnalysisRegistryRow = Readonly<{
+  analysisId: string;
+  label: string;
+  availabilityState: CharacterizationAvailabilityState;
+  requiredConfigFields: readonly string[];
+  traceCompatibility: CharacterizationAnalysisTraceCompatibility;
+}>;
+
+export type CharacterizationRunHistoryRow = Readonly<{
+  runId: string;
+  datasetId: string;
+  designId: string;
+  analysisId: string;
+  label: string;
+  status: CharacterizationResultStatus;
+  scope: string;
+  traceCount: number;
+  sourcesSummary: string;
+  provenanceSummary: string;
+  updatedAt: string;
+  resultId: string | null;
 }>;
 
 export type CharacterizationPagedRows<T> = Readonly<{

@@ -1,6 +1,8 @@
 import pytest
 from src.app.domain.datasets import (
+    CharacterizationAnalysisRegistryQuery,
     CharacterizationResultBrowseQuery,
+    CharacterizationRunHistoryQuery,
     CharacterizationTaggingRequest,
     DatasetProfileUpdate,
     DesignBrowseQuery,
@@ -154,6 +156,47 @@ def test_dataset_service_exposes_characterization_result_summary_and_detail_surf
     )
     assert result_detail.payload["fit_table"][0]["parameter"] == "f01"
     assert result_detail.artifact_refs[0].artifact_id == "artifact-fit-table-flux-a-01"
+
+
+def test_dataset_service_exposes_characterization_analysis_registry_and_run_history_surfaces(
+    dataset_service: DatasetService,
+) -> None:
+    registry_rows = dataset_service.list_characterization_analysis_registry(
+        "fluxonium-2025-031",
+        "design_flux_scan_a",
+        CharacterizationAnalysisRegistryQuery(
+            selected_trace_ids=(
+                "trace_flux_a_measurement",
+                "trace_flux_a_layout",
+            ),
+        ),
+    )
+    run_rows = dataset_service.list_characterization_run_history(
+        "fluxonium-2025-031",
+        "design_flux_scan_a",
+        CharacterizationRunHistoryQuery(
+            analysis_id="admittance_extraction",
+        ),
+    )
+
+    assert [row.analysis_id for row in registry_rows] == [
+        "admittance_extraction",
+        "sideband_comparison",
+        "junction_parameter_identification",
+    ]
+    assert registry_rows[0].availability_state == "recommended"
+    assert registry_rows[0].required_config_fields == (
+        "fit_window",
+        "residual_tolerance",
+    )
+    assert registry_rows[0].trace_compatibility.selected_trace_count == 2
+    assert registry_rows[0].trace_compatibility.matched_trace_count == 2
+
+    assert [row.run_id for row in run_rows] == ["run-flux-a-003"]
+    assert run_rows[0].dataset_id == "fluxonium-2025-031"
+    assert run_rows[0].design_id == "design_flux_scan_a"
+    assert run_rows[0].analysis_id == "admittance_extraction"
+    assert run_rows[0].result_id == "char-fit-flux-a-01"
 
 
 def test_dataset_service_applies_identify_tagging_and_updates_dashboard_metrics_summary(
