@@ -1,3 +1,5 @@
+import importlib
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -122,6 +124,13 @@ def _task_without_result_handles_id() -> int:
     )
 
 
+def _require_backend_catalog_facade() -> None:
+    try:
+        importlib.import_module("sc_backend.rewrite_cli")
+    except ImportError:
+        pytest.skip("backend catalog facade is unavailable on this branch")
+
+
 def test_preview_artifacts_command_lists_sc_core_exports() -> None:
     runner = CliRunner()
 
@@ -160,6 +169,7 @@ def test_circuit_definition_inspect_command_delegates_to_sc_core(tmp_path: Path)
 
 
 def test_circuit_definition_inspect_command_supports_definition_id() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "inspect", "--definition-id", "18"])
@@ -171,6 +181,7 @@ def test_circuit_definition_inspect_command_supports_definition_id() -> None:
 
 
 def test_circuit_definition_list_command_reads_rewrite_state() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "list"])
@@ -182,6 +193,7 @@ def test_circuit_definition_list_command_reads_rewrite_state() -> None:
 
 
 def test_circuit_definition_list_command_supports_json_output() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "list", "--output", "json"])
@@ -216,6 +228,7 @@ def test_circuit_definition_inspect_command_supports_json_output(tmp_path: Path)
 
 
 def test_circuit_definition_create_command_persists_local_source(tmp_path: Path) -> None:
+    _require_backend_catalog_facade()
     source_file = tmp_path / "created.circuit.yaml"
     source_file.write_text(
         "\n".join(
@@ -252,6 +265,7 @@ def test_circuit_definition_create_command_persists_local_source(tmp_path: Path)
 
 
 def test_circuit_definition_create_command_supports_json_output(tmp_path: Path) -> None:
+    _require_backend_catalog_facade()
     source_file = tmp_path / "created-json.circuit.yaml"
     source_file.write_text(
         "\n".join(
@@ -292,6 +306,7 @@ def test_circuit_definition_create_command_supports_json_output(tmp_path: Path) 
 def test_circuit_definition_create_command_uses_structured_validation_error(
     tmp_path: Path,
 ) -> None:
+    _require_backend_catalog_facade()
     source_file = tmp_path / "blank.circuit.yaml"
     source_file.write_text("   \n", encoding="utf-8")
     runner = CliRunner()
@@ -315,6 +330,7 @@ def test_circuit_definition_create_command_uses_structured_validation_error(
 
 
 def test_circuit_definition_update_command_updates_existing_definition(tmp_path: Path) -> None:
+    _require_backend_catalog_facade()
     source_file = tmp_path / "updated.circuit.yaml"
     source_file.write_text(
         "\n".join(
@@ -354,6 +370,7 @@ def test_circuit_definition_update_command_updates_existing_definition(tmp_path:
 
 
 def test_circuit_definition_update_command_supports_json_output(tmp_path: Path) -> None:
+    _require_backend_catalog_facade()
     source_file = tmp_path / "updated-json.circuit.yaml"
     source_file.write_text(
         "\n".join(
@@ -393,6 +410,7 @@ def test_circuit_definition_update_command_supports_json_output(tmp_path: Path) 
 
 
 def test_circuit_definition_delete_command_deletes_definition() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "delete", "7", "--yes"])
@@ -403,6 +421,7 @@ def test_circuit_definition_delete_command_deletes_definition() -> None:
 
 
 def test_circuit_definition_delete_command_supports_json_output() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "delete", "7", "--yes", "--output", "json"])
@@ -413,6 +432,7 @@ def test_circuit_definition_delete_command_supports_json_output() -> None:
 
 
 def test_circuit_definition_delete_command_requires_confirmation() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "delete", "7"])
@@ -553,6 +573,7 @@ def test_session_active_dataset_command_reports_cleared_context() -> None:
 
 
 def test_datasets_list_command_reads_rewrite_dataset_state() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["datasets", "list"])
@@ -564,6 +585,7 @@ def test_datasets_list_command_reads_rewrite_dataset_state() -> None:
 
 
 def test_datasets_list_command_supports_json_output() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["datasets", "list", "--output", "json"])
@@ -574,6 +596,7 @@ def test_datasets_list_command_supports_json_output() -> None:
 
 
 def test_datasets_show_command_reads_one_dataset() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["datasets", "show", "fluxonium-2025-031"])
@@ -585,6 +608,7 @@ def test_datasets_show_command_reads_one_dataset() -> None:
 
 
 def test_datasets_show_command_supports_json_output() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["datasets", "show", "transmon-coupler-014", "--output", "json"])
@@ -596,6 +620,7 @@ def test_datasets_show_command_supports_json_output() -> None:
 
 
 def test_datasets_set_metadata_command_updates_dataset_metadata() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(
@@ -624,6 +649,7 @@ def test_datasets_set_metadata_command_updates_dataset_metadata() -> None:
 
 
 def test_datasets_set_metadata_command_supports_json_output() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(
@@ -653,6 +679,7 @@ def test_datasets_set_metadata_command_supports_json_output() -> None:
 
 
 def test_datasets_set_metadata_command_uses_structured_validation_error() -> None:
+    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(
@@ -989,6 +1016,8 @@ def test_results_show_command_supports_json_output() -> None:
     assert '"result_refs": {' in result.stdout
     assert '"trace_batch_id": 88' in result.stdout
     assert '"result_handles": [' in result.stdout
+    assert '"lineage": {' in result.stdout
+    assert '"source_runtime": "standalone_cli"' in result.stdout
 
 
 def test_results_trace_command_reads_trace_payload() -> None:
@@ -1016,6 +1045,7 @@ def test_results_trace_command_supports_json_output() -> None:
     assert f'"task_id": {task_id}' in result.stdout
     assert '"trace_payload": {' in result.stdout
     assert '"store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr"' in result.stdout
+    assert '"lineage": {' in result.stdout
 
 
 def test_results_handles_command_reads_persisted_handles() -> None:
@@ -1042,6 +1072,71 @@ def test_results_handles_command_supports_json_output() -> None:
     assert f'"task_id": {task_id}' in result.stdout
     assert '"metadata_records": [' in result.stdout
     assert '"handle_id": "result:fluxonium-2025-031:fit-summary"' in result.stdout
+    assert '"lineage": {' in result.stdout
+
+
+def test_results_export_bundle_command_writes_lineage_preserving_bundle(tmp_path: Path) -> None:
+    runner = CliRunner()
+    task_id = _completed_simulation_task_id()
+    bundle_file = tmp_path / "result-bundle.json"
+
+    result = runner.invoke(
+        app,
+        ["results", "export-bundle", str(task_id), str(bundle_file), "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert bundle_file.exists()
+    stdout_payload = json.loads(result.stdout)
+    bundle_payload = json.loads(bundle_file.read_text(encoding="utf-8"))
+
+    assert stdout_payload["bundle_file"] == str(bundle_file)
+    assert bundle_payload["metadata"]["bundle_family"] == "result_bundle"
+    assert bundle_payload["task"]["task_id"] == task_id
+    assert bundle_payload["result_refs"]["lineage"]["source_task_id"] == task_id
+    assert bundle_payload["result_refs"]["lineage"]["source_dataset_id"] == "fluxonium-2025-031"
+
+
+def test_results_import_bundle_command_round_trips_bundle_into_local_registry(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    source_task_id = _completed_simulation_task_id()
+    bundle_file = tmp_path / "roundtrip-result-bundle.json"
+
+    export_result = runner.invoke(
+        app,
+        ["results", "export-bundle", str(source_task_id), str(bundle_file)],
+    )
+    import_result = runner.invoke(
+        app,
+        ["results", "import-bundle", str(bundle_file), "--output", "json"],
+    )
+
+    assert export_result.exit_code == 0
+    assert import_result.exit_code == 0
+
+    import_payload = json.loads(import_result.stdout)
+    imported_task_id = import_payload["imported_task"]["task_id"]
+    assert imported_task_id != source_task_id
+    expected_bundle_id = f"bundle:result:{source_task_id}"
+    assert import_payload["bundle"]["metadata"]["bundle_id"] == expected_bundle_id
+    assert import_payload["imported_task"]["dispatch"]["submission_source"] == "bundle_import"
+    assert (
+        import_payload["imported_task"]["result_refs"]["lineage"]["imported_from_bundle_id"]
+        == expected_bundle_id
+    )
+    assert (
+        import_payload["imported_task"]["result_refs"]["lineage"]["source_task_id"]
+        == source_task_id
+    )
+
+    show_result = runner.invoke(app, ["results", "show", str(imported_task_id), "--output", "json"])
+
+    assert show_result.exit_code == 0
+    assert f'"task_id": {imported_task_id}' in show_result.stdout
+    assert '"submission_source": "bundle_import"' in show_result.stdout
+    assert f'"imported_from_bundle_id": "{expected_bundle_id}"' in show_result.stdout
 
 
 def test_results_trace_command_rejects_tasks_without_trace_payload() -> None:

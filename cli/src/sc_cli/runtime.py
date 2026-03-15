@@ -17,8 +17,10 @@ from sc_backend import (
 )
 
 from sc_cli.local_runtime import (
+    export_task_result_bundle,
     get_session,
     get_task,
+    import_task_result_bundle,
     list_tasks,
     set_active_dataset,
     submit_task,
@@ -37,10 +39,12 @@ def reset_runtime_state() -> None:
 __all__ = [
     "create_circuit_definition",
     "delete_circuit_definition",
+    "export_task_result_bundle",
     "get_circuit_definition",
     "get_dataset",
     "get_session",
     "get_task",
+    "import_task_result_bundle",
     "list_circuit_definitions",
     "list_datasets",
     "list_tasks",

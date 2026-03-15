@@ -101,6 +101,17 @@ class LocalTracePayload(BaseModel):
     schema_version: str
 
 
+class LocalResultLineage(BaseModel):
+    source_runtime: str
+    source_task_id: int | None = None
+    source_dataset_id: str | None = None
+    source_definition_id: int | None = None
+    source_analysis_run_id: str | None = None
+    source_trace_batch_id: int | None = None
+    parent_bundle_id: str | None = None
+    imported_from_bundle_id: str | None = None
+
+
 class LocalResultProvenance(BaseModel):
     source_dataset_id: str | None = None
     trace_batch_record: LocalRecordRef | None = None
@@ -124,6 +135,7 @@ class LocalResultHandle(BaseModel):
 class LocalTaskResultRefs(BaseModel):
     trace_batch_id: int | None = None
     analysis_run_id: str | None = None
+    lineage: LocalResultLineage | None = None
     metadata_records: list[LocalMetadataRecord] = Field(default_factory=list)
     trace_payload: LocalTracePayload | None = None
     result_handles: list[LocalResultHandle] = Field(default_factory=list)
@@ -420,6 +432,14 @@ def _seed_completed_post_processing_task() -> LocalTaskDetail:
         result_refs=LocalTaskResultRefs(
             trace_batch_id=88,
             analysis_run_id="analysis:fluxonium-2025-031:fit-summary",
+            lineage=LocalResultLineage(
+                source_runtime="standalone_cli",
+                source_task_id=303,
+                source_dataset_id="fluxonium-2025-031",
+                source_definition_id=18,
+                source_analysis_run_id="analysis:fluxonium-2025-031:fit-summary",
+                source_trace_batch_id=88,
+            ),
             metadata_records=[metadata_record, plot_record],
             trace_payload=LocalTracePayload(
                 contract_version="1.0",
@@ -702,3 +722,115 @@ def submit_task(
     )
     _STATE.tasks[task_id] = task
     return task.model_copy(deep=True)
+
+
+def export_task_result_bundle(task_id: int):
+    from sc_cli.local_interchange import build_result_bundle
+
+    task = get_task(task_id)
+    if not task.result_refs.result_handles and task.result_refs.trace_payload is None:
+        raise _backend_error(
+            code="result_bundle_unavailable",
+            category="validation",
+            message=f"Task {task_id} does not expose result payloads for bundle export.",
+            status=422,
+        )
+    return build_result_bundle(task)
+
+
+def import_task_result_bundle(bundle) -> LocalTaskDetail:
+    task_id = _STATE.next_task_id
+    _STATE.next_task_id += 1
+    imported_result_refs = bundle.result_refs.model_copy(deep=True)
+    previous_lineage = imported_result_refs.lineage
+    imported_result_refs.lineage = LocalResultLineage(
+        source_runtime=(
+            "bundle_import"
+            if previous_lineage is None
+            else previous_lineage.source_runtime
+        ),
+        source_task_id=(
+            bundle.task.task_id if previous_lineage is None else previous_lineage.source_task_id
+        ),
+        source_dataset_id=(
+            bundle.task.dataset_id
+            if previous_lineage is None
+            else previous_lineage.source_dataset_id
+        ),
+        source_definition_id=(
+            bundle.task.definition_id
+            if previous_lineage is None
+            else previous_lineage.source_definition_id
+        ),
+        source_analysis_run_id=(
+            imported_result_refs.analysis_run_id
+            if previous_lineage is None
+            else previous_lineage.source_analysis_run_id
+        ),
+        source_trace_batch_id=(
+            imported_result_refs.trace_batch_id
+            if previous_lineage is None
+            else previous_lineage.source_trace_batch_id
+        ),
+        parent_bundle_id=bundle.metadata.bundle_id,
+        imported_from_bundle_id=bundle.metadata.bundle_id,
+    )
+    imported_task = LocalTaskDetail(
+        task_id=task_id,
+        kind=bundle.task.kind,
+        lane=bundle.task.lane,
+        execution_mode="imported",
+        status="completed",
+        visibility_scope="workspace",
+        dataset_id=bundle.task.dataset_id,
+        definition_id=bundle.task.definition_id,
+        summary=f"Imported result bundle from task {bundle.task.task_id}",
+        submitted_at="2026-03-15T12:05:00Z",
+        owner_user_id="researcher-01",
+        owner_display_name="Rewrite Local User",
+        workspace_id="ws-device-lab",
+        workspace_slug="device-lab",
+        queue_backend="local_registry",
+        worker_task_name="result_bundle_import",
+        request_ready=True,
+        submitted_from_active_dataset=False,
+        progress=LocalTaskProgress(
+            phase="completed",
+            percent_complete=100,
+            summary="Imported result bundle into local registry.",
+            updated_at="2026-03-15T12:05:00Z",
+        ),
+        dispatch=LocalTaskDispatch(
+            dispatch_key=f"dispatch:{task_id}",
+            status="completed",
+            submission_source="bundle_import",
+        ),
+        events=[
+            LocalTaskEvent(
+                event_key=f"task:{task_id}:submitted",
+                event_type="task_submitted",
+                level="info",
+                occurred_at="2026-03-15T12:05:00Z",
+                message="Imported result bundle registered locally.",
+                metadata={
+                    "dispatch_key": f"dispatch:{task_id}",
+                    "submission_source": "bundle_import",
+                    "bundle_id": bundle.metadata.bundle_id,
+                },
+            ),
+            LocalTaskEvent(
+                event_key=f"task:{task_id}:completed",
+                event_type="task_completed",
+                level="info",
+                occurred_at="2026-03-15T12:05:00Z",
+                message="Imported result bundle is available for inspection.",
+                metadata={
+                    "bundle_id": bundle.metadata.bundle_id,
+                    "source_task_id": bundle.task.task_id,
+                },
+            ),
+        ],
+        result_refs=imported_result_refs,
+    )
+    _STATE.tasks[task_id] = imported_task
+    return imported_task.model_copy(deep=True)

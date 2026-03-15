@@ -14,7 +14,22 @@ from sc_backend import (
 )
 
 from sc_cli.local_circuit_definitions import LocalCircuitDefinitionInspection
+from sc_cli.local_interchange import (
+    LocalResultBundleExportReceipt,
+    LocalResultBundleImportReceipt,
+)
 from sc_cli.local_runtime import LocalSession, LocalTaskDetail, LocalTaskSummary
+from sc_cli.local_views import (
+    build_session_active_dataset_envelope,
+    build_session_identity_envelope,
+    build_task_event_history_envelope,
+    build_task_handles_envelope,
+    build_task_inspection_envelope,
+    build_task_latest_event_envelope,
+    build_task_operations_bundle_envelope,
+    build_task_result_refs_envelope,
+    build_task_trace_payload_envelope,
+)
 from sc_cli.output import OutputMode
 
 
@@ -133,15 +148,7 @@ def render_session_identity(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "session_id": session.session_id,
-                "auth": session.auth.model_dump(mode="json"),
-                "identity": (
-                    None if session.identity is None else session.identity.model_dump(mode="json")
-                ),
-            }
-        )
+        return _render_json_model(build_session_identity_envelope(session))
     lines = [
         f"session_id: {session.session_id}",
         f"auth_state: {session.auth.state}",
@@ -187,15 +194,7 @@ def render_session_active_dataset(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "active_dataset": (
-                    None
-                    if session.workspace.active_dataset is None
-                    else session.workspace.active_dataset.model_dump(mode="json")
-                )
-            }
-        )
+        return _render_json_model(build_session_active_dataset_envelope(session))
     return "\n".join(_render_active_dataset_lines(session))
 
 
@@ -360,35 +359,25 @@ def render_task_inspection(
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
-    latest_event = task.events[-1] if task.events else None
-    inspection = {
-        "event_count": len(task.events),
-        "latest_event": None if latest_event is None else latest_event.model_dump(mode="json"),
-        "metadata_record_count": len(task.result_refs.metadata_records),
-        "result_handle_count": len(task.result_refs.result_handles),
-        "trace_payload_present": task.result_refs.trace_payload is not None,
-        "trace_batch_id": task.result_refs.trace_batch_id,
-        "analysis_run_id": task.result_refs.analysis_run_id,
-    }
+    envelope = build_task_inspection_envelope(task)
+    latest_event = envelope.inspection.latest_event
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {"task": task.model_dump(mode="json"), "inspection": inspection}
-        )
+        return _render_json_model(envelope)
     lines = [
         render_task_detail(task, output=OutputMode.TEXT),
         "inspection:",
-        f"event_count: {inspection['event_count']}",
+        f"event_count: {envelope.inspection.event_count}",
         f"latest_event_type: {latest_event.event_type if latest_event is not None else '-'}",
         f"latest_event_level: {latest_event.level if latest_event is not None else '-'}",
         (
             "latest_event_occurred_at: "
             f"{latest_event.occurred_at if latest_event is not None else '-'}"
         ),
-        f"metadata_record_count: {inspection['metadata_record_count']}",
-        f"result_handle_count: {inspection['result_handle_count']}",
-        f"trace_payload_present: {_render_bool(inspection['trace_payload_present'])}",
-        f"inspection_trace_batch_id: {_render_nullable(inspection['trace_batch_id'])}",
-        f"inspection_analysis_run_id: {_render_nullable(inspection['analysis_run_id'])}",
+        f"metadata_record_count: {envelope.inspection.metadata_record_count}",
+        f"result_handle_count: {envelope.inspection.result_handle_count}",
+        f"trace_payload_present: {_render_bool(envelope.inspection.trace_payload_present)}",
+        f"inspection_trace_batch_id: {_render_nullable(envelope.inspection.trace_batch_id)}",
+        f"inspection_analysis_run_id: {_render_nullable(envelope.inspection.analysis_run_id)}",
     ]
     if latest_event is not None:
         lines.append(f"latest_event_message: {latest_event.message}")
@@ -402,33 +391,9 @@ def render_task_operations_bundle(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     recent_events = task.events[-recent_event_limit:]
-    result_summary = {
-        "trace_batch_id": task.result_refs.trace_batch_id,
-        "analysis_run_id": task.result_refs.analysis_run_id,
-        "metadata_record_count": len(task.result_refs.metadata_records),
-        "result_handle_count": len(task.result_refs.result_handles),
-        "trace_payload_present": task.result_refs.trace_payload is not None,
-        "result_handle_ids": [handle.handle_id for handle in task.result_refs.result_handles],
-    }
-    latest_event = task.events[-1] if task.events else None
-    inspection = {
-        "event_count": len(task.events),
-        "latest_event": None if latest_event is None else latest_event.model_dump(mode="json"),
-        "metadata_record_count": result_summary["metadata_record_count"],
-        "result_handle_count": result_summary["result_handle_count"],
-        "trace_payload_present": result_summary["trace_payload_present"],
-        "trace_batch_id": result_summary["trace_batch_id"],
-        "analysis_run_id": result_summary["analysis_run_id"],
-    }
+    envelope = build_task_operations_bundle_envelope(task, recent_events=recent_events)
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "task": task.model_dump(mode="json"),
-                "inspection": inspection,
-                "recent_events": [event.model_dump(mode="json") for event in recent_events],
-                "result_summary": result_summary,
-            }
-        )
+        return _render_json_model(envelope)
     lines = [
         render_task_inspection(task, output=OutputMode.TEXT),
         "recent_events:",
@@ -447,22 +412,23 @@ def render_task_operations_bundle(
                     ),
                 )
             )
-    lines.extend(
+        lines.extend(
         [
             "result_summary:",
-            f"trace_batch_id: {_render_nullable(result_summary['trace_batch_id'])}",
-            f"analysis_run_id: {_render_nullable(result_summary['analysis_run_id'])}",
-            f"metadata_record_count: {result_summary['metadata_record_count']}",
-            f"result_handle_count: {result_summary['result_handle_count']}",
-            f"trace_payload_present: {_render_bool(result_summary['trace_payload_present'])}",
+            f"trace_batch_id: {_render_nullable(envelope.result_summary.trace_batch_id)}",
+            f"analysis_run_id: {_render_nullable(envelope.result_summary.analysis_run_id)}",
+            f"metadata_record_count: {envelope.result_summary.metadata_record_count}",
+            f"result_handle_count: {envelope.result_summary.result_handle_count}",
+            f"trace_payload_present: {_render_bool(envelope.result_summary.trace_payload_present)}",
             "result_handle_ids: "
             + (
-                ", ".join(result_summary["result_handle_ids"])
-                if result_summary["result_handle_ids"]
+                ", ".join(envelope.result_summary.result_handle_ids)
+                if envelope.result_summary.result_handle_ids
                 else "-"
             ),
         ]
     )
+    lines.extend(_render_lineage_lines(task))
     return "\n".join(lines)
 
 
@@ -472,16 +438,12 @@ def render_task_result_refs(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "task": _build_task_result_context(task),
-                "result_refs": task.result_refs.model_dump(mode="json"),
-            }
-        )
+        return _render_json_model(build_task_result_refs_envelope(task))
     lines = [
         *_build_task_result_context_lines(task),
         f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
         f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
+        *_render_lineage_lines(task),
         f"metadata_record_count: {len(task.result_refs.metadata_records)}",
         "metadata_records:",
     ]
@@ -506,17 +468,13 @@ def render_task_trace_payload(
     trace_payload = task.result_refs.trace_payload
     assert trace_payload is not None
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "task": _build_task_result_context(task),
-                "trace_payload": trace_payload.model_dump(mode="json"),
-            }
-        )
+        return _render_json_model(build_task_trace_payload_envelope(task))
     return "\n".join(
         [
             *_build_task_result_context_lines(task),
             f"trace_batch_id: {_render_nullable(task.result_refs.trace_batch_id)}",
             f"analysis_run_id: {_render_nullable(task.result_refs.analysis_run_id)}",
+            *_render_lineage_lines(task),
             f"contract_version: {trace_payload.contract_version}",
             f"backend: {trace_payload.backend}",
             f"payload_role: {trace_payload.payload_role}",
@@ -538,19 +496,10 @@ def render_task_result_handles(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "task": _build_task_result_context(task),
-                "metadata_records": [
-                    record.model_dump(mode="json") for record in task.result_refs.metadata_records
-                ],
-                "result_handles": [
-                    handle.model_dump(mode="json") for handle in task.result_refs.result_handles
-                ],
-            }
-        )
+        return _render_json_model(build_task_handles_envelope(task))
     lines = [
         *_build_task_result_context_lines(task),
+        *_render_lineage_lines(task),
         "metadata_records:",
     ]
     lines.extend(_render_metadata_record_lines(task))
@@ -566,12 +515,8 @@ def render_task_event_history(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "task": _build_task_result_context(task),
-                "event_count": len(events),
-                "events": [event.model_dump(mode="json") for event in events],
-            }
+        return _render_json_model(
+            build_task_event_history_envelope(task, events=list(events))
         )
     lines = [
         *_build_task_result_context_lines(task),
@@ -589,17 +534,65 @@ def render_task_latest_event(
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "task": _build_task_result_context(task),
-                "event": event.model_dump(mode="json"),
-            }
-        )
+        return _render_json_model(build_task_latest_event_envelope(task, event=event))
     lines = [
         *_build_task_result_context_lines(task),
         "latest_event:",
     ]
     lines.extend(_render_event_lines(event))
+    return "\n".join(lines)
+
+
+def render_result_bundle_export_receipt(
+    receipt: LocalResultBundleExportReceipt,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(receipt)
+    bundle = receipt.bundle
+    lineage = bundle.result_refs.lineage
+    lineage_source_dataset_id = (
+        "-"
+        if lineage is None or lineage.source_dataset_id is None
+        else lineage.source_dataset_id
+    )
+    return "\n".join(
+        [
+            "operation: exported",
+            f"bundle_file: {receipt.bundle_file}",
+            f"bundle_id: {bundle.metadata.bundle_id}",
+            f"bundle_family: {bundle.metadata.bundle_family}",
+            f"bundle_version: {bundle.metadata.bundle_version}",
+            f"source_task_id: {bundle.task.task_id}",
+            f"source_dataset_id: {bundle.task.dataset_id or '-'}",
+            (
+                "lineage_source_task_id: "
+                f"{_render_nullable(None if lineage is None else lineage.source_task_id)}"
+            ),
+            (
+                "lineage_source_dataset_id: "
+                f"{lineage_source_dataset_id}"
+            ),
+        ]
+    )
+
+
+def render_result_bundle_import_receipt(
+    receipt: LocalResultBundleImportReceipt,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(receipt)
+    lines = [
+        "operation: imported",
+        f"bundle_file: {receipt.bundle_file}",
+        f"bundle_id: {receipt.bundle.metadata.bundle_id}",
+        f"imported_task_id: {receipt.imported_task.task_id}",
+        f"imported_task_status: {receipt.imported_task.status}",
+    ]
+    lines.extend(_render_lineage_lines(receipt.imported_task))
     return "\n".join(lines)
 
 
@@ -677,6 +670,9 @@ def _render_list_line(label: str, parts: Iterable[str]) -> str:
 
 
 def _build_task_result_context(task: LocalTaskDetail) -> dict[str, object]:
+    lineage = None
+    if task.result_refs.lineage is not None:
+        lineage = task.result_refs.lineage.model_dump(mode="json")
     return {
         "task_id": task.task_id,
         "kind": task.kind,
@@ -692,11 +688,12 @@ def _build_task_result_context(task: LocalTaskDetail) -> dict[str, object]:
         "trace_batch_id": task.result_refs.trace_batch_id,
         "analysis_run_id": task.result_refs.analysis_run_id,
         "dispatch": task.dispatch.model_dump(mode="json"),
+        "lineage": lineage,
     }
 
 
 def _build_task_result_context_lines(task: LocalTaskDetail) -> list[str]:
-    return [
+    lines = [
         f"task_id: {task.task_id}",
         f"kind: {task.kind}",
         f"lane: {task.lane}",
@@ -711,6 +708,24 @@ def _build_task_result_context_lines(task: LocalTaskDetail) -> list[str]:
         f"submission_source: {task.dispatch.submission_source}",
         f"event_count: {len(task.events)}",
         f"result_handle_count: {len(task.result_refs.result_handles)}",
+    ]
+    return lines
+
+
+def _render_lineage_lines(task: LocalTaskDetail) -> list[str]:
+    lineage = task.result_refs.lineage
+    if lineage is None:
+        return ["lineage: none"]
+    return [
+        "lineage:",
+        f"source_runtime: {lineage.source_runtime}",
+        f"source_task_id: {_render_nullable(lineage.source_task_id)}",
+        f"source_dataset_id: {lineage.source_dataset_id or '-'}",
+        f"source_definition_id: {_render_nullable(lineage.source_definition_id)}",
+        f"source_analysis_run_id: {lineage.source_analysis_run_id or '-'}",
+        f"source_trace_batch_id: {_render_nullable(lineage.source_trace_batch_id)}",
+        f"parent_bundle_id: {lineage.parent_bundle_id or '-'}",
+        f"imported_from_bundle_id: {lineage.imported_from_bundle_id or '-'}",
     ]
 
 
