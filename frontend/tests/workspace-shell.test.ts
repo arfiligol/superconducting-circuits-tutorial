@@ -19,6 +19,14 @@ const statusStripSource = readFileSync(
   fileURLToPath(new URL("../src/components/layout/workspace-status-strip.tsx", import.meta.url)),
   "utf8",
 );
+const loginPageSource = readFileSync(
+  fileURLToPath(new URL("../src/app/login/page.tsx", import.meta.url)),
+  "utf8",
+);
+const logoutPageSource = readFileSync(
+  fileURLToPath(new URL("../src/app/logout/page.tsx", import.meta.url)),
+  "utf8",
+);
 
 describe("workspace shell source contracts", () => {
   it("keeps the sticky header layered above the sidebar and gives the hamburger trigger feedback", () => {
@@ -56,5 +64,17 @@ describe("workspace shell source contracts", () => {
     expect(statusStripSource).toContain("Search Datasets");
     expect(statusStripSource).toContain("handleDatasetSelection(");
     expect(statusStripSource).toContain("syncRouteDataset(");
+  });
+
+  it("adopts explicit auth entry routes instead of disabled user-menu wording", () => {
+    expect(headerSource).toContain("authSummary.primaryActionHref");
+    expect(headerSource).not.toContain("adapter pending");
+    expect(loginPageSource).toContain('mode="login"');
+    expect(logoutPageSource).toContain('mode="logout"');
+  });
+
+  it("removes low-contrast auth-adjacent rose notices from the shared shell", () => {
+    expect(statusStripSource).not.toContain("text-rose-100");
+    expect(headerSource).not.toContain("text-rose-100");
   });
 });

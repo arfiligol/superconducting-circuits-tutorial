@@ -6,6 +6,7 @@ import useSWR from "swr";
 import {
   appSessionKey,
   getSession,
+  type SessionAuthState,
   patchActiveWorkspace,
   type SessionSnapshot,
   type WorkspaceSwitchResult,
@@ -21,7 +22,10 @@ type AppSessionContextValue = Readonly<{
   isSessionLoading: boolean;
   isSessionRefreshing: boolean;
   hasResolvedSession: boolean;
+  authState: SessionAuthState;
   isAuthenticated: boolean;
+  isAnonymousSession: boolean;
+  isDegradedSession: boolean;
   refreshSession: () => Promise<SessionSnapshot | undefined>;
   replaceSession: (nextSession: SessionSnapshot) => Promise<SessionSnapshot | undefined>;
   switchWorkspace: (workspaceId: string) => Promise<WorkspaceSwitchResult>;
@@ -43,6 +47,8 @@ export function AppSessionProvider({ children }: AppSessionProviderProps) {
         : sessionQuery.isValidating && !!sessionQuery.data
           ? "refreshing"
           : "ready";
+  const authState: SessionAuthState =
+    sessionQuery.data?.authState ?? (sessionQuery.error ? "degraded" : "anonymous");
 
   return (
     <AppSessionContext.Provider
@@ -54,7 +60,10 @@ export function AppSessionProvider({ children }: AppSessionProviderProps) {
         isSessionLoading: sessionQuery.isLoading,
         isSessionRefreshing: status === "refreshing",
         hasResolvedSession: !!sessionQuery.data || !!sessionQuery.error,
-        isAuthenticated: sessionQuery.data?.authState === "authenticated",
+        authState,
+        isAuthenticated: authState === "authenticated",
+        isAnonymousSession: authState === "anonymous",
+        isDegradedSession: authState === "degraded",
         async refreshSession() {
           return sessionQuery.mutate();
         },

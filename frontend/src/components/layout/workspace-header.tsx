@@ -1,11 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, LogOut, Settings2 } from "lucide-react";
+import { ChevronDown, LogIn, LogOut, Settings2 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
+import { ShellNotice } from "@/components/layout/shell-notice";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { resolveShellUserInitials } from "@/components/layout/workspace-shell-contract";
+import {
+  resolveShellAuthSummary,
+  resolveShellUserInitials,
+} from "@/components/layout/workspace-shell-contract";
 import { cx } from "@/features/shared/components/surface-kit";
 import { useAppSession } from "@/lib/app-state";
 import { resolveWorkspacePageIdentity } from "@/lib/navigation";
@@ -13,11 +18,14 @@ import { resolveWorkspacePageIdentity } from "@/lib/navigation";
 export function WorkspaceHeader() {
   const pathname = usePathname();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const { session, workspace, status, isAuthenticated } = useAppSession();
+  const { session, workspace, status, sessionError } = useAppSession();
   const identity = resolveWorkspacePageIdentity(pathname);
-  const userDisplayName =
-    session?.user?.displayName ?? (isAuthenticated ? "Authenticated User" : "Anonymous Session");
-  const userInitials = resolveShellUserInitials(userDisplayName);
+  const authSummary = resolveShellAuthSummary({
+    session,
+    status,
+    error: sessionError,
+  });
+  const userInitials = resolveShellUserInitials(authSummary.triggerName);
 
   useEffect(() => {
     setIsUserMenuOpen(false);
@@ -52,9 +60,9 @@ export function WorkspaceHeader() {
             {userInitials}
           </span>
           <span className="hidden min-w-0 sm:block">
-            <span className="block truncate text-sm font-medium">{userDisplayName}</span>
+            <span className="block truncate text-sm font-medium">{authSummary.triggerName}</span>
             <span className="block truncate text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              {workspace?.displayName ?? "Resolving workspace"}
+              {authSummary.triggerDetail}
             </span>
           </span>
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -68,15 +76,17 @@ export function WorkspaceHeader() {
                   {userInitials}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-foreground">{userDisplayName}</p>
+                  <p className="truncate text-sm font-semibold text-foreground">
+                    {authSummary.triggerName}
+                  </p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {session?.user?.email ?? "No email available"}
+                    {session?.user?.email ?? authSummary.triggerDetail}
                   </p>
                 </div>
               </div>
               <div className="mt-3 grid gap-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground sm:grid-cols-2">
                 <span className="rounded-full border border-border px-3 py-1">
-                  {workspace?.role ?? "session"} role
+                  {authSummary.badgeLabel}
                 </span>
                 <span className="rounded-full border border-border px-3 py-1">
                   {status === "ready" || status === "refreshing" ? "session-backed" : status}
@@ -85,6 +95,10 @@ export function WorkspaceHeader() {
             </div>
 
             <div className="space-y-3 py-4">
+              <ShellNotice tone={authSummary.tone} title={authSummary.menuTitle}>
+                {authSummary.menuDescription}
+              </ShellNotice>
+
               <div className="rounded-[0.9rem] border border-border bg-surface px-3 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                   Profile Summary
@@ -95,17 +109,19 @@ export function WorkspaceHeader() {
                 </p>
               </div>
 
-              <button
-                type="button"
-                disabled
-                className="flex w-full cursor-not-allowed items-center justify-between rounded-[0.9rem] border border-border bg-surface px-3 py-3 text-left text-sm text-muted-foreground opacity-70"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <Settings2 className="h-4 w-4" />
-                  Settings
-                </span>
-                <span className="text-[11px] uppercase tracking-[0.16em]">pending</span>
-              </button>
+              <div className="rounded-[0.9rem] border border-border bg-surface px-3 py-3 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-2 text-foreground">
+                    <Settings2 className="h-4 w-4" />
+                    Settings
+                  </span>
+                  <span className="text-[11px] uppercase tracking-[0.16em]">shell-owned</span>
+                </div>
+                <p className="mt-2 text-xs leading-5">
+                  Account settings are not expanded in this milestone. Identity and auth entry now
+                  stay explicit in this menu instead of hidden behind disabled placeholders.
+                </p>
+              </div>
 
               <div className="flex items-center justify-between rounded-[0.9rem] border border-border bg-surface px-3 py-3">
                 <div>
@@ -118,19 +134,22 @@ export function WorkspaceHeader() {
               </div>
             </div>
 
-            <button
-              type="button"
-              disabled
+            <Link
+              href={authSummary.primaryActionHref}
               className={cx(
-                "flex w-full cursor-not-allowed items-center justify-between rounded-[0.9rem] border border-border px-3 py-3 text-left text-sm text-muted-foreground opacity-70",
+                "flex w-full cursor-pointer items-center justify-between rounded-[0.9rem] border border-border px-3 py-3 text-left text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10",
               )}
             >
               <span className="inline-flex items-center gap-2">
-                <LogOut className="h-4 w-4" />
-                Sign out
+                {authSummary.primaryActionHref === "/logout" ? (
+                  <LogOut className="h-4 w-4" />
+                ) : (
+                  <LogIn className="h-4 w-4" />
+                )}
+                {authSummary.primaryActionLabel}
               </span>
-              <span className="text-[11px] uppercase tracking-[0.16em]">adapter pending</span>
-            </button>
+              <span className="text-[11px] uppercase tracking-[0.16em]">{authSummary.badgeLabel}</span>
+            </Link>
 
             <button
               type="button"

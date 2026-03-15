@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import {
+  describeShellError,
   filterShellDatasets,
   resolveShellActiveDatasetSummary,
   resolveShellTaskHref,
@@ -24,6 +25,7 @@ import {
   resolveWorkspaceSwitchNotice,
   resolveShellWorkerSummary,
 } from "@/components/layout/workspace-shell-contract";
+import { ShellNotice } from "@/components/layout/shell-notice";
 import { cx } from "@/features/shared/components/surface-kit";
 import { datasetCatalogKey, listDatasetCatalog } from "@/lib/api/datasets";
 import {
@@ -32,7 +34,6 @@ import {
   useAppSession,
   useTaskQueue,
 } from "@/lib/app-state";
-import { ApiError } from "@/lib/api/client";
 
 type WorkspaceStatusStripProps = Readonly<{
   compact?: boolean;
@@ -50,22 +51,12 @@ type TriggerCardProps = Readonly<{
   trailing?: React.ReactNode;
 }>;
 
-function getStatusErrorDetail(error: Error): string {
-  if (error instanceof ApiError) {
-    const errorCode = error.errorCode ? ` (${error.errorCode})` : "";
-    const debugRef = error.debugRef ? ` · Ref ${error.debugRef}` : "";
-    return `${error.message}${errorCode}${debugRef}`;
-  }
-
-  return error.message;
-}
-
 function isRetryableError(error: Error | undefined): boolean {
   if (!error) {
     return false;
   }
 
-  return !(error instanceof ApiError) || error.retryable !== false;
+  return !("retryable" in error) || (error as { retryable?: boolean | null }).retryable !== false;
 }
 
 function TriggerCard({
@@ -234,7 +225,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
       ? "Loading workspace..."
       : workspace?.displayName ?? "Workspace unavailable";
   const workspaceDetail = sessionError
-    ? getStatusErrorDetail(sessionError)
+    ? (describeShellError(sessionError) ?? sessionError.message)
     : workspace
       ? `${workspace.role} role · ${session?.memberships.length ?? 0} memberships · session authority`
       : "Waiting for session authority";
@@ -244,7 +235,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
       ? "Syncing active dataset..."
       : activeDataset?.name ?? "No active dataset";
   const datasetDetail = activeDatasetError
-    ? getStatusErrorDetail(activeDatasetError)
+    ? (describeShellError(activeDatasetError) ?? activeDatasetError.message)
     : source === "url" && routeDatasetId !== sessionDatasetId
       ? "URL-selected dataset is waiting to attach to the session"
       : source === "url"
@@ -255,7 +246,7 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
   const datasetSummary = resolveShellActiveDatasetSummary(activeDataset, {
     status: activeDatasetStatus,
     source,
-    errorDetail: activeDatasetError ? getStatusErrorDetail(activeDatasetError) : null,
+    errorDetail: activeDatasetError ? describeShellError(activeDatasetError) : null,
     isUpdating: isUpdatingActiveDataset,
   });
 
@@ -268,9 +259,9 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
           ? `${summary.completedCount} completed · ${summary.failedCount} failed`
           : "Queue idle";
   const queueDetail = taskQueueError
-    ? getStatusErrorDetail(taskQueueError)
+    ? (describeShellError(taskQueueError) ?? taskQueueError.message)
     : activeTaskError
-      ? getStatusErrorDetail(activeTaskError)
+      ? (describeShellError(activeTaskError) ?? activeTaskError.message)
       : activeTaskDetail
         ? `Attached #${activeTaskDetail.taskId} · ${activeTaskDetail.progress.phase}`
         : latestTask
@@ -406,8 +397,8 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
               className={cx(
                 "rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]",
                 workerSummary.tone === "success"
-                  ? "bg-emerald-500/12 text-emerald-300"
-                  : "bg-amber-500/12 text-amber-300",
+                  ? "bg-emerald-500/12 text-emerald-800 dark:text-emerald-200"
+                  : "bg-amber-500/12 text-amber-800 dark:text-amber-200",
               )}
             >
               {workerSummary.tone}
@@ -439,18 +430,18 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
           </div>
 
           {workspaceNotice ? (
-            <div
-              className={cx(
-                "mt-4 rounded-[0.9rem] border px-4 py-3 text-sm",
+            <ShellNotice
+              className="mt-4"
+              tone={
                 workspaceNotice.tone === "success"
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-foreground"
+                  ? "success"
                   : workspaceNotice.tone === "primary"
-                    ? "border-primary/30 bg-primary/10 text-foreground"
-                    : "border-amber-500/30 bg-amber-500/10 text-foreground",
-              )}
+                    ? "info"
+                    : "warning"
+              }
             >
               {workspaceNotice.message}
-            </div>
+            </ShellNotice>
           ) : null}
 
           <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
@@ -606,22 +597,18 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
           </div>
 
           {datasetNotice ? (
-            <div
-              className={cx(
-                "mt-4 rounded-[0.9rem] border px-4 py-3 text-sm",
-                datasetNotice.tone === "success"
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-foreground"
-                  : "border-amber-500/30 bg-amber-500/10 text-foreground",
-              )}
+            <ShellNotice
+              className="mt-4"
+              tone={datasetNotice.tone === "success" ? "success" : "warning"}
             >
               {datasetNotice.message}
-            </div>
+            </ShellNotice>
           ) : null}
 
           {datasetCatalogQuery.error ? (
-            <div className="mt-4 rounded-[0.9rem] border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-foreground">
+            <ShellNotice className="mt-4" tone="warning" title="Dataset Visibility Error">
               Unable to load visible datasets. {(datasetCatalogQuery.error as Error).message}
-            </div>
+            </ShellNotice>
           ) : null}
 
           <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">

@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  SessionAuthMode,
   SessionSnapshot,
   WorkspaceSwitchResult,
 } from "@/lib/api/session";
@@ -11,6 +12,125 @@ import type {
   ActiveDatasetSource,
   ActiveDatasetStatus,
 } from "@/lib/app-state/active-dataset";
+import type { AppSessionStatus } from "@/lib/app-state/app-session";
+import { ApiError } from "@/lib/api/client";
+
+export type ShellAuthViewState = "loading" | "authenticated" | "anonymous" | "degraded";
+
+type ShellAuthSummaryInput = Readonly<{
+  session: SessionSnapshot | undefined;
+  status: AppSessionStatus;
+  error: Error | undefined;
+}>;
+
+export function describeShellError(error: Error | undefined): string | null {
+  if (!error) {
+    return null;
+  }
+
+  if (error instanceof ApiError) {
+    const errorCode = error.errorCode ? ` (${error.errorCode})` : "";
+    const debugRef = error.debugRef ? ` · Ref ${error.debugRef}` : "";
+    return `${error.message}${errorCode}${debugRef}`;
+  }
+
+  return error.message;
+}
+
+export function resolveShellAuthViewState({
+  session,
+  status,
+  error,
+}: ShellAuthSummaryInput): ShellAuthViewState {
+  if (status === "loading" && !session && !error) {
+    return "loading";
+  }
+
+  if (session?.authState === "degraded" || (status === "error" && !session)) {
+    return "degraded";
+  }
+
+  return session?.authState ?? "anonymous";
+}
+
+export function resolveShellAuthModeLabel(mode: SessionAuthMode | undefined) {
+  switch (mode) {
+    case "jwt_cookie":
+      return "JWT cookie";
+    case "development_stub":
+      return "Development stub";
+    case "local_stub":
+    default:
+      return "Local stub";
+  }
+}
+
+export function resolveShellAuthSummary(input: ShellAuthSummaryInput) {
+  const state = resolveShellAuthViewState(input);
+  const errorDetail = describeShellError(input.error);
+
+  if (state === "loading") {
+    return {
+      state,
+      tone: "info",
+      badgeLabel: "Resolving",
+      triggerName: "Session resolving",
+      triggerDetail: "Checking session authority",
+      menuTitle: "Resolving session",
+      menuDescription: "The shell is still waiting for the backend session authority.",
+      primaryActionHref: "/login",
+      primaryActionLabel: "Open login",
+    } as const;
+  }
+
+  if (state === "authenticated") {
+    const displayName = input.session?.user?.displayName ?? "Authenticated User";
+    const workspaceName = input.session?.workspace.displayName ?? "Workspace pending";
+
+    return {
+      state,
+      tone: "success",
+      badgeLabel: "Authenticated",
+      triggerName: displayName,
+      triggerDetail: `${workspaceName} · ${resolveShellAuthModeLabel(input.session?.authMode)}`,
+      menuTitle: "Authenticated session",
+      menuDescription: input.session?.user?.email
+        ? `${displayName} is signed in as ${input.session.user.email}.`
+        : `${displayName} is signed in and backed by the shared session surface.`,
+      primaryActionHref: "/logout",
+      primaryActionLabel: "Open logout",
+    } as const;
+  }
+
+  if (state === "anonymous") {
+    return {
+      state,
+      tone: "warning",
+      badgeLabel: "Anonymous",
+      triggerName: "Anonymous session",
+      triggerDetail: "No authenticated user is attached to the shell session",
+      menuTitle: "Anonymous session",
+      menuDescription:
+        "This shell is running without an authenticated user. Use the login entry to review session state and next steps.",
+      primaryActionHref: "/login",
+      primaryActionLabel: "Open login",
+    } as const;
+  }
+
+  return {
+    state,
+    tone: "error",
+    badgeLabel: "Degraded",
+    triggerName: "Session degraded",
+    triggerDetail: errorDetail ?? "The shell could not resolve a healthy session.",
+    menuTitle: "Degraded session",
+    menuDescription:
+      errorDetail ??
+      "The shell could not confirm the current session. Retry session resolution before trusting auth or workspace context.",
+    primaryActionHref: "/login",
+    primaryActionLabel: "Recover session",
+  } as const;
+}
 
 export function resolveShellUserInitials(displayName: string | null | undefined) {
   const normalized = displayName?.trim();

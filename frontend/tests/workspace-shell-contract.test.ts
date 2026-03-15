@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  describeShellError,
   filterShellDatasets,
+  resolveShellAuthSummary,
   resolveShellActiveDatasetSummary,
   resolveShellTaskHref,
   resolveShellTaskLabel,
@@ -62,6 +64,78 @@ describe("workspace shell contract helpers", () => {
       detail: "Lab A has no runtime summary surface yet.",
       tone: "warning",
     });
+  });
+
+  it("derives auth-aware shell summaries from the shared session surface", () => {
+    expect(
+      resolveShellAuthSummary({
+        session: {
+          sessionId: "session-dev-001",
+          authState: "authenticated",
+          authMode: "local_stub",
+          capabilities: {
+            canSwitchWorkspace: true,
+            canSwitchDataset: true,
+            canInviteMembers: false,
+            canRemoveMembers: false,
+            canTransferWorkspaceOwner: false,
+            canSubmitTasks: true,
+            canManageWorkspaceTasks: false,
+            canManageDefinitions: true,
+            canManageDatasets: true,
+            canViewAuditLogs: false,
+          },
+          canSubmitTasks: true,
+          canManageDatasets: true,
+          user: {
+            userId: "user-dev-01",
+            displayName: "Device Lab",
+            email: "device-lab@example.com",
+            platformRole: "user",
+          },
+          workspace: {
+            workspaceId: "ws-lab-a",
+            slug: "lab-a",
+            displayName: "Lab A",
+            role: "owner",
+            defaultTaskScope: "workspace",
+            allowedActions: {
+              switchTo: true,
+              activateDataset: true,
+              inviteMembers: false,
+              removeMembers: false,
+              transferOwner: false,
+            },
+          },
+          memberships: [],
+          activeDataset: null,
+        },
+        status: "ready",
+        error: undefined,
+      }),
+    ).toMatchObject({
+      state: "authenticated",
+      badgeLabel: "Authenticated",
+      primaryActionHref: "/logout",
+    });
+
+    expect(
+      resolveShellAuthSummary({
+        session: undefined,
+        status: "error",
+        error: new Error("Session authority unavailable."),
+      }),
+    ).toMatchObject({
+      state: "degraded",
+      badgeLabel: "Degraded",
+      primaryActionHref: "/login",
+    });
+  });
+
+  it("formats readable shell errors for auth and shell notices", () => {
+    expect(describeShellError(new Error("Session authority unavailable."))).toBe(
+      "Session authority unavailable.",
+    );
   });
 
   it("keeps the collapsed active dataset trigger compact while staying single-authority", () => {

@@ -1,5 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
 
+export type SessionAuthState = "authenticated" | "anonymous" | "degraded";
+export type SessionAuthMode = "local_stub" | "development_stub" | "jwt_cookie";
+
 type AllowedActionsResponseShape = Readonly<{
   switch_to: boolean;
   activate_dataset: boolean;
@@ -11,8 +14,8 @@ type AllowedActionsResponseShape = Readonly<{
 type SessionResponseShape = Readonly<{
   session_id: string;
   auth: Readonly<{
-    state: "authenticated" | "anonymous";
-    mode: "local_stub";
+    state: SessionAuthState;
+    mode: SessionAuthMode;
   }>;
   user:
     | Readonly<{
@@ -97,8 +100,8 @@ export type SessionCapabilities = Readonly<{
 
 export type SessionSnapshot = Readonly<{
   sessionId: string;
-  authState: "authenticated" | "anonymous";
-  authMode: "local_stub";
+  authState: SessionAuthState;
+  authMode: SessionAuthMode;
   capabilities: SessionCapabilities;
   canSubmitTasks: boolean;
   canManageDatasets: boolean;

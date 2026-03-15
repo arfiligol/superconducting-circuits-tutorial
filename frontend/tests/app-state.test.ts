@@ -230,6 +230,50 @@ describe("session contract mapping", () => {
     });
   });
 
+  it("preserves broader auth states and modes from the session surface", () => {
+    expect(
+      mapSessionResponse({
+        session_id: "session-dev-002",
+        auth: {
+          state: "degraded",
+          mode: "jwt_cookie",
+        },
+        user: null,
+        workspace: {
+          id: "workspace-lab",
+          slug: "device-lab",
+          name: "Device Lab",
+          role: "viewer",
+          default_task_scope: "workspace",
+          allowed_actions: {
+            switch_to: true,
+            activate_dataset: false,
+            invite_members: false,
+            remove_members: false,
+            transfer_owner: false,
+          },
+        },
+        memberships: [],
+        active_dataset: null,
+        capabilities: {
+          can_switch_workspace: true,
+          can_switch_dataset: false,
+          can_invite_members: false,
+          can_remove_members: false,
+          can_transfer_workspace_owner: false,
+          can_submit_tasks: false,
+          can_manage_workspace_tasks: false,
+          can_manage_definitions: false,
+          can_manage_datasets: false,
+          can_view_audit_logs: false,
+        },
+      }),
+    ).toMatchObject({
+      authState: "degraded",
+      authMode: "jwt_cookie",
+    });
+  });
+
   it("maps workspace switch responses into session plus rebind outcome", () => {
     expect(
       mapWorkspaceSwitchResponse({
