@@ -3,278 +3,541 @@ using JosephsonCircuits
 using PlotlyJS
 using CSV, DataFrames
 
-include("../../src/julia/utils.jl")
-# using GLMakie
+# =============================================================================
+# 1. Basic Setup
+# =============================================================================
 
-nH = 1e-9
-GHz = 1e9
-fF = 1e-15
+const nH = 1e-9
+const GHz = 1e9
+const fF = 1e-15
 
-df = CSV.read("/Users/arfiligol/Github/Lab/Quantum-Chip-Design-Julia/circuit_model_analysis/PF6FQ_Q3D_C_Matrix.csv", DataFrame)
-qubit = "q0"
-sub = df[df.qubit_id.==qubit, :]
-sub.value_F = sub[!, "value(fF)"] .* 1e-15
+const CAP_MATRIX_PATH = "/Users/arfiligol/Github/Lab/Quantum-Chip-Design-Julia/circuit_model_analysis/PF6FQ_Q3D_C_Matrix.csv"
+const TARGET_QUBIT = "q0"
 
+# =============================================================================
+# 2. Plot Helper
+# =============================================================================
+# 取代原本 utils.jl 裡的 ili_plot
 
-# Single Floating Qubit Coupled To XY Line
-@variables R_Big R50 C_01 C_02 C_12 L_12 C_13 C_23 C_r L_r L_03 L_04 K_34
-# @variables R_Big R50 C_01 C_02 C_12 C_13 C_23
+function build_plot(traces, title, xaxis_title, yaxis_title; legend_title="Legend")
+    return plot(
+        traces,
+        Layout(
+            title=title,
+            xaxis=attr(title=xaxis_title),
+            yaxis=attr(title=yaxis_title),
+            legend=attr(title=attr(text=legend_title)),
+        ),
+    )
+end
 
+# =============================================================================
+# 3A. Manual Component Values
+# =============================================================================
 
-circuit = Tuple{String,String,String,Num}[]
-
-# Qubit
-push!(circuit, ("C_01", "1", "0", C_01))
-push!(circuit, ("C_02", "2", "0", C_02))
-push!(circuit, ("C_12", "1", "2", C_12))
-push!(circuit, ("L_12", "1", "2", L_12))
-
-# Coupler to Readout Resonator
-push!(circuit, ("C_13", "1", "3", C_13))
-push!(circuit, ("C_23", "2", "3", C_23))
-
-# Resonator
-push!(circuit, ("C_r", "3", "0", C_r))
-push!(circuit, ("L_r", "3", "0", L_r))
-push!(circuit, ("L_03", "3", "0", L_03))
-
-# RTL (Readout Transmission Line)
-push!(circuit, ("L_04", "4", "0", L_04))
-push!(circuit, ("R_04_1", "4", "0", R50))
-push!(circuit, ("R_04_2", "4", "0", R50))
-
-# Coupling of Resonator to RTL
-push!(circuit, ("K_34", "L_03", "L_04", K_34))
-
-# Differential Ports
-push!(circuit, ("P1", "1", "0", 1))
-push!(circuit, ("R_P1", "1", "0", R_Big))
-push!(circuit, ("P2", "2", "0", 2))
-push!(circuit, ("R_P2", "2", "0", R_Big))
-push!(circuit, ("P3", "3", "0", 3))
-push!(circuit, ("R_P3", "3", "0", R_Big))
-push!(circuit, ("P4", "4", "0", 4))
-
-circuitdefs = Dict(
-    R_Big => 1e100,
-    R50 => 50,
-    C_01 => sub[sub.name.=="C_01", :value_F][1],
-    C_02 => sub[sub.name.=="C_02", :value_F][1],
-    C_12 => sub[sub.name.=="C_12", :value_F][1],
-    C_13 => sub[sub.name.=="C_13", :value_F][1],
-    C_23 => sub[sub.name.=="C_23", :value_F][1],
-    # C_r => ,
-    L12 => 12.34e-9,
+component_values = Dict(
+    C_01 => 45.0e-15,
+    C_02 => 46.0e-15,
+    C_12 => 28.0e-15,
+    C_13 => 2.5e-15,
+    C_23 => 2.3e-15,
 )
 
-# Another Circuit wihtout R50 & Lq for capacitance network and effective capacitance extraction
-circuit2 = Tuple{String,String,String,Num}[]
-# Qubit
-push!(circuit2, ("C_01", "1", "0", C_01))
-push!(circuit2, ("C_02", "2", "0", C_02))
-push!(circuit2, ("C_12", "1", "2", C_12))
-# Coupler
-push!(circuit2, ("C_13", "1", "3", C_13))
-push!(circuit2, ("C_23", "2", "3", C_23))
-# Differential Ports
-push!(circuit2, ("P1", "1", "0", 1))
-push!(circuit2, ("R_P1", "1", "0", R_Big))
-push!(circuit2, ("P2", "2", "0", 2))
-push!(circuit2, ("R_P2", "2", "0", R_Big))
-push!(circuit2, ("P3", "3", "0", 3))
-push!(circuit2, ("R50_XY", "3", "0", R_Big))
+# =============================================================================
+# 3B. Load Q3D Component Values
+# =============================================================================
 
-circuitdefs2 = Dict(
-    R_Big => 1e100,
-    C_01 => sub[sub.name.=="C_01", :value_F][1],
-    C_02 => sub[sub.name.=="C_02", :value_F][1],
-    C_12 => sub[sub.name.=="C_12", :value_F][1],
-    C_13 => sub[sub.name.=="C_13", :value_F][1],
-    C_23 => sub[sub.name.=="C_23", :value_F][1],
+qubit_cap_table = load_qubit_capacitance_table(CAP_MATRIX_PATH, TARGET_QUBIT)
+component_values = build_component_values(qubit_cap_table)
+
+# =============================================================================
+# 4. Circuit Symbols
+# =============================================================================
+
+@variables R_Big R50
+@variables C_01 C_02 C_12 L_12
+@variables C_13 C_23
+@variables C_r L_r
+@variables L_03 L_04 K_34
+
+# =============================================================================
+# 5. Build Circuit Definitions
+# =============================================================================
+
+function build_component_values(sub::DataFrame)
+    return Dict(
+        C_01 => get_component_value(sub, "C_01"),
+        C_02 => get_component_value(sub, "C_02"),
+        C_12 => get_component_value(sub, "C_12"),
+        C_13 => get_component_value(sub, "C_13"),
+        C_23 => get_component_value(sub, "C_23"),
+    )
+end
+
+component_values = build_component_values(qubit_cap_table)
+
+base_circuitdefs = merge(
+    component_values,
+    Dict(
+        R_Big => 1e100,
+        R50 => 50.0,
+        L_12 => 12.34e-9,
+
+        # TODO: 換成你已驗證過的 readout resonator / RTL 參數
+        C_r => 100.0e-15,
+        L_r => 8.0e-9,
+        L_03 => 0.2e-9,
+        L_04 => 0.2e-9,
+        K_34 => 0.02,
+    ),
 )
 
+# =============================================================================
+# 6. Build Circuits
+# =============================================================================
 
-const Circuit = Vector{Tuple{String,String,String,Number}}
+function build_floating_qubit_with_readout_circuit(; include_qubit_inductor::Bool=true)
+    circuit = Tuple{String,String,String,Num}[]
+
+    # ---------------------------
+    # Qubit body
+    # ---------------------------
+    push!(circuit, ("C_01", "1", "0", C_01))
+    push!(circuit, ("C_02", "2", "0", C_02))
+    push!(circuit, ("C_12", "1", "2", C_12))
+
+    if include_qubit_inductor
+        push!(circuit, ("L_12", "1", "2", L_12))
+    end
+
+    # ---------------------------
+    # Coupling to readout resonator
+    # ---------------------------
+    push!(circuit, ("C_13", "1", "3", C_13))
+    push!(circuit, ("C_23", "2", "3", C_23))
+
+    # ---------------------------
+    # Readout resonator
+    # ---------------------------
+    push!(circuit, ("C_r", "3", "0", C_r))
+    push!(circuit, ("L_r", "3", "0", L_r))
+    push!(circuit, ("L_03", "3", "0", L_03))
+
+    # ---------------------------
+    # Readout transmission line
+    # ---------------------------
+    push!(circuit, ("L_04", "4", "0", L_04))
+    push!(circuit, ("R_04_1", "4", "0", R50))
+    push!(circuit, ("R_04_2", "4", "0", R50))
+
+    # ---------------------------
+    # Mutual inductive coupling
+    # ---------------------------
+    push!(circuit, ("K_34", "L_03", "L_04", K_34))
+
+    # ---------------------------
+    # Ports
+    # ---------------------------
+    # P1 / P2: qubit artificial measurement ports
+    push!(circuit, ("P1", "1", "0", 1))
+    push!(circuit, ("R_P1", "1", "0", R50))
+
+    push!(circuit, ("P2", "2", "0", 2))
+    push!(circuit, ("R_P2", "2", "0", R50))
+
+    # P3: high-Z probe at resonator node
+    push!(circuit, ("P3", "3", "0", 3))
+    push!(circuit, ("R_P3", "3", "0", R_Big))
+
+    # P4: physical readout line environment
+    push!(circuit, ("P4", "4", "0", 4))
+
+    return circuit
+end
+
+function build_capacitance_reference_circuit()
+    circuit = Tuple{String,String,String,Num}[]
+
+    # Qubit capacitive body
+    push!(circuit, ("C_01", "1", "0", C_01))
+    push!(circuit, ("C_02", "2", "0", C_02))
+    push!(circuit, ("C_12", "1", "2", C_12))
+
+    # Coupling to readout node
+    push!(circuit, ("C_13", "1", "3", C_13))
+    push!(circuit, ("C_23", "2", "3", C_23))
+
+    # Ports
+    push!(circuit, ("P1", "1", "0", 1))
+    push!(circuit, ("R_P1", "1", "0", R_Big))
+
+    push!(circuit, ("P2", "2", "0", 2))
+    push!(circuit, ("R_P2", "2", "0", R_Big))
+
+    push!(circuit, ("P3", "3", "0", 3))
+    push!(circuit, ("R_P3", "3", "0", R_Big))
+
+    return circuit
+end
+
+full_circuit = build_floating_qubit_with_readout_circuit(include_qubit_inductor=true)
+cap_reference_circuit = build_capacitance_reference_circuit()
+
+# =============================================================================
+# 7. Solver
+# =============================================================================
 
 function solve_circuit(
-    circuit::Circuit,
-    circuitdefs::Dict{String,Number},
-    f_start::Real, # GHz
-    f_stop::Real, # GHz
-    f_step::Real; # GHz
+    circuit,
+    circuitdefs;
+    f_start::Real=1.0,
+    f_stop::Real=10.0,
+    f_step::Real=0.001,
     solver::Function=hbsolve,
-)::JosephsonCircuits.HB
-    # Define the unit
-    GHz = 1e9
-
-    ws = 2 * pi * (f_start:f_step:f_stop) * GHz
-    wp = (2 * pi * 4.3 * GHz)
+)
+    ws = 2π .* (f_start:f_step:f_stop) .* GHz
+    wp = (2π * 8.001 * GHz,)
     Ip = 0.0
     sources = [(mode=(1,), port=1, current=Ip)]
     Npumpharmonics = (20,)
     Nmodulationharmonics = (10,)
 
-    return solver(ws, wp, sources, Nmodulationharmonics, Npumpharmonics, circuit, circuitdefs; returnZ=true)
-
+    return solver(
+        ws,
+        wp,
+        sources,
+        Nmodulationharmonics,
+        Npumpharmonics,
+        circuit,
+        circuitdefs;
+        returnZ=true,
+    )
 end
 
+# =============================================================================
+# 8. Z(ω) -> Y(ω)
+# =============================================================================
 
+function z_to_y_cube(solution)
+    z_cube = Array(solution.linearized.Z[1, :, 1, :, :])
+    _, _, n_freq = size(z_cube)
+    y_cube = similar(z_cube)
 
-freqs = single_FQ_with_XY.linearized.w / (2 * pi * 1e9)
+    for k in 1:n_freq
+        y_cube[:, :, k] = inv(Matrix(@view z_cube[:, :, k]))
+    end
 
-Z_mat = Array(single_FQ_with_XY.linearized.Z[1, :, 1, :, :]) # 只取第一個 Mode 的 Z 矩陣
-N, _, Nf = size(Z_mat)
-Y_mat = similar(Z_mat)    # 同樣型別、同樣尺寸
-
-for k in 1:Nf
-    # 先把切片拿成真正的 Matrix
-    Zk = Matrix(@view Z_mat[:, :, k])
-    # inv!(F) 就会返回 Zk^{-1} 这个 Matrix
-    Y_mat[:, :, k] = inv(Zk)
-    # ——等价于 Y_mat[:,:,k] = Zk \ I
+    return y_cube
 end
 
-Y11 = vec(Y_mat[1, 1, :]) # 取出 Y₁₁
-Y12 = vec(Y_mat[1, 2, :]) # 取出 Y₁₂
-Y21 = vec(Y_mat[2, 1, :]) # 取出 Y₂₁
-Y22 = vec(Y_mat[2, 2, :]) # 取出 Y₂₂
-Y13 = vec(Y_mat[1, 3, :]) # 取出 Y₁₃
-Y23 = vec(Y_mat[2, 3, :]) # 取出 Y₂₃
-Y31 = vec(Y_mat[3, 1, :]) # 取出 Y₃₁
-Y32 = vec(Y_mat[3, 2, :]) # 取出 Y₃₂
-Y33 = vec(Y_mat[3, 3, :]) # 取出 Y₃₃
+# =============================================================================
+# 9. Port Termination Compensation (PTC)
+# =============================================================================
 
-Nf = length(Y11)
+function apply_port_termination_compensation(y_cube; resistance_ohm_by_port::Dict{Int,Float64})
+    compensated = copy(y_cube)
+    n_ports, _, n_freq = size(compensated)
 
-# Calculate the weighting of common and differential modes
-w_1 = (circuitdefs[C_01] + circuitdefs[C_13])
-w_2 = (circuitdefs[C_02] + circuitdefs[C_23])
-S = w_1 + w_2
-alpha = w_1 / S
-beta = w_2 / S
+    for (port, resistance_ohm) in resistance_ohm_by_port
+        if port < 1 || port > n_ports
+            error("Port $port out of range.")
+        end
+        if resistance_ohm <= 0
+            error("Resistance must be positive.")
+        end
 
-# Do Neumann-Kron reduction to eliminate port 3 (XY line)
-# I will directly use the result from handwriting notes
-A = Y11 .- ((Y13 .* Y13) ./ Y33)
-B = Y22 .- ((Y23 .* Y23) ./ Y33)
-C = -(Y12 .- ((Y13 .* Y23) ./ Y33))
+        shunt_admittance = 1 / resistance_ohm
+        for k in 1:n_freq
+            compensated[port, port, k] -= shunt_admittance
+        end
+    end
 
-Y_m_eff_11 = A .- (2 .* C) .+ B
-Y_m_eff_12 = beta .* (A .- C) .- alpha .* (-C .+ B)
-Y_m_eff_21 = beta .* (A .- C) .- alpha .* (-C .+ B)
-Y_m_eff_22 = beta^2 .* A .+ (2 .* alpha .* beta .* C) .+ alpha^2 .* B
+    return compensated
+end
 
+# =============================================================================
+# 10. Coordinate Transformation
+# =============================================================================
+# port basis: (P1, P2, P3, P4)
+# modal basis: (CM, DM, P3, P4)
 
-# 準備一個 2×2×Nf 的陣列
-Y_m_eff = Array{ComplexF64}(undef, 2, 2, Nf)
-for k in 1:Nf
-    # Put the values into the 2D array
-    Y_m_eff[:, :, k] = [
-        Y_m_eff_11[k] Y_m_eff_12[k];
-        Y_m_eff_21[k] Y_m_eff_22[k]
+function differential_mode_weights(component_values)
+    w_1 = component_values[C_01] + component_values[C_13]
+    w_2 = component_values[C_02] + component_values[C_23]
+    total = w_1 + w_2
+
+    return (
+        w_1=w_1,
+        w_2=w_2,
+        alpha=w_1 / total,
+        beta=w_2 / total,
+    )
+end
+
+function build_cm_dm_coordinate_transform(component_values)
+    weights = differential_mode_weights(component_values)
+    alpha = weights.alpha
+    beta = weights.beta
+
+    # Vm = A * Vp
+    return [
+        alpha beta 0.0 0.0
+        1.0 -1.0 0.0 0.0
+        0.0 0.0 1.0 0.0
+        0.0 0.0 0.0 1.0
     ]
 end
 
-Yin_dm = Y_m_eff_22 .- (Y_m_eff_21 .* inv.(Y_m_eff_11) .* Y_m_eff_12)   # Vector{ComplexF64} 長度 Nf
-G_dm = real.(Yin_dm) # 損耗
+function apply_coordinate_transformation(y_cube, transform_matrix)
+    _, _, n_freq = size(y_cube)
+    transformed = Array{ComplexF64}(undef, size(y_cube))
+    a_inv = inv(Matrix{Float64}(transform_matrix))
+    a_inv_t = transpose(a_inv)
 
-Z_mat2 = Array(single_FQ_no_Lq_R50.linearized.Z[1, :, 1, :, :]) # 只取第一個 Mode 的 Z 矩陣
-N2, _, Nf2 = size(Z_mat2)
-Y_mat2 = similar(Z_mat2)    # 同樣型別、同樣尺寸
-for k in 1:Nf2
-    Zk2 = Matrix(@view Z_mat2[:, :, k])
-    Y_mat2[:, :, k] = inv(Zk2)
-end
-Y11_2 = vec(Y_mat2[1, 1, :]) # 取出 Y₁₁
-Y12_2 = vec(Y_mat2[1, 2, :]) # 取出 Y₁₂
-Y21_2 = vec(Y_mat2[2, 1, :]) # 取出 Y₂₁
-Y22_2 = vec(Y_mat2[2, 2, :]) # 取出 Y₂₂
-Y13_2 = vec(Y_mat2[1, 3, :]) # 取出 Y₁₃
-Y23_2 = vec(Y_mat2[2, 3, :]) # 取出 Y₂₃
-Y31_2 = vec(Y_mat2[3, 1, :]) # 取出 Y₃₁
-Y32_2 = vec(Y_mat2[3, 2, :]) # 取出 Y₃₂
-Y33_2 = vec(Y_mat2[3, 3, :]) # 取出 Y₃₃
-Nf2 = length(Y11_2)
-# Calculate the weighting of common and differential modes
-w_1_2 = (circuitdefs2[C_01] + circuitdefs2[C_13])
-w_2_2 = (circuitdefs2[C_02] + circuitdefs2[C_23])
-S2 = w_1_2 + w_2_2
-alpha2 = w_1_2 / S2
-beta2 = w_2_2 / S2
-# Do Neumann-Kron reduction to eliminate port 3 (XY line)
-# I will directly use the result from handwriting notes
-A2 = Y11_2 .- ((Y13_2 .* Y13_2) ./ Y33_2)
-B2 = Y22_2 .- ((Y23_2 .* Y23_2) ./ Y33_2)
-C2 = -(Y12_2 .- ((Y13_2 .* Y23_2) ./ Y33_2))
-Y_m_eff_11_2 = A2 .- (2 .* C2) .+ B2
-Y_m_eff_12_2 = beta2 .* (A2 .- C2) .- alpha2 .* (-C2 .+ B2)
-Y_m_eff_21_2 = beta2 .* (A2 .- C2) .- alpha2 .* (-C2 .+ B2)
-Y_m_eff_22_2 = beta2^2 .* A2 .+ (2 .* alpha2 .* beta2 .* C2) .+ alpha2^2 .* B2
-# 準備一個 2×2×Nf 的陣列
-Y_m_eff_2 = Array{ComplexF64}(undef, 2, 2, Nf2)
-for k in 1:Nf2
-    # Put the values into the 2D array
-    Y_m_eff_2[:, :, k] = [
-        Y_m_eff_11_2[k] Y_m_eff_12_2[k];
-        Y_m_eff_21_2[k] Y_m_eff_22_2[k]
-    ]
-end
-Yin_dm_2 = Y_m_eff_22_2 .- (Y_m_eff_21_2 .* inv.(Y_m_eff_11_2) .* Y_m_eff_12_2)   # Vector{ComplexF64} 長度 Nf
-Ceff_dm = imag.(Yin_dm_2) ./ (2π .* freqs * GHz) # 等效電容（給你有 ω::Vector） # Only Available when L = 0 (purely capacitance network)
+    for k in 1:n_freq
+        transformed[:, :, k] = a_inv_t * Matrix(@view y_cube[:, :, k]) * a_inv
+    end
 
-C_eff_plot = ili_plot(
+    return transformed
+end
+
+# =============================================================================
+# 11. Kron Reduction
+# =============================================================================
+
+function kron_reduce_y_cube(y_cube; keep_ports, drop_ports)
+    n_ports, _, n_freq = size(y_cube)
+    keep = collect(keep_ports)
+    drop = collect(drop_ports)
+
+    isempty(keep) && error("keep_ports must not be empty.")
+    length(union(keep, drop)) == length(keep) + length(drop) ||
+        error("keep_ports and drop_ports must be disjoint.")
+    sort(union(keep, drop)) == collect(1:n_ports) ||
+        error("keep_ports and drop_ports must partition all ports.")
+
+    reduced = Array{ComplexF64}(undef, length(keep), length(keep), n_freq)
+
+    for k in 1:n_freq
+        yk = Matrix(@view y_cube[:, :, k])
+        y_kk = yk[keep, keep]
+
+        if isempty(drop)
+            reduced[:, :, k] = y_kk
+            continue
+        end
+
+        y_kd = yk[keep, drop]
+        y_dd = yk[drop, drop]
+        y_dk = yk[drop, keep]
+
+        reduced[:, :, k] = y_kk - y_kd * (y_dd \ y_dk)
+    end
+
+    return reduced
+end
+
+# =============================================================================
+# 12. Differential-Mode Input Admittance
+# =============================================================================
+# raw Y
+#   -> PTC
+#   -> CT to (cm, dm, p3, p4)
+#   -> Kron reduce away (cm, p3, p4)
+#   -> keep dm only
+
+function differential_mode_input_admittance(y_cube, component_values)
+    transform_matrix = build_cm_dm_coordinate_transform(component_values)
+    y_modal = apply_coordinate_transformation(y_cube, transform_matrix)
+
+    y_dm_only = kron_reduce_y_cube(
+        y_modal;
+        keep_ports=(2,),
+        drop_ports=(1, 3, 4),
+    )
+
+    yin_dm = vec(y_dm_only[1, 1, :])
+
+    return (
+        Yin_dm=yin_dm,
+        Y_modal=y_modal,
+        Y_dm_only=y_dm_only,
+        coordinate_transform=transform_matrix,
+    )
+end
+
+# =============================================================================
+# 13. Resonance Extraction
+# =============================================================================
+
+function extract_resonance_from_yin(freqs_ghz, yin_dm)
+    imag_y = imag.(yin_dm)
+    real_y = real.(yin_dm)
+    crossing_pairs = Tuple{Int,Int}[]
+
+    for k in 1:(length(freqs_ghz)-1)
+        if imag_y[k] == 0
+            return (frequency_ghz=freqs_ghz[k], re_y=real_y[k], crossed=true, idx=k)
+        end
+        if imag_y[k] * imag_y[k+1] < 0
+            push!(crossing_pairs, (k, k + 1))
+        end
+    end
+
+    if !isempty(crossing_pairs)
+        scores = [abs(imag_y[i]) + abs(imag_y[j]) for (i, j) in crossing_pairs]
+        k1, k2 = crossing_pairs[argmin(scores)]
+
+        f1, f2 = freqs_ghz[k1], freqs_ghz[k2]
+        im1, im2 = imag_y[k1], imag_y[k2]
+        re1, re2 = real_y[k1], real_y[k2]
+        t = -im1 / (im2 - im1)
+
+        return (
+            frequency_ghz=f1 + t * (f2 - f1),
+            re_y=re1 + t * (re2 - re1),
+            crossed=true,
+            idx=k1,
+        )
+    end
+
+    idx = argmin(abs.(imag_y))
+    return (
+        frequency_ghz=freqs_ghz[idx],
+        re_y=real_y[idx],
+        crossed=false,
+        idx=idx,
+    )
+end
+
+# =============================================================================
+# 14. Effective Capacitance Extraction
+# =============================================================================
+
+function extract_ceff_from_cap_reference(freqs_ghz, yin_dm_cap)
+    ω = 2π .* freqs_ghz .* GHz
+    return imag.(yin_dm_cap) ./ ω
+end
+
+# =============================================================================
+# 15. Run Full Simulation
+# =============================================================================
+
+full_solution = solve_circuit(
+    full_circuit,
+    base_circuitdefs;
+    f_start=1.0,
+    f_stop=10.0,
+    f_step=0.001,
+)
+
+freqs = full_solution.linearized.w ./ (2π .* GHz)
+y_cube_raw = z_to_y_cube(full_solution)
+
+# 只扣掉 qubit artificial measurement ports
+y_cube_ptc = apply_port_termination_compensation(
+    y_cube_raw;
+    resistance_ohm_by_port=Dict(
+        1 => 50.0,
+        2 => 50.0,
+    ),
+)
+
+dm_result = differential_mode_input_admittance(y_cube_ptc, component_values)
+yin_dm = dm_result.Yin_dm
+resonance = extract_resonance_from_yin(freqs, yin_dm)
+
+# =============================================================================
+# 16. Run Capacitive Reference for Ceff
+# =============================================================================
+
+cap_solution = solve_circuit(
+    cap_reference_circuit,
+    base_circuitdefs;
+    f_start=1.0,
+    f_stop=10.0,
+    f_step=0.001,
+)
+
+y_cube_cap_raw = z_to_y_cube(cap_solution)
+
+transform_matrix_cap = build_cm_dm_coordinate_transform(component_values)
+y_modal_cap = apply_coordinate_transformation(y_cube_cap_raw, transform_matrix_cap)
+y_dm_cap = kron_reduce_y_cube(
+    y_modal_cap;
+    keep_ports=(2,),
+    drop_ports=(1, 3),
+)
+
+yin_dm_cap = vec(y_dm_cap[1, 1, :])
+ceff_dm = extract_ceff_from_cap_reference(freqs, yin_dm_cap)
+
+# =============================================================================
+# 17. Compute Physical Quantities
+# =============================================================================
+
+idx = resonance.idx
+qubit_frequency_ghz = resonance.frequency_ghz
+G0 = resonance.re_y
+Ceff0 = ceff_dm[idx]
+
+if G0 <= 0
+    @warn "Re(Yin_dm) <= 0 at f ≈ $qubit_frequency_ghz GHz -> T1 is not finite or model should be checked."
+else
+    T1 = Ceff0 / G0
+    ω0 = 2π * qubit_frequency_ghz * GHz
+    Q = ω0 * Ceff0 / G0
+
+    println("====================================")
+    println("Differential-Mode Readout-Induced Loss")
+    println("====================================")
+    println("Qubit frequency  : $(qubit_frequency_ghz) GHz")
+    println("Ceff_dm          : $(Ceff0) F")
+    println("Re(Yin_dm)       : $(G0) S")
+    println("T1               : $(T1) s")
+    println("Q                : $(Q)")
+    println("Crossed zero     : $(resonance.crossed)")
+end
+
+# =============================================================================
+# 18. Plots
+# =============================================================================
+
+ceff_plot = build_plot(
     [
         scatter(
-            mode="lines+markers",
+            mode="lines",
             x=freqs,
-            y=Ceff_dm,
+            y=ceff_dm,
             name="Ceff_dm",
         ),
     ],
-    "Single Floating Qubit Differential Mode Effective Capacitance",
-    "C_{eff}",
+    "Differential-Mode Effective Capacitance",
     "Frequency (GHz)",
     "Capacitance (F)";
+    legend_title="Legend",
 )
 
-Y_m_eff_plot = ili_plot(
+yin_plot = build_plot(
     [
         scatter(
-            mode="lines+markers",
+            mode="lines",
             x=freqs,
-            y=imag.(Yin_dm),
-            name="Im Yin_dm",
+            y=imag.(yin_dm),
+            name="Im(Yin_dm)",
         ),
         scatter(
-            mode="lines+markers",
+            mode="lines",
             x=freqs,
-            y=real.(Yin_dm),
-            name="Re Yin_dm",
+            y=real.(yin_dm),
+            name="Re(Yin_dm)",
         ),
     ],
-    "Single Floating Qubit Differential Mode Input Admittance",
-    "1 / Ω",
+    "Differential-Mode Input Admittance Seen by Qubit",
     "Frequency (GHz)",
-    "Legend";
+    "Admittance (S)";
+    legend_title="Legend",
 )
 
-idx = argmin(abs.(Yin_dm))
-qubit_frequency = freqs[idx] # GHz
-idx_4_3GHz = argmin(abs.(freqs .- 4.3)) # 找最接近 4.3 GHz 的 index
-# println("At 4.3 GHz, Im(Yin_dm) = ", imag.(Yin_dm[idx_4_3GHz]), "F")
-# f_near = freqs[idx]
-Ceff0 = Ceff_dm[idx]
-analytical_differential_mode_effective_c = circuitdefs[C_12] + (circuitdefs[C_01] * circuitdefs[C_02]) / (circuitdefs[C_01] + circuitdefs[C_02]) + (circuitdefs[C_13] * circuitdefs[C_23]) / (circuitdefs[C_13] + circuitdefs[C_23])
-Yin0 = Yin_dm[idx]
-G0 = real(Yin0)
-# G0 = real(Yin_dm[idx_4_3GHz]) # 直接取 4.3 GHz 的 Re(Yin_dm)
-if G0 <= 0
-    @warn "Re(Y_in) ≤ 0 at f ≈ $qubit_frequency GHz → 無有限 T1（近乎無損或模型需檢查）"
-else
-    T1 = Ceff0 / G0
-    println("f≈$(qubit_frequency) GHz:  Ceff=$(Ceff0) F,  ReY=$(G0) S,  T1=$(T1) s")
-    # 可選：也印 Q
-    ω0 = 2π * qubit_frequency * 1e9
-    Q = ω0 * Ceff0 / G0
-    println("Q=$(Q)")
-end
+display(ceff_plot)
+display(yin_plot)
