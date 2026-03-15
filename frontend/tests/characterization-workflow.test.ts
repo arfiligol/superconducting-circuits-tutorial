@@ -11,10 +11,13 @@ import {
   characterizationTaggingsKey,
 } from "../src/features/characterization/lib/api";
 import {
+  filterCharacterizationTasks,
+  resolveLatestCharacterizationTask,
   resolveCharacterizationSelectionRecovery,
   resolveSelectedCharacterizationDesignId,
   resolveSelectedCharacterizationResultId,
   summarizeCharacterizationResults,
+  summarizeCharacterizationTasks,
 } from "../src/features/characterization/lib/workflow";
 
 const characterizationWorkspaceSource = readFileSync(
@@ -204,25 +207,135 @@ describe("characterization browse helpers", () => {
   });
 });
 
+describe("characterization task helpers", () => {
+  const tasks = [
+    {
+      taskId: 81,
+      kind: "characterization",
+      lane: "characterization",
+      executionMode: "run",
+      status: "running",
+      submittedAt: "2026-03-15 09:10:00",
+      ownerUserId: "user-dev-01",
+      ownerDisplayName: "Device Lab",
+      workspaceId: "workspace-lab",
+      workspaceSlug: "device-lab",
+      visibilityScope: "workspace",
+      datasetId: "fluxonium-2025-031",
+      definitionId: null,
+      summary: "Characterization request for Fluxonium sweep 031",
+      hasActionAuthority: true,
+      allowedActions: {
+        attach: true,
+        cancel: true,
+        terminate: false,
+        retry: false,
+      },
+    },
+    {
+      taskId: 79,
+      kind: "characterization",
+      lane: "characterization",
+      executionMode: "run",
+      status: "completed",
+      submittedAt: "2026-03-15 08:50:00",
+      ownerUserId: "user-dev-01",
+      ownerDisplayName: "Device Lab",
+      workspaceId: "workspace-lab",
+      workspaceSlug: "device-lab",
+      visibilityScope: "workspace",
+      datasetId: "fluxonium-2025-031",
+      definitionId: null,
+      summary: "Completed characterization sweep",
+      hasActionAuthority: true,
+      allowedActions: {
+        attach: true,
+        cancel: false,
+        terminate: false,
+        retry: true,
+      },
+    },
+    {
+      taskId: 77,
+      kind: "simulation",
+      lane: "simulation",
+      executionMode: "run",
+      status: "failed",
+      submittedAt: "2026-03-15 08:40:00",
+      ownerUserId: "user-dev-02",
+      ownerDisplayName: "Analysis Team",
+      workspaceId: "workspace-lab",
+      workspaceSlug: "device-lab",
+      visibilityScope: "owned",
+      datasetId: "transmon-014",
+      definitionId: 24,
+      summary: "Simulation task",
+      hasActionAuthority: false,
+      allowedActions: {
+        attach: false,
+        cancel: false,
+        terminate: false,
+        retry: false,
+      },
+    },
+  ] as const;
+
+  it("filters characterization task rows by scope and summarizes shared queue counts", () => {
+    expect(resolveLatestCharacterizationTask(tasks)?.taskId).toBe(81);
+    expect(
+      filterCharacterizationTasks(tasks, {
+        searchQuery: "fluxonium",
+        scope: "dataset",
+        statusFilter: "all",
+        activeDatasetId: "fluxonium-2025-031",
+      }).map((task) => task.taskId),
+    ).toEqual([81, 79]);
+
+    expect(
+      summarizeCharacterizationTasks(
+        filterCharacterizationTasks(tasks, {
+          searchQuery: "",
+          scope: "all",
+          statusFilter: "all",
+          activeDatasetId: "fluxonium-2025-031",
+        }),
+      ),
+    ).toEqual({
+      total: 2,
+      activeCount: 1,
+      completedCount: 1,
+      failedCount: 0,
+      resultBackedCount: 1,
+    });
+  });
+});
+
 describe("characterization source contracts", () => {
-  it("keeps the page on registry, run history, and persisted result read responsibilities", () => {
+  it("keeps persisted artifact surfaces while adding shared task queue and attachment semantics", () => {
     expect(characterizationWorkspaceSource).toContain("Analysis Registry");
     expect(characterizationWorkspaceSource).toContain("Run History");
     expect(characterizationWorkspaceSource).toContain("Result Summary List");
     expect(characterizationWorkspaceSource).toContain("Persisted Result Detail");
     expect(characterizationWorkspaceSource).toContain("Payload Preview");
     expect(characterizationWorkspaceSource).toContain("Identify & Tag");
+    expect(characterizationWorkspaceSource).toContain("Characterization Task Queue");
+    expect(characterizationWorkspaceSource).toContain("TaskLifecyclePanel");
+    expect(characterizationWorkspaceSource).toContain("Task Controls / Result Handoff");
+    expect(characterizationWorkspaceSource).toContain("Run History remains the persisted artifact surface");
     expect(characterizationWorkspaceSource).not.toContain("Run Analysis");
-    expect(characterizationWorkspaceSource).not.toContain("submitTask(");
-    expect(characterizationWorkspaceSource).not.toContain("TaskLifecyclePanel");
-    expect(characterizationWorkspaceSource).not.toContain("ResearchTaskQueuePanel");
-    expect(characterizationWorkspaceSource).not.toContain("attached task");
+    expect(characterizationWorkspaceSource).not.toContain("submitCharacterizationTask");
   });
 
-  it("binds registry, run history, and result detail to the shared active dataset", () => {
+  it("binds queue attachment plus registry, run history, and result detail to shared app authority", () => {
     expect(characterizationHookSource).toContain(
       "const activeDatasetId = activeDatasetState.activeDataset?.datasetId ?? null",
     );
+    expect(characterizationHookSource).toContain("const taskQueueState = useTaskQueue();");
+    expect(characterizationHookSource).toContain("const characterizationTasks = taskQueueState.tasks");
+    expect(characterizationHookSource).toContain(".map(normalizeTaskSummary)");
+    expect(characterizationHookSource).toContain("const resolvedTaskId = selectedTaskId ?? latestCharacterizationTask?.taskId ?? null;");
+    expect(characterizationHookSource).toContain("const taskKey = resolvedTaskId ? taskDetailKey(resolvedTaskId) : null;");
+    expect(characterizationHookSource).toContain("() => (resolvedTaskId ? getTask(resolvedTaskId) : Promise.resolve(undefined))");
     expect(characterizationHookSource).toContain("listDesignBrowseRows(activeDatasetId");
     expect(characterizationHookSource).toContain(
       "listCharacterizationAnalysisRegistry(activeDatasetId, resolvedDesignId",
@@ -241,6 +354,5 @@ describe("characterization source contracts", () => {
     expect(characterizationHookSource).toContain("focusRunHistoryResult(resultId");
     expect(characterizationHookSource).toContain("applyCharacterizationTagging(");
     expect(characterizationHookSource).not.toContain("submitCharacterizationTask");
-    expect(characterizationHookSource).not.toContain("useTaskQueue");
   });
 });

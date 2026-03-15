@@ -21,6 +21,13 @@ describe("task event history helpers", () => {
     datasetId: "fluxonium-2025-031",
     definitionId: 18,
     summary: "Simulation request for Fluxonium sweep 031",
+    hasActionAuthority: true,
+    allowedActions: {
+      attach: true,
+      cancel: false,
+      terminate: false,
+      retry: false,
+    },
     queueBackend: "in_memory_scaffold",
     workerTaskName: "simulation_run_task",
     requestReady: true,

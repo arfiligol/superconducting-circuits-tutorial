@@ -3,8 +3,11 @@ import type {
   CharacterizationResultStatus,
   CharacterizationResultSummary,
 } from "@/features/characterization/lib/contracts";
+import type { TaskSummary } from "@/lib/api/tasks";
 
 export type CharacterizationResultStatusFilter = "all" | CharacterizationResultStatus;
+export type CharacterizationTaskScope = "all" | "dataset";
+export type CharacterizationTaskStatusFilter = "all" | "active" | "completed" | "failed";
 
 export type CharacterizationSelectionRecovery = Readonly<{
   tone: "default" | "warning";
@@ -19,6 +22,29 @@ export type CharacterizationResultSummaryCounts = Readonly<{
   blockedCount: number;
   artifactCount: number;
 }>;
+
+export type CharacterizationTaskSummaryCounts = Readonly<{
+  total: number;
+  activeCount: number;
+  completedCount: number;
+  failedCount: number;
+  resultBackedCount: number;
+}>;
+
+type FilterCharacterizationTasksOptions = Readonly<{
+  searchQuery: string;
+  scope: CharacterizationTaskScope;
+  statusFilter: CharacterizationTaskStatusFilter;
+  activeDatasetId: string | null;
+}>;
+
+function isCharacterizationTask(task: TaskSummary) {
+  return task.kind === "characterization" && task.lane === "characterization";
+}
+
+function isActiveTask(task: TaskSummary) {
+  return task.status === "queued" || task.status === "running";
+}
 
 export function resolveSelectedCharacterizationDesignId(
   selectedDesignId: string | null,
@@ -67,6 +93,78 @@ export function summarizeCharacterizationResults(
       failedCount: 0,
       blockedCount: 0,
       artifactCount: 0,
+    },
+  );
+}
+
+export function resolveLatestCharacterizationTask(
+  tasks: readonly TaskSummary[],
+): TaskSummary | undefined {
+  const characterizationTasks = tasks.filter(isCharacterizationTask);
+  return characterizationTasks.find(isActiveTask) ?? characterizationTasks[0];
+}
+
+export function filterCharacterizationTasks(
+  tasks: readonly TaskSummary[],
+  options: FilterCharacterizationTasksOptions,
+) {
+  const normalizedQuery = options.searchQuery.trim().toLowerCase();
+
+  return tasks.filter((task) => {
+    if (!isCharacterizationTask(task)) {
+      return false;
+    }
+
+    if (
+      options.scope === "dataset" &&
+      options.activeDatasetId !== null &&
+      task.datasetId !== options.activeDatasetId
+    ) {
+      return false;
+    }
+
+    if (options.statusFilter === "active" && !isActiveTask(task)) {
+      return false;
+    }
+
+    if (options.statusFilter === "completed" && task.status !== "completed") {
+      return false;
+    }
+
+    if (options.statusFilter === "failed" && task.status !== "failed") {
+      return false;
+    }
+
+    if (!normalizedQuery) {
+      return true;
+    }
+
+    return (
+      task.summary.toLowerCase().includes(normalizedQuery) ||
+      String(task.taskId).includes(normalizedQuery) ||
+      (task.datasetId?.toLowerCase().includes(normalizedQuery) ?? false)
+    );
+  });
+}
+
+export function summarizeCharacterizationTasks(
+  tasks: readonly TaskSummary[],
+): CharacterizationTaskSummaryCounts {
+  return tasks.reduce<CharacterizationTaskSummaryCounts>(
+    (summary, task) => ({
+      total: summary.total + 1,
+      activeCount: summary.activeCount + (isActiveTask(task) ? 1 : 0),
+      completedCount: summary.completedCount + (task.status === "completed" ? 1 : 0),
+      failedCount: summary.failedCount + (task.status === "failed" ? 1 : 0),
+      resultBackedCount:
+        summary.resultBackedCount + (task.status === "completed" ? 1 : 0),
+    }),
+    {
+      total: 0,
+      activeCount: 0,
+      completedCount: 0,
+      failedCount: 0,
+      resultBackedCount: 0,
     },
   );
 }

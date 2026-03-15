@@ -19,15 +19,18 @@ import {
 } from "@/features/characterization/lib/workflow";
 import { datasetMetricsKey, listDesignBrowseRows } from "@/lib/api/datasets";
 import { useActiveDataset } from "@/lib/app-state/active-dataset";
+import { useTaskQueue } from "@/lib/app-state/task-queue";
+import { getTask, normalizeTaskSummary, taskDetailKey } from "@/lib/api/tasks";
 
 type TaggingMutationState = Readonly<{
   state: "idle" | "submitting" | "success" | "error";
   message: string | null;
 }>;
 
-export function useCharacterizationWorkflowData() {
+export function useCharacterizationWorkflowData(selectedTaskId: number | null) {
   const { mutate } = useSWRConfig();
   const activeDatasetState = useActiveDataset();
+  const taskQueueState = useTaskQueue();
   const activeDatasetId = activeDatasetState.activeDataset?.datasetId ?? null;
   const [designSearch, setDesignSearch] = useState("");
   const [resultSearch, setResultSearch] = useState("");
@@ -41,6 +44,32 @@ export function useCharacterizationWorkflowData() {
     state: "idle",
     message: null,
   });
+
+  const characterizationTasks = taskQueueState.tasks
+    .map(normalizeTaskSummary)
+    .filter((task) => task.kind === "characterization" && task.lane === "characterization");
+  const latestCharacterizationTask =
+    characterizationTasks.find((task) => task.status === "queued" || task.status === "running") ??
+    characterizationTasks[0];
+  const resolvedTaskId = selectedTaskId ?? latestCharacterizationTask?.taskId ?? null;
+  const taskKey = resolvedTaskId ? taskDetailKey(resolvedTaskId) : null;
+  const taskDetailQuery = useSWR(
+    taskKey,
+    () => (resolvedTaskId ? getTask(resolvedTaskId) : Promise.resolve(undefined)),
+    {
+      keepPreviousData: true,
+      refreshInterval(currentData) {
+        if (!currentData) {
+          return 5_000;
+        }
+
+        return currentData.status === "queued" || currentData.status === "running" ? 2_000 : 0;
+      },
+    },
+  );
+  const activeTask = taskDetailQuery.data;
+  const hasAttachedTask =
+    typeof resolvedTaskId === "number" && activeTask?.taskId === resolvedTaskId;
 
   const designsQuery = useSWR(
     activeDatasetId ? ["characterization-designs", activeDatasetId, designSearch] : null,
@@ -247,8 +276,22 @@ export function useCharacterizationWorkflowData() {
     setRunHistoryCursor(prevCursor);
   }
 
+  async function refreshCharacterizationWorkflow() {
+    await Promise.all([
+      activeDatasetState.refreshActiveDataset(),
+      taskQueueState.refreshTaskQueue().then(() => undefined),
+      taskDetailQuery.mutate(),
+      designsQuery.mutate(),
+      resultsQuery.mutate(),
+      detailQuery.mutate(),
+      analysisRegistryQuery.mutate(),
+      runHistoryQuery.mutate(),
+    ]);
+  }
+
   return {
     activeDatasetState,
+    taskQueueState,
     designSearch,
     setDesignSearch,
     resultSearch,
@@ -281,10 +324,18 @@ export function useCharacterizationWorkflowData() {
     requestedResultId: selectedResultId,
     selectedResultId: resolvedResultId,
     setSelectedResultId,
+    characterizationTasks,
+    latestCharacterizationTask,
+    resolvedTaskId,
+    activeTask,
+    activeTaskError: taskDetailQuery.error as Error | undefined,
+    isTaskTransitioning:
+      typeof resolvedTaskId === "number" && (!hasAttachedTask || taskDetailQuery.isLoading),
     resultDetail: detailQuery.data,
     resultDetailError: detailQuery.error as Error | undefined,
     isResultDetailLoading: detailQuery.isLoading,
     taggingMutationState,
     submitTagging,
+    refreshCharacterizationWorkflow,
   };
 }

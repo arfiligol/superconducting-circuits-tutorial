@@ -1,4 +1,9 @@
-import type { TaskDetail, TaskResultHandleRef } from "@/lib/api/tasks";
+import type {
+  TaskAllowedActions,
+  TaskDetail,
+  TaskResultHandleRef,
+  TaskSummary,
+} from "@/lib/api/tasks";
 
 type SurfaceTone = "default" | "primary" | "success" | "warning";
 
@@ -57,6 +62,39 @@ export type TaskResultHandleGroups = Readonly<{
   materialized: readonly TaskResultHandleRef[];
   pending: readonly TaskResultHandleRef[];
 }>;
+
+export type TaskActionGate = Readonly<{
+  action: "attach" | "cancel" | "terminate" | "retry";
+  enabled: boolean;
+  reason: string;
+}>;
+
+export type TaskActionGateSummary = Readonly<{
+  hasActionAuthority: boolean;
+  attach: TaskActionGate;
+  cancel: TaskActionGate;
+  terminate: TaskActionGate;
+  retry: TaskActionGate;
+}>;
+
+export type TaskContextBindingSummary = Readonly<{
+  tone: SurfaceTone;
+  title: string;
+  message: string;
+  hasMismatch: boolean;
+}> | null;
+
+export type TaskResultHandoffSummary = Readonly<{
+  tone: SurfaceTone;
+  title: string;
+  message: string;
+  isReady: boolean;
+}>;
+
+type ActionAuthorityTask = Pick<
+  TaskSummary,
+  "hasActionAuthority" | "allowedActions" | "taskId" | "summary"
+>;
 
 function formatSubmissionSourceLabel(
   source: TaskDetail["dispatch"]["submissionSource"],
@@ -320,5 +358,140 @@ export function summarizeTaskResultSurface(
     handleKindCounts: [...countsByKind.entries()]
       .map(([kind, count]) => ({ kind, count }))
       .sort((left, right) => right.count - left.count || left.kind.localeCompare(right.kind)),
+  };
+}
+
+function resolveActionReason(
+  action: keyof TaskAllowedActions,
+  task: ActionAuthorityTask | undefined,
+) {
+  if (!task) {
+    return "Attach a persisted task before reading backend action authority.";
+  }
+
+  if (!task.hasActionAuthority) {
+    return "Backend allowed_actions are not available for this task yet.";
+  }
+
+  if (task.allowedActions[action]) {
+    return "Allowed by the backend task contract.";
+  }
+
+  return "Blocked by backend allowed_actions for the current session.";
+}
+
+export function summarizeTaskActionGates(
+  task: ActionAuthorityTask | undefined,
+): TaskActionGateSummary {
+  return {
+    hasActionAuthority: task?.hasActionAuthority ?? false,
+    attach: {
+      action: "attach",
+      enabled: task?.allowedActions.attach ?? false,
+      reason: resolveActionReason("attach", task),
+    },
+    cancel: {
+      action: "cancel",
+      enabled: task?.allowedActions.cancel ?? false,
+      reason: resolveActionReason("cancel", task),
+    },
+    terminate: {
+      action: "terminate",
+      enabled: task?.allowedActions.terminate ?? false,
+      reason: resolveActionReason("terminate", task),
+    },
+    retry: {
+      action: "retry",
+      enabled: task?.allowedActions.retry ?? false,
+      reason: resolveActionReason("retry", task),
+    },
+  };
+}
+
+export function summarizeTaskContextBinding(input: Readonly<{
+  task: TaskDetail | undefined;
+  activeDatasetId: string | null;
+  activeDefinitionId?: number | null;
+}>): TaskContextBindingSummary {
+  if (!input.task) {
+    return null;
+  }
+
+  if (input.activeDatasetId && input.task.datasetId && input.task.datasetId !== input.activeDatasetId) {
+    return {
+      tone: "warning",
+      title: "Dataset context mismatch",
+      message: `Task #${input.task.taskId} is bound to dataset ${input.task.datasetId}, while the current shell dataset is ${input.activeDatasetId}. Keep the task attached for recovery, but do not treat it as the active dataset authority.`,
+      hasMismatch: true,
+    };
+  }
+
+  if (
+    typeof input.activeDefinitionId === "number" &&
+    typeof input.task.definitionId === "number" &&
+    input.task.definitionId !== input.activeDefinitionId
+  ) {
+    return {
+      tone: "warning",
+      title: "Definition context mismatch",
+      message: `Task #${input.task.taskId} is bound to definition #${input.task.definitionId}, while the page currently targets definition #${input.activeDefinitionId}. Attached task state stays visible for comparison, but definition context has diverged.`,
+      hasMismatch: true,
+    };
+  }
+
+  return {
+    tone: "success",
+    title: "Task context aligned",
+    message: "Attached task context matches the current shell and page context.",
+    hasMismatch: false,
+  };
+}
+
+export function summarizeTaskResultHandoff(
+  task: TaskDetail | undefined,
+  resultSummary: TaskResultSurfaceSummary,
+): TaskResultHandoffSummary {
+  if (!task) {
+    return {
+      tone: "default",
+      title: "Awaiting task handoff",
+      message: "Attach a persisted task before handing off to a persisted result surface.",
+      isReady: false,
+    };
+  }
+
+  const isTerminal = task.status === "completed" || task.status === "failed";
+  const hasPersistedResult =
+    resultSummary.materializedHandleCount > 0 ||
+    resultSummary.hasTracePayload ||
+    resultSummary.analysisRunId !== null ||
+    resultSummary.traceBatchId !== null;
+
+  if (isTerminal && hasPersistedResult) {
+    return {
+      tone: "success",
+      title: "Persisted result ready",
+      message:
+        "This terminal task has enough persisted result authority to hand off into the result surface without relying on in-memory execution state.",
+      isReady: true,
+    };
+  }
+
+  if (isTerminal) {
+    return {
+      tone: "warning",
+      title: "Terminal without persisted result",
+      message:
+        "The task is terminal, but no persisted result handle or trace payload is attached yet.",
+      isReady: false,
+    };
+  }
+
+  return {
+    tone: "primary",
+    title: "Execution still active",
+    message:
+      "Stay on the attached task surface until the task reaches a terminal state and publishes persisted outputs.",
+    isReady: false,
   };
 }

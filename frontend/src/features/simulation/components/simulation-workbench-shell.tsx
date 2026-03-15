@@ -48,8 +48,11 @@ import { summarizeTaskEventHistory } from "@/lib/task-event-history";
 import { summarizeResearchWorkflowSurface } from "@/lib/research-workflow-surface";
 import {
   resolveTaskConnectionState,
+  summarizeTaskActionGates,
+  summarizeTaskContextBinding,
   resolveTaskRecoveryNotice,
   summarizeTaskLifecycle,
+  summarizeTaskResultHandoff,
   summarizeTaskResultSurface,
 } from "@/lib/task-surface";
 
@@ -218,19 +221,15 @@ function DefinitionCard({
 
 type TaskCardProps = Readonly<{
   isSelected: boolean;
-  onSelect: (taskId: number) => void;
+  onAttach: (taskId: number) => void;
   task: ReturnType<typeof filterSimulationTasks>[number];
 }>;
 
-function TaskCard({ isSelected, onSelect, task }: TaskCardProps) {
+function TaskCard({ isSelected, onAttach, task }: TaskCardProps) {
   return (
-    <button
-      type="button"
-      onClick={() => {
-        onSelect(task.taskId);
-      }}
+    <div
       className={cx(
-        "w-full cursor-pointer rounded-[1rem] border px-4 py-4 text-left shadow-[0_10px_30px_rgba(0,0,0,0.08)] transition",
+        "rounded-[1rem] border px-4 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)] transition",
         isSelected
           ? "border-primary/40 bg-card"
           : "border-border bg-card hover:border-primary/25 hover:bg-primary/5",
@@ -263,7 +262,27 @@ function TaskCard({ isSelected, onSelect, task }: TaskCardProps) {
         <span>Submitted: {task.submittedAt}</span>
         <span className="sm:text-right">{task.ownerDisplayName}</span>
       </div>
-    </button>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/80 pt-4">
+        <p className="text-xs text-muted-foreground">
+          {task.hasActionAuthority
+            ? task.allowedActions.attach
+              ? "Attach is allowed by backend task authority."
+              : "Attach is blocked by backend task authority."
+            : "Attach authority is not exposed by the backend yet."}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            onAttach(task.taskId);
+          }}
+          disabled={!task.allowedActions.attach}
+          className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Attach
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -344,6 +363,13 @@ export function SimulationWorkbenchShell() {
   );
   const taskLifecycleSummary = summarizeTaskLifecycle(activeTask);
   const taskResultSummary = summarizeTaskResultSurface(activeTask);
+  const taskActionGates = summarizeTaskActionGates(activeTask);
+  const taskContextBinding = summarizeTaskContextBinding({
+    task: activeTask,
+    activeDatasetId: activeDatasetState.activeDataset?.datasetId ?? null,
+    activeDefinitionId: resolvedDefinitionId,
+  });
+  const taskResultHandoff = summarizeTaskResultHandoff(activeTask, taskResultSummary);
   const eventHistorySummary = summarizeTaskEventHistory(activeTask);
   const workflowSurfaceSummary = summarizeResearchWorkflowSurface({
     connectionState: taskConnectionState,
@@ -706,7 +732,7 @@ export function SimulationWorkbenchShell() {
               <TaskCard
                 key={task.taskId}
                 isSelected={task.taskId === resolvedTaskId}
-                onSelect={(taskId) => {
+                onAttach={(taskId) => {
                   replaceSearchState({ taskId: String(taskId) });
                 }}
                 task={task}
@@ -744,6 +770,80 @@ export function SimulationWorkbenchShell() {
           />
 
           <TaskLifecyclePanel task={activeTask} summary={taskLifecycleSummary} />
+
+          <SurfacePanel
+            title="Task Controls / Result Handoff"
+            description="Attach follows backend `allowed_actions.attach`. Cancel, terminate, and retry remain gated by backend action authority even before the control mutation adapter is wired."
+          >
+            <div className="grid gap-3 md:grid-cols-4">
+              {[
+                taskActionGates.attach,
+                taskActionGates.cancel,
+                taskActionGates.terminate,
+                taskActionGates.retry,
+              ].map((gate) => (
+                <div
+                  key={gate.action}
+                  className={cx(
+                    "rounded-[0.9rem] border px-4 py-4",
+                    gate.enabled
+                      ? "border-primary/25 bg-primary/10"
+                      : "border-border bg-surface",
+                  )}
+                >
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    {gate.action}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-foreground">
+                    {gate.enabled ? "Allowed" : "Blocked"}
+                  </p>
+                  <p className="mt-2 text-xs text-muted-foreground">{gate.reason}</p>
+                </div>
+              ))}
+            </div>
+
+            {!taskActionGates.hasActionAuthority ? (
+              <div className="mt-4 rounded-[0.9rem] border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-foreground">
+                Backend `allowed_actions` are not present in the current task payload, so control
+                buttons stay gated instead of guessing permissions in the page body.
+              </div>
+            ) : null}
+
+            {taskContextBinding ? (
+              <div
+                className={cx(
+                  "mt-4 rounded-[0.9rem] border px-4 py-3 text-sm",
+                  taskContextBinding.tone === "warning"
+                    ? "border-amber-500/30 bg-amber-500/8 text-foreground"
+                    : "border-emerald-500/25 bg-emerald-500/10 text-foreground",
+                )}
+              >
+                <p className="font-medium">{taskContextBinding.title}</p>
+                <p className="mt-1">{taskContextBinding.message}</p>
+              </div>
+            ) : null}
+
+            <div
+              className={cx(
+                "mt-4 rounded-[0.9rem] border px-4 py-3 text-sm",
+                taskResultHandoff.tone === "success"
+                  ? "border-emerald-500/25 bg-emerald-500/10 text-foreground"
+                  : taskResultHandoff.tone === "warning"
+                    ? "border-amber-500/30 bg-amber-500/8 text-foreground"
+                    : taskResultHandoff.tone === "primary"
+                      ? "border-primary/30 bg-primary/8 text-foreground"
+                      : "border-border bg-surface text-muted-foreground",
+              )}
+            >
+              <p className="font-medium">{taskResultHandoff.title}</p>
+              <p className="mt-1">{taskResultHandoff.message}</p>
+              {taskResultHandoff.isReady ? (
+                <p className="mt-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  Persisted result refs stay available in the panel below after refresh or reattach.
+                </p>
+              ) : null}
+            </div>
+          </SurfacePanel>
 
           <TaskEventHistoryPanel
             title="Task Event History"

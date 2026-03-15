@@ -4,7 +4,10 @@ import {
   groupTaskResultHandles,
   resolveTaskConnectionState,
   resolveTaskRecoveryNotice,
+  summarizeTaskActionGates,
+  summarizeTaskContextBinding,
   summarizeTaskLifecycle,
+  summarizeTaskResultHandoff,
   summarizeTaskResultSurface,
 } from "../src/lib/task-surface";
 
@@ -24,6 +27,13 @@ describe("shared task surface helpers", () => {
     datasetId: "fluxonium-2025-031",
     definitionId: null,
     summary: "Characterization request for Fluxonium sweep 031",
+    hasActionAuthority: true,
+    allowedActions: {
+      attach: true,
+      cancel: true,
+      terminate: false,
+      retry: false,
+    },
     queueBackend: "in_memory_scaffold",
     workerTaskName: "characterization_run_task",
     requestReady: true,
@@ -203,5 +213,81 @@ describe("shared task surface helpers", () => {
 
   it("treats an unattached task as having no trace payload", () => {
     expect(summarizeTaskResultSurface(undefined).hasTracePayload).toBe(false);
+  });
+
+  it("summarizes backend-gated task actions, context binding, and result handoff", () => {
+    const completedTask = {
+      ...task,
+      status: "completed" as const,
+      dispatch: {
+        ...task.dispatch,
+        status: "completed" as const,
+      },
+      progress: {
+        ...task.progress,
+        phase: "completed" as const,
+        percentComplete: 100,
+        summary: "Characterization complete",
+      },
+    };
+
+    expect(summarizeTaskActionGates(task)).toEqual({
+      hasActionAuthority: true,
+      attach: {
+        action: "attach",
+        enabled: true,
+        reason: "Allowed by the backend task contract.",
+      },
+      cancel: {
+        action: "cancel",
+        enabled: true,
+        reason: "Allowed by the backend task contract.",
+      },
+      terminate: {
+        action: "terminate",
+        enabled: false,
+        reason: "Blocked by backend allowed_actions for the current session.",
+      },
+      retry: {
+        action: "retry",
+        enabled: false,
+        reason: "Blocked by backend allowed_actions for the current session.",
+      },
+    });
+
+    expect(
+      summarizeTaskContextBinding({
+        task,
+        activeDatasetId: "fluxonium-2025-031",
+      }),
+    ).toEqual({
+      tone: "success",
+      title: "Task context aligned",
+      message: "Attached task context matches the current shell and page context.",
+      hasMismatch: false,
+    });
+
+    expect(
+      summarizeTaskContextBinding({
+        task,
+        activeDatasetId: "transmon-014",
+      }),
+    ).toEqual({
+      tone: "warning",
+      title: "Dataset context mismatch",
+      message:
+        "Task #41 is bound to dataset fluxonium-2025-031, while the current shell dataset is transmon-014. Keep the task attached for recovery, but do not treat it as the active dataset authority.",
+      hasMismatch: true,
+    });
+
+    expect(
+      summarizeTaskResultHandoff(completedTask, summarizeTaskResultSurface(completedTask)),
+    ).toEqual({
+      tone: "success",
+      title: "Persisted result ready",
+      message:
+        "This terminal task has enough persisted result authority to hand off into the result surface without relying on in-memory execution state.",
+      isReady: true,
+    });
   });
 });

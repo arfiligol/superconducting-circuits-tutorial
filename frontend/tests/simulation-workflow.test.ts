@@ -77,6 +77,13 @@ describe("simulation task workflow helpers", () => {
       datasetId: "fluxonium-2025-031",
       definitionId: 18,
       summary: "Simulation request for FloatingQubitWithXYLine",
+      hasActionAuthority: true,
+      allowedActions: {
+        attach: true,
+        cancel: true,
+        terminate: false,
+        retry: false,
+      },
     },
     {
       taskId: 29,
@@ -93,6 +100,13 @@ describe("simulation task workflow helpers", () => {
       datasetId: "fluxonium-2025-031",
       definitionId: 18,
       summary: "Post-processing request for FloatingQubitWithXYLine",
+      hasActionAuthority: true,
+      allowedActions: {
+        attach: true,
+        cancel: false,
+        terminate: false,
+        retry: true,
+      },
     },
     {
       taskId: 28,
@@ -109,6 +123,13 @@ describe("simulation task workflow helpers", () => {
       datasetId: "transmon-014",
       definitionId: null,
       summary: "Characterization task",
+      hasActionAuthority: false,
+      allowedActions: {
+        attach: false,
+        cancel: false,
+        terminate: false,
+        retry: false,
+      },
     },
   ] as const;
 
@@ -168,6 +189,13 @@ describe("simulation task workflow helpers", () => {
           datasetId: "fluxonium-2025-031",
           definitionId: 18,
           summary: "Post-processing request for FloatingQubitWithXYLine",
+          hasActionAuthority: true,
+          allowedActions: {
+            attach: true,
+            cancel: false,
+            terminate: false,
+            retry: true,
+          },
           queueBackend: "in_memory_scaffold",
           workerTaskName: "post_processing_run_task",
           requestReady: true,
@@ -231,6 +259,13 @@ describe("simulation task workflow helpers", () => {
         datasetId: "fluxonium-2025-031",
         definitionId: 18,
         summary: "Post-processing request for FloatingQubitWithXYLine",
+        hasActionAuthority: true,
+        allowedActions: {
+          attach: true,
+          cancel: false,
+          terminate: false,
+          retry: true,
+        },
         queueBackend: "in_memory_scaffold",
         workerTaskName: "post_processing_run_task",
         requestReady: true,

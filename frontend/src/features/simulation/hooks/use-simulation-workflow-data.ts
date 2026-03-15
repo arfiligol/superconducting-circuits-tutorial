@@ -19,6 +19,7 @@ import { useAppSession } from "@/lib/app-state/app-session";
 import { useTaskQueue } from "@/lib/app-state/task-queue";
 import {
   getTask,
+  normalizeTaskSummary,
   submitTask,
   taskDetailKey,
   tasksListKey,
@@ -78,9 +79,9 @@ export function useSimulationWorkflowData(
     typeof resolvedDefinitionId === "number" &&
     activeDefinition?.definition_id === resolvedDefinitionId;
 
-  const simulationTasks = taskQueueState.tasks.filter(
-    (task) => task.kind === "simulation" || task.kind === "post_processing",
-  );
+  const simulationTasks = taskQueueState.tasks
+    .map(normalizeTaskSummary)
+    .filter((task) => task.kind === "simulation" || task.kind === "post_processing");
   const latestSimulationTask = resolveLatestSimulationTask(simulationTasks);
   const resolvedTaskId = selectedTaskId ?? latestSimulationTask?.taskId ?? null;
   const taskKey = resolvedTaskId ? taskDetailKey(resolvedTaskId) : null;

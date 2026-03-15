@@ -4,6 +4,12 @@ import { components } from "./generated/schema";
 
 type TaskSummaryResponseShape = components["schemas"]["TaskSummaryResponse"];
 type TaskDetailResponseShape = components["schemas"]["TaskDetailResponse"];
+type TaskAllowedActionsResponse = Readonly<{
+  attach: boolean;
+  cancel: boolean;
+  terminate: boolean;
+  retry: boolean;
+}>;
 
 export type TaskMetadataRecordRef = Readonly<{
   backend: "sqlite_metadata";
@@ -69,6 +75,13 @@ export type TaskEvent = Readonly<{
   metadata: Readonly<Record<string, string | number | boolean | readonly string[] | null>>;
 }>;
 
+export type TaskAllowedActions = Readonly<{
+  attach: boolean;
+  cancel: boolean;
+  terminate: boolean;
+  retry: boolean;
+}>;
+
 export type TaskSummary = Readonly<{
   taskId: number;
   kind: "simulation" | "post_processing" | "characterization";
@@ -84,6 +97,8 @@ export type TaskSummary = Readonly<{
   datasetId: string | null;
   definitionId: number | null;
   summary: string;
+  hasActionAuthority: boolean;
+  allowedActions: TaskAllowedActions;
 }>;
 
 export type TaskDetail = TaskSummary &
@@ -121,8 +136,21 @@ export type TaskDetail = TaskSummary &
 
 export type TaskSubmissionDraft = components["schemas"]["TaskSubmissionRequest"];
 export type TaskMutationResponse = components["schemas"]["TaskMutationResponse"];
+export type TaskSummaryLike = Omit<TaskSummary, "hasActionAuthority" | "allowedActions"> &
+  Readonly<
+    Partial<
+      Pick<TaskSummary, "hasActionAuthority" | "allowedActions">
+    >
+  >;
 
 export const tasksListKey = "/api/backend/tasks";
+
+const emptyTaskAllowedActions: TaskAllowedActions = {
+  attach: false,
+  cancel: false,
+  terminate: false,
+  retry: false,
+};
 
 export function taskDetailKey(taskId: number) {
   return `/api/backend/tasks/${encodeURIComponent(taskId)}`;
@@ -212,7 +240,36 @@ function mapTaskEvent(payload: components["schemas"]["TaskEventResponse"]): Task
   };
 }
 
+function mapTaskAllowedActions(
+  payload: TaskAllowedActionsResponse | undefined,
+): Readonly<{
+  hasActionAuthority: boolean;
+  allowedActions: TaskAllowedActions;
+}> {
+  if (!payload) {
+    return {
+      hasActionAuthority: false,
+      allowedActions: emptyTaskAllowedActions,
+    };
+  }
+
+  return {
+    hasActionAuthority: true,
+    allowedActions: {
+      attach: payload.attach,
+      cancel: payload.cancel,
+      terminate: payload.terminate,
+      retry: payload.retry,
+    },
+  };
+}
+
 export function mapTaskSummaryResponse(payload: TaskSummaryResponseShape): TaskSummary {
+  const actionState = mapTaskAllowedActions(
+    (payload as TaskSummaryResponseShape & { allowed_actions?: TaskAllowedActionsResponse })
+      .allowed_actions,
+  );
+
   return {
     taskId: payload.task_id,
     kind: payload.kind,
@@ -228,6 +285,20 @@ export function mapTaskSummaryResponse(payload: TaskSummaryResponseShape): TaskS
     datasetId: payload.dataset_id,
     definitionId: payload.definition_id,
     summary: payload.summary,
+    hasActionAuthority: actionState.hasActionAuthority,
+    allowedActions: actionState.allowedActions,
+  };
+}
+
+export function normalizeTaskSummary(task: TaskSummaryLike): TaskSummary {
+  const actionState = mapTaskAllowedActions(
+    task.hasActionAuthority && task.allowedActions ? task.allowedActions : undefined,
+  );
+
+  return {
+    ...task,
+    hasActionAuthority: actionState.hasActionAuthority,
+    allowedActions: actionState.allowedActions,
   };
 }
 
