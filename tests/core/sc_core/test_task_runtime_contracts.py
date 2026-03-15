@@ -3,16 +3,22 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from sc_core.execution import (
+    TaskExecutionHistoryEvent,
     build_task_control_audit_payload,
     build_task_control_event_log,
+    build_task_control_history_pair,
     build_task_control_history_event,
+    project_task_control_transition,
+    project_task_runtime_state_from_history,
 )
 from sc_core.tasking import (
     REDACTED_RUNTIME_METADATA_VALUE,
     TERMINAL_TASK_STATES,
     allowed_task_runtime_transitions,
     build_lane_processor_summaries,
+    build_lane_processor_summaries_from_snapshots,
     build_processor_heartbeat,
+    build_processor_heartbeat_from_snapshot,
     build_task_retry_lineage,
     build_task_state_matrix,
     can_transition_task_state,
@@ -25,6 +31,25 @@ from sc_core.tasking import (
 
 def _utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
     return datetime(year, month, day, hour, minute, tzinfo=UTC)
+
+
+def _history_event(
+    *,
+    event_key: str,
+    event_type: str,
+    occurred_at: datetime,
+    message: str,
+    metadata: dict[str, object],
+    level: str = "info",
+) -> TaskExecutionHistoryEvent:
+    return TaskExecutionHistoryEvent.from_mapping(
+        event_key=event_key,
+        event_type=event_type,  # type: ignore[arg-type]
+        level=level,  # type: ignore[arg-type]
+        occurred_at=occurred_at.isoformat(),
+        message=message,
+        metadata=metadata,
+    )
 
 
 def test_task_state_matrix_keeps_terminal_states_immutable() -> None:
@@ -208,3 +233,145 @@ def test_task_control_audit_and_history_payloads_are_redaction_safe() -> None:
     assert history_event.event_type == "task_retried"
     assert history_event.level == "info"
     assert history_event.metadata["creates_new_task_lineage"] is True
+
+    history_pair = build_task_control_history_pair(
+        task_id=91,
+        decision=decision,
+        occurred_at=recorded_at,
+        lineage=lineage,
+        runtime_metadata={"host": {"name": "hidden"}},
+    )
+    assert history_pair.history_event.event_type == "task_retried"
+    assert history_pair.event_log.action_kind == "task.retried"
+    assert history_pair.event_log.payload["runtime_metadata"] == {
+        "host": REDACTED_RUNTIME_METADATA_VALUE,
+    }
+
+
+def test_task_history_projection_recovers_control_runtime_states() -> None:
+    cancel_history = (
+        _history_event(
+            event_key="task_submitted:1",
+            event_type="task_submitted",
+            occurred_at=_utc(2026, 3, 16, 9, 0),
+            message="Task submission accepted by rewrite runtime.",
+            metadata={"task_status": "queued"},
+        ),
+        build_task_control_history_event(
+            decision=evaluate_task_control_action("cancel", current_state="running"),
+            occurred_at=_utc(2026, 3, 16, 9, 5),
+        ),
+        _history_event(
+            event_key="task_cancel_requested:2",
+            event_type="task_cancel_requested",
+            occurred_at=_utc(2026, 3, 16, 9, 6),
+            message="Task entered the cancel-control path.",
+            metadata={"task_status": "cancelling"},
+            level="warning",
+        ),
+        _history_event(
+            event_key="task_cancel_requested:3",
+            event_type="task_cancel_requested",
+            occurred_at=_utc(2026, 3, 16, 9, 7),
+            message="Task entered the cancel-control path.",
+            metadata={"task_status": "cancelled"},
+            level="warning",
+        ),
+    )
+
+    assert project_task_runtime_state_from_history(cancel_history) == "cancelled"
+    cancel_projection = project_task_control_transition(cancel_history)
+    assert cancel_projection is not None
+    assert cancel_projection.action == "cancel"
+    assert cancel_projection.runtime_state == "cancelled"
+    assert cancel_projection.requested_state == "cancellation_requested"
+    assert cancel_projection.request_acknowledged is True
+    assert cancel_projection.terminal_transition_complete is True
+
+    terminate_history = (
+        build_task_control_history_event(
+            decision=evaluate_task_control_action(
+                "terminate",
+                current_state="cancellation_requested",
+            ),
+            occurred_at=_utc(2026, 3, 16, 10, 0),
+        ),
+        _history_event(
+            event_key="task_terminate_requested:2",
+            event_type="task_terminate_requested",
+            occurred_at=_utc(2026, 3, 16, 10, 1),
+            message="Task entered the terminate-control path.",
+            metadata={"task_status": "terminated"},
+            level="warning",
+        ),
+    )
+    terminate_projection = project_task_control_transition(
+        terminate_history,
+        runtime_state="terminated",
+    )
+    assert terminate_projection is not None
+    assert terminate_projection.action == "terminate"
+    assert terminate_projection.runtime_state == "terminated"
+    assert terminate_projection.request_acknowledged is True
+    assert terminate_projection.terminal_transition_complete is True
+
+
+def test_terminal_history_projection_stays_immutable_when_retry_or_cancel_follow() -> None:
+    history = (
+        _history_event(
+            event_key="task_completed:1",
+            event_type="task_completed",
+            occurred_at=_utc(2026, 3, 16, 11, 0),
+            message="Task completed and persisted result metadata.",
+            metadata={"task_status": "completed"},
+        ),
+        build_task_control_history_event(
+            decision=evaluate_task_control_action("retry", current_state="completed"),
+            occurred_at=_utc(2026, 3, 16, 11, 5),
+        ),
+        build_task_control_history_event(
+            decision=evaluate_task_control_action("cancel", current_state="running"),
+            occurred_at=_utc(2026, 3, 16, 11, 10),
+        ),
+    )
+
+    assert project_task_runtime_state_from_history(history) == "completed"
+    retry_projection = project_task_control_transition(history, runtime_state="completed")
+    assert retry_projection is not None
+    assert retry_projection.action == "retry"
+    assert retry_projection.creates_new_task_lineage is True
+    assert retry_projection.runtime_state == "completed"
+    assert retry_projection.terminal_transition_complete is True
+
+
+def test_processor_snapshot_projection_preserves_lane_scope() -> None:
+    now = _utc(2026, 3, 16, 12, 0)
+    snapshots = [
+        {
+            "processor_id": "sim-1",
+            "lane": "simulation",
+            "state": "busy",
+            "current_task_id": "12",
+            "last_heartbeat_at": (now - timedelta(seconds=15)).isoformat(),
+            "runtime_metadata": {"host": {"name": "hidden"}},
+        },
+        {
+            "processor_id": "post-1",
+            "lane": "post_processing",
+            "state": "healthy",
+            "last_heartbeat_at": now,
+            "runtime_metadata": {"version": "1.0.0"},
+        },
+    ]
+
+    heartbeat = build_processor_heartbeat_from_snapshot(snapshots[0])
+    assert heartbeat.current_task_id == 12
+    assert heartbeat.runtime_metadata == {"host": REDACTED_RUNTIME_METADATA_VALUE}
+
+    summaries = build_lane_processor_summaries_from_snapshots(
+        snapshots,
+        recorded_at=now,
+        offline_after_seconds=90,
+    )
+    assert [summary.lane for summary in summaries] == ["post_processing", "simulation"]
+    assert summaries[1].busy_processors == 1

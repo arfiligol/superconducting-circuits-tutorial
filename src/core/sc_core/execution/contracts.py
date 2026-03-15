@@ -10,9 +10,13 @@ from sc_core.tasking import (
     TaskDispatchRecord,
     TaskControlAction,
     TaskControlDecision,
+    TaskControlOutcome,
+    TaskControlRuntimeProjection,
     TaskRetryLineage,
     TaskRuntimeState,
+    TERMINAL_TASK_STATES,
     WorkerTaskName,
+    is_terminal_task_state,
     sanitize_processor_runtime_metadata,
 )
 from sc_core.tasking import (
@@ -215,6 +219,14 @@ class TaskExecutionHistoryContext:
     @property
     def submission_source(self) -> TaskExecutionHistorySubmissionSource:
         return self.dispatch.submission_source
+
+
+@dataclass(frozen=True)
+class TaskControlHistoryPair:
+    """Canonical pairing of task-history and audit artifacts for one control request."""
+
+    history_event: TaskExecutionHistoryEvent
+    event_log: ExecutionEventLog
 
 
 @dataclass(frozen=True)
@@ -965,6 +977,105 @@ def build_task_execution_history(
     return tuple(events)
 
 
+def project_task_runtime_state_from_history(
+    history_events: Sequence[TaskExecutionHistoryEvent],
+    *,
+    initial_state: TaskRuntimeState = "queued",
+) -> TaskRuntimeState:
+    """Project the canonical runtime state from persisted task-history events."""
+    projected_state = initial_state
+    for event in _sort_task_history_events(history_events):
+        next_state = _task_runtime_state_from_history_event(event)
+        if next_state is None:
+            continue
+        if is_terminal_task_state(projected_state) and next_state != projected_state:
+            continue
+        projected_state = next_state
+    return projected_state
+
+
+def project_task_control_transition(
+    history_events: Sequence[TaskExecutionHistoryEvent],
+    *,
+    runtime_state: TaskRuntimeState | None = None,
+) -> TaskControlRuntimeProjection | None:
+    """Project one accepted control request into a stable runtime control view."""
+    ordered_events = _sort_task_history_events(history_events)
+    projected_runtime_state = (
+        runtime_state
+        if runtime_state is not None
+        else project_task_runtime_state_from_history(ordered_events)
+    )
+    accepted_control_event: TaskExecutionHistoryEvent | None = None
+    for event in reversed(ordered_events):
+        if event.event_type not in {
+            "task_cancel_requested",
+            "task_terminate_requested",
+            "task_retried",
+        }:
+            continue
+        if _optional_task_control_outcome(event.metadata.get("outcome")) == "accepted" and (
+            _control_event_matches_runtime_state(
+                event,
+                runtime_state=projected_runtime_state,
+            )
+        ):
+            accepted_control_event = event
+            break
+    if accepted_control_event is None:
+        return None
+
+    action = _control_action_from_history_event(accepted_control_event)
+    requested_state = _requested_state_from_history_event(
+        accepted_control_event,
+        action=action,
+    )
+
+    acknowledged_at: str | None = None
+    terminal_at: str | None = None
+    for event in ordered_events:
+        if _event_precedes(event, accepted_control_event):
+            continue
+        event_state = _task_runtime_state_from_history_event(event)
+        if event_state is None:
+            continue
+        if action == "cancel":
+            if acknowledged_at is None and event_state in {"cancelling", "cancelled"}:
+                acknowledged_at = event.occurred_at
+            if terminal_at is None and event_state == "cancelled":
+                terminal_at = event.occurred_at
+        elif action == "terminate":
+            if acknowledged_at is None and event_state == "terminated":
+                acknowledged_at = event.occurred_at
+            if terminal_at is None and event_state == "terminated":
+                terminal_at = event.occurred_at
+        else:
+            acknowledged_at = accepted_control_event.occurred_at
+            if projected_runtime_state in TERMINAL_TASK_STATES:
+                terminal_at = accepted_control_event.occurred_at
+            break
+
+    if action == "cancel" and projected_runtime_state in {"cancelling", "cancelled"}:
+        acknowledged_at = acknowledged_at or accepted_control_event.occurred_at
+    if action == "cancel" and projected_runtime_state == "cancelled":
+        terminal_at = terminal_at or acknowledged_at or accepted_control_event.occurred_at
+    if action == "terminate" and projected_runtime_state == "terminated":
+        acknowledged_at = acknowledged_at or accepted_control_event.occurred_at
+        terminal_at = terminal_at or accepted_control_event.occurred_at
+
+    return TaskControlRuntimeProjection(
+        action=action,
+        runtime_state=projected_runtime_state,
+        requested_state=requested_state,
+        requested_at=accepted_control_event.occurred_at,
+        acknowledged_at=acknowledged_at,
+        terminal_at=terminal_at,
+        creates_new_task_lineage=bool(
+            accepted_control_event.metadata.get("creates_new_task_lineage", False)
+        ),
+    )
+
+
 def build_task_control_history_event(
     *,
     decision: TaskControlDecision,
@@ -1005,6 +1116,31 @@ def build_task_control_history_event(
         occurred_at=occurred_at.isoformat(),
         message=message,
         metadata=metadata,
+    )
+
+
+def build_task_control_history_pair(
+    *,
+    task_id: int,
+    decision: TaskControlDecision,
+    occurred_at: datetime,
+    lineage: TaskRetryLineage | None = None,
+    runtime_metadata: Mapping[str, object] | None = None,
+) -> TaskControlHistoryPair:
+    """Build paired history and audit artifacts for one control request."""
+    return TaskControlHistoryPair(
+        history_event=build_task_control_history_event(
+            decision=decision,
+            occurred_at=occurred_at,
+            lineage=lineage,
+        ),
+        event_log=build_task_control_event_log(
+            task_id=task_id,
+            decision=decision,
+            recorded_at=occurred_at,
+            lineage=lineage,
+            runtime_metadata=runtime_metadata,
+        ),
     )
 
 
@@ -1282,3 +1418,113 @@ def _copy_payload(payload: Mapping[str, object] | None) -> dict[str, object] | N
     if payload is None:
         return None
     return dict(payload)
+
+
+def _sort_task_history_events(
+    history_events: Sequence[TaskExecutionHistoryEvent],
+) -> tuple[TaskExecutionHistoryEvent, ...]:
+    return tuple(sorted(history_events, key=lambda event: (event.occurred_at, event.event_key)))
+
+
+def _event_precedes(
+    event: TaskExecutionHistoryEvent,
+    anchor: TaskExecutionHistoryEvent,
+) -> bool:
+    return (event.occurred_at, event.event_key) < (anchor.occurred_at, anchor.event_key)
+
+
+def _task_runtime_state_from_history_event(
+    event: TaskExecutionHistoryEvent,
+) -> TaskRuntimeState | None:
+    task_status = event.metadata.get("task_status")
+    if task_status in {
+        "queued",
+        "dispatching",
+        "running",
+        "cancellation_requested",
+        "cancelling",
+        "cancelled",
+        "termination_requested",
+        "terminated",
+        "completed",
+        "failed",
+    }:
+        return task_status
+    requested_state = event.metadata.get("requested_state")
+    if requested_state in {
+        "queued",
+        "dispatching",
+        "running",
+        "cancellation_requested",
+        "cancelling",
+        "cancelled",
+        "termination_requested",
+        "terminated",
+        "completed",
+        "failed",
+    }:
+        return requested_state
+    if event.event_type == "task_submitted":
+        return "queued"
+    if event.event_type == "task_running":
+        return "running"
+    if event.event_type == "task_completed":
+        return "completed"
+    if event.event_type == "task_failed":
+        return "failed"
+    return None
+
+
+def _optional_task_control_outcome(value: object) -> TaskControlOutcome | None:
+    if value in {"accepted", "rejected"}:
+        return value
+    return None
+
+
+def _control_action_from_history_event(
+    event: TaskExecutionHistoryEvent,
+) -> TaskControlAction:
+    if event.event_type == "task_cancel_requested":
+        return "cancel"
+    if event.event_type == "task_terminate_requested":
+        return "terminate"
+    return "retry"
+
+
+def _requested_state_from_history_event(
+    event: TaskExecutionHistoryEvent,
+    *,
+    action: TaskControlAction,
+) -> TaskRuntimeState | None:
+    requested_state = event.metadata.get("requested_state")
+    if requested_state in {
+        "queued",
+        "dispatching",
+        "running",
+        "cancellation_requested",
+        "cancelling",
+        "cancelled",
+        "termination_requested",
+        "terminated",
+        "completed",
+        "failed",
+    }:
+        return requested_state
+    if action == "cancel":
+        return "cancellation_requested"
+    if action == "terminate":
+        return "termination_requested"
+    return None
+
+
+def _control_event_matches_runtime_state(
+    event: TaskExecutionHistoryEvent,
+    *,
+    runtime_state: TaskRuntimeState,
+) -> bool:
+    action = _control_action_from_history_event(event)
+    if action == "cancel":
+        return runtime_state in {"cancellation_requested", "cancelling", "cancelled"}
+    if action == "terminate":
+        return runtime_state in {"termination_requested", "terminated"}
+    return runtime_state in TERMINAL_TASK_STATES

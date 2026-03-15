@@ -19,6 +19,7 @@ from sc_core.execution.contracts import (
     TaskExecutionHistoryLevel,
     TaskExecutionHistoryMetadataValue,
     TaskExecutionHistorySubmissionSource,
+    TaskControlHistoryPair,
     TaskExecutionOperation,
     TaskExecutionResult,
     TaskExecutionTransition,
@@ -35,6 +36,7 @@ from sc_core.execution.contracts import (
     build_task_completed_mutation,
     build_task_control_audit_payload,
     build_task_control_event_log,
+    build_task_control_history_pair,
     build_task_control_history_event,
     build_task_crash_payload,
     build_task_creation_spec,
@@ -69,6 +71,8 @@ from sc_core.execution.contracts import (
     build_worker_running_transition,
     coerce_task_execution_history_metadata,
     normalize_task_dedupe_key,
+    project_task_control_transition,
+    project_task_runtime_state_from_history,
 )
 
 __all__ = [
@@ -90,6 +94,7 @@ __all__ = [
     "TaskExecutionHistoryLevel",
     "TaskExecutionHistoryMetadataValue",
     "TaskExecutionHistorySubmissionSource",
+    "TaskControlHistoryPair",
     "TaskExecutionOperation",
     "TaskExecutionResult",
     "TaskExecutionTransition",
@@ -106,6 +111,7 @@ __all__ = [
     "build_task_completed_mutation",
     "build_task_control_audit_payload",
     "build_task_control_event_log",
+    "build_task_control_history_pair",
     "build_task_control_history_event",
     "build_task_crash_payload",
     "build_task_creation_spec",
@@ -140,4 +146,6 @@ __all__ = [
     "build_worker_running_transition",
     "coerce_task_execution_history_metadata",
     "normalize_task_dedupe_key",
+    "project_task_control_transition",
+    "project_task_runtime_state_from_history",
 ]

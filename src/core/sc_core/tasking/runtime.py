@@ -110,6 +110,54 @@ class TaskRetryLineage:
 
 
 @dataclass(frozen=True)
+class TaskControlRuntimeProjection:
+    """Canonical projection of one persisted control request into runtime state."""
+
+    action: TaskControlAction
+    runtime_state: TaskRuntimeState
+    requested_state: TaskRuntimeState | None = None
+    requested_at: str | None = None
+    acknowledged_at: str | None = None
+    terminal_at: str | None = None
+    creates_new_task_lineage: bool = False
+
+    @property
+    def request_acknowledged(self) -> bool:
+        return self.acknowledged_at is not None
+
+    @property
+    def terminal_transition_complete(self) -> bool:
+        return self.terminal_at is not None
+
+    @property
+    def terminal_state(self) -> TerminalTaskState | None:
+        if self.runtime_state in TERMINAL_TASK_STATES:
+            return self.runtime_state
+        return None
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "contract_version": TASK_RUNTIME_CONTRACT_VERSION,
+            "action": self.action,
+            "runtime_state": self.runtime_state,
+            "request_acknowledged": self.request_acknowledged,
+            "terminal_transition_complete": self.terminal_transition_complete,
+            "creates_new_task_lineage": self.creates_new_task_lineage,
+        }
+        if self.requested_state is not None:
+            payload["requested_state"] = self.requested_state
+        if self.requested_at is not None:
+            payload["requested_at"] = self.requested_at
+        if self.acknowledged_at is not None:
+            payload["acknowledged_at"] = self.acknowledged_at
+        if self.terminal_at is not None:
+            payload["terminal_at"] = self.terminal_at
+        if self.terminal_state is not None:
+            payload["terminal_state"] = self.terminal_state
+        return payload
+
+
+@dataclass(frozen=True)
 class ProcessorHeartbeat:
     """Canonical lane-scoped processor heartbeat contract."""
 
@@ -262,6 +310,23 @@ def build_processor_heartbeat(
     )
 
 
+def build_processor_heartbeat_from_snapshot(
+    snapshot: Mapping[str, object],
+) -> ProcessorHeartbeat:
+    """Project one persisted processor snapshot into the canonical heartbeat contract."""
+    processor_id = snapshot.get("processor_id")
+    if not isinstance(processor_id, str) or not processor_id.strip():
+        raise ValueError("Processor snapshot is missing processor_id.")
+    return build_processor_heartbeat(
+        processor_id=processor_id,
+        lane=_coerce_lane_name(snapshot.get("lane")),
+        state=_coerce_processor_state(snapshot.get("state")),
+        current_task_id=_coerce_optional_int(snapshot.get("current_task_id")),
+        last_heartbeat_at=_coerce_datetime(snapshot.get("last_heartbeat_at")),
+        runtime_metadata=_coerce_runtime_metadata_mapping(snapshot.get("runtime_metadata")),
+    )
+
+
 def summarize_lane_processors(
     heartbeats: Sequence[ProcessorHeartbeat],
     *,
@@ -312,6 +377,36 @@ def build_lane_processor_summaries(
             offline_after_seconds=offline_after_seconds,
         )
         for lane in lanes
+    )
+
+
+def summarize_lane_processor_snapshots(
+    snapshots: Sequence[Mapping[str, object]],
+    *,
+    lane: LaneName,
+    recorded_at: datetime,
+    offline_after_seconds: int = 90,
+) -> LaneProcessorSummary:
+    """Project one lane summary directly from raw processor snapshot payloads."""
+    return summarize_lane_processors(
+        tuple(build_processor_heartbeat_from_snapshot(snapshot) for snapshot in snapshots),
+        lane=lane,
+        recorded_at=recorded_at,
+        offline_after_seconds=offline_after_seconds,
+    )
+
+
+def build_lane_processor_summaries_from_snapshots(
+    snapshots: Sequence[Mapping[str, object]],
+    *,
+    recorded_at: datetime,
+    offline_after_seconds: int = 90,
+) -> tuple[LaneProcessorSummary, ...]:
+    """Project lane-scoped processor summaries from raw snapshot payloads."""
+    return build_lane_processor_summaries(
+        tuple(build_processor_heartbeat_from_snapshot(snapshot) for snapshot in snapshots),
+        recorded_at=recorded_at,
+        offline_after_seconds=offline_after_seconds,
     )
 
 
@@ -432,3 +527,45 @@ def _sanitize_runtime_metadata_value(value: object) -> ProcessorRuntimeMetadataV
             for item in value
         ]
     return REDACTED_RUNTIME_METADATA_VALUE
+
+
+def _coerce_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    raise ValueError("Expected datetime-compatible last_heartbeat_at value.")
+
+
+def _coerce_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError("Expected integer-compatible current_task_id value.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return int(text)
+    raise ValueError("Expected integer-compatible current_task_id value.")
+
+
+def _coerce_lane_name(value: object) -> LaneName:
+    if value in {"simulation", "characterization", "post_processing"}:
+        return value
+    raise ValueError("Expected supported lane value.")
+
+
+def _coerce_processor_state(value: object) -> ProcessorState:
+    if value in {"healthy", "busy", "degraded", "draining", "offline"}:
+        return value
+    raise ValueError("Expected supported processor state value.")
+
+
+def _coerce_runtime_metadata_mapping(value: object) -> Mapping[str, object] | None:
+    if value is None:
+        return None
+    if isinstance(value, Mapping):
+        return value
+    raise ValueError("Expected mapping runtime_metadata value.")
