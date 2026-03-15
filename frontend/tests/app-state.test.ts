@@ -439,6 +439,13 @@ describe("task queue store", () => {
       datasetId: "fluxonium-2025-031",
       definitionId: 18,
       summary: "Fluxonium sweep queued from workspace",
+      allowedActions: {
+        attach: false,
+        cancel: false,
+        retry: false,
+        terminate: false,
+      },
+      hasActionAuthority: false,
     });
   });
 

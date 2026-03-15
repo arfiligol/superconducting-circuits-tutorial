@@ -4,21 +4,36 @@ import { useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 
 import {
+  circuitDefinitionsCatalogKey,
   circuitDefinitionDetailKey,
+  circuitDefinitionCloneKey,
   circuitDefinitionsListKey,
+  circuitDefinitionPublishKey,
+  cloneCircuitDefinition,
   createCircuitDefinition,
   deleteCircuitDefinition,
   getCircuitDefinition,
+  listCircuitDefinitionsCatalog,
   listCircuitDefinitions,
+  publishCircuitDefinition,
   updateCircuitDefinition,
 } from "@/features/circuit-definition-editor/lib/api";
 import type {
-  CircuitDefinitionDraft,
+  CircuitDefinitionCloneDraft,
+  CircuitDefinitionCreateDraft,
   CircuitDefinitionDetail,
+  CircuitDefinitionUpdateDraft,
 } from "@/features/circuit-definition-editor/lib/contracts";
 
 type MutationStatus = Readonly<{
-  state: "idle" | "saving" | "deleting" | "success" | "error";
+  state:
+    | "idle"
+    | "saving"
+    | "publishing"
+    | "cloning"
+    | "deleting"
+    | "success"
+    | "error";
   message: string | null;
 }>;
 
@@ -29,7 +44,7 @@ export function useCircuitDefinitionEditorData(selectedDefinitionId: number | "n
     message: null,
   });
 
-  const definitionsQuery = useSWR(circuitDefinitionsListKey, listCircuitDefinitions);
+  const definitionsQuery = useSWR(circuitDefinitionsCatalogKey, listCircuitDefinitionsCatalog);
   const detailKey =
     typeof selectedDefinitionId === "number"
       ? circuitDefinitionDetailKey(selectedDefinitionId)
@@ -41,30 +56,42 @@ export function useCircuitDefinitionEditorData(selectedDefinitionId: number | "n
       : Promise.resolve(undefined),
   );
 
-  async function refreshDefinitionQueries(definitionId: number) {
+  async function refreshDefinitionQueries(definitionId: number, nextDetail?: CircuitDefinitionDetail) {
     await Promise.all([
       mutate(circuitDefinitionsListKey),
-      mutate(circuitDefinitionDetailKey(definitionId)),
+      mutate(circuitDefinitionsCatalogKey),
+      mutate(
+        circuitDefinitionDetailKey(definitionId),
+        nextDetail,
+        nextDetail ? { revalidate: false } : undefined,
+      ),
     ]);
   }
 
   async function saveDefinition(
-    draft: CircuitDefinitionDraft,
-    definitionId: number | "new" | null,
+    draft: CircuitDefinitionCreateDraft,
+    input: Readonly<{
+      definitionId: number | "new" | null;
+      activeDefinition?: CircuitDefinitionDetail;
+    }>,
   ): Promise<CircuitDefinitionDetail> {
     setMutationStatus({ state: "saving", message: null });
 
     try {
       const detail =
-        typeof definitionId === "number"
-          ? await updateCircuitDefinition(definitionId, draft)
+        typeof input.definitionId === "number"
+          ? await updateCircuitDefinition(input.definitionId, {
+              source_text: draft.source_text,
+              name: draft.name,
+              concurrency_token: input.activeDefinition?.concurrency_token,
+            } satisfies CircuitDefinitionUpdateDraft)
           : await createCircuitDefinition(draft);
 
-      await refreshDefinitionQueries(detail.definition_id);
+      await refreshDefinitionQueries(detail.definition_id, detail);
       setMutationStatus({
         state: "success",
         message:
-          typeof definitionId === "number"
+          typeof input.definitionId === "number"
             ? "Circuit definition updated."
             : "Circuit definition created.",
       });
@@ -84,6 +111,7 @@ export function useCircuitDefinitionEditorData(selectedDefinitionId: number | "n
       await deleteCircuitDefinition(definitionId);
       await Promise.all([
         mutate(circuitDefinitionsListKey),
+        mutate(circuitDefinitionsCatalogKey),
         mutate(circuitDefinitionDetailKey(definitionId), undefined, { revalidate: false }),
       ]);
       setMutationStatus({ state: "success", message: "Circuit definition removed." });
@@ -95,12 +123,65 @@ export function useCircuitDefinitionEditorData(selectedDefinitionId: number | "n
     }
   }
 
+  async function publishDefinition(definitionId: number) {
+    setMutationStatus({ state: "publishing", message: null });
+
+    try {
+      const detail = await publishCircuitDefinition(definitionId);
+      await refreshDefinitionQueries(detail.definition_id, detail);
+      setMutationStatus({
+        state: "success",
+        message: "Circuit definition published to workspace visibility.",
+      });
+      return detail;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to publish the circuit definition.";
+      setMutationStatus({ state: "error", message });
+      throw error;
+    }
+  }
+
+  async function cloneDefinition(
+    definitionId: number,
+    cloneDraft?: CircuitDefinitionCloneDraft,
+  ) {
+    setMutationStatus({ state: "cloning", message: null });
+
+    try {
+      const detail = await cloneCircuitDefinition(definitionId, cloneDraft);
+      await Promise.all([
+        mutate(circuitDefinitionsListKey),
+        mutate(circuitDefinitionsCatalogKey),
+        mutate(circuitDefinitionDetailKey(detail.definition_id), detail, { revalidate: false }),
+        mutate(circuitDefinitionCloneKey(definitionId), undefined, {
+          revalidate: false,
+        }),
+        mutate(circuitDefinitionPublishKey(definitionId), undefined, {
+          revalidate: false,
+        }),
+      ]);
+      setMutationStatus({
+        state: "success",
+        message: "Private clone created from the persisted definition.",
+      });
+      return detail;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to clone the circuit definition.";
+      setMutationStatus({ state: "error", message });
+      throw error;
+    }
+  }
+
   function clearMutationStatus() {
     setMutationStatus({ state: "idle", message: null });
   }
 
   return {
-    definitions: definitionsQuery.data,
+    definitions: definitionsQuery.data?.catalog.rows,
+    definitionsMeta: definitionsQuery.data?.meta,
+    definitionsTotalCount: definitionsQuery.data?.catalog.total_count ?? 0,
     definitionsError: definitionsQuery.error as Error | undefined,
     isDefinitionsLoading: definitionsQuery.isLoading,
     activeDefinition: detailQuery.data,
@@ -108,6 +189,8 @@ export function useCircuitDefinitionEditorData(selectedDefinitionId: number | "n
     isActiveDefinitionLoading: detailQuery.isLoading,
     mutationStatus,
     saveDefinition,
+    publishDefinition,
+    cloneDefinition,
     removeDefinition,
     clearMutationStatus,
   };

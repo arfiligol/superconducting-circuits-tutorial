@@ -3,6 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import {
   ArrowRight,
+  Copy,
+  Globe,
   Plus,
   Search,
   Trash2,
@@ -11,11 +13,20 @@ import { useRouter } from "next/navigation";
 
 import { useCircuitDefinitionEditorData } from "@/features/circuit-definition-editor/hooks/use-circuit-definition-editor-data";
 import {
+  summarizeCatalogDefinitionActionState,
+} from "@/features/circuit-definition-editor/lib/actions";
+import {
   filterCircuitDefinitionCatalog,
   type CircuitDefinitionCatalogSort,
 } from "@/features/circuit-definition-editor/lib/catalog";
 import { buildCircuitDefinitionEditorHref } from "@/features/circuit-definition-editor/lib/routes";
 import { cx } from "@/features/shared/components/surface-kit";
+
+function visibilityTone(scope: "private" | "workspace" | undefined) {
+  return scope === "workspace"
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+    : "border-border bg-surface text-muted-foreground";
+}
 
 export function CircuitDefinitionCatalogWorkspace() {
   const router = useRouter();
@@ -24,9 +35,12 @@ export function CircuitDefinitionCatalogWorkspace() {
   const [sortMode, setSortMode] = useState<CircuitDefinitionCatalogSort>("recent");
   const {
     definitions,
+    definitionsTotalCount,
     definitionsError,
     isDefinitionsLoading,
     removeDefinition,
+    publishDefinition,
+    cloneDefinition,
     mutationStatus,
   } = useCircuitDefinitionEditorData(null);
 
@@ -42,12 +56,30 @@ export function CircuitDefinitionCatalogWorkspace() {
   }
 
   async function handleDelete(definitionId: number, definitionName: string) {
-    const confirmed = window.confirm(`Delete "${definitionName}"?`);
+    const confirmed = window.confirm(
+      `Delete persisted definition "${definitionName}"? This action cannot be undone.`,
+    );
     if (!confirmed) {
       return;
     }
 
     await removeDefinition(definitionId);
+  }
+
+  async function handlePublish(definitionId: number, definitionName: string) {
+    const confirmed = window.confirm(
+      `Publish "${definitionName}" to workspace visibility?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    await publishDefinition(definitionId);
+  }
+
+  async function handleClone(definitionId: number) {
+    const clonedDetail = await cloneDefinition(definitionId);
+    openEditor(clonedDetail.definition_id);
   }
 
   return (
@@ -56,8 +88,8 @@ export function CircuitDefinitionCatalogWorkspace() {
         <div>
           <h1 className="text-[2.05rem] font-semibold tracking-tight text-foreground">Schemas</h1>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            Browse saved circuit definitions, search and sort the catalog, then open a single
-            schema in the editor flow.
+            Browse persisted circuit definitions, inspect backend action availability, then open a
+            single definition in the editor route for authoring.
           </p>
         </div>
         <button
@@ -127,7 +159,7 @@ export function CircuitDefinitionCatalogWorkspace() {
 
         <div className="mt-4 flex items-center justify-between gap-3 rounded-[0.9rem] border border-border bg-surface px-4 py-3 text-xs text-muted-foreground">
           <span>
-            Showing {visibleDefinitions.length} of {definitions?.length ?? 0} schemas
+            Showing {visibleDefinitions.length} of {definitionsTotalCount} persisted schemas
           </span>
           <span className="rounded-full border border-border px-3 py-1">
             Catalog authority only
@@ -142,75 +174,122 @@ export function CircuitDefinitionCatalogWorkspace() {
 
         {visibleDefinitions.length > 0 ? (
           <div className="mt-4 space-y-3">
-            {visibleDefinitions.map((definition) => (
-              <article
-                key={definition.definition_id}
-                className="rounded-[1rem] border border-border bg-background px-4 py-4"
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
+            {visibleDefinitions.map((definition) => {
+              const actionState = summarizeCatalogDefinitionActionState(definition);
+              return (
+                <article
+                  key={definition.definition_id}
+                  className="rounded-[1rem] border border-border bg-background px-4 py-4"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openEditor(definition.definition_id);
+                          }}
+                          className="truncate text-left text-base font-semibold text-foreground transition hover:text-primary"
+                        >
+                          {definition.name}
+                        </button>
+                        <span
+                          className={cx(
+                            "rounded-full border px-3 py-1 text-[11px] font-medium",
+                            visibilityTone(definition.visibility_scope),
+                          )}
+                        >
+                          {definition.visibility_scope ?? "private"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="rounded-full border border-border px-3 py-1">
+                          Definition #{definition.definition_id}
+                        </span>
+                        <span className="rounded-full border border-border px-3 py-1">
+                          Owner {definition.owner_display_name ?? "Unknown"}
+                        </span>
+                        <span
+                          className={cx(
+                            "rounded-full border px-3 py-1",
+                            definition.allowed_actions?.publish
+                              ? "border-emerald-500/30 text-emerald-200"
+                              : "border-border text-muted-foreground",
+                          )}
+                        >
+                          {definition.allowed_actions?.publish
+                            ? "Publish allowed"
+                            : "Publish blocked"}
+                        </span>
+                        <span
+                          className={cx(
+                            "rounded-full border px-3 py-1",
+                            definition.allowed_actions?.clone
+                              ? "border-primary/30 text-primary"
+                              : "border-border text-muted-foreground",
+                          )}
+                        >
+                          {definition.allowed_actions?.clone ? "Clone allowed" : "Clone blocked"}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Created: {definition.created_at}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => {
                           openEditor(definition.definition_id);
                         }}
-                        className="truncate text-left text-base font-semibold text-foreground transition hover:text-primary"
+                        title={actionState.open.reason}
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
                       >
-                        {definition.name}
+                        <ArrowRight className="h-4 w-4" />
+                        Open
                       </button>
-                      <span
-                        className={cx(
-                          "rounded-full px-3 py-1 text-[11px] font-medium",
-                          definition.validation_status === "warning"
-                            ? "bg-amber-500/12 text-amber-300"
-                            : "bg-emerald-500/12 text-emerald-300",
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleClone(definition.definition_id);
+                        }}
+                        disabled={!actionState.clone.enabled}
+                        title={actionState.clone.reason}
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {definition.validation_status === "warning" ? "Warnings" : "Ready"}
-                      </span>
+                        <Copy className="h-4 w-4" />
+                        Clone
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handlePublish(definition.definition_id, definition.name);
+                        }}
+                        disabled={!actionState.publish.enabled}
+                        title={actionState.publish.reason}
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Globe className="h-4 w-4" />
+                        Publish
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${definition.name}`}
+                        onClick={() => {
+                          void handleDelete(definition.definition_id, definition.name);
+                        }}
+                        disabled={!actionState.delete.enabled}
+                        title={actionState.delete.reason}
+                        className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-rose-500/30 text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                      <span className="rounded-full border border-border px-3 py-1">
-                        Definition #{definition.definition_id}
-                      </span>
-                      <span className="rounded-full border border-border px-3 py-1">
-                        {definition.element_count} elements
-                      </span>
-                      <span className="rounded-full border border-border px-3 py-1">
-                        {definition.preview_artifact_count} preview artifacts
-                      </span>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      Created: {definition.created_at}
-                    </p>
                   </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        openEditor(definition.definition_id);
-                      }}
-                      className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                      Open Editor
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Delete ${definition.name}`}
-                      onClick={() => {
-                        void handleDelete(definition.definition_id, definition.name);
-                      }}
-                      className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-rose-500/30 text-rose-300 transition hover:bg-rose-500/10"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         ) : null}
 

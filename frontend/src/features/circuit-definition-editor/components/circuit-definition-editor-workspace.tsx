@@ -6,7 +6,9 @@ import {
   AlertTriangle,
   ArrowLeft,
   BadgeCheck,
+  Copy,
   FileCode2,
+  Globe,
   LoaderCircle,
   Save,
   Shapes,
@@ -21,6 +23,9 @@ import { z } from "zod";
 
 import { useCircuitDefinitionEditorData } from "@/features/circuit-definition-editor/hooks/use-circuit-definition-editor-data";
 import {
+  summarizeEditorDefinitionActionState,
+} from "@/features/circuit-definition-editor/lib/actions";
+import {
   parseDefinitionIdParam,
   resolveSelectedDefinitionId,
 } from "@/features/circuit-definition-editor/lib/definition-id";
@@ -32,6 +37,7 @@ import {
   buildCircuitDefinitionDraft,
   formatCircuitNetlistSource,
   parseCircuitNetlistSource,
+  summarizeCircuitDefinitionSerializerBoundary,
   summarizeCircuitNetlistDocument,
 } from "@/features/circuit-definition-editor/lib/netlist";
 import {
@@ -100,12 +106,15 @@ export function CircuitDefinitionEditorWorkspace() {
   const selectedDefinitionId = parseDefinitionIdParam(searchParams.get("definitionId"));
   const {
     definitions,
+    definitionsTotalCount,
     definitionsError,
     isDefinitionsLoading,
     activeDefinition,
     activeDefinitionError,
     mutationStatus,
     saveDefinition,
+    publishDefinition,
+    cloneDefinition,
     removeDefinition,
     clearMutationStatus,
   } = useCircuitDefinitionEditorData(selectedDefinitionId);
@@ -135,7 +144,9 @@ export function CircuitDefinitionEditorWorkspace() {
     }
 
     if (activeDefinition) {
-      const parsedSource = formatCircuitNetlistSource(activeDefinition.source_text);
+      const parsedSource = formatCircuitNetlistSource(activeDefinition.source_text, {
+        canonicalName: activeDefinition.name,
+      });
       form.reset({
         name: activeDefinition.name,
         source_text: parsedSource.formattedSource || activeDefinition.source_text,
@@ -157,12 +168,21 @@ export function CircuitDefinitionEditorWorkspace() {
     };
   }, [form]);
 
+  const definitionName = form.watch("name");
   const sourceText = form.watch("source_text");
   const parsedNetlist = useMemo(() => parseCircuitNetlistSource(sourceText), [sourceText]);
   const localSummary = summarizeCircuitNetlistDocument(parsedNetlist.document);
   const localDiagnostics = parsedNetlist.diagnostics;
   const blockingLocalDiagnostics = localDiagnostics.filter(
     (diagnostic) => diagnostic.severity === "error",
+  );
+  const serializerBoundary = useMemo(
+    () =>
+      summarizeCircuitDefinitionSerializerBoundary({
+        name: definitionName,
+        sourceText,
+      }),
+    [definitionName, sourceText],
   );
   const filteredDefinitions = (definitions ?? []).filter((definition) => {
     const normalizedQuery = catalogQuery.trim().toLowerCase();
@@ -188,6 +208,14 @@ export function CircuitDefinitionEditorWorkspace() {
   });
   const normalizedPreview = buildNormalizedOutputPreview(normalizedOutput);
   const validationGroups = partitionValidationNotices(validationNotices);
+  const editorActionState = summarizeEditorDefinitionActionState({
+    selectedDefinitionId,
+    activeDefinition,
+    isDirty: form.formState.isDirty,
+    isSubmitting: form.formState.isSubmitting,
+    isNavigating,
+    hasBlockingLocalDiagnostics: blockingLocalDiagnostics.length > 0,
+  });
 
   const activeDefinitionLabel =
     selectedDefinitionId === "new" ? "New Circuit Definition" : activeDefinition?.name ?? "Loading";
@@ -206,7 +234,10 @@ export function CircuitDefinitionEditorWorkspace() {
       return;
     }
 
-    const detail = await saveDefinition(nextDraft.draft, selectedDefinitionId);
+    const detail = await saveDefinition(nextDraft.draft, {
+      definitionId: selectedDefinitionId,
+      activeDefinition,
+    });
     replaceDefinitionId(String(detail.definition_id));
     form.reset({
       name: detail.name,
@@ -215,7 +246,11 @@ export function CircuitDefinitionEditorWorkspace() {
   }
 
   async function handleDelete(definitionId: number) {
-    const confirmed = window.confirm("Delete this circuit definition?");
+    const confirmed = window.confirm(
+      form.formState.isDirty
+        ? "Delete this persisted definition and discard the local draft changes?"
+        : "Delete this circuit definition?",
+    );
     if (!confirmed) {
       return;
     }
@@ -231,7 +266,9 @@ export function CircuitDefinitionEditorWorkspace() {
   }
 
   async function handleFormat() {
-    const formatted = formatCircuitNetlistSource(form.getValues("source_text"));
+    const formatted = formatCircuitNetlistSource(form.getValues("source_text"), {
+      canonicalName: form.getValues("name"),
+    });
     form.setValue("source_text", formatted.formattedSource, {
       shouldDirty: true,
       shouldTouch: true,
@@ -270,12 +307,43 @@ export function CircuitDefinitionEditorWorkspace() {
     }
 
     if (activeDefinition) {
-      const parsedSource = formatCircuitNetlistSource(activeDefinition.source_text);
+      const parsedSource = formatCircuitNetlistSource(activeDefinition.source_text, {
+        canonicalName: activeDefinition.name,
+      });
       form.reset({
         name: activeDefinition.name,
         source_text: parsedSource.formattedSource || activeDefinition.source_text,
       });
     }
+  }
+
+  async function handlePublish() {
+    if (!activeDefinition) {
+      return;
+    }
+
+    const detail = await publishDefinition(activeDefinition.definition_id);
+    form.reset({
+      name: detail.name,
+      source_text: formatCircuitNetlistSource(detail.source_text, {
+        canonicalName: detail.name,
+      }).formattedSource,
+    });
+  }
+
+  async function handleClone() {
+    if (!activeDefinition) {
+      return;
+    }
+
+    const detail = await cloneDefinition(activeDefinition.definition_id);
+    replaceDefinitionId(String(detail.definition_id));
+    form.reset({
+      name: detail.name,
+      source_text: formatCircuitNetlistSource(detail.source_text, {
+        canonicalName: detail.name,
+      }).formattedSource,
+    });
   }
 
   function replaceDefinitionId(definitionId: string) {
@@ -362,7 +430,7 @@ export function CircuitDefinitionEditorWorkspace() {
                 </p>
               </div>
               <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
-                {definitions?.length ?? 0} total
+                {definitionsTotalCount} total
               </span>
             </div>
 
@@ -418,28 +486,36 @@ export function CircuitDefinitionEditorWorkspace() {
                       ? "border-primary/40 bg-primary/10"
                       : "border-border bg-surface hover:border-primary/30 hover:bg-primary/5",
                   )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-foreground">
-                        {definition.name}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Definition #{definition.definition_id}
-                      </p>
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {definition.name}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Definition #{definition.definition_id}
+                        </p>
+                      </div>
+                      <span
+                        className={cx(
+                          "rounded-full border px-2.5 py-1 text-[11px]",
+                          definition.visibility_scope === "workspace"
+                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                            : "border-border bg-background text-muted-foreground",
+                        )}
+                      >
+                        {definition.visibility_scope}
+                      </span>
                     </div>
-                    <span
-                      className={cx(
-                        "rounded-full px-2.5 py-1 text-[11px]",
-                        definition.validation_status === "warning"
-                          ? "bg-amber-500/12 text-amber-300"
-                          : "bg-emerald-500/12 text-emerald-300",
-                      )}
-                    >
-                      {definition.validation_status === "warning" ? "Warnings" : "Ready"}
-                    </span>
-                  </div>
-                </button>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                      <span className="rounded-full border border-border px-3 py-1">
+                        Owner {definition.owner_display_name}
+                      </span>
+                      <span className="rounded-full border border-border px-3 py-1">
+                        {definition.allowed_actions?.clone ? "Clone allowed" : "Clone blocked"}
+                      </span>
+                    </div>
+                  </button>
               ))}
             </div>
           </section>
@@ -502,6 +578,16 @@ export function CircuitDefinitionEditorWorkspace() {
                       ? "Draft"
                       : `Definition #${activeDefinition?.definition_id ?? "--"}`}
                   </span>
+                  {activeDefinition ? (
+                    <>
+                      <span className="rounded-full bg-surface px-3 py-1">
+                        {activeDefinition.visibility_scope}
+                      </span>
+                      <span className="rounded-full bg-surface px-3 py-1">
+                        {activeDefinition.lifecycle_state}
+                      </span>
+                    </>
+                  ) : null}
                   <span className="rounded-full bg-surface px-3 py-1">
                     {localSummary.componentCount} components
                   </span>
@@ -511,6 +597,11 @@ export function CircuitDefinitionEditorWorkspace() {
                   <span className="rounded-full bg-surface px-3 py-1">
                     {localSummary.parameterCount} parameters
                   </span>
+                  {typeof activeDefinition?.lineage_parent_id === "number" ? (
+                    <span className="rounded-full bg-surface px-3 py-1">
+                      Cloned from #{activeDefinition.lineage_parent_id}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -520,10 +611,40 @@ export function CircuitDefinitionEditorWorkspace() {
                     onClick={() => {
                       void handleDelete(selectedDefinitionId);
                     }}
-                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-rose-500/30 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-500/10"
+                    disabled={!editorActionState.delete.enabled}
+                    title={editorActionState.delete.reason}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-rose-500/30 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Trash2 className="h-4 w-4" />
                     Delete
+                  </button>
+                ) : null}
+                {typeof selectedDefinitionId === "number" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handlePublish();
+                    }}
+                    disabled={!editorActionState.publish.enabled}
+                    title={editorActionState.publish.reason}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Globe className="h-4 w-4" />
+                    Publish
+                  </button>
+                ) : null}
+                {typeof selectedDefinitionId === "number" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleClone();
+                    }}
+                    disabled={!editorActionState.clone.enabled}
+                    title={editorActionState.clone.reason}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Copy className="h-4 w-4" />
+                    Clone
                   </button>
                 ) : null}
                 <button
@@ -531,7 +652,8 @@ export function CircuitDefinitionEditorWorkspace() {
                   onClick={() => {
                     void handleFormat();
                   }}
-                  disabled={form.formState.isSubmitting || isNavigating}
+                  disabled={!editorActionState.format.enabled}
+                  title={editorActionState.format.reason}
                   className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Sparkles className="h-4 w-4" />
@@ -541,7 +663,8 @@ export function CircuitDefinitionEditorWorkspace() {
                   <button
                     type="button"
                     onClick={discardChanges}
-                    disabled={form.formState.isSubmitting || isNavigating}
+                    disabled={!editorActionState.discard.enabled}
+                    title={editorActionState.discard.reason}
                     className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Discard
@@ -552,12 +675,8 @@ export function CircuitDefinitionEditorWorkspace() {
                   onClick={() => {
                     void form.handleSubmit(onSubmit)();
                   }}
-                  disabled={
-                    !form.formState.isDirty ||
-                    form.formState.isSubmitting ||
-                    isNavigating ||
-                    blockingLocalDiagnostics.length > 0
-                  }
+                  disabled={!editorActionState.save.enabled}
+                  title={editorActionState.save.reason}
                   className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {form.formState.isSubmitting ? (
@@ -568,6 +687,19 @@ export function CircuitDefinitionEditorWorkspace() {
                   Save
                 </button>
               </div>
+            </div>
+
+            <div className="mt-4 rounded-[0.8rem] border border-border bg-surface px-4 py-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Action Authority</p>
+              <p className="mt-1">
+                Save: {editorActionState.save.reason}
+              </p>
+              <p className="mt-1">
+                Publish: {editorActionState.publish.reason}
+              </p>
+              <p className="mt-1">
+                Clone: {editorActionState.clone.reason}
+              </p>
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -672,6 +804,48 @@ export function CircuitDefinitionEditorWorkspace() {
                   ) : null}
                 </div>
               </div>
+
+              <div className="mt-4 rounded-[0.8rem] border border-border bg-surface px-4 py-4 text-sm">
+                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                  Serializer Boundary
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Definition Identity
+                    </p>
+                    <p className="mt-2 font-medium text-foreground">
+                      {serializerBoundary.definitionName}
+                    </p>
+                  </div>
+                  <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Source Document Name
+                    </p>
+                    <p className="mt-2 font-medium text-foreground">
+                      {serializerBoundary.sourceDocumentName ?? "Unavailable"}
+                    </p>
+                  </div>
+                  <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Persisted Source Hash
+                    </p>
+                    <p className="mt-2 font-medium text-foreground">
+                      {activeDefinition?.source_hash ?? "Draft only"}
+                    </p>
+                  </div>
+                </div>
+                <p
+                  className={cx(
+                    "mt-3",
+                    serializerBoundary.willRewriteSourceName
+                      ? "text-amber-200"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {serializerBoundary.detail}
+                </p>
+              </div>
             </section>
           </form>
 
@@ -761,7 +935,9 @@ export function CircuitDefinitionEditorWorkspace() {
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
                   {validationSummary
-                    ? validationSummary.status === "warning"
+                    ? validationSummary.status === "invalid"
+                      ? "Invalid"
+                      : validationSummary.status === "warning"
                       ? "Warnings Present"
                       : "Ready"
                     : "Pending Save"}
@@ -803,7 +979,11 @@ export function CircuitDefinitionEditorWorkspace() {
                     </p>
                   </div>
                   <div className="rounded-full bg-background px-3 py-1 text-xs text-muted-foreground">
-                    {validationSummary?.status === "warning" ? "Needs review" : "Ready"}
+                    {validationSummary?.status === "invalid"
+                      ? "Blocking"
+                      : validationSummary?.status === "warning"
+                        ? "Needs review"
+                        : "Ready"}
                   </div>
                 </div>
 
@@ -813,10 +993,34 @@ export function CircuitDefinitionEditorWorkspace() {
                       ? "Save the draft to generate persisted backend validation notices."
                       : form.formState.isDirty
                         ? "Save the current draft to refresh the persisted validation report."
-                        : "No validation notices were returned for this definition."}
+                      : "No validation notices were returned for this definition."}
                   </div>
                 ) : (
                   <div className="mt-4 space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-rose-300">
+                        <AlertTriangle className="h-4 w-4" />
+                        Blocking
+                      </div>
+                      {validationGroups.blocking.length === 0 ? (
+                        <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+                          No blocking persisted notices were recorded.
+                        </div>
+                      ) : (
+                        validationGroups.blocking.map((notice) => (
+                          <div
+                            key={`blocking-${notice.code}-${notice.message}`}
+                            className="rounded-[0.8rem] border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-sm text-rose-100"
+                          >
+                            <p className="font-medium">
+                              {notice.code} · {notice.source}
+                            </p>
+                            <p className="mt-1">{notice.message}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-amber-300">
                         <AlertTriangle className="h-4 w-4" />
@@ -829,10 +1033,13 @@ export function CircuitDefinitionEditorWorkspace() {
                       ) : (
                         validationGroups.warnings.map((notice) => (
                           <div
-                            key={`warning-${notice.message}`}
+                            key={`warning-${notice.code}-${notice.message}`}
                             className="rounded-[0.8rem] border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100"
                           >
-                            {notice.message}
+                            <p className="font-medium">
+                              {notice.code} · {notice.source}
+                            </p>
+                            <p className="mt-1">{notice.message}</p>
                           </div>
                         ))
                       )}
@@ -850,10 +1057,13 @@ export function CircuitDefinitionEditorWorkspace() {
                       ) : (
                         validationGroups.checks.map((notice) => (
                           <div
-                            key={`check-${notice.message}`}
+                            key={`check-${notice.code}-${notice.message}`}
                             className="rounded-[0.8rem] border border-emerald-500/20 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-100"
                           >
-                            {notice.message}
+                            <p className="font-medium">
+                              {notice.code} · {notice.source}
+                            </p>
+                            <p className="mt-1">{notice.message}</p>
                           </div>
                         ))
                       )}

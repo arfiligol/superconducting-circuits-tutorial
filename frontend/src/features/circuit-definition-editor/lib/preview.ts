@@ -10,6 +10,7 @@ export type PersistedPreviewState = Readonly<{
 }>;
 
 export type ValidationNoticeGroups = Readonly<{
+  blocking: readonly DefinitionValidationNotice[];
   warnings: readonly DefinitionValidationNotice[];
   checks: readonly DefinitionValidationNotice[];
 }>;
@@ -66,9 +67,13 @@ export function resolvePersistedPreviewState({
   }
 
   if (activeDefinition) {
+    const lineageLabel =
+      activeDefinition.lineage_parent_id !== null
+        ? ` Derived from definition #${activeDefinition.lineage_parent_id}.`
+        : "";
     return {
       label: "Persisted Preview",
-      detail: `Backend validation is attached to definition #${activeDefinition.definition_id}.`,
+      detail: `Backend validation is attached to definition #${activeDefinition.definition_id} in ${activeDefinition.visibility_scope} visibility. Last updated at ${activeDefinition.updated_at}.${lineageLabel}`,
       tone: "accent",
     };
   }
@@ -84,8 +89,17 @@ export function partitionValidationNotices(
   notices: readonly DefinitionValidationNotice[],
 ): ValidationNoticeGroups {
   return {
-    warnings: notices.filter((notice) => notice.level === "warning"),
-    checks: notices.filter((notice) => notice.level === "ok"),
+    blocking: notices.filter((notice) => notice.blocking || notice.severity === "error"),
+    warnings: notices.filter(
+      (notice) =>
+        !notice.blocking &&
+        (notice.severity === "warning" || notice.level === "warning"),
+    ),
+    checks: notices.filter(
+      (notice) =>
+        (!notice.severity || notice.severity === "info") &&
+        (notice.level === undefined || notice.level === "ok"),
+    ),
   };
 }
 

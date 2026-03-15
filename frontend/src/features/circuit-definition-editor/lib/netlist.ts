@@ -34,6 +34,14 @@ export type ParsedCircuitNetlistSource = Readonly<{
   diagnostics: readonly CircuitNetlistDiagnostic[];
 }>;
 
+export type CircuitDefinitionSerializerBoundary = Readonly<{
+  definitionName: string;
+  sourceDocumentName: string | null;
+  canonicalSourceText: string;
+  willRewriteSourceName: boolean;
+  detail: string;
+}>;
+
 const nodeTokenPattern = /^\d+$/;
 
 function normalizePythonLikeSource(sourceText: string) {
@@ -87,7 +95,14 @@ function serializeCircuitNetlist(document: CircuitNetlistDocument) {
   return JSON.stringify(serialized, null, 2);
 }
 
-export function parseCircuitNetlistSource(sourceText: string): ParsedCircuitNetlistSource {
+type ParseCircuitNetlistOptions = Readonly<{
+  canonicalName?: string;
+}>;
+
+export function parseCircuitNetlistSource(
+  sourceText: string,
+  options?: ParseCircuitNetlistOptions,
+): ParsedCircuitNetlistSource {
   const trimmedSource = sourceText.trim();
   if (trimmedSource.length === 0) {
     return {
@@ -121,17 +136,27 @@ export function parseCircuitNetlistSource(sourceText: string): ParsedCircuitNetl
   }
 
   const document = coerceCircuitNetlistDocument(parsedObject);
-  const diagnostics = validateCircuitNetlistDocument(document);
+  const normalizedDocument =
+    options?.canonicalName && options.canonicalName.trim().length > 0
+      ? {
+          ...document,
+          name: options.canonicalName.trim(),
+        }
+      : document;
+  const diagnostics = validateCircuitNetlistDocument(normalizedDocument);
 
   return {
-    document,
-    formattedSource: serializeCircuitNetlist(document),
+    document: normalizedDocument,
+    formattedSource: serializeCircuitNetlist(normalizedDocument),
     diagnostics,
   };
 }
 
-export function formatCircuitNetlistSource(sourceText: string) {
-  return parseCircuitNetlistSource(sourceText);
+export function formatCircuitNetlistSource(
+  sourceText: string,
+  options?: ParseCircuitNetlistOptions,
+) {
+  return parseCircuitNetlistSource(sourceText, options);
 }
 
 export function buildCircuitDefinitionDraft(input: Readonly<{
@@ -142,7 +167,9 @@ export function buildCircuitDefinitionDraft(input: Readonly<{
   formattedSource: string;
   diagnostics: readonly CircuitNetlistDiagnostic[];
 }> {
-  const parsed = parseCircuitNetlistSource(input.sourceText);
+  const parsed = parseCircuitNetlistSource(input.sourceText, {
+    canonicalName: input.name,
+  });
   if (!parsed.document) {
     return {
       draft: null,
@@ -173,6 +200,36 @@ export function buildCircuitDefinitionDraft(input: Readonly<{
     },
     formattedSource: serializeCircuitNetlist(document),
     diagnostics,
+  };
+}
+
+export function summarizeCircuitDefinitionSerializerBoundary(input: Readonly<{
+  name: string;
+  sourceText: string;
+}>): CircuitDefinitionSerializerBoundary {
+  const parsed = parseCircuitNetlistSource(input.sourceText);
+  const definitionName = input.name.trim();
+  const sourceDocumentName = parsed.document?.name?.trim() || null;
+  const canonicalSourceText = parsed.document
+    ? serializeCircuitNetlist({
+        ...parsed.document,
+        name: definitionName,
+      })
+    : parsed.formattedSource;
+  const willRewriteSourceName =
+    parsed.document !== null &&
+    sourceDocumentName !== null &&
+    sourceDocumentName.length > 0 &&
+    sourceDocumentName !== definitionName;
+
+  return {
+    definitionName,
+    sourceDocumentName,
+    canonicalSourceText,
+    willRewriteSourceName,
+    detail: willRewriteSourceName
+      ? `Format and Save will rewrite the netlist document name from "${sourceDocumentName}" to "${definitionName}".`
+      : "Serializer output already matches the current definition identity.",
   };
 }
 

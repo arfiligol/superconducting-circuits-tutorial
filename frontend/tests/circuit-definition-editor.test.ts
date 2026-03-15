@@ -3,10 +3,17 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  circuitDefinitionCloneKey,
   circuitDefinitionDetailKey,
   circuitDefinitionsListKey,
+  circuitDefinitionPublishKey,
+  mapCircuitDefinitionDetailResponse,
   unwrapCircuitDefinitionMutation,
 } from "../src/features/circuit-definition-editor/lib/api";
+import {
+  summarizeCatalogDefinitionActionState,
+  summarizeEditorDefinitionActionState,
+} from "../src/features/circuit-definition-editor/lib/actions";
 import {
   filterCircuitDefinitionCatalog,
 } from "../src/features/circuit-definition-editor/lib/catalog";
@@ -21,6 +28,7 @@ import {
 import {
   buildCircuitDefinitionDraft,
   formatCircuitNetlistSource,
+  summarizeCircuitDefinitionSerializerBoundary,
   summarizeCircuitNetlistDocument,
 } from "../src/features/circuit-definition-editor/lib/netlist";
 import {
@@ -34,18 +42,34 @@ describe("circuit definition editor routing helpers", () => {
     {
       definition_id: 18,
       name: "FloatingQubitWithXYLine",
-      created_at: "2026-03-08 18:19:42",
-      element_count: 12,
-      validation_status: "warning",
-      preview_artifact_count: 3,
+      created_at: "2026-03-08T18:19:42Z",
+      visibility_scope: "private",
+      owner_display_name: "Ari",
+      allowed_actions: {
+        update: true,
+        delete: true,
+        publish: true,
+        clone: true,
+      },
+      element_count: 0,
+      validation_status: "ok",
+      preview_artifact_count: 0,
     },
     {
       definition_id: 12,
       name: "FluxoniumReadoutChain",
-      created_at: "2026-03-05 11:14:03",
-      element_count: 9,
+      created_at: "2026-03-05T11:14:03Z",
+      visibility_scope: "workspace",
+      owner_display_name: "Ari",
+      allowed_actions: {
+        update: false,
+        delete: false,
+        publish: false,
+        clone: true,
+      },
+      element_count: 0,
       validation_status: "ok",
-      preview_artifact_count: 2,
+      preview_artifact_count: 0,
     },
   ] as const;
 
@@ -61,19 +85,8 @@ describe("circuit definition editor routing helpers", () => {
     expect(resolveSelectedDefinitionId("999", definitions)).toBe("18");
   });
 
-  it("preserves explicit new-draft selection", () => {
+  it("preserves explicit new-draft selection and editor routes", () => {
     expect(resolveSelectedDefinitionId("new", definitions)).toBe("new");
-  });
-
-  it("filters and sorts the catalog for the dedicated schemas page", () => {
-    expect(
-      filterCircuitDefinitionCatalog(definitions, "flux", "name").map(
-        (definition) => definition.definition_id,
-      ),
-    ).toEqual([12]);
-  });
-
-  it("routes new and existing catalog selections into the editor page", () => {
     expect(buildCircuitDefinitionCatalogHref()).toBe("/schemas");
     expect(buildCircuitDefinitionEditorHref("new")).toBe(
       "/circuit-definition-editor?definitionId=new",
@@ -82,45 +95,259 @@ describe("circuit definition editor routing helpers", () => {
       "/circuit-definition-editor?definitionId=18",
     );
   });
+
+  it("filters the catalog for the dedicated schemas page", () => {
+    expect(
+      filterCircuitDefinitionCatalog(definitions, "flux", "name").map(
+        (definition) => definition.definition_id,
+      ),
+    ).toEqual([12]);
+  });
 });
 
-describe("circuit definition editor api keys", () => {
-  it("keeps stable list and detail paths", () => {
+describe("circuit definition editor api adapters", () => {
+  it("keeps stable list, detail, publish, and clone paths", () => {
     expect(circuitDefinitionsListKey).toBe("/api/backend/circuit-definitions");
     expect(circuitDefinitionDetailKey(18)).toBe("/api/backend/circuit-definitions/18");
+    expect(circuitDefinitionPublishKey(18)).toBe(
+      "/api/backend/circuit-definitions/18/publish",
+    );
+    expect(circuitDefinitionCloneKey(18)).toBe("/api/backend/circuit-definitions/18/clone");
   });
 
-  it("unwraps mutation responses into detail payloads", () => {
+  it("maps backend detail fields and compatibility shims", () => {
+    const detail = mapCircuitDefinitionDetailResponse({
+      definition_id: 18,
+      workspace_id: "ws_lab_a",
+      visibility_scope: "private",
+      lifecycle_state: "active",
+      owner_user_id: "user-ari",
+      owner_display_name: "Ari",
+      allowed_actions: {
+        update: true,
+        delete: true,
+        publish: true,
+        clone: true,
+      },
+      name: "FloatingQubitWithXYLine",
+      created_at: "2026-03-08T18:19:42Z",
+      updated_at: "2026-03-15T08:10:00Z",
+      concurrency_token: "etag_18_v3",
+      source_hash: "sha256:definition18",
+      source_text: `{
+  "name": "FloatingQubitWithXYLine",
+  "components": [
+    { "name": "R1", "default": 50, "unit": "Ohm" },
+    { "name": "C1", "default": 100, "unit": "fF" }
+  ],
+  "topology": [
+    ["P1", "1", "0", 1],
+    ["R1", "1", "0", "R1"],
+    ["C1", "1", "2", "C1"]
+  ]
+}`,
+      normalized_output:
+        '{\n  "circuit": "floating_xy",\n  "elements": 2,\n  "schemdraw_ready": true\n}',
+      validation_notices: [
+        {
+          severity: "error",
+          code: "definition_source_invalid",
+          message: "Topology still needs one more shunt resistor.",
+          source: "backend_validator",
+          blocking: true,
+        },
+        {
+          severity: "info",
+          code: "definition_ok",
+          message: "Canonical serializer succeeded.",
+          source: "backend_validator",
+          blocking: false,
+        },
+      ],
+      validation_summary: {
+        status: "invalid",
+        notice_count: 2,
+        warning_count: 0,
+        blocking_notice_count: 1,
+      },
+      preview_artifacts: ["definition.normalized.json", "definition.preview.svg"],
+      lineage_parent_id: 7,
+    });
+
+    expect(detail.allowed_actions?.publish).toBe(true);
+    expect(detail.validation_status).toBe("warning");
+    expect(detail.preview_artifact_count).toBe(2);
+    expect(detail.element_count).toBe(2);
+    expect(detail.validation_notices[0]).toEqual({
+      severity: "error",
+      level: "warning",
+      code: "definition_source_invalid",
+      message: "Topology still needs one more shunt resistor.",
+      source: "backend_validator",
+      blocking: true,
+    });
+  });
+
+  it("unwraps mutation responses into persisted detail payloads", () => {
+    const detail = mapCircuitDefinitionDetailResponse({
+      definition_id: 24,
+      workspace_id: "ws_lab_a",
+      visibility_scope: "workspace",
+      lifecycle_state: "active",
+      owner_user_id: "user-ari",
+      owner_display_name: "Ari",
+      allowed_actions: {
+        update: false,
+        delete: false,
+        publish: false,
+        clone: true,
+      },
+      name: "WorkspacePublishedDefinition",
+      created_at: "2026-03-09T08:00:00Z",
+      updated_at: "2026-03-15T09:00:00Z",
+      concurrency_token: "etag_24_v1",
+      source_hash: "sha256:definition24",
+      source_text: '{\n  "name": "WorkspacePublishedDefinition",\n  "components": [],\n  "topology": []\n}',
+      normalized_output: "{}",
+      validation_notices: [],
+      validation_summary: {
+        status: "valid",
+        notice_count: 0,
+        warning_count: 0,
+        blocking_notice_count: 0,
+      },
+      preview_artifacts: [],
+      lineage_parent_id: null,
+    });
+
     expect(
       unwrapCircuitDefinitionMutation({
-        operation: "updated",
-        definition: {
-          definition_id: 18,
-          name: "FloatingQubitWithXYLine",
-          created_at: "2026-03-08 18:19:42",
-          element_count: 12,
-          validation_status: "warning",
-          preview_artifact_count: 3,
-          source_text: "circuit:\n  name: floating_xy\n",
-          normalized_output: "{\n  \"circuit\": \"floating_xy\"\n}",
-          validation_notices: [
-            {
-              level: "warning",
-              message: "Port mapping metadata still needs migration from legacy forms.",
-            },
-          ],
-          validation_summary: {
-            status: "warning",
-            notice_count: 1,
-            warning_count: 1,
-          },
-          preview_artifacts: ["definition.normalized.json"],
-        },
+        operation: "published",
+        definition: detail,
       }),
     ).toMatchObject({
-      definition_id: 18,
-      validation_status: "warning",
-      preview_artifact_count: 3,
+      definition_id: 24,
+      visibility_scope: "workspace",
+    });
+  });
+});
+
+describe("circuit definition action helpers", () => {
+  const persistedDefinition = {
+    definition_id: 18,
+    name: "FloatingQubitWithXYLine",
+    created_at: "2026-03-08T18:19:42Z",
+    visibility_scope: "private",
+    owner_display_name: "Ari",
+    allowed_actions: {
+      update: true,
+      delete: true,
+      publish: true,
+      clone: true,
+    },
+    element_count: 2,
+    validation_status: "warning",
+    preview_artifact_count: 2,
+    workspace_id: "ws_lab_a",
+    lifecycle_state: "active",
+    owner_user_id: "user-ari",
+    updated_at: "2026-03-15T09:00:00Z",
+    concurrency_token: "etag_18_v3",
+    source_hash: "sha256:definition18",
+    source_text: '{\n  "name": "FloatingQubitWithXYLine",\n  "components": [],\n  "topology": []\n}',
+    normalized_output: "{}",
+    validation_notices: [],
+    validation_summary: {
+      status: "valid",
+      notice_count: 0,
+      warning_count: 0,
+      blocking_notice_count: 0,
+    },
+    preview_artifacts: [],
+    lineage_parent_id: null,
+  } as const;
+
+  it("uses backend action authority for catalog action gating", () => {
+    expect(
+      summarizeCatalogDefinitionActionState({
+        ...persistedDefinition,
+        allowed_actions: {
+          update: false,
+          delete: false,
+          publish: false,
+          clone: true,
+        },
+      }),
+    ).toEqual({
+      open: {
+        enabled: true,
+        reason: "Open navigates to the single active editor route.",
+      },
+      clone: {
+        enabled: true,
+        reason: "Clone is allowed by the persisted definition authority.",
+      },
+      publish: {
+        enabled: false,
+        reason: "Publish is blocked by backend definition authority.",
+      },
+      delete: {
+        enabled: false,
+        reason: "Delete is blocked by backend definition authority.",
+      },
+    });
+  });
+
+  it("keeps save/publish/clone/delete states distinct from format and draft state", () => {
+    expect(
+      summarizeEditorDefinitionActionState({
+        selectedDefinitionId: 18,
+        activeDefinition: persistedDefinition,
+        isDirty: true,
+        isSubmitting: false,
+        isNavigating: false,
+        hasBlockingLocalDiagnostics: false,
+      }),
+    ).toMatchObject({
+      format: {
+        enabled: true,
+      },
+      save: {
+        enabled: true,
+      },
+      publish: {
+        enabled: false,
+        reason: "Save or discard local edits before publishing the persisted definition.",
+      },
+      clone: {
+        enabled: false,
+        reason: "Save or discard local edits before cloning the persisted definition.",
+      },
+      delete: {
+        enabled: true,
+      },
+    });
+
+    expect(
+      summarizeEditorDefinitionActionState({
+        selectedDefinitionId: "new",
+        activeDefinition: undefined,
+        isDirty: false,
+        isSubmitting: false,
+        isNavigating: false,
+        hasBlockingLocalDiagnostics: false,
+      }),
+    ).toMatchObject({
+      save: {
+        enabled: false,
+        reason: "Make a local change before creating a persisted definition.",
+      },
+      publish: {
+        enabled: false,
+      },
+      clone: {
+        enabled: false,
+      },
     });
   });
 });
@@ -141,7 +368,9 @@ describe("circuit definition preview helpers", () => {
         ["R1", "1", "0", "R1"],
         ["C1", "1", "2", "C1"]
       ]
-    }`);
+    }`, {
+      canonicalName: "RenamedCircuit",
+    });
 
     expect(formatted.diagnostics).toEqual([]);
     expect(summarizeCircuitNetlistDocument(formatted.document)).toEqual({
@@ -162,121 +391,128 @@ describe("circuit definition preview helpers", () => {
     });
   });
 
-  it("reports blocking diagnostics for invalid netlist contracts", () => {
+  it("describes serializer rewrite, persisted preview state, validation grouping, and normalized output", () => {
     expect(
-      buildCircuitDefinitionDraft({
-        name: "Invalid",
-        sourceText: `{
-          "name": "Invalid",
-          "components": [
-            {"name": "C1", "unit": "fF", "value_ref": "Missing"}
-          ],
-          "topology": [
-            ["C1", "node-a", "0", "missing_component"]
-          ]
-        }`,
-      }).diagnostics.map((diagnostic) => diagnostic.message),
-    ).toEqual([
-      'Component "C1" references undefined parameter "Missing".',
-      'Topology row "C1" must use numeric string node tokens and ground token "0".',
-      'Topology row "C1" must reference an existing component name.',
-    ]);
-  });
-
-  it("describes stale and persisted preview states distinctly", () => {
-    expect(
-      resolvePersistedPreviewState({
-        selectedDefinitionId: "new",
-        isDirty: true,
-        isSaving: false,
-        activeDefinition: undefined,
+      summarizeCircuitDefinitionSerializerBoundary({
+        name: "RenamedCircuit",
+        sourceText:
+          '{\n  "name": "LegacyName",\n  "components": [],\n  "topology": []\n}',
       }),
     ).toEqual({
-      label: "Draft Preview",
-      detail: "Save this draft to create a persisted normalized preview and validation report.",
-      tone: "default",
+      definitionName: "RenamedCircuit",
+      sourceDocumentName: "LegacyName",
+      canonicalSourceText:
+        '{\n  "name": "RenamedCircuit",\n  "components": [],\n  "topology": []\n}',
+      willRewriteSourceName: true,
+      detail:
+        'Format and Save will rewrite the netlist document name from "LegacyName" to "RenamedCircuit".',
     });
 
     expect(
       resolvePersistedPreviewState({
         selectedDefinitionId: 18,
-        isDirty: true,
+        isDirty: false,
         isSaving: false,
         activeDefinition: {
           definition_id: 18,
           name: "FloatingQubitWithXYLine",
-          created_at: "2026-03-08 18:19:42",
-          element_count: 12,
-          validation_status: "warning",
-          preview_artifact_count: 3,
-          source_text: "circuit:\n  name: floating_xy\n",
-          normalized_output: "{\n  \"circuit\": \"floating_xy\"\n}",
-          validation_notices: [],
-          validation_summary: {
-            status: "warning",
-            notice_count: 0,
-            warning_count: 0,
+          created_at: "2026-03-08T18:19:42Z",
+          visibility_scope: "workspace",
+          owner_display_name: "Ari",
+          allowed_actions: {
+            update: false,
+            delete: false,
+            publish: false,
+            clone: true,
           },
-          preview_artifacts: [],
-        },
-      }),
-    ).toMatchObject({
-      label: "Preview Out Of Date",
-      tone: "warning",
-    });
-  });
-
-  it("keeps explicit format separate from persisted preview authority", () => {
-    const formatted = formatCircuitNetlistSource(`{
-      "name": "FloatingQubitWithXYLine",
-      "components": [
-        {"name": "R1", "default": 50, "unit": "Ohm"}
-      ],
-      "topology": [
-        ["P1", "1", "0", 1],
-        ["R1", "1", "0", "R1"]
-      ]
-    }`);
-
-    expect(formatted.diagnostics).toEqual([]);
-    expect(
-      resolvePersistedPreviewState({
-        selectedDefinitionId: 18,
-        isDirty: true,
-        isSaving: false,
-        activeDefinition: {
-          definition_id: 18,
-          name: "FloatingQubitWithXYLine",
-          created_at: "2026-03-08 18:19:42",
           element_count: 2,
-          validation_status: "ok",
-          preview_artifact_count: 1,
-          source_text: '{\n  "name": "FloatingQubitWithXYLine"\n}',
+          validation_status: "warning",
+          preview_artifact_count: 2,
+          workspace_id: "ws_lab_a",
+          lifecycle_state: "active",
+          owner_user_id: "user-ari",
+          updated_at: "2026-03-15T09:00:00Z",
+          concurrency_token: "etag_18_v3",
+          source_hash: "sha256:definition18",
+          source_text:
+            '{\n  "name": "FloatingQubitWithXYLine",\n  "components": [],\n  "topology": []\n}',
           normalized_output: "{\n  \"circuit\": \"floating_xy\"\n}",
           validation_notices: [],
           validation_summary: {
-            status: "ok",
+            status: "valid",
             notice_count: 0,
             warning_count: 0,
+            blocking_notice_count: 0,
           },
-          preview_artifacts: ["definition.normalized.json"],
+          preview_artifacts: ["definition.preview.svg"],
+          lineage_parent_id: 9,
         },
       }),
-    ).toMatchObject({
-      label: "Preview Out Of Date",
-      detail: "Panels below still show the last persisted definition. Save to refresh them.",
+    ).toEqual({
+      label: "Persisted Preview",
+      detail:
+        "Backend validation is attached to definition #18 in workspace visibility. Last updated at 2026-03-15T09:00:00Z. Derived from definition #9.",
+      tone: "accent",
     });
-  });
 
-  it("partitions validation notices and extracts structured normalized output fields", () => {
     expect(
       partitionValidationNotices([
-        { level: "ok", message: "All required element blocks are present." },
-        { level: "warning", message: "Ports still need migration." },
+        {
+          severity: "error",
+          level: "warning",
+          code: "definition_source_invalid",
+          message: "Topology row is invalid.",
+          source: "backend_validator",
+          blocking: true,
+        },
+        {
+          severity: "warning",
+          level: "warning",
+          code: "definition_warning",
+          message: "Workspace publish will remove private-only state.",
+          source: "backend_validator",
+          blocking: false,
+        },
+        {
+          severity: "info",
+          level: "ok",
+          code: "definition_ok",
+          message: "Canonical serializer succeeded.",
+          source: "backend_validator",
+          blocking: false,
+        },
       ]),
     ).toEqual({
-      warnings: [{ level: "warning", message: "Ports still need migration." }],
-      checks: [{ level: "ok", message: "All required element blocks are present." }],
+      blocking: [
+        {
+          severity: "error",
+          level: "warning",
+          code: "definition_source_invalid",
+          message: "Topology row is invalid.",
+          source: "backend_validator",
+          blocking: true,
+        },
+      ],
+      warnings: [
+        {
+          severity: "warning",
+          level: "warning",
+          code: "definition_warning",
+          message: "Workspace publish will remove private-only state.",
+          source: "backend_validator",
+          blocking: false,
+        },
+      ],
+      checks: [
+        {
+          severity: "info",
+          level: "ok",
+          code: "definition_ok",
+          message: "Canonical serializer succeeded.",
+          source: "backend_validator",
+          blocking: false,
+        },
+      ],
     });
 
     expect(
@@ -323,23 +559,27 @@ describe("circuit definition workspace boundaries", () => {
     "utf8",
   );
 
-  it("keeps the schemas route mounted on the catalog workspace only", () => {
+  it("keeps the schemas route mounted on the catalog workspace only and shows action availability", () => {
     expect(schemasPageSource).toContain("CircuitDefinitionCatalogWorkspace");
     expect(schemasPageSource).not.toContain("CircuitDefinitionEditorWorkspace");
     expect(catalogWorkspaceSource).toContain("New Circuit");
-    expect(catalogWorkspaceSource).toContain("Open Editor");
+    expect(catalogWorkspaceSource).toContain("Open");
+    expect(catalogWorkspaceSource).toContain("Clone");
+    expect(catalogWorkspaceSource).toContain("Publish");
     expect(catalogWorkspaceSource).not.toContain("CodeMirror");
     expect(catalogWorkspaceSource).not.toContain("Validation & Preview");
-    expect(catalogWorkspaceSource).not.toContain("Open Schemdraw");
   });
 
-  it("keeps the editor route responsible for source editing and persisted preview", () => {
+  it("keeps the editor route responsible for source editing, serializer binding, and persisted preview", () => {
     expect(editorPageSource).toContain("CircuitDefinitionEditorWorkspace");
     expect(editorPageSource).not.toContain("CircuitDefinitionCatalogWorkspace");
     expect(editorWorkspaceSource).toContain("Format");
     expect(editorWorkspaceSource).toContain("Save");
     expect(editorWorkspaceSource).toContain("Discard");
-    expect(editorWorkspaceSource).toContain("Validation & Preview");
+    expect(editorWorkspaceSource).toContain("Publish");
+    expect(editorWorkspaceSource).toContain("Clone");
+    expect(editorWorkspaceSource).toContain("Serializer Boundary");
+    expect(editorWorkspaceSource).toContain("Action Authority");
     expect(editorWorkspaceSource).toContain("does not save");
   });
 });
