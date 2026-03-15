@@ -201,9 +201,11 @@ export function buildRenderSurfaceFromError(
   error: Error,
   previousSurface: SchemdrawRenderSurface,
 ): SchemdrawRenderSurface {
+  const phase = resolveErrorPhase(error);
+
   return {
-    phase: "request_error",
-    statusLabel: "Render Request Failed",
+    phase,
+    statusLabel: resolveErrorStatusLabel(phase),
     diagnostics: [buildDiagnosticFromError(error)],
     svg: previousSurface.svg,
     previewMetadata: previousSurface.previewMetadata,
@@ -258,12 +260,16 @@ function buildClientDiagnostic(code: string, message: string): SchemdrawDiagnost
 
 function buildDiagnosticFromError(error: Error): SchemdrawDiagnostic {
   if (error instanceof ApiError) {
+    const details = parseApiErrorLocation(error.details);
+
     return {
       severity: "error",
       code: error.errorCode ?? "schemdraw_request_failed",
       message: error.message,
-      source: "request",
+      source: resolveDiagnosticSourceFromErrorCode(error.errorCode),
       blocking: true,
+      line: details?.line ?? null,
+      column: details?.column ?? null,
     };
   }
 
@@ -273,5 +279,67 @@ function buildDiagnosticFromError(error: Error): SchemdrawDiagnostic {
     message: error.message,
     source: "request",
     blocking: true,
+  };
+}
+
+function resolveErrorPhase(error: Error): SchemdrawRenderPhase {
+  if (!(error instanceof ApiError)) {
+    return "request_error";
+  }
+
+  if (error.errorCode === "schemdraw_syntax_error") {
+    return "syntax_error";
+  }
+
+  if (error.errorCode === "schemdraw_runtime_error") {
+    return "runtime_error";
+  }
+
+  return "request_error";
+}
+
+function resolveErrorStatusLabel(phase: SchemdrawRenderPhase) {
+  switch (phase) {
+    case "syntax_error":
+      return "Syntax Error";
+    case "runtime_error":
+      return "Runtime Error";
+    case "request_error":
+    default:
+      return "Render Request Failed";
+  }
+}
+
+function resolveDiagnosticSourceFromErrorCode(
+  errorCode: string | null,
+): SchemdrawDiagnostic["source"] {
+  switch (errorCode) {
+    case "schemdraw_relation_invalid":
+      return "relation_config";
+    case "schemdraw_syntax_error":
+      return "python_syntax";
+    case "schemdraw_runtime_error":
+      return "render_runtime";
+    default:
+      return "request";
+  }
+}
+
+function parseApiErrorLocation(details: unknown) {
+  if (!details || typeof details !== "object") {
+    return null;
+  }
+
+  const candidate = details as Record<string, unknown>;
+  const line = typeof candidate.line === "number" ? candidate.line : null;
+  const column = typeof candidate.column === "number" ? candidate.column : null;
+
+  if (line === null && column === null) {
+    return null;
+  }
+
+  return {
+    line,
+    column,
   };
 }

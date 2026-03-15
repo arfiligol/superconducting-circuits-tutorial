@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
+import { ApiError } from "../src/lib/api/client";
 import {
   parseSchemdrawDefinitionIdParam,
   resolveSchemdrawDefinitionId,
@@ -16,8 +19,10 @@ import {
 } from "../src/features/circuit-schemdraw/lib/workflow";
 import {
   schemdrawRenderEndpoint,
+  unwrapSchemdrawRenderEnvelope,
 } from "../src/features/circuit-schemdraw/lib/api";
 import {
+  buildRenderSurfaceFromError,
   buildSchemdrawRenderRequest,
   buildRenderSurfaceFromResponse,
   createInitialRenderSurface,
@@ -62,6 +67,10 @@ describe("circuit schemdraw routing helpers", () => {
 
   it("preserves a valid selected definition", () => {
     expect(resolveSchemdrawDefinitionId("12", definitions)).toBe(12);
+  });
+
+  it("supports an explicitly cleared linked schema selection", () => {
+    expect(resolveSchemdrawDefinitionId(null, undefined)).toBeNull();
   });
 });
 
@@ -253,6 +262,41 @@ describe("circuit schemdraw render helpers", () => {
     expect(schemdrawRenderEndpoint).toBe("/api/backend/schemdraw/render");
   });
 
+  it("unwraps successful and failed render envelopes into the canonical frontend contract", () => {
+    expect(
+      unwrapSchemdrawRenderEnvelope({
+        ok: true,
+        data: {
+          request_id: "req-9",
+          document_version: 9,
+          status: "rendered",
+          svg: "<svg />",
+          diagnostics: [],
+        },
+      }),
+    ).toMatchObject({
+      request_id: "req-9",
+      document_version: 9,
+    });
+
+    expect(() =>
+      unwrapSchemdrawRenderEnvelope({
+        ok: false,
+        error: {
+          code: "schemdraw_syntax_error",
+          category: "validation_error",
+          message: "The Schemdraw source cannot be parsed.",
+          retryable: false,
+          details: {
+            line: 12,
+            column: 8,
+          },
+          debug_ref: "req-9",
+        },
+      }),
+    ).toThrowError(ApiError);
+  });
+
   it("builds render requests from editor drafts and linked schema context", () => {
     const request = buildSchemdrawRenderRequest({
       activeDefinition: {
@@ -361,5 +405,58 @@ describe("circuit schemdraw render helpers", () => {
       isStale: true,
       appliedDocumentVersion: 5,
     });
+  });
+
+  it("maps api errors into diagnostics with latest backend locations", () => {
+    expect(
+      buildRenderSurfaceFromError(
+        new ApiError("The Schemdraw source cannot be parsed.", 200, {
+          errorCode: "schemdraw_syntax_error",
+          category: "validation_error",
+          retryable: false,
+          details: {
+            line: 12,
+            column: 8,
+          },
+          debugRef: "req-14",
+        }),
+        {
+          ...createInitialRenderSurface(),
+          svg: "<svg>old</svg>",
+          requestId: "req-12",
+          appliedDocumentVersion: 12,
+        },
+      ),
+    ).toMatchObject({
+      phase: "syntax_error",
+      statusLabel: "Syntax Error",
+      svg: "<svg>old</svg>",
+      diagnostics: [
+        {
+          code: "schemdraw_syntax_error",
+          source: "python_syntax",
+          line: 12,
+          column: 8,
+          blocking: true,
+        },
+      ],
+    });
+  });
+});
+
+describe("circuit schemdraw workspace boundaries", () => {
+  const workspaceSource = readFileSync(
+    new URL(
+      "../src/features/circuit-schemdraw/components/circuit-schemdraw-workspace.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
+  it("keeps schemdraw as a request-response assist surface with a clear linked-schema path", () => {
+    expect(workspaceSource).toContain("No linked schema");
+    expect(workspaceSource).toContain("request/response authoring assist surface");
+    expect(workspaceSource).toContain("Stale preview");
+    expect(workspaceSource).not.toContain("Tasks Queue");
   });
 });

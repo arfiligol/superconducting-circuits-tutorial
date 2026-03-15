@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api/client";
+import { ApiError, apiRequest } from "@/lib/api/client";
 
 export type SchemdrawDiagnostic = Readonly<{
   severity: "error" | "warning" | "info";
@@ -47,9 +47,39 @@ export type SchemdrawRenderResponse = Readonly<{
 type SchemdrawRenderEnvelope = Readonly<{
   ok: boolean;
   data?: SchemdrawRenderResponse;
+  error?: Readonly<{
+    code?: string;
+    category?: string;
+    message?: string;
+    retryable?: boolean;
+    details?: unknown;
+    debug_ref?: string;
+  }>;
 }>;
 
 export const schemdrawRenderEndpoint = "/api/backend/schemdraw/render";
+
+export function unwrapSchemdrawRenderEnvelope(response: SchemdrawRenderEnvelope) {
+  if (response.ok && response.data) {
+    return response.data;
+  }
+
+  if (!response.ok && response.error) {
+    throw new ApiError(
+      response.error.message ?? "Schemdraw render failed.",
+      200,
+      {
+        errorCode: response.error.code ?? "schemdraw_render_failed",
+        category: response.error.category ?? "validation_error",
+        retryable: response.error.retryable ?? false,
+        details: response.error.details,
+        debugRef: response.error.debug_ref ?? null,
+      },
+    );
+  }
+
+  throw new Error("Schemdraw render response did not include a data payload.");
+}
 
 export async function renderSchemdrawPreview(request: SchemdrawRenderRequest) {
   const response = await apiRequest<SchemdrawRenderEnvelope>(schemdrawRenderEndpoint, {
@@ -57,9 +87,5 @@ export async function renderSchemdrawPreview(request: SchemdrawRenderRequest) {
     body: request,
   });
 
-  if (!response.ok || !response.data) {
-    throw new Error("Schemdraw render response did not include a data payload.");
-  }
-
-  return response.data;
+  return unwrapSchemdrawRenderEnvelope(response);
 }

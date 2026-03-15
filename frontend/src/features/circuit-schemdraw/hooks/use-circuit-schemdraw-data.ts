@@ -81,18 +81,10 @@ export function useCircuitSchemdrawData(selectedDefinitionId: number | null) {
   }, [detailQuery.data, draftKey]);
 
   useEffect(() => {
-    if (!detailQuery.data) {
-      return;
-    }
-
     setRenderSurface((currentSurface) => markSchemdrawPreviewStale(currentSurface));
-  }, [activeDraft.documentVersion, detailQuery.data]);
+  }, [activeDraft.documentVersion]);
 
   useEffect(() => {
-    if (!detailQuery.data) {
-      return;
-    }
-
     const timer = window.setTimeout(() => {
       void requestRender("debounced");
     }, 700);
@@ -100,7 +92,7 @@ export function useCircuitSchemdrawData(selectedDefinitionId: number | null) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [activeDraft.documentVersion, detailQuery.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeDraft.documentVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function requestRender(renderMode: RenderMode) {
     const requestId = `${draftKey}-${activeDraft.documentVersion}-${Date.now()}`;

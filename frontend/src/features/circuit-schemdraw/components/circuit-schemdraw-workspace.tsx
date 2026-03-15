@@ -16,12 +16,23 @@ import CodeMirror from "@uiw/react-codemirror";
 
 import { useCircuitSchemdrawData } from "@/features/circuit-schemdraw/hooks/use-circuit-schemdraw-data";
 import { parseSchemdrawDefinitionIdParam } from "@/features/circuit-schemdraw/lib/definition-id";
+import { resolveSchemdrawSelectionRecovery } from "@/features/circuit-schemdraw/lib/workflow";
 import { cx } from "@/features/shared/components/surface-kit";
 
-function definitionSearchHref(pathname: string, searchParamsValue: string, definitionId: string) {
+function definitionSearchHref(
+  pathname: string,
+  searchParamsValue: string,
+  definitionId: string | null,
+) {
   const params = new URLSearchParams(searchParamsValue);
-  params.set("definitionId", definitionId);
-  return `${pathname}?${params.toString()}`;
+  if (definitionId) {
+    params.set("definitionId", definitionId);
+  } else {
+    params.delete("definitionId");
+  }
+
+  const nextSearch = params.toString();
+  return nextSearch ? `${pathname}?${nextSearch}` : pathname;
 }
 
 function renderTone(phase: string) {
@@ -46,7 +57,8 @@ export function CircuitSchemdrawWorkspace() {
   const searchParams = useSearchParams();
   const [isNavigating, startTransition] = useTransition();
 
-  const rawDefinitionId = parseSchemdrawDefinitionIdParam(searchParams.get("definitionId"));
+  const requestedDefinitionId = searchParams.get("definitionId");
+  const rawDefinitionId = parseSchemdrawDefinitionIdParam(requestedDefinitionId);
   const {
     definitions,
     definitionsError,
@@ -64,12 +76,24 @@ export function CircuitSchemdrawWorkspace() {
     resetDraft,
     renderNow,
   } = useCircuitSchemdrawData(rawDefinitionId);
+  const selectionRecovery = resolveSchemdrawSelectionRecovery(
+    requestedDefinitionId,
+    resolvedDefinitionId,
+    definitions,
+  );
 
-  function replaceDefinitionId(definitionId: number) {
+  function replaceDefinitionId(definitionId: number | null) {
     startTransition(() => {
-      router.replace(definitionSearchHref(pathname, searchParams.toString(), String(definitionId)), {
-        scroll: false,
-      });
+      router.replace(
+        definitionSearchHref(
+          pathname,
+          searchParams.toString(),
+          definitionId === null ? null : String(definitionId),
+        ),
+        {
+          scroll: false,
+        },
+      );
     });
   }
 
@@ -124,6 +148,20 @@ export function CircuitSchemdrawWorkspace() {
         </div>
       ) : null}
 
+      {selectionRecovery ? (
+        <div
+          className={cx(
+            "rounded-[1rem] border px-4 py-3 text-sm",
+            selectionRecovery.tone === "warning"
+              ? "border-amber-500/30 bg-amber-500/8 text-foreground"
+              : "border-border bg-surface text-muted-foreground",
+          )}
+        >
+          <p className="font-medium">{selectionRecovery.title}</p>
+          <p className="mt-1">{selectionRecovery.message}</p>
+        </div>
+      ) : null}
+
       <section className="grid gap-5 xl:grid-cols-[minmax(340px,0.88fr)_minmax(0,1.12fr)]">
         <div className="space-y-4">
           <section className="rounded-[1rem] border border-border bg-card px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.08)]">
@@ -158,13 +196,14 @@ export function CircuitSchemdrawWorkspace() {
                 <select
                   value={resolvedDefinitionId ?? ""}
                   onChange={(event) => {
-                    replaceDefinitionId(Number(event.target.value));
+                    const nextValue = event.target.value;
+                    replaceDefinitionId(nextValue ? Number(nextValue) : null);
                   }}
-                  disabled={isDefinitionsLoading || isNavigating || (definitions?.length ?? 0) === 0}
+                  disabled={isDefinitionsLoading || isNavigating}
                   className="w-full bg-transparent text-sm text-foreground outline-none"
                 >
-                  <option value="" disabled>
-                    {isDefinitionsLoading ? "Loading schemas..." : "Select a schema"}
+                  <option value="">
+                    {isDefinitionsLoading ? "Loading schemas..." : "No linked schema"}
                   </option>
                   {(definitions ?? []).map((definition) => (
                     <option key={definition.definition_id} value={definition.definition_id}>
@@ -188,7 +227,13 @@ export function CircuitSchemdrawWorkspace() {
                   Source State
                 </p>
                 <p className="mt-2 text-sm font-semibold text-foreground">
-                  {isDefinitionTransitioning ? "Refreshing" : "Attached"}
+                  {isDefinitionTransitioning
+                    ? "Refreshing"
+                    : resolvedDefinitionId === null
+                      ? "Unlinked"
+                      : selectionRecovery
+                        ? "Recovered"
+                        : "Attached"}
                 </p>
               </div>
             </div>
