@@ -8,7 +8,7 @@ This artifact uses the current Source of Truth only. Historical plans, migration
 
 - Agent: `Planning Agent`
 - Task ID / Topic: `L3M-SoT-Rebaseline`
-- Status: `Proposed / Ready for dispatch`
+- Status: `Active / Execution checkpoint 2026-03-16`
 
 ## 1) Goal
 
@@ -16,6 +16,22 @@ This artifact uses the current Source of Truth only. Historical plans, migration
 - Identify where code already aligns, where code is behind the SoT, and where legacy design should be removed.
 - Define directly assignable implementation slices for Frontend, Backend, Core, CLI, and shared cross-layer work.
 - Capture unit, integration, E2E, contract-verification, and removal-safety backlog without writing migration strategy.
+
+## 1.1) Mainline Checkpoint (2026-03-16)
+
+- `main` has already absorbed major progress across `F2`, `F3`, `B3`, `B5`, `C1`, `C2`, `L1`, and `L2`:
+  - definition authoring route split, action adoption, and contract polish
+  - characterization results, identify/tagging, registry/history, and test evidence
+  - canonical backend task queue/control surface and audit-log query surface
+  - core task runtime canonicalization, persistence canonicalization, and explicit scope write proofs
+  - CLI standalone local runtime, result bundles, and definition bundle interchange
+- The largest remaining cross-layer blocker is still `X1` + `B1`: canonical authentication, session, workspace membership, active workspace, active dataset, capability, and allowed-action adoption.
+- Execution priority is therefore updated:
+  1. `X1` shared identity / auth / envelope adoption
+  2. `B1` backend session / workspace / auth surface
+  3. frontend shell adoption against the canonical auth/session authority
+  4. integration / E2E + docs synchronization pass
+- Human choice of external auth provider still remains open, but that decision does **not** block contract-level session/auth adoption.
 
 ## 2) Source of Truth
 
