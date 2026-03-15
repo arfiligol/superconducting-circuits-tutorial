@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import {
+  resolveShellActiveDatasetSummary,
   resolveShellTaskHref,
   resolveShellTaskLabel,
   resolveShellWorkerSummary,
@@ -38,7 +39,7 @@ type TriggerCardProps = Readonly<{
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-  detail: string;
+  detail?: string | null;
   active?: boolean;
   onClick?: () => void;
   trailing?: React.ReactNode;
@@ -87,7 +88,7 @@ function TriggerCard({
             {label}
           </p>
           <p className="truncate text-sm font-medium text-foreground">{value}</p>
-          <p className="truncate text-[11px] text-muted-foreground">{detail}</p>
+          {detail ? <p className="truncate text-[11px] text-muted-foreground">{detail}</p> : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -113,7 +114,7 @@ function TriggerCard({
         "flex min-h-[58px] w-full cursor-pointer items-center justify-between gap-3 rounded-[0.95rem] border px-3 py-3 text-left transition",
         active
           ? "border-primary/35 bg-primary/10"
-          : "border-border bg-surface hover:border-primary/20 hover:bg-surface-elevated",
+          : "border-border bg-surface hover:border-primary/20 hover:bg-surface-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-header",
       )}
     >
       {content}
@@ -221,6 +222,12 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         : source === "session"
           ? "Session-backed dataset context"
           : "Select a dataset from Raw Data";
+  const datasetSummary = resolveShellActiveDatasetSummary(activeDataset, {
+    status: activeDatasetStatus,
+    source,
+    errorDetail: activeDatasetError ? getStatusErrorDetail(activeDatasetError) : null,
+    isUpdating: isUpdatingActiveDataset,
+  });
 
   const queueValue =
     isTaskQueueLoading && summary.total === 0
@@ -267,16 +274,23 @@ export function WorkspaceStatusStrip({ compact = false }: WorkspaceStatusStripPr
         <TriggerCard
           icon={Database}
           label="Active Dataset"
-          value={datasetValue}
-          detail={datasetDetail}
+          value={compact ? datasetSummary.value : datasetValue}
+          detail={compact ? datasetSummary.detail : datasetDetail}
           active={openPanel === "dataset"}
           onClick={() => {
             setOpenPanel((current) => (current === "dataset" ? null : "dataset"));
           }}
           trailing={
-            isDatasetDetailLoading || isRouteSyncPending ? (
-              <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
-            ) : null
+            <>
+              {isDatasetDetailLoading || isRouteSyncPending ? (
+                <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+              ) : null}
+              {compact && datasetSummary.badge ? (
+                <span className="rounded-full border border-border bg-surface-elevated px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                  {datasetSummary.badge}
+                </span>
+              ) : null}
+            </>
           }
         />
 

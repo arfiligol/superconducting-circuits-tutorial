@@ -135,15 +135,13 @@ export function resolveWorkspacePageIdentity(pathname: string) {
   const match = resolveWorkspaceNavigationMatch(pathname);
   if (!match) {
     return {
-      routeFamily: "Workspace",
-      pageTitle: "Superconducting Circuits Workbench",
-      summary: "Shared shell context for datasets, queue activity, and research workflows.",
+      sectionLabel: "Workspace",
+      pageTitle: "Research Workbench",
     } as const;
   }
 
   return {
-    routeFamily: match.group.label,
+    sectionLabel: match.group.label,
     pageTitle: match.item.pageTitle ?? match.item.label,
-    summary: match.item.summary,
   } as const;
 }

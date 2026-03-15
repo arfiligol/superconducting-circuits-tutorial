@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  resolveShellActiveDatasetSummary,
   resolveShellTaskHref,
   resolveShellTaskLabel,
   resolveShellUserInitials,
@@ -50,6 +51,42 @@ describe("workspace shell contract helpers", () => {
       value: "Awaiting Authority",
       detail: "Lab A has no runtime summary surface yet.",
       tone: "warning",
+    });
+  });
+
+  it("keeps the collapsed active dataset trigger compact while staying single-authority", () => {
+    expect(
+      resolveShellActiveDatasetSummary(
+        {
+          datasetId: "fluxonium-2025-031",
+          name: "Fluxonium sweep 031",
+          owner: "Device Lab",
+          family: "Fluxonium",
+          status: "Ready",
+          source: "session",
+        },
+        {
+          status: "ready",
+          source: "session",
+          isUpdating: false,
+        },
+      ),
+    ).toEqual({
+      value: "Fluxonium sweep 031",
+      detail: null,
+      badge: "Ready",
+    });
+
+    expect(
+      resolveShellActiveDatasetSummary(null, {
+        status: "empty",
+        source: "none",
+        isUpdating: false,
+      }),
+    ).toEqual({
+      value: "No active dataset",
+      detail: "Select one from Raw Data to attach it to the session.",
+      badge: null,
     });
   });
 });

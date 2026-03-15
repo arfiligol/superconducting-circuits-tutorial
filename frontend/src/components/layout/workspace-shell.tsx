@@ -30,7 +30,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
         />
       ) : null}
 
-      <header className="sticky top-0 z-20 border-b border-border bg-header shadow-[0_1px_0_rgba(255,255,255,0.04)]">
+      <header className="sticky top-0 z-50 border-b border-border/80 bg-header/95 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur supports-[backdrop-filter]:bg-header/80">
         <div className="flex min-h-[74px] items-center gap-4 px-4 py-4 md:px-6">
           <button
             type="button"
@@ -43,7 +43,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
 
               setDesktopSidebarCollapsed((collapsed) => !collapsed);
             }}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-primary transition hover:bg-surface-elevated"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-transparent text-primary transition hover:border-primary/35 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-header"
           >
             <Menu size={18} strokeWidth={2} />
           </button>
@@ -59,7 +59,7 @@ export function WorkspaceShell({ children }: WorkspaceShellProps) {
       <div className="flex min-h-[calc(100vh-4rem)]">
         <aside
           className={[
-            "fixed inset-y-[74px] left-0 z-40 w-[220px] border-r border-border bg-sidebar px-4 py-5 transition-[transform,width,padding] duration-200 lg:static lg:inset-y-0 lg:translate-x-0 lg:shrink-0",
+            "fixed inset-y-[74px] left-0 z-30 w-[220px] border-r border-border bg-sidebar px-4 py-5 transition-[transform,width,padding] duration-200 lg:static lg:inset-y-0 lg:translate-x-0 lg:shrink-0",
             mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
             desktopSidebarCollapsed ? "lg:w-0 lg:overflow-hidden lg:border-r-0 lg:px-0 lg:py-0" : "",
           ].join(" ")}

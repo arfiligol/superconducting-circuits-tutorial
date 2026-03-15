@@ -42,19 +42,16 @@ describe("workspaceNavigation", () => {
 
   it("realigns route family and page identity for header consumers", () => {
     expect(resolveWorkspacePageIdentity("/")).toEqual({
-      routeFamily: "Dashboard",
+      sectionLabel: "Dashboard",
       pageTitle: "Dashboard",
-      summary: "Review session-backed workspace context before entering a workflow surface.",
     });
     expect(resolveWorkspacePageIdentity("/circuit-definition-editor")).toEqual({
-      routeFamily: "Circuit Simulation",
+      sectionLabel: "Circuit Simulation",
       pageTitle: "Schema Editor",
-      summary: "Edit canonical circuit definitions with validation-ready structure.",
     });
     expect(resolveWorkspacePageIdentity("/raw-data")).toEqual({
-      routeFamily: "Pipeline",
+      sectionLabel: "Pipeline",
       pageTitle: "Raw Data Browser",
-      summary: "Browse design scopes and trace summaries inside the session-owned active dataset.",
     });
   });
 });

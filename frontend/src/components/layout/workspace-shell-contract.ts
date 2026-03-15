@@ -2,6 +2,11 @@
 
 import type { SessionSnapshot } from "@/lib/api/session";
 import type { TaskSummary } from "@/lib/api/tasks";
+import type {
+  ActiveDatasetSnapshot,
+  ActiveDatasetSource,
+  ActiveDatasetStatus,
+} from "@/lib/app-state/active-dataset";
 
 export function resolveShellUserInitials(displayName: string | null | undefined) {
   const normalized = displayName?.trim();
@@ -52,5 +57,47 @@ export function resolveShellWorkerSummary(
       ? `${workspace.displayName} has no runtime summary surface yet.`
       : "Runtime summary is unavailable until the session resolves.",
     tone: "warning",
+  } as const;
+}
+
+export function resolveShellActiveDatasetSummary(
+  dataset: ActiveDatasetSnapshot | null,
+  options: Readonly<{
+    status: ActiveDatasetStatus;
+    source: ActiveDatasetSource;
+    errorDetail?: string | null;
+    isUpdating: boolean;
+  }>,
+) {
+  if (options.status === "syncing-route" || options.isUpdating) {
+    return {
+      value: "Syncing active dataset...",
+      detail: "Session authority is updating the dataset selection.",
+      badge: "Syncing",
+    } as const;
+  }
+
+  if (options.errorDetail && !dataset) {
+    return {
+      value: "No active dataset",
+      detail: options.errorDetail,
+      badge: "Error",
+    } as const;
+  }
+
+  if (!dataset) {
+    return {
+      value: "No active dataset",
+      detail: "Select one from Raw Data to attach it to the session.",
+      badge: null,
+    } as const;
+  }
+
+  return {
+    value: dataset.name ?? dataset.datasetId,
+    detail: null,
+    badge:
+      dataset.status ??
+      (options.source === "url" ? "Attached" : options.source === "session" ? "Session" : null),
   } as const;
 }
