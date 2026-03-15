@@ -1,19 +1,13 @@
-"""Commands for inspecting rewrite task state."""
+"""Commands for inspecting standalone local task state."""
 
 from enum import Enum
-from typing import Annotated, cast
+from typing import Annotated
 
 import typer
-from sc_backend import (
-    BackendContractError,
-    TaskDetailResponse,
-    TaskKind,
-    TaskLane,
-    TaskStatus,
-    TaskVisibilityScope,
-)
+from sc_backend import BackendContractError
 
 from sc_cli.errors import exit_for_backend_error
+from sc_cli.local_runtime import LocalTaskDetail
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_task_detail, render_task_inspection, render_task_summaries
 from sc_cli.runtime import get_task, list_tasks, submit_task
@@ -26,7 +20,7 @@ from sc_cli.task_operator import (
     wait_for_task_or_exit,
 )
 
-app = typer.Typer(help="Rewrite task helpers.", no_args_is_help=True)
+app = typer.Typer(help="Standalone local task helpers.", no_args_is_help=True)
 
 
 class TaskLaneOption(str, Enum):
@@ -64,12 +58,12 @@ def list_command(
     ] = 20,
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
-    """List tasks from the rewrite integration scaffold."""
+    """List tasks from the standalone local run registry."""
     try:
         tasks = list_tasks(
-            status=None if status is None else cast(TaskStatus, status.value),
-            lane=None if lane is None else cast(TaskLane, lane.value),
-            scope=cast(TaskVisibilityScope, scope.value),
+            status=None if status is None else status.value,
+            lane=None if lane is None else lane.value,
+            scope=scope.value,
             dataset_id=dataset_id,
             limit=limit,
         )
@@ -83,7 +77,7 @@ def show_command(
     task_id: Annotated[int, typer.Argument(min=1, help="Task id to inspect.")],
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
-    """Show one task from the rewrite integration scaffold."""
+    """Show one task from the standalone local run registry."""
     try:
         task = get_task(task_id)
     except BackendContractError as error:
@@ -130,9 +124,9 @@ def latest_command(
         no_match_message="No tasks matched the requested filters.",
         get_task_fn=get_task,
         list_tasks_fn=list_tasks,
-        status=None if status is None else cast(TaskStatus, status.value),
-        lane=None if lane is None else cast(TaskLane, lane.value),
-        scope=cast(TaskVisibilityScope, scope.value),
+        status=None if status is None else status.value,
+        lane=None if lane is None else lane.value,
+        scope=scope.value,
         dataset_id=dataset_id,
         limit=20,
     )
@@ -200,10 +194,10 @@ def submit_command(
     ] = None,
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
-    """Submit one task through the rewrite task scaffold."""
+    """Submit one task through the standalone local run registry."""
     try:
         task = submit_task(
-            kind=cast(TaskKind, kind.value),
+            kind=kind.value,
             dataset_id=dataset_id,
             definition_id=definition_id,
             summary=summary,
@@ -217,7 +211,7 @@ def _get_task_or_exit(
     *,
     task_id: int,
     output: OutputMode,
-) -> TaskDetailResponse:
+) -> LocalTaskDetail:
     try:
         return get_task(task_id)
     except BackendContractError as error:
@@ -226,7 +220,7 @@ def _get_task_or_exit(
 
 def _has_reached_wait_target(
     *,
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     until_status: WaitStatusOption,
 ) -> bool:
     return has_reached_wait_target(task=task, until_status=until_status)

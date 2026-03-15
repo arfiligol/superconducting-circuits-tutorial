@@ -3,9 +3,9 @@
 from typing import Annotated
 
 import typer
-from sc_backend import TaskDetailResponse
 
 from sc_cli.errors import exit_with_runtime_error
+from sc_cli.local_runtime import LocalTaskDetail
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import (
     render_task_result_handles,
@@ -56,5 +56,5 @@ def _get_task_or_exit(
     *,
     task_id: int,
     output: OutputMode,
-) -> TaskDetailResponse:
+) -> LocalTaskDetail:
     return get_task_or_exit(task_id=task_id, output=output, get_task_fn=get_task)

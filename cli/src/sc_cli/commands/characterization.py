@@ -1,11 +1,12 @@
 """Characterization-lane operator commands."""
 
-from typing import Annotated, cast
+from typing import Annotated
 
 import typer
-from sc_backend import BackendContractError, TaskDetailResponse, TaskStatus, TaskVisibilityScope
+from sc_backend import BackendContractError
 
 from sc_cli.errors import exit_for_backend_error
+from sc_cli.local_runtime import LocalTaskDetail
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import render_task_detail, render_task_inspection
 from sc_cli.runtime import get_task, list_tasks, submit_task
@@ -40,7 +41,7 @@ def submit_command(
     ] = None,
     output: OutputOption = OutputMode.TEXT,
 ) -> None:
-    """Submit a characterization task through the generic rewrite task contract."""
+    """Submit a characterization task through the generic local task contract."""
     try:
         task = submit_task(
             kind="characterization",
@@ -103,9 +104,9 @@ def latest_command(
         get_task_fn=get_task,
         list_tasks_fn=list_tasks,
         no_match_message="No characterization-lane tasks matched the requested filters.",
-        status=None if status is None else cast(TaskStatus, status.value),
+        status=None if status is None else status.value,
         lane="characterization",
-        scope=cast(TaskVisibilityScope, scope.value),
+        scope=scope.value,
         dataset_id=dataset_id,
         limit=20,
     )
@@ -156,7 +157,7 @@ def _get_characterization_task_or_exit(
     *,
     task_id: int,
     output: OutputMode,
-) -> TaskDetailResponse:
+) -> LocalTaskDetail:
     return get_lane_task_or_exit(
         task_id=task_id,
         lane="characterization",
@@ -168,7 +169,7 @@ def _get_characterization_task_or_exit(
 
 def _has_reached_wait_target(
     *,
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     until_status: WaitStatusOption,
 ) -> bool:
     return has_reached_wait_target(task=task, until_status=until_status)

@@ -11,12 +11,10 @@ from sc_backend import (
     DatasetDetailResponse,
     DatasetMetadataUpdateResponse,
     DatasetSummaryResponse,
-    SessionResponse,
-    TaskDetailResponse,
-    TaskSummaryResponse,
 )
 
 from sc_cli.local_circuit_definitions import LocalCircuitDefinitionInspection
+from sc_cli.local_runtime import LocalSession, LocalTaskDetail, LocalTaskSummary
 from sc_cli.output import OutputMode
 
 
@@ -87,7 +85,7 @@ def render_circuit_definition_summaries(
     return "\n".join(lines)
 
 
-def render_session(session: SessionResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+def render_session(session: LocalSession, *, output: OutputMode = OutputMode.TEXT) -> str:
     if output is OutputMode.JSON:
         return _render_json_model(session)
     lines = [
@@ -130,7 +128,7 @@ def render_session(session: SessionResponse, *, output: OutputMode = OutputMode.
 
 
 def render_session_identity(
-    session: SessionResponse,
+    session: LocalSession,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -166,7 +164,7 @@ def render_session_identity(
 
 
 def render_session_workspace(
-    session: SessionResponse,
+    session: LocalSession,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -184,7 +182,7 @@ def render_session_workspace(
 
 
 def render_session_active_dataset(
-    session: SessionResponse,
+    session: LocalSession,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -296,7 +294,7 @@ def render_dataset_metadata_update(
 
 
 def render_task_summaries(
-    tasks: list[TaskSummaryResponse],
+    tasks: list[LocalTaskSummary],
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -322,7 +320,7 @@ def render_task_summaries(
     return "\n".join(lines)
 
 
-def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputMode.TEXT) -> str:
+def render_task_detail(task: LocalTaskDetail, *, output: OutputMode = OutputMode.TEXT) -> str:
     if output is OutputMode.JSON:
         return _render_json_model(task)
     trace_batch_id = task.result_refs.trace_batch_id
@@ -358,7 +356,7 @@ def render_task_detail(task: TaskDetailResponse, *, output: OutputMode = OutputM
 
 
 def render_task_inspection(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -398,7 +396,7 @@ def render_task_inspection(
 
 
 def render_task_operations_bundle(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     recent_event_limit: int = 3,
     output: OutputMode = OutputMode.TEXT,
@@ -469,7 +467,7 @@ def render_task_operations_bundle(
 
 
 def render_task_result_refs(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -501,7 +499,7 @@ def render_task_result_refs(
 
 
 def render_task_trace_payload(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -535,7 +533,7 @@ def render_task_trace_payload(
 
 
 def render_task_result_handles(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -562,7 +560,7 @@ def render_task_result_handles(
 
 
 def render_task_event_history(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     events: Sequence[BaseModel],
     output: OutputMode = OutputMode.TEXT,
@@ -585,7 +583,7 @@ def render_task_event_history(
 
 
 def render_task_latest_event(
-    task: TaskDetailResponse,
+    task: LocalTaskDetail,
     *,
     event: BaseModel,
     output: OutputMode = OutputMode.TEXT,
@@ -678,7 +676,7 @@ def _render_list_line(label: str, parts: Iterable[str]) -> str:
     return f"- {label} | " + " | ".join(parts)
 
 
-def _build_task_result_context(task: TaskDetailResponse) -> dict[str, object]:
+def _build_task_result_context(task: LocalTaskDetail) -> dict[str, object]:
     return {
         "task_id": task.task_id,
         "kind": task.kind,
@@ -697,7 +695,7 @@ def _build_task_result_context(task: TaskDetailResponse) -> dict[str, object]:
     }
 
 
-def _build_task_result_context_lines(task: TaskDetailResponse) -> list[str]:
+def _build_task_result_context_lines(task: LocalTaskDetail) -> list[str]:
     return [
         f"task_id: {task.task_id}",
         f"kind: {task.kind}",
@@ -716,7 +714,7 @@ def _build_task_result_context_lines(task: TaskDetailResponse) -> list[str]:
     ]
 
 
-def _render_metadata_record_lines(task: TaskDetailResponse) -> list[str]:
+def _render_metadata_record_lines(task: LocalTaskDetail) -> list[str]:
     if not task.result_refs.metadata_records:
         return ["- none"]
     return [
@@ -733,7 +731,7 @@ def _render_metadata_record_lines(task: TaskDetailResponse) -> list[str]:
     ]
 
 
-def _render_trace_payload_summary_lines(task: TaskDetailResponse) -> list[str]:
+def _render_trace_payload_summary_lines(task: LocalTaskDetail) -> list[str]:
     trace_payload = task.result_refs.trace_payload
     if trace_payload is None:
         return ["- none"]
@@ -747,7 +745,7 @@ def _render_trace_payload_summary_lines(task: TaskDetailResponse) -> list[str]:
     ]
 
 
-def _render_result_handle_summary_lines(task: TaskDetailResponse) -> list[str]:
+def _render_result_handle_summary_lines(task: LocalTaskDetail) -> list[str]:
     if not task.result_refs.result_handles:
         return ["- none"]
     return [
@@ -765,7 +763,7 @@ def _render_result_handle_summary_lines(task: TaskDetailResponse) -> list[str]:
     ]
 
 
-def _render_result_handle_detail_lines(task: TaskDetailResponse) -> list[str]:
+def _render_result_handle_detail_lines(task: LocalTaskDetail) -> list[str]:
     if not task.result_refs.result_handles:
         return ["- none"]
     lines: list[str] = []
@@ -833,7 +831,7 @@ def _render_primary_trace_store_uri(dataset: DatasetDetailResponse) -> str:
     return dataset.storage.primary_trace.store_uri
 
 
-def _render_active_dataset_lines(session: SessionResponse) -> list[str]:
+def _render_active_dataset_lines(session: LocalSession) -> list[str]:
     if session.workspace.active_dataset is None:
         return ["active_dataset: none"]
     return [

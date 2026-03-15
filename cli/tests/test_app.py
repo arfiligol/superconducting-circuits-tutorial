@@ -5,11 +5,6 @@ import pytest
 from sc_backend import (
     ApiErrorBodyResponse,
     BackendContractError,
-    TaskDetailResponse,
-    TaskLane,
-    TaskStatus,
-    TaskSummaryResponse,
-    TaskVisibilityScope,
 )
 from typer.testing import CliRunner
 
@@ -24,6 +19,7 @@ from sc_cli.commands import (
     simulation,
     tasks,
 )
+from sc_cli.local_runtime import LocalTaskDetail, LocalTaskSummary
 from sc_cli.runtime import get_task as runtime_get_task
 from sc_cli.runtime import list_tasks as runtime_list_tasks
 from sc_cli.runtime import reset_runtime_state
@@ -38,12 +34,12 @@ def reset_cli_runtime() -> Iterator[None]:
 
 def _list_runtime_tasks(
     *,
-    status: TaskStatus | None = None,
-    lane: TaskLane | None = None,
-    scope: TaskVisibilityScope = "workspace",
+    status: str | None = None,
+    lane: str | None = None,
+    scope: str = "workspace",
     dataset_id: str | None = None,
     limit: int = 50,
-) -> list[TaskSummaryResponse]:
+) -> list[LocalTaskSummary]:
     return runtime_list_tasks(
         status=status,
         lane=lane,
@@ -66,15 +62,15 @@ def _owned_only_task_ids(*, limit: int = 20) -> list[int]:
     ]
 
 
-def _task_detail(task_id: int) -> TaskDetailResponse:
+def _task_detail(task_id: int) -> LocalTaskDetail:
     return runtime_get_task(task_id)
 
 
 def _find_task_id(
     *,
-    status: TaskStatus | None = None,
-    lane: TaskLane | None = None,
-    scope: TaskVisibilityScope = "workspace",
+    status: str | None = None,
+    lane: str | None = None,
+    scope: str = "workspace",
     require_result_handles: bool | None = None,
     require_trace_payload: bool | None = None,
 ) -> int:
@@ -1153,6 +1149,21 @@ def test_simulation_submit_command_supports_json_output() -> None:
     assert '"definition_id": 18' in result.stdout
 
 
+def test_simulation_submit_command_falls_back_to_local_active_dataset() -> None:
+    runner = CliRunner()
+
+    set_result = runner.invoke(app, ["session", "set-active-dataset", "transmon-coupler-014"])
+    result = runner.invoke(
+        app,
+        ["simulation", "submit", "--definition-id", "18", "--output", "json"],
+    )
+
+    assert set_result.exit_code == 0
+    assert result.exit_code == 0
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
+    assert '"submitted_from_active_dataset": true' in result.stdout
+
+
 def test_simulation_wait_command_returns_terminal_simulation_lane_task() -> None:
     runner = CliRunner()
     task_id = _completed_simulation_task_id()
@@ -1412,6 +1423,21 @@ def test_tasks_submit_command_supports_json_output() -> None:
     assert '"kind": "characterization"' in result.stdout
     assert '"dataset_id": "transmon-coupler-014"' in result.stdout
     assert '"status": "queued"' in result.stdout
+
+
+def test_tasks_submit_command_falls_back_to_local_active_dataset() -> None:
+    runner = CliRunner()
+
+    set_result = runner.invoke(app, ["session", "set-active-dataset", "transmon-coupler-014"])
+    result = runner.invoke(
+        app,
+        ["tasks", "submit", "characterization", "--output", "json"],
+    )
+
+    assert set_result.exit_code == 0
+    assert result.exit_code == 0
+    assert '"dataset_id": "transmon-coupler-014"' in result.stdout
+    assert '"submitted_from_active_dataset": true' in result.stdout
 
 
 def test_tasks_submit_command_uses_structured_backend_error_message() -> None:
