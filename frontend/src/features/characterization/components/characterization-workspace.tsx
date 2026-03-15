@@ -1,95 +1,34 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Play,
+  Search,
 } from "lucide-react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { z } from "zod";
 
 import { useCharacterizationWorkflowData } from "@/features/characterization/hooks/use-characterization-workflow-data";
-import { parseCharacterizationTaskIdParam } from "@/features/characterization/lib/task-id";
 import {
-  buildCharacterizationRequestSummary,
-  filterCharacterizationTasks,
-  summarizeCharacterizationTasks,
-  type CharacterizationTaskScope,
-  type CharacterizationTaskStatusFilter,
+  characterizationStatusTone,
+  resolveCharacterizationSelectionRecovery,
+  summarizeCharacterizationResults,
+  type CharacterizationResultStatusFilter,
 } from "@/features/characterization/lib/workflow";
 import {
-  ResearchTaskQueuePanel,
-  ResearchWorkflowHero,
-  ResearchWorkflowOverviewPanel,
-} from "@/features/shared/components/research-workflow-panels";
-import {
+  SurfaceHeader,
   SurfacePanel,
+  SurfaceStat,
   SurfaceTag,
   cx,
 } from "@/features/shared/components/surface-kit";
-import { TaskEventHistoryPanel } from "@/features/shared/components/task-event-history-panel";
-import {
-  TaskAttachmentPanel,
-  TaskLifecyclePanel,
-  TaskResultPanel,
-} from "@/features/shared/components/task-workflow-panels";
 import { ApiError } from "@/lib/api/client";
-import { summarizeTaskEventHistory } from "@/lib/task-event-history";
-import { summarizeResearchWorkflowSurface } from "@/lib/research-workflow-surface";
-import {
-  resolveTaskConnectionState,
-  resolveTaskRecoveryNotice,
-  summarizeTaskLifecycle,
-  summarizeTaskResultSurface,
-} from "@/lib/task-surface";
 
-const characterizationRequestSchema = z.object({
-  summaryNote: z.string().trim().max(180, "Keep the request note within 180 characters."),
-});
-
-type CharacterizationRequestValues = z.infer<typeof characterizationRequestSchema>;
-
-const defaultRequestValues: CharacterizationRequestValues = {
-  summaryNote: "",
-};
-
-const characterizationTaskScopeOptions = [
-  { label: "Active dataset", value: "dataset" },
-  { label: "All characterization tasks", value: "all" },
-] as const satisfies readonly Readonly<{
-  label: string;
-  value: CharacterizationTaskScope;
-}>[];
-
-const characterizationTaskStatusOptions = [
-  { label: "All statuses", value: "all" },
-  { label: "Queued or running", value: "active" },
+const statusOptions = [
+  { label: "All persisted results", value: "all" },
   { label: "Completed", value: "completed" },
   { label: "Failed", value: "failed" },
+  { label: "Blocked", value: "blocked" },
 ] as const satisfies readonly Readonly<{
   label: string;
-  value: CharacterizationTaskStatusFilter;
+  value: CharacterizationResultStatusFilter;
 }>[];
-
-function buildCharacterizationSearchHref(
-  pathname: string,
-  searchParamsValue: string,
-  updates: Readonly<Record<string, string | null>>,
-) {
-  const params = new URLSearchParams(searchParamsValue);
-
-  for (const [key, value] of Object.entries(updates)) {
-    if (value === null) {
-      params.delete(key);
-    } else {
-      params.set(key, value);
-    }
-  }
-
-  const nextSearch = params.toString();
-  return nextSearch ? `${pathname}?${nextSearch}` : pathname;
-}
 
 function describeApiError(error: Error | undefined) {
   if (!error) {
@@ -97,456 +36,419 @@ function describeApiError(error: Error | undefined) {
   }
 
   if (error instanceof ApiError) {
-    const retryHint = error.retryable === true ? " Retry is available." : "";
     const debugHint = error.debugRef ? ` Ref: ${error.debugRef}.` : "";
-    return `${error.message}${retryHint}${debugHint}`;
+    return `${error.message}${debugHint}`;
   }
 
   return error.message;
 }
 
-function taskStatusTone(status: "queued" | "running" | "completed" | "failed") {
-  if (status === "completed") {
-    return "success" as const;
-  }
-
-  if (status === "running") {
-    return "primary" as const;
-  }
-
-  if (status === "failed") {
-    return "warning" as const;
-  }
-
-  return "default" as const;
+function formatCoverageLabel(sourceCoverage: Record<string, number>) {
+  const segments = Object.entries(sourceCoverage).map(([source, count]) => `${source} ${count}`);
+  return segments.length > 0 ? segments.join(" · ") : "No indexed source coverage";
 }
 
-type TaskCardProps = Readonly<{
-  isFollowingLatest?: boolean;
-  isLatest?: boolean;
-  isSelected: boolean;
-  onSelect: (taskId: number) => void;
-  task: ReturnType<typeof filterCharacterizationTasks>[number];
-}>;
-
-function TaskCard({
-  isFollowingLatest = false,
-  isLatest = false,
-  isSelected,
-  onSelect,
-  task,
-}: TaskCardProps) {
+function ResultPayloadPreview({ payload }: Readonly<{ payload: Readonly<Record<string, unknown>> }>) {
   return (
-    <button
-      type="button"
-      onClick={() => {
-        onSelect(task.taskId);
-      }}
-      className={cx(
-        "w-full cursor-pointer rounded-[1rem] border px-4 py-4 text-left shadow-[0_10px_30px_rgba(0,0,0,0.08)] transition",
-        isSelected
-          ? "border-primary/40 bg-card"
-          : "border-border bg-card hover:border-primary/25 hover:bg-primary/5",
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-foreground">
-            {task.summary || "Characterization task"}
-          </h3>
-          <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-            Task #{task.taskId}
-          </p>
-        </div>
-        <SurfaceTag tone={taskStatusTone(task.status)}>{task.status}</SurfaceTag>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-        {isLatest ? <SurfaceTag tone="primary">Latest</SurfaceTag> : null}
-        {isFollowingLatest ? <SurfaceTag tone="success">Following</SurfaceTag> : null}
-        <SurfaceTag tone="default">{task.executionMode}</SurfaceTag>
-        {task.datasetId ? <SurfaceTag tone="default">{task.datasetId}</SurfaceTag> : null}
-        <SurfaceTag tone="default">{task.visibilityScope}</SurfaceTag>
-      </div>
-
-      <div className="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-        <span>Submitted: {task.submittedAt}</span>
-        <span className="sm:text-right">{task.ownerDisplayName}</span>
-      </div>
-    </button>
+    <pre className="overflow-x-auto rounded-2xl border border-border bg-surface px-4 py-4 text-xs leading-6 text-muted-foreground">
+      {JSON.stringify(payload, null, 2)}
+    </pre>
   );
 }
 
 export function CharacterizationWorkspace() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [, startTransition] = useTransition();
-  const [taskQuery, setTaskQuery] = useState("");
-  const [taskScope, setTaskScope] = useState<CharacterizationTaskScope>("dataset");
-  const [taskStatusFilter, setTaskStatusFilter] =
-    useState<CharacterizationTaskStatusFilter>("all");
-  const [isRefreshingWorkflow, setIsRefreshingWorkflow] = useState(false);
-
-  const form = useForm<CharacterizationRequestValues>({
-    resolver: zodResolver(characterizationRequestSchema),
-    defaultValues: defaultRequestValues,
-  });
-
-  const requestedTaskId = parseCharacterizationTaskIdParam(searchParams.get("taskId"));
   const {
-    session,
     activeDatasetState,
-    characterizationTasks,
-    latestCharacterizationTask,
-    resolvedTaskId,
-    activeTask,
-    activeTaskError,
-    isTaskTransitioning,
-    taskMutationStatus,
-    submitCharacterizationTask,
-    clearTaskMutationStatus,
-    refreshCharacterizationWorkflow,
-  } = useCharacterizationWorkflowData(requestedTaskId);
+    designSearch,
+    setDesignSearch,
+    resultSearch,
+    setResultSearch,
+    statusFilter,
+    setStatusFilter,
+    designs,
+    designsError,
+    isDesignsLoading,
+    requestedDesignId,
+    selectedDesignId,
+    setSelectedDesignId,
+    results,
+    resultsError,
+    isResultsLoading,
+    requestedResultId,
+    selectedResultId,
+    setSelectedResultId,
+    resultDetail,
+    resultDetailError,
+    isResultDetailLoading,
+  } = useCharacterizationWorkflowData();
 
-  const taskSummary = summarizeCharacterizationTasks(characterizationTasks);
-  const filteredTasks = filterCharacterizationTasks(characterizationTasks, {
-    searchQuery: taskQuery,
-    scope: taskScope,
-    statusFilter: taskStatusFilter,
-    activeDatasetId: activeDatasetState.activeDataset?.datasetId ?? null,
+  const selectionRecovery = resolveCharacterizationSelectionRecovery({
+    activeDatasetName: activeDatasetState.activeDataset?.name ?? null,
+    requestedDesignId,
+    resolvedDesignId: selectedDesignId,
+    requestedResultId,
+    resolvedResultId: selectedResultId,
   });
-  const latestTaskId = latestCharacterizationTask?.taskId ?? null;
-  const taskConnectionState = resolveTaskConnectionState({
-    requestedTaskId,
-    resolvedTaskId,
-    latestTaskId,
-    activeTask,
-  });
-  const taskRecovery = resolveTaskRecoveryNotice(
-    requestedTaskId,
-    latestTaskId,
-    activeTaskError,
-  );
-  const taskLifecycleSummary = summarizeTaskLifecycle(activeTask);
-  const taskResultSummary = summarizeTaskResultSurface(activeTask);
-  const eventHistorySummary = summarizeTaskEventHistory(activeTask);
-  const workflowSurfaceSummary = summarizeResearchWorkflowSurface({
-    connectionState: taskConnectionState,
-    lifecycleSummary: taskLifecycleSummary,
-    eventHistorySummary,
-    resultSummary: taskResultSummary,
-  });
-  const requestSummaryPreview = buildCharacterizationRequestSummary({
-    datasetId: activeDatasetState.activeDataset?.datasetId ?? null,
-    datasetName: activeDatasetState.activeDataset?.name ?? null,
-    note: form.watch("summaryNote"),
-  });
+  const resultSummary = summarizeCharacterizationResults(results);
   const activeDatasetErrorMessage = describeApiError(activeDatasetState.activeDatasetError);
-  const activeTaskErrorMessage = describeApiError(activeTaskError);
-  const eventHistoryNarrative = !activeTask
-    ? "Attach or submit a characterization task to inspect its persisted event trail."
-    : taskConnectionState.isStaleSnapshot && resolvedTaskId !== null
-      ? `Showing persisted events from task #${activeTask.taskId} while task #${resolvedTaskId} reattaches so dispatch and analysis history stay visible.`
-      : taskConnectionState.hasNewerLatestTask && latestTaskId !== null
-        ? `Task #${resolvedTaskId} remains attached for comparison while newer characterization activity exists on task #${latestTaskId}.`
-        : taskConnectionState.isFollowingLatest && latestTaskId !== null
-          ? `Following the latest characterization task #${latestTaskId}. Persisted events here should advance as backend analysis progresses.`
-          : `Task #${activeTask.taskId} keeps a persisted event trail that ties dispatch state to analysis progress and published outputs.`;
-
-  function replaceSearchState(updates: Readonly<Record<string, string | null>>) {
-    startTransition(() => {
-      router.replace(
-        buildCharacterizationSearchHref(pathname, searchParams.toString(), updates),
-        { scroll: false },
-      );
-    });
-  }
-
-  async function handleRefreshWorkflow() {
-    setIsRefreshingWorkflow(true);
-    try {
-      await refreshCharacterizationWorkflow();
-    } finally {
-      setIsRefreshingWorkflow(false);
-    }
-  }
-
-  async function handleSubmit() {
-    const values = await form.trigger();
-    if (!values) {
-      return;
-    }
-
-    const task = await submitCharacterizationTask({
-      note: form.getValues("summaryNote"),
-    });
-
-    replaceSearchState({ taskId: String(task.taskId) });
-  }
+  const designsErrorMessage = describeApiError(designsError);
+  const resultsErrorMessage = describeApiError(resultsError);
+  const resultDetailErrorMessage = describeApiError(resultDetailError);
 
   return (
     <div className="space-y-8">
-      <ResearchWorkflowHero
-        eyebrow="Research Workflow"
+      <SurfaceHeader
+        eyebrow="Persisted Results"
         title="Characterization"
-        description="Submit dataset-backed characterization work, reattach to persisted task state, and inspect event and result history with the same shared workflow language as simulation."
-        contextTags={[
-          {
-            label: activeDatasetState.activeDataset?.name ?? "Dataset not attached",
-            tone: activeDatasetState.activeDataset
-              ? "success"
-              : activeDatasetState.status === "error"
-                ? "warning"
-                : "default",
-          },
-          ...(resolvedTaskId !== null
-            ? [
-                {
-                  label: `Task #${resolvedTaskId}`,
-                  tone: taskConnectionState.isAttached ? "success" : "warning",
-                } as const,
-              ]
-            : []),
-          {
-            label: taskLifecycleSummary.statusLabel,
-            tone: taskLifecycleSummary.tone,
-          },
-          ...(taskConnectionState.isFollowingLatest
-            ? [{ label: "Following latest queue task", tone: "success" as const }]
-            : []),
-        ]}
-        submitAuthorityLabel={`Workspace submit authority: ${
-          session?.canSubmitTasks ? "available" : "disabled for this session"
-        }.`}
-        stats={[
-          { label: "Characterization Tasks", value: String(taskSummary.total) },
-          { label: "Active", value: String(taskSummary.activeCount), tone: "primary" },
-          { label: "Result-backed", value: String(taskSummary.resultBackedCount) },
-        ]}
+        description="Browse dataset-scoped characterization summaries, then open one persisted result detail without reusing task queue or execution controls."
+        actions={
+          <>
+            <SurfaceTag
+              tone={
+                activeDatasetState.activeDataset ? "success" : activeDatasetState.status === "error"
+                  ? "warning"
+                  : "default"
+              }
+            >
+              {activeDatasetState.activeDataset?.name ?? "Dataset not attached"}
+            </SurfaceTag>
+            {selectedDesignId ? <SurfaceTag tone="primary">{selectedDesignId}</SurfaceTag> : null}
+          </>
+        }
       />
 
-      {taskMutationStatus.message ? (
+      {selectionRecovery ? (
         <div
           className={cx(
-            "rounded-[1rem] border px-4 py-3 text-sm",
-            taskMutationStatus.state === "error"
-              ? "border-rose-500/30 bg-rose-500/8 text-rose-100"
-              : "border-primary/30 bg-primary/8 text-foreground",
+            "rounded-[1rem] border px-4 py-4",
+            selectionRecovery.tone === "warning"
+              ? "border-amber-500/25 bg-amber-500/10"
+              : "border-border bg-surface",
           )}
         >
-          {taskMutationStatus.message}
+          <p className="text-sm font-semibold text-foreground">{selectionRecovery.title}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{selectionRecovery.message}</p>
         </div>
       ) : null}
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(320px,0.84fr)_minmax(0,1.16fr)]">
-        <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-4">
+        <SurfaceStat
+          label="Visible Designs"
+          value={String(designs.length)}
+          tone="primary"
+        />
+        <SurfaceStat label="Visible Results" value={String(resultSummary.total)} />
+        <SurfaceStat label="Completed" value={String(resultSummary.completedCount)} />
+        <SurfaceStat label="Artifact Refs" value={String(resultSummary.artifactCount)} />
+      </div>
+
+      {!activeDatasetState.activeDataset ? (
+        <SurfacePanel
+          title="Attach Active Dataset"
+          description="Characterization results are always scoped to the shared shell active dataset. Attach one from the header before browsing persisted summaries."
+        >
+          <p className="text-sm leading-6 text-muted-foreground">
+            {activeDatasetErrorMessage ??
+              "This page keeps only page-local design/result browse state. Dataset authority continues to come from the shared shell context."}
+          </p>
+        </SurfacePanel>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr_1.2fr]">
           <SurfacePanel
             title="Design Scope"
-            description="Characterization authority stays dataset-centric in this slice: the active dataset anchors submission, task recovery, and persisted results."
+            description="Pick one dataset-local design scope, then browse persisted characterization results within that scope."
           >
-            {activeDatasetErrorMessage ? (
-              <div className="rounded-[0.9rem] border border-rose-500/30 bg-rose-500/8 px-4 py-3 text-sm text-rose-100">
-                Unable to resolve the active dataset. {activeDatasetErrorMessage}
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <input
+                value={designSearch}
+                onChange={(event) => {
+                  setDesignSearch(event.target.value);
+                }}
+                placeholder="Search designs"
+                className="w-full rounded-xl border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/40"
+              />
+            </label>
+
+            <div className="mt-4 space-y-3">
+              {designs.map((design) => (
+                <button
+                  key={design.design_id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDesignId(design.design_id);
+                  }}
+                  className={cx(
+                    "w-full rounded-[1rem] border px-4 py-4 text-left transition",
+                    selectedDesignId === design.design_id
+                      ? "border-primary/35 bg-primary/10"
+                      : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-foreground">
+                        {design.name}
+                      </h3>
+                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                        {design.design_id}
+                      </p>
+                    </div>
+                    <SurfaceTag tone="default">{design.compare_readiness}</SurfaceTag>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                    <span>{design.trace_count} traces</span>
+                    <span>{formatCoverageLabel(design.source_coverage)}</span>
+                  </div>
+                </button>
+              ))}
+
+              {!isDesignsLoading && designs.length === 0 ? (
+                <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                  No visible design scope matches this dataset search.
+                </p>
+              ) : null}
+              {designsErrorMessage ? (
+                <p className="text-sm text-amber-700">{designsErrorMessage}</p>
+              ) : null}
+            </div>
+          </SurfacePanel>
+
+          <SurfacePanel
+            title="Result Summary List"
+            description="Summary-first browse surface for persisted characterization results. Select one row to expand diagnostics, payload, and artifact references."
+          >
+            <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+              <label className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <input
+                  value={resultSearch}
+                  onChange={(event) => {
+                    setResultSearch(event.target.value);
+                  }}
+                  placeholder="Search results or analysis id"
+                  className="w-full rounded-xl border border-border bg-surface py-2 pl-9 pr-3 text-sm outline-none transition focus:border-primary/40"
+                />
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value as CharacterizationResultStatusFilter);
+                }}
+                className="rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary/40"
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {results.map((result) => (
+                <button
+                  key={result.resultId}
+                  type="button"
+                  onClick={() => {
+                    setSelectedResultId(result.resultId);
+                  }}
+                  className={cx(
+                    "w-full rounded-[1rem] border px-4 py-4 text-left transition",
+                    selectedResultId === result.resultId
+                      ? "border-primary/35 bg-card"
+                      : "border-border bg-surface hover:border-primary/25 hover:bg-primary/5",
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-sm font-semibold text-foreground">
+                        {result.title}
+                      </h3>
+                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                        {result.analysisId}
+                      </p>
+                    </div>
+                    <SurfaceTag tone={characterizationStatusTone(result.status)}>
+                      {result.status}
+                    </SurfaceTag>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                    <SurfaceTag tone="default">{result.traceCount} traces</SurfaceTag>
+                    <SurfaceTag tone="default">{result.artifactCount} artifacts</SurfaceTag>
+                    <SurfaceTag tone="default">{result.updatedAt}</SurfaceTag>
+                  </div>
+
+                  <p className="mt-3 text-sm text-muted-foreground">{result.freshnessSummary}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{result.provenanceSummary}</p>
+                </button>
+              ))}
+
+              {!isResultsLoading && results.length === 0 ? (
+                <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                  No persisted characterization result matches this design scope and filter set.
+                </p>
+              ) : null}
+              {resultsErrorMessage ? (
+                <p className="text-sm text-amber-700">{resultsErrorMessage}</p>
+              ) : null}
+            </div>
+          </SurfacePanel>
+
+          <SurfacePanel
+            title="Persisted Result Detail"
+            description="Detail path only. Payload, diagnostics, and artifact references expand here after one persisted result summary row is selected."
+          >
+            {!selectedResultId ? (
+              <p className="rounded-[1rem] border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
+                Select one persisted characterization result to inspect detail payload and artifact references.
+              </p>
+            ) : null}
+
+            {resultDetail ? (
+              <div className="space-y-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">
+                      {resultDetail.title}
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {resultDetail.analysisId} · {resultDetail.updatedAt}
+                    </p>
+                  </div>
+                  <SurfaceTag tone={characterizationStatusTone(resultDetail.status)}>
+                    {resultDetail.status}
+                  </SurfaceTag>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Freshness
+                    </p>
+                    <p className="mt-2 text-sm text-foreground">{resultDetail.freshnessSummary}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Provenance
+                    </p>
+                    <p className="mt-2 text-sm text-foreground">
+                      {resultDetail.provenanceSummary}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Input Trace Scope
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {resultDetail.inputTraceIds.map((traceId) => (
+                      <SurfaceTag key={traceId} tone="default">
+                        {traceId}
+                      </SurfaceTag>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Diagnostics
+                    </p>
+                    <SurfaceTag
+                      tone={
+                        resultDetail.diagnostics.some((diagnostic) => diagnostic.blocking)
+                          ? "warning"
+                          : "default"
+                      }
+                    >
+                      {resultDetail.diagnostics.length} entries
+                    </SurfaceTag>
+                  </div>
+
+                  <div className="mt-3 space-y-3">
+                    {resultDetail.diagnostics.map((diagnostic) => (
+                      <div
+                        key={`${diagnostic.code}-${diagnostic.message}`}
+                        className={cx(
+                          "rounded-xl border px-3 py-3",
+                          diagnostic.blocking
+                            ? "border-amber-500/25 bg-amber-500/10"
+                            : "border-border bg-card",
+                        )}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <SurfaceTag tone={diagnostic.blocking ? "warning" : "default"}>
+                            {diagnostic.severity}
+                          </SurfaceTag>
+                          <span className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                            {diagnostic.code}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm text-foreground">{diagnostic.message}</p>
+                      </div>
+                    ))}
+                    {resultDetail.diagnostics.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No diagnostics were attached to this persisted result detail.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      Artifact References
+                    </p>
+                    <SurfaceTag tone="default">
+                      {resultDetail.artifactRefs.length} refs
+                    </SurfaceTag>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {resultDetail.artifactRefs.map((artifact) => (
+                      <div
+                        key={artifact.artifactId}
+                        className="rounded-xl border border-border bg-card px-3 py-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <SurfaceTag tone="default">{artifact.category}</SurfaceTag>
+                          <SurfaceTag tone="default">{artifact.viewKind}</SurfaceTag>
+                          <SurfaceTag tone="default">{artifact.payloadFormat}</SurfaceTag>
+                        </div>
+                        <p className="mt-2 text-sm font-medium text-foreground">
+                          {artifact.title}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {artifact.payloadLocator ?? "No materialized locator available"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Payload Preview
+                  </p>
+                  <ResultPayloadPreview payload={resultDetail.payload} />
+                </div>
               </div>
             ) : null}
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Active Dataset
-                </p>
-                <p className="mt-2 text-sm font-semibold text-foreground">
-                  {activeDatasetState.activeDataset?.name ?? "Attach a dataset in the shell first"}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {activeDatasetState.activeDataset?.datasetId ?? "No dataset in session"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Dataset Source
-                </p>
-                <p className="mt-2 text-sm font-semibold text-foreground">
-                  {activeDatasetState.activeDataset?.source ?? "none"}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {activeDatasetState.activeDataset?.status ?? "Not attached"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Dataset Owner
-                </p>
-                <p className="mt-2 text-sm font-semibold text-foreground">
-                  {activeDatasetState.activeDataset?.owner ?? "--"}
-                </p>
-              </div>
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Dataset Family
-                </p>
-                <p className="mt-2 text-sm font-semibold text-foreground">
-                  {activeDatasetState.activeDataset?.family ?? "--"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-              Trace selection and analysis config remain backend-owned in this slice. The frontend
-              centers on persisted dataset, task, and result relationships so refresh and reattach
-              keep the workflow readable.
-            </div>
+            {isResultDetailLoading ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Loading persisted result detail…
+              </p>
+            ) : null}
+            {resultDetailErrorMessage ? (
+              <p className="mt-4 text-sm text-amber-700">{resultDetailErrorMessage}</p>
+            ) : null}
           </SurfacePanel>
-
-          <SurfacePanel
-            title="Run Characterization"
-            description="Submit a characterization task for the active dataset and keep the persisted request summary visible before and after dispatch."
-          >
-            <form
-              className="space-y-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-              }}
-            >
-              <label className="block rounded-[0.9rem] border border-border bg-surface px-4 py-3">
-                <span className="mb-2 block text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Request Note
-                </span>
-                <textarea
-                  {...form.register("summaryNote")}
-                  rows={4}
-                  placeholder="Optional context for this characterization run, for example baseline review or fit refresh."
-                  className="w-full resize-none bg-transparent text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
-                />
-              </label>
-              {form.formState.errors.summaryNote ? (
-                <p className="text-sm text-rose-300">
-                  {form.formState.errors.summaryNote.message}
-                </p>
-              ) : null}
-
-              <div className="rounded-[0.9rem] border border-border bg-surface px-4 py-4 text-sm text-muted-foreground">
-                <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                  Submission Preview
-                </p>
-                <p className="mt-2 text-foreground">{requestSummaryPreview}</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  void handleSubmit();
-                }}
-                disabled={
-                  taskMutationStatus.state === "submitting" ||
-                  !session?.canSubmitTasks ||
-                  !activeDatasetState.activeDataset
-                }
-                className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Play className="h-4 w-4" />
-                Run Characterization
-              </button>
-            </form>
-          </SurfacePanel>
-
-          <ResearchTaskQueuePanel
-            title="Characterization Task Queue"
-            description="Inspect characterization-lane tasks for the current dataset or the wider workspace, then attach a task into the shared research workflow surface."
-            searchValue={taskQuery}
-            onSearchChange={setTaskQuery}
-            searchPlaceholder="Find by task id, summary, or dataset"
-            scopeValue={taskScope}
-            onScopeChange={(value) => {
-              setTaskScope(value as CharacterizationTaskScope);
-            }}
-            scopeOptions={characterizationTaskScopeOptions}
-            statusValue={taskStatusFilter}
-            onStatusChange={(value) => {
-              setTaskStatusFilter(value as CharacterizationTaskStatusFilter);
-            }}
-            statusOptions={characterizationTaskStatusOptions}
-            summaryLabel={`Showing ${filteredTasks.length} of ${characterizationTasks.length} characterization tasks`}
-            summaryTags={[
-              ...(taskConnectionState.mode === "explicit" && resolvedTaskId !== null
-                ? [{ label: `Locked to task #${resolvedTaskId}`, tone: "warning" as const }]
-                : []),
-              ...(taskConnectionState.isFollowingLatest && latestTaskId !== null
-                ? [
-                    {
-                      label: `Following latest #${latestTaskId}`,
-                      tone: "success" as const,
-                    },
-                  ]
-                : []),
-            ]}
-            isRefreshing={isRefreshingWorkflow}
-            onRefresh={() => {
-              void handleRefreshWorkflow();
-            }}
-            isEmpty={filteredTasks.length === 0}
-            emptyMessage="No characterization tasks match the current filters."
-          >
-            {filteredTasks.map((task) => (
-              <TaskCard
-                key={task.taskId}
-                isSelected={task.taskId === resolvedTaskId}
-                isFollowingLatest={
-                  task.taskId === resolvedTaskId && taskConnectionState.isFollowingLatest
-                }
-                isLatest={task.taskId === latestTaskId}
-                onSelect={(taskId) => {
-                  clearTaskMutationStatus();
-                  replaceSearchState({ taskId: String(taskId) });
-                }}
-                task={task}
-              />
-            ))}
-          </ResearchTaskQueuePanel>
         </div>
-
-        <div className="space-y-4">
-          <ResearchWorkflowOverviewPanel
-            summary={workflowSurfaceSummary}
-            narrative={eventHistoryNarrative}
-          />
-
-          <TaskAttachmentPanel
-            task={activeTask}
-            connectionState={taskConnectionState}
-            recoveryNotice={taskRecovery}
-            taskErrorMessage={activeTaskErrorMessage}
-            isRefreshing={isRefreshingWorkflow}
-            isTransitioning={isTaskTransitioning}
-            onRefresh={() => {
-              void handleRefreshWorkflow();
-            }}
-            onAttachLatest={
-              latestCharacterizationTask
-                ? () => {
-                    replaceSearchState({ taskId: String(latestCharacterizationTask.taskId) });
-                  }
-                : null
-            }
-            onFollowLatest={() => {
-              replaceSearchState({ taskId: null });
-            }}
-          />
-
-          <TaskLifecyclePanel task={activeTask} summary={taskLifecycleSummary} />
-
-          <TaskEventHistoryPanel
-            title="Task Event History"
-            description="Inspect persisted event records so dispatch changes, progress movement, and task outcomes remain readable after refresh or recovery."
-            task={activeTask}
-            narrative={eventHistoryNarrative}
-            emptyMessage="No persisted characterization task events are attached yet. Submit or attach a task to inspect its backend event history."
-          />
-
-          <TaskResultPanel task={activeTask} summary={taskResultSummary} />
-        </div>
-      </section>
+      )}
     </div>
   );
 }

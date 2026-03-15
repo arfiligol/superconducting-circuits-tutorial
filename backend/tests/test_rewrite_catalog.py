@@ -1,5 +1,10 @@
 import pytest
-from src.app.domain.datasets import DatasetProfileUpdate, DesignBrowseQuery, TraceBrowseQuery
+from src.app.domain.datasets import (
+    CharacterizationResultBrowseQuery,
+    DatasetProfileUpdate,
+    DesignBrowseQuery,
+    TraceBrowseQuery,
+)
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 from src.app.services.dataset_service import DatasetService
@@ -118,6 +123,36 @@ def test_dataset_service_exposes_tagged_metrics_and_summary_first_browse_contrac
     assert trace_detail.payload_ref is not None
     assert trace_detail.payload_ref.store_key.endswith("batch_4.zarr")
     assert trace_detail.result_handles[0].handle_id == "result:fluxonium-2025-031:fit-summary"
+
+
+def test_dataset_service_exposes_characterization_result_summary_and_detail_surfaces(
+    dataset_service: DatasetService,
+) -> None:
+    result_rows = dataset_service.list_characterization_results(
+        "fluxonium-2025-031",
+        "design_flux_scan_a",
+        CharacterizationResultBrowseQuery(status="completed"),
+    )
+    result_detail = dataset_service.get_characterization_result(
+        "fluxonium-2025-031",
+        "design_flux_scan_a",
+        "char-fit-flux-a-01",
+    )
+
+    assert [row.result_id for row in result_rows] == ["char-fit-flux-a-01"]
+    assert result_rows[0].dataset_id == "fluxonium-2025-031"
+    assert result_rows[0].design_id == "design_flux_scan_a"
+    assert result_rows[0].status == "completed"
+    assert result_rows[0].provenance_summary == "Measurement batch #4 + layout batch #2"
+
+    assert result_detail.result_id == "char-fit-flux-a-01"
+    assert result_detail.analysis_id == "admittance_extraction"
+    assert result_detail.input_trace_ids == (
+        "trace_flux_a_measurement",
+        "trace_flux_a_layout",
+    )
+    assert result_detail.payload["fit_table"][0]["parameter"] == "f01"
+    assert result_detail.artifact_refs[0].artifact_id == "artifact-fit-table-flux-a-01"
 
 
 def test_dataset_service_rejects_invisible_dataset_outside_active_workspace(

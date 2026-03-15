@@ -1,147 +1,127 @@
 "use client";
 
-import { useState } from "react";
-import useSWR, { useSWRConfig } from "swr";
+import { useEffect, useState } from "react";
+import useSWR from "swr";
 
 import {
-  buildCharacterizationRequestSummary,
-  resolveLatestCharacterizationTask,
+  getCharacterizationResult,
+  listCharacterizationResults,
+} from "@/features/characterization/lib/api";
+import {
+  resolveSelectedCharacterizationDesignId,
+  resolveSelectedCharacterizationResultId,
+  type CharacterizationResultStatusFilter,
 } from "@/features/characterization/lib/workflow";
-import { resolveCharacterizationTaskId } from "@/features/characterization/lib/task-id";
+import { listDesignBrowseRows } from "@/lib/api/datasets";
 import { useActiveDataset } from "@/lib/app-state/active-dataset";
-import { useAppSession } from "@/lib/app-state/app-session";
-import { useTaskQueue } from "@/lib/app-state/task-queue";
-import {
-  getTask,
-  submitTask,
-  taskDetailKey,
-  tasksListKey,
-  type TaskDetail,
-} from "@/lib/api/tasks";
 
-type TaskMutationStatus = Readonly<{
-  state: "idle" | "submitting" | "success" | "error";
-  message: string | null;
-}>;
-
-type SubmitCharacterizationTaskInput = Readonly<{
-  note: string;
-}>;
-
-export function useCharacterizationWorkflowData(selectedTaskId: number | null) {
-  const { mutate } = useSWRConfig();
-  const { session } = useAppSession();
+export function useCharacterizationWorkflowData() {
   const activeDatasetState = useActiveDataset();
-  const taskQueueState = useTaskQueue();
-  const [taskMutationStatus, setTaskMutationStatus] = useState<TaskMutationStatus>({
-    state: "idle",
-    message: null,
-  });
+  const activeDatasetId = activeDatasetState.activeDataset?.datasetId ?? null;
+  const [designSearch, setDesignSearch] = useState("");
+  const [resultSearch, setResultSearch] = useState("");
+  const [statusFilter, setStatusFilter] =
+    useState<CharacterizationResultStatusFilter>("all");
+  const [selectedDesignId, setSelectedDesignId] = useState<string | null>(null);
+  const [selectedResultId, setSelectedResultId] = useState<string | null>(null);
 
-  const characterizationTasks = taskQueueState.tasks.filter(
-    (task) => task.kind === "characterization" || task.lane === "characterization",
+  const designsQuery = useSWR(
+    activeDatasetId ? ["characterization-designs", activeDatasetId, designSearch] : null,
+    () =>
+      activeDatasetId
+        ? listDesignBrowseRows(activeDatasetId, {
+            search: designSearch || null,
+          })
+        : Promise.resolve(undefined),
   );
-  const latestCharacterizationTask = resolveLatestCharacterizationTask(characterizationTasks);
-  const resolvedTaskId = resolveCharacterizationTaskId(
-    selectedTaskId,
-    latestCharacterizationTask?.taskId ?? null,
+
+  const resolvedDesignId = resolveSelectedCharacterizationDesignId(
+    selectedDesignId,
+    designsQuery.data?.rows,
   );
-  const detailKey = resolvedTaskId ? taskDetailKey(resolvedTaskId) : null;
-  const taskDetailQuery = useSWR(
-    detailKey,
-    () => (resolvedTaskId ? getTask(resolvedTaskId) : Promise.resolve(undefined)),
-    {
-      keepPreviousData: true,
-      refreshInterval(currentData) {
-        if (!currentData) {
-          return 5_000;
-        }
 
-        return currentData.status === "queued" || currentData.status === "running" ? 2_000 : 0;
-      },
-    },
+  const resultsQuery = useSWR(
+    activeDatasetId && resolvedDesignId
+      ? [
+          "characterization-results",
+          activeDatasetId,
+          resolvedDesignId,
+          resultSearch,
+          statusFilter,
+        ]
+      : null,
+    () =>
+      activeDatasetId && resolvedDesignId
+        ? listCharacterizationResults(activeDatasetId, resolvedDesignId, {
+            search: resultSearch || null,
+            status: statusFilter === "all" ? null : statusFilter,
+          })
+        : Promise.resolve(undefined),
   );
-  const activeTask = taskDetailQuery.data;
-  const hasAttachedTask =
-    typeof resolvedTaskId === "number" && activeTask?.taskId === resolvedTaskId;
 
-  async function submitCharacterizationTask({
-    note,
-  }: SubmitCharacterizationTaskInput): Promise<TaskDetail> {
-    if (!session?.canSubmitTasks) {
-      const error = new Error("This session cannot submit tasks.");
-      setTaskMutationStatus({ state: "error", message: error.message });
-      throw error;
-    }
+  const resolvedResultId = resolveSelectedCharacterizationResultId(
+    selectedResultId,
+    resultsQuery.data?.rows,
+  );
 
-    const datasetId = activeDatasetState.activeDataset?.datasetId ?? null;
-    if (!datasetId) {
-      const error = new Error("Attach an active dataset before submitting characterization.");
-      setTaskMutationStatus({ state: "error", message: error.message });
-      throw error;
-    }
+  const detailQuery = useSWR(
+    activeDatasetId && resolvedDesignId && resolvedResultId
+      ? ["characterization-result-detail", activeDatasetId, resolvedDesignId, resolvedResultId]
+      : null,
+    () =>
+      activeDatasetId && resolvedDesignId && resolvedResultId
+        ? getCharacterizationResult(activeDatasetId, resolvedDesignId, resolvedResultId)
+        : Promise.resolve(undefined),
+  );
 
-    setTaskMutationStatus({ state: "submitting", message: null });
+  useEffect(() => {
+    setSelectedDesignId((current) =>
+      resolveSelectedCharacterizationDesignId(current, designsQuery.data?.rows),
+    );
+  }, [designsQuery.data?.rows]);
 
-    try {
-      const task = await submitTask({
-        kind: "characterization",
-        dataset_id: datasetId,
-        summary: buildCharacterizationRequestSummary({
-          datasetId,
-          datasetName: activeDatasetState.activeDataset?.name ?? null,
-          note,
-        }),
-      });
+  useEffect(() => {
+    setSelectedResultId((current) =>
+      resolveSelectedCharacterizationResultId(current, resultsQuery.data?.rows),
+    );
+  }, [resultsQuery.data?.rows]);
 
-      await Promise.all([
-        mutate(tasksListKey),
-        mutate(taskDetailKey(task.taskId), task, { revalidate: false }),
-        taskQueueState.refreshTaskQueue(),
-      ]);
+  useEffect(() => {
+    setDesignSearch("");
+    setResultSearch("");
+    setStatusFilter("all");
+    setSelectedDesignId(null);
+    setSelectedResultId(null);
+  }, [activeDatasetId]);
 
-      setTaskMutationStatus({
-        state: "success",
-        message: `Characterization task #${task.taskId} submitted.`,
-      });
-
-      return task;
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Unable to submit the characterization task.";
-      setTaskMutationStatus({ state: "error", message });
-      throw error;
-    }
-  }
-
-  function clearTaskMutationStatus() {
-    setTaskMutationStatus({ state: "idle", message: null });
-  }
-
-  async function refreshCharacterizationWorkflow() {
-    await Promise.all([
-      taskQueueState.refreshTaskQueue().then(() => undefined),
-      taskDetailQuery.mutate(),
-      activeDatasetState.refreshActiveDataset(),
-    ]);
-  }
+  useEffect(() => {
+    setSelectedResultId(null);
+  }, [resolvedDesignId]);
 
   return {
-    session,
     activeDatasetState,
-    taskQueueState,
-    characterizationTasks,
-    latestCharacterizationTask,
-    resolvedTaskId,
-    activeTask,
-    activeTaskError: taskDetailQuery.error as Error | undefined,
-    isTaskTransitioning:
-      typeof resolvedTaskId === "number" && (!hasAttachedTask || taskDetailQuery.isLoading),
-    taskMutationStatus,
-    submitCharacterizationTask,
-    clearTaskMutationStatus,
-    refreshCharacterizationWorkflow,
-    refreshTaskQueue: taskQueueState.refreshTaskQueue,
-    refreshActiveTask: taskDetailQuery.mutate,
+    designSearch,
+    setDesignSearch,
+    resultSearch,
+    setResultSearch,
+    statusFilter,
+    setStatusFilter,
+    designs: designsQuery.data?.rows ?? [],
+    designsMeta: designsQuery.data?.meta,
+    designsError: designsQuery.error as Error | undefined,
+    isDesignsLoading: designsQuery.isLoading,
+    requestedDesignId: selectedDesignId,
+    selectedDesignId: resolvedDesignId,
+    setSelectedDesignId,
+    results: resultsQuery.data?.rows ?? [],
+    resultsMeta: resultsQuery.data?.meta,
+    resultsError: resultsQuery.error as Error | undefined,
+    isResultsLoading: resultsQuery.isLoading,
+    requestedResultId: selectedResultId,
+    selectedResultId: resolvedResultId,
+    setSelectedResultId,
+    resultDetail: detailQuery.data,
+    resultDetailError: detailQuery.error as Error | undefined,
+    isResultDetailLoading: detailQuery.isLoading,
   };
 }

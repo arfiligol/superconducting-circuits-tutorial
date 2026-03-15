@@ -26,6 +26,28 @@ def test_dataset_service_raises_framework_agnostic_error_for_missing_dataset() -
     assert exc_info.value.category == "not_found"
 
 
+def test_dataset_service_raises_framework_agnostic_error_for_missing_characterization_result() -> (
+    None
+):
+    app_state_repository = InMemoryRewriteAppStateRepository()
+    service = DatasetService(
+        repository=InMemoryRewriteCatalogRepository(),
+        session_repository=app_state_repository,
+    )
+
+    with pytest.raises(ServiceError) as exc_info:
+        service.get_characterization_result(
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+            "missing-result",
+        )
+
+    assert not isinstance(exc_info.value, HTTPException)
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.code == "run_not_found"
+    assert exc_info.value.category == "not_found"
+
+
 def test_session_service_raises_framework_agnostic_error_for_missing_active_dataset() -> None:
     service = SessionService(
         repository=InMemoryRewriteAppStateRepository(),

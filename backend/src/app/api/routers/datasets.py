@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from fastapi.responses import JSONResponse
 
 from src.app.domain.datasets import (
+    CharacterizationResultBrowseQuery,
     DatasetDetail,
     DatasetProfileUpdate,
     DesignBrowseQuery,
@@ -189,6 +190,80 @@ def get_trace_detail(
     )
 
 
+@router.get("/{dataset_id}/designs/{design_id}/characterization-results")
+def list_characterization_results(
+    dataset_id: str,
+    design_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+    limit: Annotated[str | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query()] = None,
+    analysis_id: Annotated[str | None, Query()] = None,
+) -> JSONResponse:
+    try:
+        resolved_limit = _parse_limit(limit)
+        rows = [
+            asdict(row)
+            for row in dataset_service.list_characterization_results(
+                dataset_id,
+                design_id,
+                CharacterizationResultBrowseQuery(
+                    search=_normalize_optional_text(search),
+                    status=_normalize_characterization_result_status(status),
+                    analysis_id=_normalize_optional_text(analysis_id),
+                ),
+            )
+        ]
+    except ServiceError as exc:
+        return _service_error_response(exc)
+
+    page_rows, meta = _paginate_rows(
+        rows,
+        limit=resolved_limit,
+        cursor=cursor,
+        filter_echo={
+            "dataset_id": dataset_id,
+            "design_id": design_id,
+            "search": _normalize_optional_text(search),
+            "status": _normalize_characterization_result_status(status),
+            "analysis_id": _normalize_optional_text(analysis_id),
+        },
+    )
+    return _success_response(data={"rows": page_rows}, meta=meta)
+
+
+@router.get("/{dataset_id}/designs/{design_id}/characterization-results/{result_id}")
+def get_characterization_result(
+    dataset_id: str,
+    design_id: str,
+    result_id: str,
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> JSONResponse:
+    try:
+        detail = dataset_service.get_characterization_result(dataset_id, design_id, result_id)
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(
+        data={
+            "result_id": detail.result_id,
+            "dataset_id": detail.dataset_id,
+            "design_id": detail.design_id,
+            "analysis_id": detail.analysis_id,
+            "title": detail.title,
+            "status": detail.status,
+            "freshness_summary": detail.freshness_summary,
+            "provenance_summary": detail.provenance_summary,
+            "trace_count": detail.trace_count,
+            "updated_at": detail.updated_at,
+            "input_trace_ids": list(detail.input_trace_ids),
+            "payload": detail.payload,
+            "diagnostics": [asdict(diagnostic) for diagnostic in detail.diagnostics],
+            "artifact_refs": [asdict(artifact_ref) for artifact_ref in detail.artifact_refs],
+        }
+    )
+
+
 def _serialize_dataset_profile(detail: DatasetDetail) -> dict[str, object]:
     return {
         "dataset_id": detail.dataset_id,
@@ -307,6 +382,20 @@ def _normalize_trace_mode_group(value: str | None) -> str | None:
             code="request_validation_failed",
             category="validation_error",
             message="trace_mode_group must be one of base, sideband, or all.",
+        )
+    return normalized
+
+
+def _normalize_characterization_result_status(value: str | None) -> str | None:
+    normalized = _normalize_optional_text(value)
+    if normalized is None:
+        return None
+    if normalized not in {"completed", "failed", "blocked"}:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="status must be one of completed, failed, or blocked.",
         )
     return normalized
 

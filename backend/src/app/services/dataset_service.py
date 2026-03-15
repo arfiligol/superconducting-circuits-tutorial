@@ -2,6 +2,9 @@ from collections.abc import Sequence
 from typing import Protocol
 
 from src.app.domain.datasets import (
+    CharacterizationResultBrowseQuery,
+    CharacterizationResultDetail,
+    CharacterizationResultSummary,
     DatasetAllowedActions,
     DatasetCatalogRow,
     DatasetDetail,
@@ -52,6 +55,19 @@ class DatasetRepository(Protocol):
         design_id: str,
         trace_id: str,
     ) -> TraceDetail | None: ...
+
+    def list_characterization_results(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> Sequence[CharacterizationResultSummary]: ...
+
+    def get_characterization_result(
+        self,
+        dataset_id: str,
+        design_id: str,
+        result_id: str,
+    ) -> CharacterizationResultDetail | None: ...
 
 
 class SessionRepository(Protocol):
@@ -181,6 +197,50 @@ class DatasetService:
                 code="trace_not_found",
                 category="not_found",
                 message="The requested trace is not available in the selected design scope.",
+            )
+        return detail
+
+    def list_characterization_results(
+        self,
+        dataset_id: str,
+        design_id: str,
+        query: CharacterizationResultBrowseQuery,
+    ) -> list[CharacterizationResultSummary]:
+        self._require_visible_dataset(dataset_id)
+        rows = list(self._repository.list_characterization_results(dataset_id, design_id))
+        filtered = rows
+        if query.search is not None:
+            token = query.search.casefold()
+            filtered = [
+                row
+                for row in filtered
+                if token in row.title.casefold()
+                or token in row.analysis_id.casefold()
+                or token in row.provenance_summary.casefold()
+            ]
+        if query.status is not None:
+            filtered = [row for row in filtered if row.status == query.status]
+        if query.analysis_id is not None:
+            normalized_analysis_id = query.analysis_id.casefold()
+            filtered = [
+                row for row in filtered if row.analysis_id.casefold() == normalized_analysis_id
+            ]
+        return filtered
+
+    def get_characterization_result(
+        self,
+        dataset_id: str,
+        design_id: str,
+        result_id: str,
+    ) -> CharacterizationResultDetail:
+        self._require_visible_dataset(dataset_id)
+        detail = self._repository.get_characterization_result(dataset_id, design_id, result_id)
+        if detail is None:
+            raise service_error(
+                404,
+                code="run_not_found",
+                category="not_found",
+                message="The requested characterization result is not available in the selected design scope.",
             )
         return detail
 

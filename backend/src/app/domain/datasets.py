@@ -12,6 +12,7 @@ TraceFamily = Literal["s_matrix", "y_matrix", "z_matrix"]
 TraceModeGroup = Literal["base", "sideband", "all"]
 TraceSourceKind = Literal["circuit_simulation", "layout_simulation", "measurement"]
 TraceStageKind = Literal["raw", "preprocess", "postprocess"]
+CharacterizationResultStatus = Literal["completed", "failed", "blocked"]
 
 
 @dataclass(frozen=True)
@@ -130,3 +131,61 @@ class TraceDetail:
     preview_payload: dict[str, object]
     payload_ref: TracePayloadRef | None
     result_handles: tuple[ResultHandleRef, ...]
+
+
+@dataclass(frozen=True)
+class CharacterizationResultSummary:
+    result_id: str
+    dataset_id: str
+    design_id: str
+    analysis_id: str
+    title: str
+    status: CharacterizationResultStatus
+    freshness_summary: str
+    provenance_summary: str
+    trace_count: int
+    artifact_count: int
+    updated_at: str
+
+
+@dataclass(frozen=True)
+class CharacterizationResultBrowseQuery:
+    search: str | None = None
+    status: CharacterizationResultStatus | None = None
+    analysis_id: str | None = None
+
+
+@dataclass(frozen=True)
+class CharacterizationDiagnostic:
+    severity: Literal["error", "warning", "info"]
+    code: str
+    message: str
+    blocking: bool
+
+
+@dataclass(frozen=True)
+class CharacterizationArtifactRef:
+    artifact_id: str
+    category: str
+    view_kind: Literal["table", "plot", "text", "json"]
+    title: str
+    payload_format: Literal["json", "markdown", "svg", "csv"]
+    payload_locator: str | None
+
+
+@dataclass(frozen=True)
+class CharacterizationResultDetail:
+    result_id: str
+    dataset_id: str
+    design_id: str
+    analysis_id: str
+    title: str
+    status: CharacterizationResultStatus
+    freshness_summary: str
+    provenance_summary: str
+    trace_count: int
+    updated_at: str
+    input_trace_ids: tuple[str, ...]
+    payload: dict[str, object]
+    diagnostics: tuple[CharacterizationDiagnostic, ...]
+    artifact_refs: tuple[CharacterizationArtifactRef, ...]

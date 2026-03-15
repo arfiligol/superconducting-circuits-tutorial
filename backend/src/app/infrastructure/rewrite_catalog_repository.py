@@ -17,6 +17,10 @@ from src.app.domain.circuit_definitions import (
     ValidationNotice,
 )
 from src.app.domain.datasets import (
+    CharacterizationArtifactRef,
+    CharacterizationDiagnostic,
+    CharacterizationResultDetail,
+    CharacterizationResultSummary,
     DatasetAllowedActions,
     DatasetDetail,
     DatasetProfileUpdate,
@@ -41,6 +45,8 @@ class InMemoryRewriteCatalogRepository:
         self._designs = _seed_designs()
         self._trace_summaries = _seed_trace_summaries()
         self._trace_details = _seed_trace_details()
+        self._characterization_results = _seed_characterization_results()
+        self._characterization_result_details = _seed_characterization_result_details()
         self._circuit_definitions = {
             definition.definition_id: definition for definition in _seed_circuit_definitions()
         }
@@ -97,6 +103,21 @@ class InMemoryRewriteCatalogRepository:
         trace_id: str,
     ) -> TraceDetail | None:
         return self._trace_details.get((dataset_id, design_id, trace_id))
+
+    def list_characterization_results(
+        self,
+        dataset_id: str,
+        design_id: str,
+    ) -> tuple[CharacterizationResultSummary, ...]:
+        return self._characterization_results.get((dataset_id, design_id), ())
+
+    def get_characterization_result(
+        self,
+        dataset_id: str,
+        design_id: str,
+        result_id: str,
+    ) -> CharacterizationResultDetail | None:
+        return self._characterization_result_details.get((dataset_id, design_id, result_id))
 
     def list_circuit_definitions(self) -> list[CircuitDefinitionSummary]:
         return [
@@ -657,6 +678,331 @@ def _seed_trace_details() -> dict[tuple[str, str, str], TraceDetail]:
                 chunk_shape=(76,),
             ),
             result_handles=(),
+        ),
+    }
+
+
+def _seed_characterization_results() -> dict[
+    tuple[str, str],
+    tuple[CharacterizationResultSummary, ...],
+]:
+    return {
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+        ): (
+            CharacterizationResultSummary(
+                result_id="char-fit-flux-a-01",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                analysis_id="admittance_extraction",
+                title="Flux Scan A admittance fit",
+                status="completed",
+                freshness_summary="Materialized 14 minutes ago",
+                provenance_summary="Measurement batch #4 + layout batch #2",
+                trace_count=2,
+                artifact_count=2,
+                updated_at="2026-03-14T11:12:00Z",
+            ),
+            CharacterizationResultSummary(
+                result_id="char-sideband-flux-a-02",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_a",
+                analysis_id="sideband_comparison",
+                title="Flux Scan A sideband comparison",
+                status="failed",
+                freshness_summary="Failed 6 minutes ago",
+                provenance_summary="Measurement phase trace only",
+                trace_count=1,
+                artifact_count=1,
+                updated_at="2026-03-14T11:20:00Z",
+            ),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_b",
+        ): (
+            CharacterizationResultSummary(
+                result_id="char-flux-b-screening",
+                dataset_id="fluxonium-2025-031",
+                design_id="design_flux_scan_b",
+                analysis_id="screening_summary",
+                title="Flux Scan B screening summary",
+                status="blocked",
+                freshness_summary="Awaiting compatible trace bundle",
+                provenance_summary="Single measurement trace only",
+                trace_count=1,
+                artifact_count=0,
+                updated_at="2026-03-14T09:54:00Z",
+            ),
+        ),
+        (
+            "resonator-chip-002",
+            "design_resonator_temp",
+        ): (
+            CharacterizationResultSummary(
+                result_id="char-resonator-temp-qi",
+                dataset_id="resonator-chip-002",
+                design_id="design_resonator_temp",
+                analysis_id="quality_factor_fit",
+                title="Temperature sweep quality factor fit",
+                status="completed",
+                freshness_summary="Materialized 2 hours ago",
+                provenance_summary="Measurement batch #12",
+                trace_count=1,
+                artifact_count=2,
+                updated_at="2026-03-13T18:00:00Z",
+            ),
+        ),
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+        ): (
+            CharacterizationResultSummary(
+                result_id="char-coupler-detuning-chi",
+                dataset_id="transmon-coupler-014",
+                design_id="design_coupler_detuning",
+                analysis_id="coupler_shift_fit",
+                title="Coupler detuning chi fit",
+                status="completed",
+                freshness_summary="Materialized 38 minutes ago",
+                provenance_summary="Measurement + simulation cross-check",
+                trace_count=2,
+                artifact_count=3,
+                updated_at="2026-03-14T09:35:00Z",
+            ),
+        ),
+    }
+
+
+def _seed_characterization_result_details() -> dict[
+    tuple[str, str, str],
+    CharacterizationResultDetail,
+]:
+    return {
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+            "char-fit-flux-a-01",
+        ): CharacterizationResultDetail(
+            result_id="char-fit-flux-a-01",
+            dataset_id="fluxonium-2025-031",
+            design_id="design_flux_scan_a",
+            analysis_id="admittance_extraction",
+            title="Flux Scan A admittance fit",
+            status="completed",
+            freshness_summary="Materialized 14 minutes ago",
+            provenance_summary="Measurement batch #4 + layout batch #2",
+            trace_count=2,
+            updated_at="2026-03-14T11:12:00Z",
+            input_trace_ids=("trace_flux_a_measurement", "trace_flux_a_layout"),
+            payload={
+                "fit_table": [
+                    {"parameter": "f01", "value": 5.742, "unit": "GHz"},
+                    {"parameter": "alpha", "value": -0.238, "unit": "GHz"},
+                ],
+                "quality_flags": {
+                    "residual_rms": 0.012,
+                    "fit_status": "converged",
+                },
+            },
+            diagnostics=(
+                CharacterizationDiagnostic(
+                    severity="info",
+                    code="fit_residual_checked",
+                    message="Residual RMS stays within the characterization threshold.",
+                    blocking=False,
+                ),
+            ),
+            artifact_refs=(
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-fit-table-flux-a-01",
+                    category="fit_table",
+                    view_kind="table",
+                    title="Fit table",
+                    payload_format="json",
+                    payload_locator="artifacts/characterization/flux-a-fit-table.json",
+                ),
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-fit-plot-flux-a-01",
+                    category="plot",
+                    view_kind="plot",
+                    title="Admittance overlay",
+                    payload_format="svg",
+                    payload_locator="artifacts/characterization/flux-a-fit-plot.svg",
+                ),
+            ),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+            "char-sideband-flux-a-02",
+        ): CharacterizationResultDetail(
+            result_id="char-sideband-flux-a-02",
+            dataset_id="fluxonium-2025-031",
+            design_id="design_flux_scan_a",
+            analysis_id="sideband_comparison",
+            title="Flux Scan A sideband comparison",
+            status="failed",
+            freshness_summary="Failed 6 minutes ago",
+            provenance_summary="Measurement phase trace only",
+            trace_count=1,
+            updated_at="2026-03-14T11:20:00Z",
+            input_trace_ids=("trace_flux_a_phase",),
+            payload={
+                "comparison_window": {"center": 5.81, "unit": "GHz"},
+                "failure_summary": "Sideband peaks fell below the comparison threshold.",
+            },
+            diagnostics=(
+                CharacterizationDiagnostic(
+                    severity="error",
+                    code="sideband_peak_missing",
+                    message="No stable sideband peak was detected in the selected trace bundle.",
+                    blocking=True,
+                ),
+            ),
+            artifact_refs=(
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-sideband-report-flux-a-02",
+                    category="report",
+                    view_kind="text",
+                    title="Failure report",
+                    payload_format="markdown",
+                    payload_locator="artifacts/characterization/flux-a-sideband-report.md",
+                ),
+            ),
+        ),
+        (
+            "fluxonium-2025-031",
+            "design_flux_scan_b",
+            "char-flux-b-screening",
+        ): CharacterizationResultDetail(
+            result_id="char-flux-b-screening",
+            dataset_id="fluxonium-2025-031",
+            design_id="design_flux_scan_b",
+            analysis_id="screening_summary",
+            title="Flux Scan B screening summary",
+            status="blocked",
+            freshness_summary="Awaiting compatible trace bundle",
+            provenance_summary="Single measurement trace only",
+            trace_count=1,
+            updated_at="2026-03-14T09:54:00Z",
+            input_trace_ids=("trace_flux_b_measurement",),
+            payload={
+                "blocking_reason": "At least one comparison trace is required before screening can produce persisted artifacts.",
+            },
+            diagnostics=(
+                CharacterizationDiagnostic(
+                    severity="warning",
+                    code="trace_selection_incomplete",
+                    message="The selected design scope does not yet expose a compatible comparison pair.",
+                    blocking=True,
+                ),
+            ),
+            artifact_refs=(),
+        ),
+        (
+            "resonator-chip-002",
+            "design_resonator_temp",
+            "char-resonator-temp-qi",
+        ): CharacterizationResultDetail(
+            result_id="char-resonator-temp-qi",
+            dataset_id="resonator-chip-002",
+            design_id="design_resonator_temp",
+            analysis_id="quality_factor_fit",
+            title="Temperature sweep quality factor fit",
+            status="completed",
+            freshness_summary="Materialized 2 hours ago",
+            provenance_summary="Measurement batch #12",
+            trace_count=1,
+            updated_at="2026-03-13T18:00:00Z",
+            input_trace_ids=("trace_res_temp_measurement",),
+            payload={
+                "fit_table": [
+                    {"parameter": "Qi_low_temp", "value": 18200, "unit": ""},
+                    {"parameter": "Qi_high_temp", "value": 13100, "unit": ""},
+                ],
+            },
+            diagnostics=(),
+            artifact_refs=(
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-resonator-temp-table",
+                    category="fit_table",
+                    view_kind="table",
+                    title="Quality factor table",
+                    payload_format="json",
+                    payload_locator="artifacts/characterization/resonator-temp-fit-table.json",
+                ),
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-resonator-temp-plot",
+                    category="plot",
+                    view_kind="plot",
+                    title="Temperature fit plot",
+                    payload_format="svg",
+                    payload_locator="artifacts/characterization/resonator-temp-fit-plot.svg",
+                ),
+            ),
+        ),
+        (
+            "transmon-coupler-014",
+            "design_coupler_detuning",
+            "char-coupler-detuning-chi",
+        ): CharacterizationResultDetail(
+            result_id="char-coupler-detuning-chi",
+            dataset_id="transmon-coupler-014",
+            design_id="design_coupler_detuning",
+            analysis_id="coupler_shift_fit",
+            title="Coupler detuning chi fit",
+            status="completed",
+            freshness_summary="Materialized 38 minutes ago",
+            provenance_summary="Measurement + simulation cross-check",
+            trace_count=2,
+            updated_at="2026-03-14T09:35:00Z",
+            input_trace_ids=("trace_coupler_measurement", "trace_coupler_simulation"),
+            payload={
+                "fit_table": [
+                    {"parameter": "chi", "value": 2.31, "unit": "MHz"},
+                    {"parameter": "detuning_zero", "value": -0.247, "unit": "V"},
+                ],
+                "cross_check": {
+                    "measurement_peak": 10.8,
+                    "simulation_peak": 10.7,
+                },
+            },
+            diagnostics=(
+                CharacterizationDiagnostic(
+                    severity="info",
+                    code="simulation_cross_check_passed",
+                    message="Simulation-backed cross-check stayed within tolerance.",
+                    blocking=False,
+                ),
+            ),
+            artifact_refs=(
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-coupler-fit-table",
+                    category="fit_table",
+                    view_kind="table",
+                    title="Chi fit table",
+                    payload_format="json",
+                    payload_locator="artifacts/characterization/coupler-fit-table.json",
+                ),
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-coupler-fit-plot",
+                    category="plot",
+                    view_kind="plot",
+                    title="Detuning fit plot",
+                    payload_format="svg",
+                    payload_locator="artifacts/characterization/coupler-fit-plot.svg",
+                ),
+                CharacterizationArtifactRef(
+                    artifact_id="artifact-coupler-report",
+                    category="report",
+                    view_kind="text",
+                    title="Research summary",
+                    payload_format="markdown",
+                    payload_locator="artifacts/characterization/coupler-report.md",
+                ),
+            ),
         ),
     }
 
