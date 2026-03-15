@@ -10,6 +10,22 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
+def clear_session_cookies() -> None:
+    client.cookies.clear()
+
+
+def _login() -> None:
+    response = client.post(
+        "/session/login",
+        json={
+            "email": "rewrite.local@example.com",
+            "password": "rewrite-local-password",
+        },
+    )
+    assert response.status_code == 200
+
+
+@pytest.fixture(autouse=True)
 def reset_app_state() -> None:
     reset_runtime_state()
 
@@ -124,6 +140,7 @@ def test_get_characterization_result_returns_detail_only_payload() -> None:
 
 
 def test_characterization_result_routes_reject_invisible_dataset() -> None:
+    _login()
     switch_response = client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
     assert switch_response.status_code == 200
 

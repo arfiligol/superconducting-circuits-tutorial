@@ -10,6 +10,7 @@ from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteA
 from src.app.infrastructure.rewrite_processor_runtime_repository import (
     InMemoryProcessorRuntimeRepository,
 )
+from src.app.infrastructure.session_jwt_transport import SessionJwtTransport
 from src.app.infrastructure.rewrite_task_audit_repository import InMemoryTaskAuditRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 from src.app.infrastructure.rewrite_execution_runtime import RewriteExecutionRuntime
@@ -106,9 +107,13 @@ def get_schemdraw_render_service() -> SchemdrawRenderService:
 
 @lru_cache(maxsize=1)
 def get_session_service() -> SessionService:
+    settings = get_settings()
     return SessionService(
         repository=get_rewrite_app_state_repository(),
         dataset_repository=get_rewrite_catalog_repository(),
+        token_transport=SessionJwtTransport(
+            secret=settings.session_secret.get_secret_value(),
+        ),
     )
 
 

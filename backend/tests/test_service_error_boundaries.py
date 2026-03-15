@@ -4,6 +4,7 @@ from src.app.domain.datasets import CharacterizationTaggingRequest
 from src.app.domain.tasks import TaskSubmissionDraft
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
+from src.app.infrastructure.session_jwt_transport import SessionJwtTransport
 from src.app.services.circuit_definition_service import CircuitDefinitionService
 from src.app.services.dataset_service import DatasetService
 from src.app.services.service_errors import ServiceError
@@ -75,13 +76,20 @@ def test_dataset_service_raises_conflict_for_characterization_tagging_collision(
 
 
 def test_session_service_raises_framework_agnostic_error_for_missing_active_dataset() -> None:
+    repository = InMemoryRewriteAppStateRepository()
+    token_transport = SessionJwtTransport(secret="test-session-secret-2026")
     service = SessionService(
-        repository=InMemoryRewriteAppStateRepository(),
+        repository=repository,
         dataset_repository=InMemoryRewriteCatalogRepository(),
+        token_transport=token_transport,
+    )
+    login_result = service.login(
+        email="rewrite.local@example.com",
+        password="rewrite-local-password",
     )
 
     with pytest.raises(ServiceError) as exc_info:
-        service.set_active_dataset("missing-dataset")
+        service.set_active_dataset(login_result.access_token, "missing-dataset")
 
     assert not isinstance(exc_info.value, HTTPException)
     assert exc_info.value.status_code == 404

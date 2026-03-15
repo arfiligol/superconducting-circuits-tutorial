@@ -92,6 +92,12 @@ class InMemoryRewriteAppStateRepository:
             "ws-device-lab": "fluxonium-2025-031",
             "ws-modeling": "transmon-coupler-014",
         }
+        self._auth_accounts = {
+            "rewrite.local@example.com": "rewrite-local-password",
+        }
+        self._authenticated_sessions: dict[str, SessionState] = {}
+        self._session_last_active_dataset_ids: dict[str, dict[str, str]] = {}
+        self._next_transport_session_id = 1
         self._tasks = (
             {task.task_id: task for task in build_seed_tasks()} if include_task_scaffold else {}
         )
@@ -101,6 +107,112 @@ class InMemoryRewriteAppStateRepository:
 
     def get_session_state(self) -> SessionState:
         return self._session_state
+
+    def create_authenticated_session(
+        self,
+        *,
+        email: str,
+        password: str,
+    ) -> SessionState | None:
+        normalized_email = email.strip().lower()
+        if self._auth_accounts.get(normalized_email) != password:
+            return None
+
+        session_id = f"rewrite-auth-session-{self._next_transport_session_id}"
+        self._next_transport_session_id += 1
+        session_state = replace(
+            self._session_state,
+            session_id=session_id,
+            auth_state="authenticated",
+            auth_mode="jwt_cookie",
+        )
+        self._authenticated_sessions[session_id] = session_state
+        self._session_last_active_dataset_ids[session_id] = dict(self._last_active_dataset_ids)
+        self._session_state = session_state
+        return session_state
+
+    def get_authenticated_session_state(self, session_id: str) -> SessionState | None:
+        return self._authenticated_sessions.get(session_id)
+
+    def invalidate_authenticated_session(self, session_id: str) -> bool:
+        removed = self._authenticated_sessions.pop(session_id, None)
+        self._session_last_active_dataset_ids.pop(session_id, None)
+        return removed is not None
+
+    def set_authenticated_active_workspace_id(
+        self,
+        session_id: str,
+        workspace_id: str,
+    ) -> SessionState | None:
+        session_state = self._authenticated_sessions.get(session_id)
+        if session_state is None:
+            return None
+        current_workspace_id = session_state.workspace_id
+        session_dataset_state = self._session_last_active_dataset_ids.setdefault(
+            session_id,
+            dict(self._last_active_dataset_ids),
+        )
+        if session_state.active_dataset_id is not None:
+            session_dataset_state[current_workspace_id] = session_state.active_dataset_id
+
+        membership = _membership_for_workspace(session_state.memberships, workspace_id)
+        if membership is None:
+            return session_state
+
+        memberships = tuple(
+            WorkspaceMembership(
+                workspace_id=item.workspace_id,
+                slug=item.slug,
+                display_name=item.display_name,
+                role=item.role,
+                default_task_scope=item.default_task_scope,
+                is_active=item.workspace_id == workspace_id,
+                allowed_actions=item.allowed_actions,
+            )
+            for item in session_state.memberships
+        )
+        updated_state = replace(
+            session_state,
+            workspace_id=membership.workspace_id,
+            workspace_slug=membership.slug,
+            workspace_display_name=membership.display_name,
+            workspace_role=membership.role,
+            default_task_scope=membership.default_task_scope,
+            memberships=memberships,
+            active_dataset_id=None,
+        )
+        self._authenticated_sessions[session_id] = updated_state
+        self._session_state = updated_state
+        return updated_state
+
+    def set_authenticated_active_dataset_id(
+        self,
+        session_id: str,
+        dataset_id: str | None,
+    ) -> SessionState | None:
+        session_state = self._authenticated_sessions.get(session_id)
+        if session_state is None:
+            return None
+
+        updated_state = replace(session_state, active_dataset_id=dataset_id)
+        self._authenticated_sessions[session_id] = updated_state
+        self._session_state = updated_state
+        session_dataset_state = self._session_last_active_dataset_ids.setdefault(
+            session_id,
+            dict(self._last_active_dataset_ids),
+        )
+        if dataset_id is None:
+            session_dataset_state.pop(updated_state.workspace_id, None)
+        else:
+            session_dataset_state[updated_state.workspace_id] = dataset_id
+        return updated_state
+
+    def get_authenticated_last_active_dataset_id(
+        self,
+        session_id: str,
+        workspace_id: str,
+    ) -> str | None:
+        return self._session_last_active_dataset_ids.get(session_id, {}).get(workspace_id)
 
     def set_active_workspace_id(self, workspace_id: str) -> SessionState:
         current_workspace_id = self._session_state.workspace_id

@@ -1,12 +1,14 @@
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Literal, Protocol
 
 from src.app.domain.datasets import DatasetDetail
 from src.app.domain.session import (
     ActiveDatasetContext,
     AppSession,
     DatasetResolution,
+    SessionAuth,
     SessionCapabilities,
+    SessionLoginResult,
     SessionState,
     WorkspaceAllowedActions,
     WorkspaceContext,
@@ -15,15 +17,43 @@ from src.app.domain.session import (
 )
 from src.app.services.service_errors import service_error
 
+TokenVerificationStatus = Literal["valid", "expired", "invalid"]
+
+
+class VerifiedSessionToken(Protocol):
+    status: TokenVerificationStatus
+    session_id: str | None
+
 
 class SessionRepository(Protocol):
-    def get_session_state(self) -> SessionState: ...
+    def create_authenticated_session(
+        self,
+        *,
+        email: str,
+        password: str,
+    ) -> SessionState | None: ...
 
-    def set_active_workspace_id(self, workspace_id: str) -> SessionState: ...
+    def get_authenticated_session_state(self, session_id: str) -> SessionState | None: ...
 
-    def set_active_dataset_id(self, dataset_id: str | None) -> SessionState: ...
+    def invalidate_authenticated_session(self, session_id: str) -> bool: ...
 
-    def get_last_active_dataset_id(self, workspace_id: str) -> str | None: ...
+    def set_authenticated_active_workspace_id(
+        self,
+        session_id: str,
+        workspace_id: str,
+    ) -> SessionState | None: ...
+
+    def set_authenticated_active_dataset_id(
+        self,
+        session_id: str,
+        dataset_id: str | None,
+    ) -> SessionState | None: ...
+
+    def get_authenticated_last_active_dataset_id(
+        self,
+        session_id: str,
+        workspace_id: str,
+    ) -> str | None: ...
 
     def get_default_dataset_id(self, workspace_id: str) -> str | None: ...
 
@@ -34,21 +64,66 @@ class SessionDatasetRepository(Protocol):
     def list_dataset_details(self) -> Sequence[DatasetDetail]: ...
 
 
+class SessionTokenTransport(Protocol):
+    def issue_token(self, session_id: str) -> str: ...
+
+    def verify_token(self, token: str) -> VerifiedSessionToken: ...
+
+
 class SessionService:
     def __init__(
         self,
         repository: SessionRepository,
         dataset_repository: SessionDatasetRepository,
+        token_transport: SessionTokenTransport,
     ) -> None:
         self._repository = repository
         self._dataset_repository = dataset_repository
+        self._token_transport = token_transport
 
-    def get_session(self) -> AppSession:
-        state = self._require_authenticated_session()
-        return self._build_session(state)
+    def get_session(self, session_token: str | None) -> AppSession:
+        state, auth_state, auth_reason = self._resolve_session_context(session_token)
+        if state is None:
+            return _build_public_session(auth_state=auth_state, auth_reason=auth_reason)
+        return self._build_authenticated_session(state)
 
-    def switch_active_workspace(self, workspace_id: str) -> WorkspaceSwitchResult:
-        current_state = self._require_authenticated_session()
+    def login(
+        self,
+        *,
+        email: str,
+        password: str,
+    ) -> SessionLoginResult:
+        state = self._repository.create_authenticated_session(
+            email=email,
+            password=password,
+        )
+        if state is None:
+            raise service_error(
+                401,
+                code="auth_invalid_credentials",
+                category="auth_required",
+                message="The supplied email or password is invalid.",
+            )
+
+        access_token = self._token_transport.issue_token(state.session_id)
+        return SessionLoginResult(
+            session=self._build_authenticated_session(state),
+            access_token=access_token,
+        )
+
+    def logout(self, session_token: str | None) -> AppSession:
+        if session_token is not None:
+            verified = self._token_transport.verify_token(session_token)
+            if verified.status == "valid" and verified.session_id is not None:
+                self._repository.invalidate_authenticated_session(verified.session_id)
+        return _build_public_session(auth_state="anonymous", auth_reason=None)
+
+    def switch_active_workspace(
+        self,
+        session_token: str | None,
+        workspace_id: str,
+    ) -> WorkspaceSwitchResult:
+        current_state = self._require_authenticated_session(session_token)
         target_membership = _membership_for_workspace(current_state, workspace_id)
         if target_membership is None:
             raise service_error(
@@ -59,22 +134,44 @@ class SessionService:
             )
 
         previous_dataset_id = current_state.active_dataset_id
-        switched_state = self._repository.set_active_workspace_id(workspace_id)
+        switched_state = self._repository.set_authenticated_active_workspace_id(
+            current_state.session_id,
+            workspace_id,
+        )
+        if switched_state is None:
+            raise _auth_session_expired_error()
+
         resolved_dataset_id, resolution = self._resolve_workspace_dataset(
             state=switched_state,
             previous_dataset_id=previous_dataset_id,
         )
-        final_state = self._repository.set_active_dataset_id(resolved_dataset_id)
+        final_state = self._repository.set_authenticated_active_dataset_id(
+            switched_state.session_id,
+            resolved_dataset_id,
+        )
+        if final_state is None:
+            raise _auth_session_expired_error()
+
         return WorkspaceSwitchResult(
-            session=self._build_session(final_state),
+            session=self._build_authenticated_session(final_state),
             active_dataset_resolution=resolution,
             detached_task_ids=(),
         )
 
-    def set_active_dataset(self, dataset_id: str | None) -> AppSession:
-        state = self._require_authenticated_session()
+    def set_active_dataset(
+        self,
+        session_token: str | None,
+        dataset_id: str | None,
+    ) -> AppSession:
+        state = self._require_authenticated_session(session_token)
         if dataset_id is None:
-            return self._build_session(self._repository.set_active_dataset_id(None))
+            cleared_state = self._repository.set_authenticated_active_dataset_id(
+                state.session_id,
+                None,
+            )
+            if cleared_state is None:
+                raise _auth_session_expired_error()
+            return self._build_authenticated_session(cleared_state)
 
         dataset = self._dataset_repository.get_dataset(dataset_id)
         if dataset is None:
@@ -99,7 +196,13 @@ class SessionService:
                 message="The selected dataset is not visible in the active workspace.",
             )
 
-        return self._build_session(self._repository.set_active_dataset_id(dataset_id))
+        updated_state = self._repository.set_authenticated_active_dataset_id(
+            state.session_id,
+            dataset_id,
+        )
+        if updated_state is None:
+            raise _auth_session_expired_error()
+        return self._build_authenticated_session(updated_state)
 
     def _resolve_workspace_dataset(
         self,
@@ -116,7 +219,10 @@ class SessionService:
             ):
                 return previous_dataset_id, "preserved"
 
-        last_active_dataset_id = self._repository.get_last_active_dataset_id(state.workspace_id)
+        last_active_dataset_id = self._repository.get_authenticated_last_active_dataset_id(
+            state.session_id,
+            state.workspace_id,
+        )
         if last_active_dataset_id is not None:
             rebound_dataset = self._dataset_repository.get_dataset(last_active_dataset_id)
             if rebound_dataset is not None and _dataset_is_visible_to_state(
@@ -149,15 +255,7 @@ class SessionService:
             return None, "cleared"
         return visible_datasets[0].dataset_id, "rebound"
 
-    def _build_session(self, state: SessionState) -> AppSession:
-        if state.auth_state != "authenticated" or state.user is None:
-            raise service_error(
-                401,
-                code="auth_required",
-                category="auth_required",
-                message="The current request requires an authenticated session.",
-            )
-
+    def _build_authenticated_session(self, state: SessionState) -> AppSession:
         membership = _membership_for_workspace(state, state.workspace_id)
         if membership is None:
             raise service_error(
@@ -196,8 +294,11 @@ class SessionService:
         capabilities = _materialize_capabilities(state, membership)
         return AppSession(
             session_id=state.session_id,
-            auth_state=state.auth_state,
-            auth_mode=state.auth_mode,
+            auth=SessionAuth(
+                state="authenticated",
+                mode="jwt_cookie",
+                reason=None,
+            ),
             user=state.user,
             memberships=tuple(
                 _with_active_membership_flag(
@@ -218,16 +319,89 @@ class SessionService:
             capabilities=capabilities,
         )
 
-    def _require_authenticated_session(self) -> SessionState:
-        state = self._repository.get_session_state()
-        if state.auth_state != "authenticated" or state.user is None:
+    def _require_authenticated_session(self, session_token: str | None) -> SessionState:
+        state, auth_state, _auth_reason = self._resolve_session_context(session_token)
+        if auth_state == "anonymous":
             raise service_error(
                 401,
                 code="auth_required",
                 category="auth_required",
                 message="The current request requires an authenticated session.",
             )
+        if auth_state == "degraded" or state is None or state.user is None:
+            raise _auth_session_expired_error()
         return state
+
+    def _resolve_session_context(
+        self,
+        session_token: str | None,
+    ) -> tuple[SessionState | None, Literal["authenticated", "anonymous", "degraded"], str | None]:
+        if session_token is None:
+            return None, "anonymous", None
+
+        verified = self._token_transport.verify_token(session_token)
+        if verified.status == "invalid":
+            return None, "degraded", "session_invalid"
+        if verified.status == "expired" or verified.session_id is None:
+            return None, "degraded", "session_expired"
+
+        state = self._repository.get_authenticated_session_state(verified.session_id)
+        if state is None or state.user is None or state.auth_state != "authenticated":
+            return None, "degraded", "session_expired"
+        return state, "authenticated", None
+
+
+def _build_public_session(
+    *,
+    auth_state: Literal["anonymous", "degraded"],
+    auth_reason: str | None,
+) -> AppSession:
+    return AppSession(
+        session_id=None,
+        auth=SessionAuth(
+            state=auth_state,
+            mode="jwt_cookie",
+            reason=auth_reason,
+        ),
+        user=None,
+        memberships=(),
+        workspace=WorkspaceContext(
+            workspace_id=None,
+            slug=None,
+            display_name=None,
+            role=None,
+            default_task_scope=None,
+            allowed_actions=WorkspaceAllowedActions(
+                switch_to=False,
+                activate_dataset=False,
+                invite_members=False,
+                remove_members=False,
+                transfer_owner=False,
+            ),
+        ),
+        active_dataset=None,
+        capabilities=SessionCapabilities(
+            can_switch_workspace=False,
+            can_switch_dataset=False,
+            can_invite_members=False,
+            can_remove_members=False,
+            can_transfer_workspace_owner=False,
+            can_submit_tasks=False,
+            can_manage_workspace_tasks=False,
+            can_manage_definitions=False,
+            can_manage_datasets=False,
+            can_view_audit_logs=False,
+        ),
+    )
+
+
+def _auth_session_expired_error():
+    return service_error(
+        401,
+        code="auth_session_expired",
+        category="auth_required",
+        message="The current session could not be restored. Please sign in again.",
+    )
 
 
 def _with_active_membership_flag(

@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from src.app.domain.audit import AuditRecord
@@ -5,6 +6,22 @@ from src.app.infrastructure.runtime import get_task_audit_repository
 from src.app.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def clear_session_cookies() -> None:
+    client.cookies.clear()
+
+
+def _login() -> None:
+    response = client.post(
+        "/session/login",
+        json={
+            "email": "rewrite.local@example.com",
+            "password": "rewrite-local-password",
+        },
+    )
+    assert response.status_code == 200
 
 
 def test_audit_list_returns_workspace_scoped_rows_and_meta() -> None:
@@ -111,6 +128,7 @@ def test_audit_export_summary_returns_read_surface() -> None:
 
 
 def test_audit_query_denies_member_without_governance_permission() -> None:
+    _login()
     switch_response = client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
     assert switch_response.status_code == 200
 

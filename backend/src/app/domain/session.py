@@ -5,6 +5,7 @@ from src.app.domain.datasets import DatasetLifecycleState, DatasetStatus, Datase
 
 AuthState = Literal["authenticated", "anonymous", "degraded"]
 AuthMode = Literal["jwt_cookie", "local_stub"]
+AuthReason = Literal["session_expired", "session_invalid"]
 PlatformRole = Literal["admin", "user"]
 WorkspaceRole = Literal["owner", "member", "viewer"]
 TaskScope = Literal["workspace", "owned"]
@@ -54,6 +55,13 @@ class SessionCapabilities:
 
 
 @dataclass(frozen=True)
+class SessionAuth:
+    state: AuthState
+    mode: AuthMode
+    reason: AuthReason | None
+
+
+@dataclass(frozen=True)
 class SessionState:
     session_id: str
     auth_state: AuthState
@@ -83,19 +91,18 @@ class ActiveDatasetContext:
 
 @dataclass(frozen=True)
 class WorkspaceContext:
-    workspace_id: str
-    slug: str
-    display_name: str
-    role: WorkspaceRole
-    default_task_scope: TaskScope
+    workspace_id: str | None
+    slug: str | None
+    display_name: str | None
+    role: WorkspaceRole | None
+    default_task_scope: TaskScope | None
     allowed_actions: WorkspaceAllowedActions
 
 
 @dataclass(frozen=True)
 class AppSession:
-    session_id: str
-    auth_state: AuthState
-    auth_mode: AuthMode
+    session_id: str | None
+    auth: SessionAuth
     user: SessionUser | None
     memberships: tuple[WorkspaceMembership, ...]
     workspace: WorkspaceContext
@@ -108,3 +115,9 @@ class WorkspaceSwitchResult:
     session: AppSession
     active_dataset_resolution: DatasetResolution
     detached_task_ids: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class SessionLoginResult:
+    session: AppSession
+    access_token: str

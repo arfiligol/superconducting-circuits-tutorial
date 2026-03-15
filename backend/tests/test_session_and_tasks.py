@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 from src.app.domain.tasks import TaskLifecycleUpdate, TaskSubmissionDraft
 from src.app.infrastructure.runtime import (
-    get_rewrite_app_state_repository,
     get_rewrite_catalog_repository,
     get_task_audit_repository,
     get_task_execution_runtime,
@@ -19,19 +18,65 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def reset_app_state() -> None:
     reset_runtime_state()
+    client.cookies.clear()
 
 
-def test_get_session_returns_canonical_workspace_surface() -> None:
+def _login() -> dict[str, object]:
+    response = client.post(
+        "/session/login",
+        json={
+            "email": "rewrite.local@example.com",
+            "password": "rewrite-local-password",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    return payload["data"]
+
+
+def test_get_session_returns_anonymous_baseline_without_cookie() -> None:
     response = client.get("/session")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"] is True
     session = payload["data"]
-    assert session["session_id"] == "rewrite-local-session"
+    assert session["session_id"] is None
+    assert session["auth"] == {
+        "state": "anonymous",
+        "mode": "jwt_cookie",
+        "reason": None,
+    }
+    assert session["user"] is None
+    assert session["workspace"]["id"] is None
+    assert session["workspace"]["role"] is None
+    assert session["workspace"]["default_task_scope"] is None
+    assert session["workspace"]["memberships"] == []
+    assert session["active_dataset"] is None
+    assert session["capabilities"] == {
+        "can_switch_workspace": False,
+        "can_switch_dataset": False,
+        "can_invite_members": False,
+        "can_remove_members": False,
+        "can_transfer_workspace_owner": False,
+        "can_submit_tasks": False,
+        "can_manage_workspace_tasks": False,
+        "can_manage_definitions": False,
+        "can_manage_datasets": False,
+        "can_view_audit_logs": False,
+    }
+    assert "memberships" not in session
+    assert payload["meta"]["memberships_count"] == 0
+
+
+def test_login_returns_canonical_authenticated_workspace_surface() -> None:
+    session = _login()
+
     assert session["auth"] == {
         "state": "authenticated",
-        "mode": "local_stub",
+        "mode": "jwt_cookie",
+        "reason": None,
     }
     assert session["user"] == {
         "id": "researcher-01",
@@ -57,11 +102,46 @@ def test_get_session_returns_canonical_workspace_surface() -> None:
         "can_manage_datasets": True,
         "can_view_audit_logs": True,
     }
-    assert "memberships" not in session
-    assert payload["meta"]["memberships_count"] == 2
+
+    follow_up = client.get("/session")
+    assert follow_up.status_code == 200
+    assert follow_up.json()["data"]["auth"]["state"] == "authenticated"
+
+
+def test_login_rejects_invalid_credentials() -> None:
+    response = client.post(
+        "/session/login",
+        json={
+            "email": "rewrite.local@example.com",
+            "password": "wrong-password",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "auth_invalid_credentials"
+    assert client.get("/session").json()["data"]["auth"]["state"] == "anonymous"
+
+
+def test_logout_clears_session_continuity() -> None:
+    _login()
+
+    response = client.post("/session/logout")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["auth"] == {
+        "state": "anonymous",
+        "mode": "jwt_cookie",
+        "reason": None,
+    }
+    assert payload["data"]["user"] is None
+    assert client.get("/session").json()["data"]["auth"]["state"] == "anonymous"
 
 
 def test_patch_session_active_workspace_rebinds_dataset_and_capabilities() -> None:
+    _login()
     response = client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
 
     assert response.status_code == 200
@@ -76,6 +156,7 @@ def test_patch_session_active_workspace_rebinds_dataset_and_capabilities() -> No
 
 
 def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> None:
+    _login()
     response = client.patch("/session/active-dataset", json={"dataset_id": "transmon-coupler-014"})
 
     assert response.status_code == 403
@@ -85,6 +166,7 @@ def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> Non
 
 
 def test_patch_session_active_dataset_can_clear_context() -> None:
+    _login()
     response = client.patch("/session/active-dataset", json={"dataset_id": None})
 
     assert response.status_code == 200
@@ -94,14 +176,8 @@ def test_patch_session_active_dataset_can_clear_context() -> None:
     assert payload["data"]["capabilities"]["can_switch_dataset"] is True
 
 
-def test_get_session_requires_authenticated_session() -> None:
-    app_state_repository = get_rewrite_app_state_repository()
-    app_state_repository.override_session_state(
-        auth_state="anonymous",
-        user=None,
-    )
-
-    response = client.get("/session")
+def test_session_mutations_require_authenticated_session() -> None:
+    response = client.patch("/session/active-dataset", json={"dataset_id": None})
 
     assert response.status_code == 401
     assert response.json()["ok"] is False
@@ -109,11 +185,40 @@ def test_get_session_requires_authenticated_session() -> None:
     assert response.json()["error"]["category"] == "auth_required"
 
 
+def test_get_session_returns_degraded_when_continuity_cannot_be_restored() -> None:
+    _login()
+    reset_runtime_state()
+
+    response = client.get("/session")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["auth"] == {
+        "state": "degraded",
+        "mode": "jwt_cookie",
+        "reason": "session_expired",
+    }
+    assert payload["data"]["workspace"]["memberships"] == []
+    assert payload["data"]["capabilities"]["can_submit_tasks"] is False
+
+
+def test_session_mutations_reject_degraded_continuity() -> None:
+    _login()
+    reset_runtime_state()
+
+    response = client.patch("/session/active-dataset", json={"dataset_id": None})
+
+    assert response.status_code == 401
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "auth_session_expired"
+    assert response.json()["error"]["category"] == "auth_required"
+
+
 def test_get_session_requires_context_rebind_when_active_dataset_is_archived() -> None:
-    app_state_repository = get_rewrite_app_state_repository()
+    _login()
     catalog_repository = get_rewrite_catalog_repository()
     catalog_repository.set_dataset_lifecycle_state("fluxonium-2025-031", "archived")
-    app_state_repository.override_session_state(active_dataset_id="fluxonium-2025-031")
 
     response = client.get("/session")
 
@@ -124,6 +229,7 @@ def test_get_session_requires_context_rebind_when_active_dataset_is_archived() -
 
 
 def test_switch_workspace_can_clear_active_dataset_when_target_has_no_visible_dataset() -> None:
+    _login()
     catalog_repository = get_rewrite_catalog_repository()
     catalog_repository.set_dataset_lifecycle_state("transmon-coupler-014", "archived")
 
@@ -138,6 +244,7 @@ def test_switch_workspace_can_clear_active_dataset_when_target_has_no_visible_da
 
 
 def test_switch_workspace_rejects_missing_membership() -> None:
+    _login()
     response = client.patch("/session/active-workspace", json={"workspace_id": "ws-missing"})
 
     assert response.status_code == 403
@@ -464,6 +571,7 @@ def test_submit_simulation_task_requires_definition_id() -> None:
 
 
 def test_submit_post_processing_task_requires_dataset_context() -> None:
+    _login()
     cleared = client.patch("/session/active-dataset", json={"dataset_id": None})
     assert cleared.status_code == 200
 

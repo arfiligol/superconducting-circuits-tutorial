@@ -3,28 +3,35 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
 
 from src.app.domain.session import (
     ActiveDatasetContext,
     AppSession,
+    SessionLoginResult,
     WorkspaceMembership,
     WorkspaceSwitchResult,
 )
 from src.app.infrastructure.runtime import get_session_service
+from src.app.infrastructure.session_jwt_transport import (
+    DEFAULT_SESSION_TOKEN_LIFETIME_SECONDS,
+    SESSION_COOKIE_NAME,
+)
 from src.app.services.service_errors import ServiceError, service_error
 from src.app.services.session_service import SessionService
+from src.app.settings import get_settings
 
 router = APIRouter(prefix="/session", tags=["session"])
 
 
 @router.get("")
 def get_session(
+    request: Request,
     session_service: Annotated[SessionService, Depends(get_session_service)],
 ) -> JSONResponse:
     try:
-        session = session_service.get_session()
+        session = session_service.get_session(_session_token_from_request(request))
     except ServiceError as exc:
         return _service_error_response(exc)
     return _success_response(
@@ -33,14 +40,54 @@ def get_session(
     )
 
 
+@router.post("/login")
+def login(
+    payload: Annotated[object, Body(...)],
+    session_service: Annotated[SessionService, Depends(get_session_service)],
+) -> JSONResponse:
+    try:
+        email, password = _parse_login_payload(payload)
+        result = session_service.login(email=email, password=password)
+    except ServiceError as exc:
+        return _service_error_response(exc)
+
+    response = _success_response(
+        data=_serialize_session(result.session),
+        meta={
+            "generated_at": _generated_at(),
+            "memberships_count": len(result.session.memberships),
+        },
+    )
+    _set_session_cookie(response, result)
+    return response
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    session_service: Annotated[SessionService, Depends(get_session_service)],
+) -> JSONResponse:
+    session = session_service.logout(_session_token_from_request(request))
+    response = _success_response(
+        data=_serialize_session(session),
+        meta={"generated_at": _generated_at(), "memberships_count": len(session.memberships)},
+    )
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return response
+
+
 @router.patch("/active-workspace")
 def switch_active_workspace(
+    request: Request,
     payload: Annotated[object, Body(...)],
     session_service: Annotated[SessionService, Depends(get_session_service)],
 ) -> JSONResponse:
     try:
         workspace_id = _parse_workspace_switch_payload(payload)
-        result = session_service.switch_active_workspace(workspace_id)
+        result = session_service.switch_active_workspace(
+            _session_token_from_request(request),
+            workspace_id,
+        )
     except ServiceError as exc:
         return _service_error_response(exc)
     return _success_response(
@@ -54,18 +101,43 @@ def switch_active_workspace(
 
 @router.patch("/active-dataset")
 def update_active_dataset(
+    request: Request,
     payload: Annotated[object, Body(...)],
     session_service: Annotated[SessionService, Depends(get_session_service)],
 ) -> JSONResponse:
     try:
         dataset_id = _parse_dataset_activation_payload(payload)
-        session = session_service.set_active_dataset(dataset_id)
+        session = session_service.set_active_dataset(
+            _session_token_from_request(request),
+            dataset_id,
+        )
     except ServiceError as exc:
         return _service_error_response(exc)
     return _success_response(
         data=_serialize_session(session),
         meta={"generated_at": _generated_at(), "memberships_count": len(session.memberships)},
     )
+
+
+def _parse_login_payload(payload: object) -> tuple[str, str]:
+    body = _as_mapping(payload)
+    email = body.get("email")
+    password = body.get("password")
+    if not isinstance(email, str) or len(email.strip()) == 0:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="email must be a non-empty string.",
+        )
+    if not isinstance(password, str) or len(password) == 0:
+        raise service_error(
+            400,
+            code="request_validation_failed",
+            category="validation_error",
+            message="password must be a non-empty string.",
+        )
+    return email.strip(), password
 
 
 def _parse_workspace_switch_payload(payload: object) -> str:
@@ -114,8 +186,9 @@ def _serialize_session(session: AppSession) -> dict[str, object]:
     return {
         "session_id": session.session_id,
         "auth": {
-            "state": session.auth_state,
-            "mode": session.auth_mode,
+            "state": session.auth.state,
+            "mode": session.auth.mode,
+            "reason": session.auth.reason,
         },
         "user": (
             {
@@ -232,3 +305,23 @@ def _as_mapping(payload: object) -> dict[str, object]:
             message="Request body must be an object.",
         )
     return payload
+
+
+def _session_token_from_request(request: Request) -> str | None:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if token is None or len(token.strip()) == 0:
+        return None
+    return token
+
+
+def _set_session_cookie(response: JSONResponse, result: SessionLoginResult) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=result.access_token,
+        httponly=True,
+        samesite="lax",
+        secure=settings.environment not in {"development", "test"},
+        max_age=DEFAULT_SESSION_TOKEN_LIFETIME_SECONDS,
+        path="/",
+    )
