@@ -2,12 +2,34 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-LaneName = Literal["simulation", "characterization"]
+LaneName = Literal["simulation", "characterization", "post_processing"]
 TaskSubmissionKind = Literal["simulation", "post_processing", "characterization"]
 TaskExecutionMode = Literal["run", "smoke"]
-TaskDispatchStatus = Literal["accepted", "running", "completed", "failed"]
+TaskDispatchStatus = Literal[
+    "accepted",
+    "dispatching",
+    "running",
+    "cancellation_requested",
+    "cancelling",
+    "cancelled",
+    "termination_requested",
+    "terminated",
+    "completed",
+    "failed",
+]
 TaskSubmissionSource = Literal["active_dataset", "explicit_dataset", "definition_only"]
-TaskDispatchLifecycleStatus = Literal["queued", "running", "completed", "failed"]
+TaskDispatchLifecycleStatus = Literal[
+    "queued",
+    "dispatching",
+    "running",
+    "cancellation_requested",
+    "cancelling",
+    "cancelled",
+    "termination_requested",
+    "terminated",
+    "completed",
+    "failed",
+]
 TASKING_CONTRACT_VERSION = "sc_tasking.v1"
 WorkerTaskName = Literal[
     "simulation_run_task",
@@ -40,7 +62,7 @@ class WorkerDispatchPlan:
     """Canonical queue-dispatch plan for one persisted task submission."""
 
     lane: LaneName
-    queue_name: LaneName
+    queue_name: str
     worker_task_name: WorkerTaskName
     execution_mode: TaskExecutionMode
     request_ready: bool
@@ -94,7 +116,7 @@ def resolve_worker_task_route(
     if task_kind == "post_processing":
         return _build_route(
             task_kind=task_kind,
-            lane="simulation",
+            lane="post_processing",
             run_task_name="post_processing_run_task",
             smoke_task_name="post_processing_smoke_task",
             request_is_valid=request_is_valid,
@@ -119,6 +141,7 @@ def resolve_worker_task_route(
 def build_worker_dispatch_plan(
     route: WorkerTaskRoute,
     *,
+    queue_name: str | None = None,
     job_timeout: int = -1,
     failure_ttl: int = 86400,
     result_ttl: int = 3600,
@@ -126,7 +149,7 @@ def build_worker_dispatch_plan(
     """Build the canonical queue-dispatch plan for one resolved worker route."""
     return WorkerDispatchPlan(
         lane=route.lane,
-        queue_name=route.lane,
+        queue_name=route.lane if queue_name is None else queue_name,
         worker_task_name=route.worker_task_name,
         execution_mode=route.execution_mode,
         request_ready=route.request_ready,

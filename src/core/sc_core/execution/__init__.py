@@ -2,6 +2,7 @@
 
 from sc_core.execution.contracts import (
     EXECUTION_CONTRACT_VERSION,
+    ExecutionAuditOutcome,
     STALE_TASK_TIMEOUT_ERROR_CODE,
     WORKER_TASK_FAILED_ERROR_CODE,
     ExecutionEventKind,
@@ -32,6 +33,9 @@ from sc_core.execution.contracts import (
     build_reconcile_stale_task_operation,
     build_reconcile_stale_task_transition,
     build_task_completed_mutation,
+    build_task_control_audit_payload,
+    build_task_control_event_log,
+    build_task_control_history_event,
     build_task_crash_payload,
     build_task_creation_spec,
     build_task_execution_history,
@@ -69,6 +73,7 @@ from sc_core.execution.contracts import (
 
 __all__ = [
     "EXECUTION_CONTRACT_VERSION",
+    "ExecutionAuditOutcome",
     "STALE_TASK_TIMEOUT_ERROR_CODE",
     "WORKER_TASK_FAILED_ERROR_CODE",
     "ExecutionEventKind",
@@ -99,6 +104,9 @@ __all__ = [
     "build_reconcile_stale_task_operation",
     "build_reconcile_stale_task_transition",
     "build_task_completed_mutation",
+    "build_task_control_audit_payload",
+    "build_task_control_event_log",
+    "build_task_control_history_event",
     "build_task_crash_payload",
     "build_task_creation_spec",
     "build_task_execution_history",

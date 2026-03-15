@@ -8,7 +8,12 @@ from typing import Literal
 from sc_core.tasking import (
     LaneName,
     TaskDispatchRecord,
+    TaskControlAction,
+    TaskControlDecision,
+    TaskRetryLineage,
+    TaskRuntimeState,
     WorkerTaskName,
+    sanitize_processor_runtime_metadata,
 )
 from sc_core.tasking import (
     TaskDispatchStatus as TaskExecutionHistoryDispatchStatus,
@@ -17,13 +22,24 @@ from sc_core.tasking import (
     TaskSubmissionSource as TaskExecutionHistorySubmissionSource,
 )
 
-ExecutionPhase = Literal["running", "completed", "failed", "crashing"]
-TaskLifecycleStatus = Literal["queued", "running", "completed", "failed"]
+ExecutionPhase = Literal[
+    "running",
+    "completed",
+    "failed",
+    "crashing",
+    "cancel_requested",
+    "terminate_requested",
+    "retried",
+]
+TaskLifecycleStatus = TaskRuntimeState
 ExecutionEventKind = Literal[
     "worker.task_started",
     "worker.task_completed",
     "worker.task_failed",
     "worker.task_crashing",
+    "task.cancel_requested",
+    "task.terminate_requested",
+    "task.retried",
     "reconcile.task_failed",
     "reconcile.batch_failed",
 ]
@@ -33,6 +49,9 @@ TaskExecutionHistoryEventType = Literal[
     "task_running",
     "task_completed",
     "task_failed",
+    "task_cancel_requested",
+    "task_terminate_requested",
+    "task_retried",
 ]
 TaskExecutionHistoryLevel = Literal["info", "warning", "error"]
 TaskAuditActionKind = Literal[
@@ -46,8 +65,12 @@ TaskExecutionAuditActionKind = Literal[
     "worker.task_completed",
     "worker.task_failed",
     "worker.task_crashing",
+    "task.cancel_requested",
+    "task.terminate_requested",
+    "task.retried",
     "reconcile.task_failed",
 ]
+ExecutionAuditOutcome = Literal["accepted", "rejected", "completed", "failed"]
 
 EXECUTION_CONTRACT_VERSION = "sc_execution.v1"
 WORKER_TASK_FAILED_ERROR_CODE = "worker_task_failed"
@@ -892,12 +915,20 @@ def build_task_lifecycle_history_event(
     context: TaskExecutionHistoryContext,
 ) -> TaskExecutionHistoryEvent | None:
     """Build one lifecycle history entry from the current persisted task state."""
-    if context.task_status == "queued":
+    if context.task_status in {"queued", "dispatching"}:
         return None
     if context.task_status == "running":
         event_type: TaskExecutionHistoryEventType = "task_running"
         level: TaskExecutionHistoryLevel = "info"
         message = "Task entered the running state."
+    elif context.task_status in {"cancellation_requested", "cancelling", "cancelled"}:
+        event_type = "task_cancel_requested"
+        level = "warning"
+        message = "Task entered the cancel-control path."
+    elif context.task_status in {"termination_requested", "terminated"}:
+        event_type = "task_terminate_requested"
+        level = "warning"
+        message = "Task entered the terminate-control path."
     elif context.task_status == "completed":
         event_type = "task_completed"
         level = "info"
@@ -934,7 +965,50 @@ def build_task_execution_history(
     return tuple(events)
 
 
-def audit_action_for_phase(phase: ExecutionPhase) -> TaskAuditActionKind:
+def build_task_control_history_event(
+    *,
+    decision: TaskControlDecision,
+    occurred_at: datetime,
+    lineage: TaskRetryLineage | None = None,
+) -> TaskExecutionHistoryEvent:
+    """Build the canonical task-history entry for one control request."""
+    event_type: TaskExecutionHistoryEventType
+    message: str
+    if decision.action == "cancel":
+        event_type = "task_cancel_requested"
+        message = (
+            "Task cancel request accepted."
+            if decision.accepted
+            else "Task cancel request rejected."
+        )
+    elif decision.action == "terminate":
+        event_type = "task_terminate_requested"
+        message = (
+            "Task terminate request accepted."
+            if decision.accepted
+            else "Task terminate request rejected."
+        )
+    else:
+        event_type = "task_retried"
+        message = "Task retry accepted." if decision.accepted else "Task retry rejected."
+
+    metadata = {
+        **coerce_task_execution_history_metadata(decision.to_payload()),
+    }
+    if lineage is not None:
+        metadata["retry_lineage"] = str(lineage.to_payload())
+
+    return TaskExecutionHistoryEvent(
+        event_key=f"{event_type}:{occurred_at.isoformat()}",
+        event_type=event_type,
+        level="info" if decision.accepted else "warning",
+        occurred_at=occurred_at.isoformat(),
+        message=message,
+        metadata=metadata,
+    )
+
+
+def audit_action_for_phase(phase: ExecutionPhase) -> TaskExecutionAuditActionKind:
     """Map one execution phase to the canonical worker audit action kind."""
     if phase == "running":
         return "worker.task_started"
@@ -942,6 +1016,12 @@ def audit_action_for_phase(phase: ExecutionPhase) -> TaskAuditActionKind:
         return "worker.task_completed"
     if phase == "failed":
         return "worker.task_failed"
+    if phase == "cancel_requested":
+        return "task.cancel_requested"
+    if phase == "terminate_requested":
+        return "task.terminate_requested"
+    if phase == "retried":
+        return "task.retried"
     return "worker.task_crashing"
 
 
@@ -959,6 +1039,76 @@ def build_worker_audit_summary(
     if phase == "failed":
         return f"Worker failed {worker_task_name} for task {task_id}"
     return f"Worker is about to crash while running {worker_task_name} for task {task_id}"
+
+
+def build_task_control_audit_payload(
+    *,
+    decision: TaskControlDecision,
+    recorded_at: datetime,
+    lineage: TaskRetryLineage | None = None,
+    runtime_metadata: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Build a redaction-safe audit payload for one task control request."""
+    decision_payload = dict(decision.to_payload())
+    decision_payload.pop("contract_version", None)
+    payload: dict[str, object] = {
+        "contract_version": EXECUTION_CONTRACT_VERSION,
+        "recorded_at": recorded_at.isoformat(),
+        "outcome": decision.outcome,
+        **decision_payload,
+    }
+    sanitized_runtime_metadata = sanitize_processor_runtime_metadata(runtime_metadata)
+    if sanitized_runtime_metadata:
+        payload["runtime_metadata"] = sanitized_runtime_metadata
+    if lineage is not None:
+        payload["retry_lineage"] = lineage.to_payload()
+    return payload
+
+
+def build_task_control_event_log(
+    *,
+    task_id: int,
+    decision: TaskControlDecision,
+    recorded_at: datetime,
+    lineage: TaskRetryLineage | None = None,
+    runtime_metadata: Mapping[str, object] | None = None,
+) -> ExecutionEventLog:
+    """Build the canonical execution-event envelope for one task control action."""
+    phase: ExecutionPhase
+    summary: str
+    if decision.action == "cancel":
+        phase = "cancel_requested"
+        summary = (
+            f"Cancel request accepted for task {task_id}"
+            if decision.accepted
+            else f"Cancel request rejected for task {task_id}"
+        )
+    elif decision.action == "terminate":
+        phase = "terminate_requested"
+        summary = (
+            f"Terminate request accepted for task {task_id}"
+            if decision.accepted
+            else f"Terminate request rejected for task {task_id}"
+        )
+    else:
+        phase = "retried"
+        summary = (
+            f"Retry accepted for task {task_id}"
+            if decision.accepted
+            else f"Retry rejected for task {task_id}"
+        )
+    return build_execution_event_log(
+        action_kind=audit_action_for_phase(phase),
+        resource_kind="task",
+        resource_id=task_id,
+        summary=summary,
+        payload=build_task_control_audit_payload(
+            decision=decision,
+            recorded_at=recorded_at,
+            lineage=lineage,
+            runtime_metadata=runtime_metadata,
+        ),
+    )
 
 
 def build_reconcile_stale_task_transition(
