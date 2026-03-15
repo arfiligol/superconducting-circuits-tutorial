@@ -2,7 +2,6 @@
 
 from collections.abc import Iterable, Sequence
 from json import dumps
-from pathlib import Path
 
 from pydantic import BaseModel
 from sc_backend import (
@@ -16,8 +15,8 @@ from sc_backend import (
     TaskDetailResponse,
     TaskSummaryResponse,
 )
-from sc_core import CircuitDefinitionInspection
 
+from sc_cli.local_circuit_definitions import LocalCircuitDefinitionInspection
 from sc_cli.output import OutputMode
 
 
@@ -28,34 +27,38 @@ def render_preview_artifacts(artifacts: tuple[str, ...]) -> str:
 
 
 def render_circuit_definition_inspection(
-    source_file: Path,
-    inspection: CircuitDefinitionInspection,
+    inspection: LocalCircuitDefinitionInspection,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
-        return _render_json_payload(
-            {
-                "source_file": str(source_file),
-                "circuit_name": inspection.circuit_name,
-                "family": inspection.family,
-                "element_count": inspection.element_count,
-                "normalized_output": inspection.normalized_output,
-                "validation_notices": [
-                    {"level": notice.level, "message": notice.message}
-                    for notice in inspection.validation_notices
-                ],
-            }
-        )
+        return _render_json_model(inspection)
     lines = [
-        f"source_file: {source_file}",
+        f"source_file: {inspection.source_file}",
         f"circuit_name: {inspection.circuit_name}",
         f"family: {inspection.family}",
         f"element_count: {inspection.element_count}",
+        f"validation_status: {inspection.validation_status}",
+        f"preview_artifact_count: {inspection.preview_artifact_count}",
+        "preview_artifacts:",
+    ]
+    lines.extend(f"- {artifact}" for artifact in inspection.preview_artifacts)
+    lines.extend(
+        [
+            "validation_summary:",
+            f"status: {inspection.validation_summary.status}",
+            f"notice_count: {inspection.validation_summary.notice_count}",
+            f"warning_count: {inspection.validation_summary.warning_count}",
+            f"invalid_count: {inspection.validation_summary.invalid_count}",
+        ]
+    )
+    lines.extend(
+        [
         "normalized_output:",
         inspection.normalized_output,
         "validation_notices:",
-    ]
+        ]
+    )
     lines.extend(f"- [{notice.level}] {notice.message}" for notice in inspection.validation_notices)
     return "\n".join(lines)
 
