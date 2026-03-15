@@ -1,5 +1,6 @@
 import pytest
 from fastapi import HTTPException
+from src.app.domain.datasets import CharacterizationTaggingRequest
 from src.app.domain.tasks import TaskSubmissionDraft
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
@@ -46,6 +47,31 @@ def test_dataset_service_raises_framework_agnostic_error_for_missing_characteriz
     assert exc_info.value.status_code == 404
     assert exc_info.value.code == "run_not_found"
     assert exc_info.value.category == "not_found"
+
+
+def test_dataset_service_raises_conflict_for_characterization_tagging_collision() -> None:
+    app_state_repository = InMemoryRewriteAppStateRepository()
+    service = DatasetService(
+        repository=InMemoryRewriteCatalogRepository(),
+        session_repository=app_state_repository,
+    )
+
+    with pytest.raises(ServiceError) as exc_info:
+        service.apply_characterization_tagging(
+            "fluxonium-2025-031",
+            "design_flux_scan_a",
+            "char-fit-flux-a-01",
+            CharacterizationTaggingRequest(
+                artifact_id="artifact-fit-table-flux-a-01",
+                source_parameter="EJ_fit",
+                designated_metric="f01",
+            ),
+        )
+
+    assert not isinstance(exc_info.value, HTTPException)
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.code == "tagging_conflict"
+    assert exc_info.value.category == "conflict"
 
 
 def test_session_service_raises_framework_agnostic_error_for_missing_active_dataset() -> None:

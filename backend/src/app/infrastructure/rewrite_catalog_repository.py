@@ -19,8 +19,14 @@ from src.app.domain.circuit_definitions import (
 from src.app.domain.datasets import (
     CharacterizationArtifactRef,
     CharacterizationDiagnostic,
+    CharacterizationAppliedTag,
+    CharacterizationDesignatedMetricOption,
+    CharacterizationIdentifySurface,
     CharacterizationResultDetail,
     CharacterizationResultSummary,
+    CharacterizationSourceParameterOption,
+    CharacterizationTaggingRequest,
+    CharacterizationTaggingResult,
     DatasetAllowedActions,
     DatasetDetail,
     DatasetProfileUpdate,
@@ -118,6 +124,78 @@ class InMemoryRewriteCatalogRepository:
         result_id: str,
     ) -> CharacterizationResultDetail | None:
         return self._characterization_result_details.get((dataset_id, design_id, result_id))
+
+    def apply_characterization_tagging(
+        self,
+        dataset_id: str,
+        design_id: str,
+        result_id: str,
+        request: CharacterizationTaggingRequest,
+    ) -> CharacterizationTaggingResult:
+        detail_key = (dataset_id, design_id, result_id)
+        detail = self._characterization_result_details[detail_key]
+        metric_option = next(
+            option
+            for option in detail.identify_surface.designated_metrics
+            if option.metric_key == request.designated_metric
+        )
+        tagged_metric = TaggedCoreMetricSummary(
+            metric_id=_build_tagged_metric_id(dataset_id, request.designated_metric),
+            label=metric_option.label,
+            source_parameter=request.source_parameter,
+            designated_metric=request.designated_metric,
+            tagged_at="2026-03-15T12:10:00Z",
+        )
+
+        dataset_metrics = list(self._tagged_core_metrics.get(dataset_id, ()))
+        dataset_metrics.append(tagged_metric)
+        self._tagged_core_metrics[dataset_id] = tuple(dataset_metrics)
+
+        updated_source_parameters = tuple(
+            replace(
+                option,
+                current_designated_metric=request.designated_metric,
+            )
+            if option.artifact_id == request.artifact_id
+            and option.source_parameter == request.source_parameter
+            else option
+            for option in detail.identify_surface.source_parameters
+        )
+        updated_applied_tags = tuple(
+            tag
+            for tag in detail.identify_surface.applied_tags
+            if not (
+                tag.artifact_id == request.artifact_id
+                and tag.source_parameter == request.source_parameter
+            )
+        ) + (
+            CharacterizationAppliedTag(
+                artifact_id=request.artifact_id,
+                source_parameter=request.source_parameter,
+                designated_metric=request.designated_metric,
+                designated_metric_label=metric_option.label,
+                tagged_at=tagged_metric.tagged_at,
+            ),
+        )
+        self._characterization_result_details[detail_key] = replace(
+            detail,
+            identify_surface=replace(
+                detail.identify_surface,
+                source_parameters=updated_source_parameters,
+                applied_tags=updated_applied_tags,
+            ),
+        )
+
+        return CharacterizationTaggingResult(
+            tagging_status="applied",
+            dataset_id=dataset_id,
+            design_id=design_id,
+            result_id=result_id,
+            artifact_id=request.artifact_id,
+            source_parameter=request.source_parameter,
+            designated_metric=request.designated_metric,
+            tagged_metric=tagged_metric,
+        )
 
     def list_circuit_definitions(self) -> list[CircuitDefinitionSummary]:
         return [
@@ -832,6 +910,61 @@ def _seed_characterization_result_details() -> dict[
                     payload_locator="artifacts/characterization/flux-a-fit-plot.svg",
                 ),
             ),
+            identify_surface=_build_identify_surface(
+                source_parameters=(
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-fit-table-flux-a-01",
+                        source_parameter="f01",
+                        label="f01",
+                        artifact_title="Fit table",
+                        current_designated_metric="f01",
+                    ),
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-fit-table-flux-a-01",
+                        source_parameter="alpha",
+                        label="alpha",
+                        artifact_title="Fit table",
+                        current_designated_metric="alpha",
+                    ),
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-fit-table-flux-a-01",
+                        source_parameter="EJ_fit",
+                        label="EJ fit",
+                        artifact_title="Fit table",
+                        current_designated_metric=None,
+                    ),
+                ),
+                designated_metrics=(
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="f01",
+                        label="Qubit Transition",
+                    ),
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="alpha",
+                        label="Anharmonicity",
+                    ),
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="ej",
+                        label="Josephson Energy",
+                    ),
+                ),
+                applied_tags=(
+                    CharacterizationAppliedTag(
+                        artifact_id="artifact-fit-table-flux-a-01",
+                        source_parameter="f01",
+                        designated_metric="f01",
+                        designated_metric_label="Qubit Transition",
+                        tagged_at="2026-03-14T11:05:00Z",
+                    ),
+                    CharacterizationAppliedTag(
+                        artifact_id="artifact-fit-table-flux-a-01",
+                        source_parameter="alpha",
+                        designated_metric="alpha",
+                        designated_metric_label="Anharmonicity",
+                        tagged_at="2026-03-14T11:08:00Z",
+                    ),
+                ),
+            ),
         ),
         (
             "fluxonium-2025-031",
@@ -871,6 +1004,16 @@ def _seed_characterization_result_details() -> dict[
                     payload_locator="artifacts/characterization/flux-a-sideband-report.md",
                 ),
             ),
+            identify_surface=_build_identify_surface(
+                source_parameters=(),
+                designated_metrics=(
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="sideband_offset",
+                        label="Sideband Offset",
+                    ),
+                ),
+                applied_tags=(),
+            ),
         ),
         (
             "fluxonium-2025-031",
@@ -900,6 +1043,11 @@ def _seed_characterization_result_details() -> dict[
                 ),
             ),
             artifact_refs=(),
+            identify_surface=_build_identify_surface(
+                source_parameters=(),
+                designated_metrics=(),
+                applied_tags=(),
+            ),
         ),
         (
             "resonator-chip-002",
@@ -941,6 +1089,39 @@ def _seed_characterization_result_details() -> dict[
                     payload_format="svg",
                     payload_locator="artifacts/characterization/resonator-temp-fit-plot.svg",
                 ),
+            ),
+            identify_surface=_build_identify_surface(
+                source_parameters=(
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-resonator-temp-table",
+                        source_parameter="Qi_low_temp",
+                        label="Qi low temp",
+                        artifact_title="Quality factor table",
+                        current_designated_metric=None,
+                    ),
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-resonator-temp-table",
+                        source_parameter="Qi_high_temp",
+                        label="Qi high temp",
+                        artifact_title="Quality factor table",
+                        current_designated_metric=None,
+                    ),
+                ),
+                designated_metrics=(
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="qi_low_temp",
+                        label="Low Temperature Qi",
+                    ),
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="qi_high_temp",
+                        label="High Temperature Qi",
+                    ),
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="thermal_rolloff",
+                        label="Thermal Rolloff",
+                    ),
+                ),
+                applied_tags=(),
             ),
         ),
         (
@@ -1003,8 +1184,64 @@ def _seed_characterization_result_details() -> dict[
                     payload_locator="artifacts/characterization/coupler-report.md",
                 ),
             ),
+            identify_surface=_build_identify_surface(
+                source_parameters=(
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-coupler-fit-table",
+                        source_parameter="chi",
+                        label="chi",
+                        artifact_title="Chi fit table",
+                        current_designated_metric="chi",
+                    ),
+                    CharacterizationSourceParameterOption(
+                        artifact_id="artifact-coupler-fit-table",
+                        source_parameter="detuning_zero",
+                        label="Detuning zero",
+                        artifact_title="Chi fit table",
+                        current_designated_metric=None,
+                    ),
+                ),
+                designated_metrics=(
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="chi",
+                        label="Coupler Shift",
+                    ),
+                    CharacterizationDesignatedMetricOption(
+                        metric_key="detuning_zero",
+                        label="Zero Detuning Bias",
+                    ),
+                ),
+                applied_tags=(
+                    CharacterizationAppliedTag(
+                        artifact_id="artifact-coupler-fit-table",
+                        source_parameter="chi",
+                        designated_metric="chi",
+                        designated_metric_label="Coupler Shift",
+                        tagged_at="2026-03-14T09:30:00Z",
+                    ),
+                ),
+            ),
         ),
     }
+
+
+def _build_identify_surface(
+    *,
+    source_parameters: tuple[CharacterizationSourceParameterOption, ...],
+    designated_metrics: tuple[CharacterizationDesignatedMetricOption, ...],
+    applied_tags: tuple[CharacterizationAppliedTag, ...],
+) -> CharacterizationIdentifySurface:
+    return CharacterizationIdentifySurface(
+        source_parameters=source_parameters,
+        designated_metrics=designated_metrics,
+        applied_tags=applied_tags,
+    )
+
+
+def _build_tagged_metric_id(dataset_id: str, designated_metric: str) -> str:
+    normalized_dataset = dataset_id.replace("_", "-")
+    normalized_metric = designated_metric.replace("_", "-")
+    return f"metric-{normalized_dataset}-{normalized_metric}"
 
 
 def _seed_circuit_definitions() -> tuple[CircuitDefinitionDetail, ...]:

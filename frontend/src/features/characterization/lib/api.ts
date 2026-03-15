@@ -2,11 +2,17 @@ import { apiRequest, apiRequestEnvelope } from "@/lib/api/client";
 
 import type {
   CharacterizationArtifactRef,
+  CharacterizationAppliedTag,
+  CharacterizationDesignatedMetricOption,
   CharacterizationDiagnostic,
+  CharacterizationIdentifySurface,
   CharacterizationPagedRows,
   CharacterizationResultDetail,
   CharacterizationResultStatus,
   CharacterizationResultSummary,
+  CharacterizationSourceParameterOption,
+  CharacterizationTaggingInput,
+  CharacterizationTaggingResult,
 } from "@/features/characterization/lib/contracts";
 
 type CharacterizationResultSummaryResponse = Readonly<{
@@ -54,6 +60,49 @@ type CharacterizationResultDetailResponse = Readonly<{
   payload: Readonly<Record<string, unknown>>;
   diagnostics: readonly CharacterizationDiagnosticResponse[];
   artifact_refs: readonly CharacterizationArtifactRefResponse[];
+  identify_surface: Readonly<{
+    source_parameters: readonly CharacterizationSourceParameterResponse[];
+    designated_metrics: readonly CharacterizationDesignatedMetricOptionResponse[];
+    applied_tags: readonly CharacterizationAppliedTagResponse[];
+  }>;
+}>;
+
+type CharacterizationSourceParameterResponse = Readonly<{
+  artifact_id: string;
+  source_parameter: string;
+  label: string;
+  artifact_title: string;
+  current_designated_metric: string | null;
+}>;
+
+type CharacterizationDesignatedMetricOptionResponse = Readonly<{
+  metric_key: string;
+  label: string;
+}>;
+
+type CharacterizationAppliedTagResponse = Readonly<{
+  artifact_id: string;
+  source_parameter: string;
+  designated_metric: string;
+  designated_metric_label: string;
+  tagged_at: string;
+}>;
+
+type CharacterizationTaggingResultResponse = Readonly<{
+  tagging_status: CharacterizationTaggingResult["taggingStatus"];
+  dataset_id: string;
+  design_id: string;
+  result_id: string;
+  artifact_id: string;
+  source_parameter: string;
+  designated_metric: string;
+  tagged_metric: Readonly<{
+    metric_id: string;
+    label: string;
+    source_parameter: string;
+    designated_metric: string;
+    tagged_at: string;
+  }>;
 }>;
 
 type CharacterizationCursorMeta = Readonly<{
@@ -83,6 +132,14 @@ export function characterizationResultDetailKey(
   resultId: string,
 ) {
   return `${characterizationResultsListKey(datasetId, designId)}/${encodeURIComponent(resultId)}`;
+}
+
+export function characterizationTaggingsKey(
+  datasetId: string,
+  designId: string,
+  resultId: string,
+) {
+  return `${characterizationResultDetailKey(datasetId, designId, resultId)}/taggings`;
 }
 
 function mapCharacterizationResultSummary(
@@ -127,6 +184,51 @@ function mapCharacterizationArtifactRef(
   };
 }
 
+function mapCharacterizationSourceParameterOption(
+  payload: CharacterizationSourceParameterResponse,
+): CharacterizationSourceParameterOption {
+  return {
+    artifactId: payload.artifact_id,
+    sourceParameter: payload.source_parameter,
+    label: payload.label,
+    artifactTitle: payload.artifact_title,
+    currentDesignatedMetric: payload.current_designated_metric,
+  };
+}
+
+function mapCharacterizationDesignatedMetricOption(
+  payload: CharacterizationDesignatedMetricOptionResponse,
+): CharacterizationDesignatedMetricOption {
+  return {
+    metricKey: payload.metric_key,
+    label: payload.label,
+  };
+}
+
+function mapCharacterizationAppliedTag(
+  payload: CharacterizationAppliedTagResponse,
+): CharacterizationAppliedTag {
+  return {
+    artifactId: payload.artifact_id,
+    sourceParameter: payload.source_parameter,
+    designatedMetric: payload.designated_metric,
+    designatedMetricLabel: payload.designated_metric_label,
+    taggedAt: payload.tagged_at,
+  };
+}
+
+function mapCharacterizationIdentifySurface(
+  payload: CharacterizationResultDetailResponse["identify_surface"],
+): CharacterizationIdentifySurface {
+  return {
+    sourceParameters: payload.source_parameters.map(mapCharacterizationSourceParameterOption),
+    designatedMetrics: payload.designated_metrics.map(
+      mapCharacterizationDesignatedMetricOption,
+    ),
+    appliedTags: payload.applied_tags.map(mapCharacterizationAppliedTag),
+  };
+}
+
 function mapCharacterizationResultDetail(
   payload: CharacterizationResultDetailResponse,
 ): CharacterizationResultDetail {
@@ -145,6 +247,28 @@ function mapCharacterizationResultDetail(
     payload: payload.payload,
     diagnostics: payload.diagnostics.map(mapCharacterizationDiagnostic),
     artifactRefs: payload.artifact_refs.map(mapCharacterizationArtifactRef),
+    identifySurface: mapCharacterizationIdentifySurface(payload.identify_surface),
+  };
+}
+
+function mapCharacterizationTaggingResult(
+  payload: CharacterizationTaggingResultResponse,
+): CharacterizationTaggingResult {
+  return {
+    taggingStatus: payload.tagging_status,
+    datasetId: payload.dataset_id,
+    designId: payload.design_id,
+    resultId: payload.result_id,
+    artifactId: payload.artifact_id,
+    sourceParameter: payload.source_parameter,
+    designatedMetric: payload.designated_metric,
+    taggedMetric: {
+      metricId: payload.tagged_metric.metric_id,
+      label: payload.tagged_metric.label,
+      sourceParameter: payload.tagged_metric.source_parameter,
+      designatedMetric: payload.tagged_metric.designated_metric,
+      taggedAt: payload.tagged_metric.tagged_at,
+    },
   };
 }
 
@@ -196,4 +320,24 @@ export async function getCharacterizationResult(
     characterizationResultDetailKey(datasetId, designId, resultId),
   );
   return mapCharacterizationResultDetail(response);
+}
+
+export async function applyCharacterizationTagging(
+  datasetId: string,
+  designId: string,
+  resultId: string,
+  payload: CharacterizationTaggingInput,
+) {
+  const response = await apiRequest<CharacterizationTaggingResultResponse>(
+    characterizationTaggingsKey(datasetId, designId, resultId),
+    {
+      method: "POST",
+      body: {
+        artifact_id: payload.artifactId,
+        source_parameter: payload.sourceParameter,
+        designated_metric: payload.designatedMetric,
+      },
+    },
+  );
+  return mapCharacterizationTaggingResult(response);
 }

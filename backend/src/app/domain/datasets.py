@@ -13,6 +13,7 @@ TraceModeGroup = Literal["base", "sideband", "all"]
 TraceSourceKind = Literal["circuit_simulation", "layout_simulation", "measurement"]
 TraceStageKind = Literal["raw", "preprocess", "postprocess"]
 CharacterizationResultStatus = Literal["completed", "failed", "blocked"]
+CharacterizationTaggingStatus = Literal["applied", "already_applied"]
 
 
 @dataclass(frozen=True)
@@ -174,6 +175,37 @@ class CharacterizationArtifactRef:
 
 
 @dataclass(frozen=True)
+class CharacterizationSourceParameterOption:
+    artifact_id: str
+    source_parameter: str
+    label: str
+    artifact_title: str
+    current_designated_metric: str | None
+
+
+@dataclass(frozen=True)
+class CharacterizationDesignatedMetricOption:
+    metric_key: str
+    label: str
+
+
+@dataclass(frozen=True)
+class CharacterizationAppliedTag:
+    artifact_id: str
+    source_parameter: str
+    designated_metric: str
+    designated_metric_label: str
+    tagged_at: str
+
+
+@dataclass(frozen=True)
+class CharacterizationIdentifySurface:
+    source_parameters: tuple[CharacterizationSourceParameterOption, ...]
+    designated_metrics: tuple[CharacterizationDesignatedMetricOption, ...]
+    applied_tags: tuple[CharacterizationAppliedTag, ...]
+
+
+@dataclass(frozen=True)
 class CharacterizationResultDetail:
     result_id: str
     dataset_id: str
@@ -189,3 +221,23 @@ class CharacterizationResultDetail:
     payload: dict[str, object]
     diagnostics: tuple[CharacterizationDiagnostic, ...]
     artifact_refs: tuple[CharacterizationArtifactRef, ...]
+    identify_surface: CharacterizationIdentifySurface
+
+
+@dataclass(frozen=True)
+class CharacterizationTaggingRequest:
+    artifact_id: str
+    source_parameter: str
+    designated_metric: str
+
+
+@dataclass(frozen=True)
+class CharacterizationTaggingResult:
+    tagging_status: CharacterizationTaggingStatus
+    dataset_id: str
+    design_id: str
+    result_id: str
+    artifact_id: str
+    source_parameter: str
+    designated_metric: str
+    tagged_metric: TaggedCoreMetricSummary

@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from src.app.domain.datasets import (
     CharacterizationResultBrowseQuery,
+    CharacterizationTaggingRequest,
     DatasetDetail,
     DatasetProfileUpdate,
     DesignBrowseQuery,
@@ -260,6 +261,52 @@ def get_characterization_result(
             "payload": detail.payload,
             "diagnostics": [asdict(diagnostic) for diagnostic in detail.diagnostics],
             "artifact_refs": [asdict(artifact_ref) for artifact_ref in detail.artifact_refs],
+            "identify_surface": {
+                "source_parameters": [
+                    asdict(source_parameter)
+                    for source_parameter in detail.identify_surface.source_parameters
+                ],
+                "designated_metrics": [
+                    asdict(metric_option)
+                    for metric_option in detail.identify_surface.designated_metrics
+                ],
+                "applied_tags": [
+                    asdict(applied_tag)
+                    for applied_tag in detail.identify_surface.applied_tags
+                ],
+            },
+        }
+    )
+
+
+@router.post("/{dataset_id}/designs/{design_id}/characterization-results/{result_id}/taggings")
+def apply_characterization_tagging(
+    dataset_id: str,
+    design_id: str,
+    result_id: str,
+    payload: Annotated[object, Body(...)],
+    dataset_service: Annotated[DatasetService, Depends(get_dataset_service)],
+) -> JSONResponse:
+    try:
+        request = _parse_characterization_tagging_payload(payload)
+        result = dataset_service.apply_characterization_tagging(
+            dataset_id,
+            design_id,
+            result_id,
+            request,
+        )
+    except ServiceError as exc:
+        return _service_error_response(exc)
+    return _success_response(
+        data={
+            "tagging_status": result.tagging_status,
+            "dataset_id": result.dataset_id,
+            "design_id": result.design_id,
+            "result_id": result.result_id,
+            "artifact_id": result.artifact_id,
+            "source_parameter": result.source_parameter,
+            "designated_metric": result.designated_metric,
+            "tagged_metric": asdict(result.tagged_metric),
         }
     )
 
@@ -309,6 +356,21 @@ def _parse_dataset_profile_payload(payload: object) -> DatasetProfileUpdate:
         device_type=device_type,
         capabilities=capabilities,
         source=source,
+    )
+
+
+def _parse_characterization_tagging_payload(payload: object) -> CharacterizationTaggingRequest:
+    body = _as_mapping(payload)
+    return CharacterizationTaggingRequest(
+        artifact_id=_require_text(body.get("artifact_id"), field="artifact_id"),
+        source_parameter=_require_text(
+            body.get("source_parameter"),
+            field="source_parameter",
+        ),
+        designated_metric=_require_text(
+            body.get("designated_metric"),
+            field="designated_metric",
+        ),
     )
 
 

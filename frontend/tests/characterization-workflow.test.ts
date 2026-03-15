@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   characterizationResultDetailKey,
   characterizationResultsListKey,
+  characterizationTaggingsKey,
 } from "../src/features/characterization/lib/api";
 import {
   resolveCharacterizationSelectionRecovery,
@@ -48,6 +49,15 @@ describe("characterization results api keys", () => {
       ),
     ).toBe(
       "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/characterization-results/char-fit-flux-a-01",
+    );
+    expect(
+      characterizationTaggingsKey(
+        "fluxonium-2025-031",
+        "design_flux_scan_a",
+        "char-fit-flux-a-01",
+      ),
+    ).toBe(
+      "/api/backend/datasets/fluxonium-2025-031/designs/design_flux_scan_a/characterization-results/char-fit-flux-a-01/taggings",
     );
   });
 
@@ -177,6 +187,8 @@ describe("characterization source contracts", () => {
     expect(characterizationWorkspaceSource).toContain("Result Summary List");
     expect(characterizationWorkspaceSource).toContain("Persisted Result Detail");
     expect(characterizationWorkspaceSource).toContain("Payload Preview");
+    expect(characterizationWorkspaceSource).toContain("Identify & Tag");
+    expect(characterizationWorkspaceSource).toContain("Tag Parameter");
     expect(characterizationWorkspaceSource).not.toContain("submitTask(");
     expect(characterizationWorkspaceSource).not.toContain("TaskLifecyclePanel");
     expect(characterizationWorkspaceSource).not.toContain("ResearchTaskQueuePanel");
@@ -192,6 +204,8 @@ describe("characterization source contracts", () => {
     expect(characterizationHookSource).toContain(
       "getCharacterizationResult(activeDatasetId, resolvedDesignId, resolvedResultId)",
     );
+    expect(characterizationHookSource).toContain("applyCharacterizationTagging(");
+    expect(characterizationHookSource).toContain("mutate(datasetMetricsKey(activeDatasetId))");
     expect(characterizationHookSource).toContain("setSelectedDesignId(null);");
     expect(characterizationHookSource).toContain("setSelectedResultId(null);");
     expect(characterizationHookSource).not.toContain("useTaskQueue");

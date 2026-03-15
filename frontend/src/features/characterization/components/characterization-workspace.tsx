@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Search,
 } from "lucide-react";
@@ -56,6 +57,10 @@ function ResultPayloadPreview({ payload }: Readonly<{ payload: Readonly<Record<s
   );
 }
 
+function buildSourceSelectionValue(artifactId: string, sourceParameter: string) {
+  return `${artifactId}::${sourceParameter}`;
+}
+
 export function CharacterizationWorkspace() {
   const {
     activeDatasetState,
@@ -80,7 +85,11 @@ export function CharacterizationWorkspace() {
     resultDetail,
     resultDetailError,
     isResultDetailLoading,
+    taggingMutationState,
+    submitTagging,
   } = useCharacterizationWorkflowData();
+  const [selectedSourceSelection, setSelectedSourceSelection] = useState("");
+  const [selectedDesignatedMetric, setSelectedDesignatedMetric] = useState("");
 
   const selectionRecovery = resolveCharacterizationSelectionRecovery({
     activeDatasetName: activeDatasetState.activeDataset?.name ?? null,
@@ -94,6 +103,42 @@ export function CharacterizationWorkspace() {
   const designsErrorMessage = describeApiError(designsError);
   const resultsErrorMessage = describeApiError(resultsError);
   const resultDetailErrorMessage = describeApiError(resultDetailError);
+  const taggingStateTone =
+    taggingMutationState.state === "success"
+      ? "border-emerald-500/30 bg-emerald-500/10"
+      : taggingMutationState.state === "error"
+        ? "border-amber-500/30 bg-amber-500/10"
+        : "border-border bg-surface";
+
+  useEffect(() => {
+    const firstSourceParameter = resultDetail?.identifySurface.sourceParameters[0];
+    const firstDesignatedMetric = resultDetail?.identifySurface.designatedMetrics[0];
+    setSelectedSourceSelection(
+      firstSourceParameter
+        ? buildSourceSelectionValue(
+            firstSourceParameter.artifactId,
+            firstSourceParameter.sourceParameter,
+          )
+        : "",
+    );
+    setSelectedDesignatedMetric(firstDesignatedMetric?.metricKey ?? "");
+  }, [resultDetail?.resultId]);
+
+  async function handleSubmitTagging() {
+    if (!selectedSourceSelection || !selectedDesignatedMetric) {
+      return;
+    }
+
+    const [artifactId, sourceParameter] = selectedSourceSelection.split("::");
+    if (!artifactId || !sourceParameter) {
+      return;
+    }
+    await submitTagging({
+      artifactId,
+      sourceParameter,
+      designatedMetric: selectedDesignatedMetric,
+    });
+  }
 
   return (
     <div className="space-y-8">
@@ -434,6 +479,127 @@ export function CharacterizationWorkspace() {
                     Payload Preview
                   </p>
                   <ResultPayloadPreview payload={resultDetail.payload} />
+                </div>
+
+                <div className="rounded-2xl border border-border bg-surface px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                        Identify & Tag
+                      </p>
+                      <p className="mt-2 text-sm text-foreground">
+                        Choose one source parameter from this persisted result detail and map it to a dataset-level designated metric.
+                      </p>
+                    </div>
+                    <SurfaceTag tone="primary">
+                      {resultDetail.identifySurface.appliedTags.length} applied
+                    </SurfaceTag>
+                  </div>
+
+                  {taggingMutationState.message ? (
+                    <div className={cx("mt-4 rounded-xl border px-4 py-3 text-sm text-foreground", taggingStateTone)}>
+                      {taggingMutationState.message}
+                    </div>
+                  ) : null}
+
+                  {resultDetail.identifySurface.sourceParameters.length > 0 &&
+                  resultDetail.identifySurface.designatedMetrics.length > 0 ? (
+                    <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+                      <label className="block rounded-xl border border-border bg-card px-4 py-3">
+                        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Source Parameter
+                        </span>
+                        <select
+                          value={selectedSourceSelection}
+                          onChange={(event) => {
+                            setSelectedSourceSelection(event.target.value);
+                          }}
+                          className="mt-2 w-full bg-transparent text-sm text-foreground outline-none"
+                        >
+                          {resultDetail.identifySurface.sourceParameters.map((option) => (
+                            <option
+                              key={`${option.artifactId}:${option.sourceParameter}`}
+                              value={buildSourceSelectionValue(
+                                option.artifactId,
+                                option.sourceParameter,
+                              )}
+                            >
+                              {option.artifactTitle} · {option.label}
+                              {option.currentDesignatedMetric
+                                ? ` (tagged: ${option.currentDesignatedMetric})`
+                                : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block rounded-xl border border-border bg-card px-4 py-3">
+                        <span className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                          Designated Metric
+                        </span>
+                        <select
+                          value={selectedDesignatedMetric}
+                          onChange={(event) => {
+                            setSelectedDesignatedMetric(event.target.value);
+                          }}
+                          className="mt-2 w-full bg-transparent text-sm text-foreground outline-none"
+                        >
+                          {resultDetail.identifySurface.designatedMetrics.map((option) => (
+                            <option key={option.metricKey} value={option.metricKey}>
+                              {option.label} ({option.metricKey})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleSubmitTagging();
+                        }}
+                        disabled={
+                          taggingMutationState.state === "submitting" ||
+                          !selectedSourceSelection ||
+                          !selectedDesignatedMetric
+                        }
+                        className="inline-flex min-h-11 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {taggingMutationState.state === "submitting"
+                          ? "Tagging…"
+                          : "Tag Parameter"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      No identify candidates are available for this persisted result detail yet.
+                    </p>
+                  )}
+
+                  <div className="mt-4 space-y-3">
+                    {resultDetail.identifySurface.appliedTags.map((tag) => (
+                      <div
+                        key={`${tag.artifactId}:${tag.sourceParameter}:${tag.designatedMetric}`}
+                        className="rounded-xl border border-border bg-card px-4 py-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <SurfaceTag tone="success">{tag.designatedMetric}</SurfaceTag>
+                          <SurfaceTag tone="default">{tag.sourceParameter}</SurfaceTag>
+                          <SurfaceTag tone="default">{tag.artifactId}</SurfaceTag>
+                        </div>
+                        <p className="mt-2 text-sm text-foreground">
+                          {tag.designatedMetricLabel}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Tagged at {tag.taggedAt}
+                        </p>
+                      </div>
+                    ))}
+                    {resultDetail.identifySurface.appliedTags.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No parameter tags were applied from this result detail yet.
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ) : null}

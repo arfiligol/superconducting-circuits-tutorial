@@ -47,6 +47,57 @@ export type CharacterizationResultDetail = Readonly<{
   payload: Readonly<Record<string, unknown>>;
   diagnostics: readonly CharacterizationDiagnostic[];
   artifactRefs: readonly CharacterizationArtifactRef[];
+  identifySurface: CharacterizationIdentifySurface;
+}>;
+
+export type CharacterizationSourceParameterOption = Readonly<{
+  artifactId: string;
+  sourceParameter: string;
+  label: string;
+  artifactTitle: string;
+  currentDesignatedMetric: string | null;
+}>;
+
+export type CharacterizationDesignatedMetricOption = Readonly<{
+  metricKey: string;
+  label: string;
+}>;
+
+export type CharacterizationAppliedTag = Readonly<{
+  artifactId: string;
+  sourceParameter: string;
+  designatedMetric: string;
+  designatedMetricLabel: string;
+  taggedAt: string;
+}>;
+
+export type CharacterizationIdentifySurface = Readonly<{
+  sourceParameters: readonly CharacterizationSourceParameterOption[];
+  designatedMetrics: readonly CharacterizationDesignatedMetricOption[];
+  appliedTags: readonly CharacterizationAppliedTag[];
+}>;
+
+export type CharacterizationTaggingInput = Readonly<{
+  artifactId: string;
+  sourceParameter: string;
+  designatedMetric: string;
+}>;
+
+export type CharacterizationTaggingResult = Readonly<{
+  taggingStatus: "applied" | "already_applied";
+  datasetId: string;
+  designId: string;
+  resultId: string;
+  artifactId: string;
+  sourceParameter: string;
+  designatedMetric: string;
+  taggedMetric: Readonly<{
+    metricId: string;
+    label: string;
+    sourceParameter: string;
+    designatedMetric: string;
+    taggedAt: string;
+  }>;
 }>;
 
 export type CharacterizationPagedRows<T> = Readonly<{

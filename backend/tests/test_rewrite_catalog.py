@@ -1,6 +1,7 @@
 import pytest
 from src.app.domain.datasets import (
     CharacterizationResultBrowseQuery,
+    CharacterizationTaggingRequest,
     DatasetProfileUpdate,
     DesignBrowseQuery,
     TraceBrowseQuery,
@@ -153,6 +154,49 @@ def test_dataset_service_exposes_characterization_result_summary_and_detail_surf
     )
     assert result_detail.payload["fit_table"][0]["parameter"] == "f01"
     assert result_detail.artifact_refs[0].artifact_id == "artifact-fit-table-flux-a-01"
+
+
+def test_dataset_service_applies_identify_tagging_and_updates_dashboard_metrics_summary(
+    dataset_service: DatasetService,
+) -> None:
+    detail_before = dataset_service.get_characterization_result(
+        "resonator-chip-002",
+        "design_resonator_temp",
+        "char-resonator-temp-qi",
+    )
+
+    assert detail_before.identify_surface.applied_tags == ()
+    assert detail_before.identify_surface.source_parameters[0].current_designated_metric is None
+
+    result = dataset_service.apply_characterization_tagging(
+        "resonator-chip-002",
+        "design_resonator_temp",
+        "char-resonator-temp-qi",
+        CharacterizationTaggingRequest(
+            artifact_id="artifact-resonator-temp-table",
+            source_parameter="Qi_low_temp",
+            designated_metric="qi_low_temp",
+        ),
+    )
+
+    detail_after = dataset_service.get_characterization_result(
+        "resonator-chip-002",
+        "design_resonator_temp",
+        "char-resonator-temp-qi",
+    )
+    metrics = dataset_service.list_tagged_core_metrics("resonator-chip-002")
+
+    assert result.tagging_status == "applied"
+    assert result.tagged_metric.metric_id == "metric-resonator-chip-002-qi-low-temp"
+    assert detail_after.identify_surface.applied_tags[0].designated_metric == "qi_low_temp"
+    assert (
+        detail_after.identify_surface.source_parameters[0].current_designated_metric
+        == "qi_low_temp"
+    )
+    assert [metric.metric_id for metric in metrics] == [
+        "metric-resonator-chip-002-qi-low-temp",
+    ]
+    assert metrics[0].label == "Low Temperature Qi"
 
 
 def test_dataset_service_rejects_invisible_dataset_outside_active_workspace(
