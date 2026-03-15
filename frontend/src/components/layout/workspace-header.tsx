@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronDown, LogIn, LogOut, Settings2 } from "lucide-react";
+import { ChevronDown, LogIn, LogOut } from "lucide-react";
 import { usePathname } from "next/navigation";
 
 import { ShellNotice } from "@/components/layout/shell-notice";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import {
+  resolveShellAuthModeLabel,
   resolveShellAuthSummary,
   resolveShellUserInitials,
 } from "@/components/layout/workspace-shell-contract";
@@ -34,8 +35,11 @@ export function WorkspaceHeader() {
   return (
     <div className="flex min-w-0 flex-1 items-start justify-between gap-4">
       <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Research Workbench
+        </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <p className="truncate text-base font-semibold text-foreground md:text-lg">
+          <p className="truncate text-base font-semibold text-foreground md:mt-1 md:text-lg">
             {identity.pageTitle}
           </p>
           {identity.sectionLabel !== identity.pageTitle ? (
@@ -101,25 +105,15 @@ export function WorkspaceHeader() {
 
               <div className="rounded-[0.9rem] border border-border bg-surface px-3 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Profile Summary
+                  Session Authority
                 </p>
                 <p className="mt-2 text-sm text-foreground">
                   {workspace?.displayName ?? "Workspace pending"} session with{" "}
                   {session?.memberships.length ?? 0} workspace memberships.
                 </p>
-              </div>
-
-              <div className="rounded-[0.9rem] border border-border bg-surface px-3 py-3 text-sm text-muted-foreground">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-2 text-foreground">
-                    <Settings2 className="h-4 w-4" />
-                    Settings
-                  </span>
-                  <span className="text-[11px] uppercase tracking-[0.16em]">shell-owned</span>
-                </div>
-                <p className="mt-2 text-xs leading-5">
-                  Account settings are not expanded in this milestone. Identity and auth entry now
-                  stay explicit in this menu instead of hidden behind disabled placeholders.
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  Auth mode: {session?.authMode ? resolveShellAuthModeLabel(session.authMode) : "pending"} · Session status:{" "}
+                  {status === "ready" || status === "refreshing" ? status : "recovering"}
                 </p>
               </div>
 

@@ -15,6 +15,10 @@ const navSource = readFileSync(
   fileURLToPath(new URL("../src/components/layout/workspace-nav.tsx", import.meta.url)),
   "utf8",
 );
+const authEntrySource = readFileSync(
+  fileURLToPath(new URL("../src/components/layout/auth-entry-surface.tsx", import.meta.url)),
+  "utf8",
+);
 const statusStripSource = readFileSync(
   fileURLToPath(new URL("../src/components/layout/workspace-status-strip.tsx", import.meta.url)),
   "utf8",
@@ -44,13 +48,19 @@ describe("workspace shell source contracts", () => {
   });
 
   it("keeps the sidebar title-only without intro copy, item summaries, or active badges", () => {
-    expect(navSource).toContain("Research Workbench");
+    expect(navSource).toContain("Superconducting Circuits");
+    expect(navSource).not.toContain("Research Workbench");
     expect(navSource).toContain("group.label");
     expect(navSource).toContain("item.label");
     expect(navSource).not.toContain("Open dashboard");
     expect(navSource).not.toContain("item.summary");
     expect(navSource).not.toContain("active route");
     expect(navSource).not.toContain("Session-backed landing and shell context.");
+  });
+
+  it("moves the secondary shell identity into the header instead of duplicating it in the sidebar", () => {
+    expect(headerSource).toContain("Research Workbench");
+    expect(navSource).not.toContain("Research Workbench");
   });
 
   it("routes the collapsed active dataset trigger through the compact shell helper", () => {
@@ -68,9 +78,12 @@ describe("workspace shell source contracts", () => {
 
   it("adopts explicit auth entry routes instead of disabled user-menu wording", () => {
     expect(headerSource).toContain("authSummary.primaryActionHref");
-    expect(headerSource).not.toContain("adapter pending");
+    expect(headerSource).not.toContain("Account settings are not expanded");
     expect(loginPageSource).toContain('mode="login"');
     expect(logoutPageSource).toContain('mode="logout"');
+    expect(authEntrySource).toContain("useForm<LoginFormValues>");
+    expect(authEntrySource).toContain("await login(values)");
+    expect(authEntrySource).toContain("await logout()");
   });
 
   it("removes low-contrast auth-adjacent rose notices from the shared shell", () => {

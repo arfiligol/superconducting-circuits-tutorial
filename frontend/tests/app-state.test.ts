@@ -9,7 +9,13 @@ import {
   shouldAutoSyncRouteDataset,
 } from "../src/lib/app-state/active-dataset-state";
 import { resolveUrlSnapshot } from "../src/lib/app-state/url-state";
-import { mapSessionResponse, mapWorkspaceSwitchResponse } from "../src/lib/api/session";
+import {
+  mapLoginResponse,
+  mapLogoutResponse,
+  mapSessionResponse,
+  mapWorkspaceSwitchResponse,
+  normalizeSessionAuthMode,
+} from "../src/lib/api/session";
 import { mapTaskSummaryResponse } from "../src/lib/api/tasks";
 import {
   resolveLatestTask,
@@ -119,24 +125,24 @@ describe("session contract mapping", () => {
             remove_members: true,
             transfer_owner: true,
           },
-        },
-        memberships: [
-          {
-            id: "workspace-lab",
-            slug: "device-lab",
-            name: "Device Lab",
-            role: "owner",
-            default_task_scope: "workspace",
-            is_active: true,
-            allowed_actions: {
-              switch_to: true,
-              activate_dataset: true,
-              invite_members: true,
-              remove_members: true,
-              transfer_owner: true,
+          memberships: [
+            {
+              id: "workspace-lab",
+              slug: "device-lab",
+              name: "Device Lab",
+              role: "owner",
+              default_task_scope: "workspace",
+              is_active: true,
+              allowed_actions: {
+                switch_to: true,
+                activate_dataset: true,
+                invite_members: true,
+                remove_members: true,
+                transfer_owner: true,
+              },
             },
-          },
-        ],
+          ],
+        },
         active_dataset: {
           id: "fluxonium-2025-031",
           name: "Fluxonium sweep 031",
@@ -252,8 +258,8 @@ describe("session contract mapping", () => {
             remove_members: false,
             transfer_owner: false,
           },
+          memberships: [],
         },
-        memberships: [],
         active_dataset: null,
         capabilities: {
           can_switch_workspace: true,
@@ -270,7 +276,41 @@ describe("session contract mapping", () => {
       }),
     ).toMatchObject({
       authState: "degraded",
-      authMode: "jwt_cookie",
+        authMode: "jwt_cookie",
+      });
+  });
+
+  it("normalizes legacy development stub auth modes and auth mutation payloads", () => {
+    expect(normalizeSessionAuthMode("development_stub")).toBe("local_stub");
+    expect(
+      mapLoginResponse({
+        authenticated: true,
+        user: {
+          id: 7,
+          username: "lab.operator",
+          role: "admin",
+          is_active: true,
+          created_at: "2026-03-16T08:30:00Z",
+          last_login_at: "2026-03-16T08:30:00Z",
+        },
+      }),
+    ).toEqual({
+      authenticated: true,
+      userId: 7,
+      username: "lab.operator",
+      role: "admin",
+      isActive: true,
+      createdAt: "2026-03-16T08:30:00Z",
+      lastLoginAt: "2026-03-16T08:30:00Z",
+    });
+    expect(
+      mapLogoutResponse({
+        authenticated: false,
+        message: "Logged out",
+      }),
+    ).toEqual({
+      authenticated: false,
+      message: "Logged out",
     });
   });
 
@@ -301,39 +341,39 @@ describe("session contract mapping", () => {
             remove_members: false,
             transfer_owner: false,
           },
+          memberships: [
+            {
+              id: "workspace-lab",
+              slug: "device-lab",
+              name: "Device Lab",
+              role: "owner",
+              default_task_scope: "workspace",
+              is_active: false,
+              allowed_actions: {
+                switch_to: true,
+                activate_dataset: true,
+                invite_members: true,
+                remove_members: true,
+                transfer_owner: true,
+              },
+            },
+            {
+              id: "workspace-modeling",
+              slug: "modeling",
+              name: "Modeling",
+              role: "member",
+              default_task_scope: "owned",
+              is_active: true,
+              allowed_actions: {
+                switch_to: true,
+                activate_dataset: true,
+                invite_members: false,
+                remove_members: false,
+                transfer_owner: false,
+              },
+            },
+          ],
         },
-        memberships: [
-          {
-            id: "workspace-lab",
-            slug: "device-lab",
-            name: "Device Lab",
-            role: "owner",
-            default_task_scope: "workspace",
-            is_active: false,
-            allowed_actions: {
-              switch_to: true,
-              activate_dataset: true,
-              invite_members: true,
-              remove_members: true,
-              transfer_owner: true,
-            },
-          },
-          {
-            id: "workspace-modeling",
-            slug: "modeling",
-            name: "Modeling",
-            role: "member",
-            default_task_scope: "owned",
-            is_active: true,
-            allowed_actions: {
-              switch_to: true,
-              activate_dataset: true,
-              invite_members: false,
-              remove_members: false,
-              transfer_owner: false,
-            },
-          },
-        ],
         active_dataset: {
           id: "transmon-coupler-014",
           name: "Transmon Coupler 014",

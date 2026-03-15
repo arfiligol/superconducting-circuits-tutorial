@@ -57,8 +57,6 @@ export function resolveShellAuthModeLabel(mode: SessionAuthMode | undefined) {
   switch (mode) {
     case "jwt_cookie":
       return "JWT cookie";
-    case "development_stub":
-      return "Development stub";
     case "local_stub":
     default:
       return "Local stub";
@@ -79,7 +77,7 @@ export function resolveShellAuthSummary(input: ShellAuthSummaryInput) {
       menuTitle: "Resolving session",
       menuDescription: "The shell is still waiting for the backend session authority.",
       primaryActionHref: "/login",
-      primaryActionLabel: "Open login",
+      primaryActionLabel: "Go to login",
     } as const;
   }
 
@@ -98,7 +96,7 @@ export function resolveShellAuthSummary(input: ShellAuthSummaryInput) {
         ? `${displayName} is signed in as ${input.session.user.email}.`
         : `${displayName} is signed in and backed by the shared session surface.`,
       primaryActionHref: "/logout",
-      primaryActionLabel: "Open logout",
+      primaryActionLabel: "Log out",
     } as const;
   }
 
@@ -111,9 +109,9 @@ export function resolveShellAuthSummary(input: ShellAuthSummaryInput) {
       triggerDetail: "No authenticated user is attached to the shell session",
       menuTitle: "Anonymous session",
       menuDescription:
-        "This shell is running without an authenticated user. Use the login entry to review session state and next steps.",
+        "This shell is running without an authenticated user. Use the login entry to establish a session before trusting workspace actions.",
       primaryActionHref: "/login",
-      primaryActionLabel: "Open login",
+      primaryActionLabel: "Log in",
     } as const;
   }
 

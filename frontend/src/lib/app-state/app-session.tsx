@@ -6,7 +6,10 @@ import useSWR from "swr";
 import {
   appSessionKey,
   getSession,
+  loginWithPassword,
+  logoutCurrentSession,
   type SessionAuthState,
+  type SessionLoginCredentials,
   patchActiveWorkspace,
   type SessionSnapshot,
   type WorkspaceSwitchResult,
@@ -28,6 +31,8 @@ type AppSessionContextValue = Readonly<{
   isDegradedSession: boolean;
   refreshSession: () => Promise<SessionSnapshot | undefined>;
   replaceSession: (nextSession: SessionSnapshot) => Promise<SessionSnapshot | undefined>;
+  login: (credentials: SessionLoginCredentials) => Promise<SessionSnapshot | undefined>;
+  logout: () => Promise<SessionSnapshot | undefined>;
   switchWorkspace: (workspaceId: string) => Promise<WorkspaceSwitchResult>;
 }>;
 
@@ -69,6 +74,14 @@ export function AppSessionProvider({ children }: AppSessionProviderProps) {
         },
         async replaceSession(nextSession) {
           return sessionQuery.mutate(nextSession, { revalidate: false });
+        },
+        async login(credentials) {
+          await loginWithPassword(credentials);
+          return sessionQuery.mutate();
+        },
+        async logout() {
+          await logoutCurrentSession();
+          return sessionQuery.mutate();
         },
         async switchWorkspace(workspaceId) {
           const result = await patchActiveWorkspace(workspaceId);

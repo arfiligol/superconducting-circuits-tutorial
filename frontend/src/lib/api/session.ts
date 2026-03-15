@@ -1,7 +1,8 @@
 import { apiRequest } from "@/lib/api/client";
 
 export type SessionAuthState = "authenticated" | "anonymous" | "degraded";
-export type SessionAuthMode = "local_stub" | "development_stub" | "jwt_cookie";
+type SessionAuthModeResponseShape = "local_stub" | "development_stub" | "jwt_cookie";
+export type SessionAuthMode = "local_stub" | "jwt_cookie";
 
 type AllowedActionsResponseShape = Readonly<{
   switch_to: boolean;
@@ -11,11 +12,21 @@ type AllowedActionsResponseShape = Readonly<{
   transfer_owner: boolean;
 }>;
 
+type MembershipResponseShape = Readonly<{
+  id: string;
+  slug: string;
+  name: string;
+  role: "owner" | "member" | "viewer";
+  default_task_scope: "workspace" | "owned";
+  is_active: boolean;
+  allowed_actions: AllowedActionsResponseShape;
+}>;
+
 type SessionResponseShape = Readonly<{
   session_id: string;
   auth: Readonly<{
     state: SessionAuthState;
-    mode: SessionAuthMode;
+    mode: SessionAuthModeResponseShape;
   }>;
   user:
     | Readonly<{
@@ -32,18 +43,9 @@ type SessionResponseShape = Readonly<{
     role: "owner" | "member" | "viewer";
     default_task_scope: "workspace" | "owned";
     allowed_actions: AllowedActionsResponseShape;
+    memberships?: ReadonlyArray<MembershipResponseShape>;
   }>;
-  memberships: ReadonlyArray<
-    Readonly<{
-      id: string;
-      slug: string;
-      name: string;
-      role: "owner" | "member" | "viewer";
-      default_task_scope: "workspace" | "owned";
-      is_active: boolean;
-      allowed_actions: AllowedActionsResponseShape;
-    }>
-  >;
+  memberships?: ReadonlyArray<MembershipResponseShape>;
   active_dataset:
     | Readonly<{
         id: string;
@@ -154,6 +156,47 @@ export type WorkspaceSwitchResult = Readonly<{
 }>;
 
 export const appSessionKey = "/api/backend/session";
+const authLoginPath = "/api/backend/api/v1/auth/login";
+const authLogoutPath = "/api/backend/api/v1/auth/logout";
+
+type LoginRequestShape = Readonly<{
+  username: string;
+  password: string;
+}>;
+
+type LoginResponseShape = Readonly<{
+  authenticated: true;
+  user: Readonly<{
+    id: number;
+    username: string;
+    role: string;
+    is_active: boolean;
+    created_at: string;
+    last_login_at: string | null;
+  }>;
+}>;
+
+type LogoutResponseShape = Readonly<{
+  authenticated: false;
+  message: string;
+}>;
+
+export type SessionLoginCredentials = LoginRequestShape;
+
+export type SessionLoginResult = Readonly<{
+  authenticated: true;
+  userId: number;
+  username: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+  lastLoginAt: string | null;
+}>;
+
+export type SessionLogoutResult = Readonly<{
+  authenticated: false;
+  message: string;
+}>;
 
 function mapAllowedActions(payload: AllowedActionsResponseShape): SessionAllowedActions {
   return {
@@ -163,6 +206,10 @@ function mapAllowedActions(payload: AllowedActionsResponseShape): SessionAllowed
     removeMembers: payload.remove_members,
     transferOwner: payload.transfer_owner,
   };
+}
+
+export function normalizeSessionAuthMode(mode: SessionAuthModeResponseShape): SessionAuthMode {
+  return mode === "development_stub" ? "local_stub" : mode;
 }
 
 export function mapSessionResponse(payload: SessionResponseShape): SessionSnapshot {
@@ -178,11 +225,12 @@ export function mapSessionResponse(payload: SessionResponseShape): SessionSnapsh
     canManageDatasets: payload.capabilities.can_manage_datasets,
     canViewAuditLogs: payload.capabilities.can_view_audit_logs,
   };
+  const memberships = payload.workspace.memberships ?? payload.memberships ?? [];
 
   return {
     sessionId: payload.session_id,
     authState: payload.auth.state,
-    authMode: payload.auth.mode,
+    authMode: normalizeSessionAuthMode(payload.auth.mode),
     capabilities,
     canSubmitTasks: capabilities.canSubmitTasks,
     canManageDatasets: capabilities.canManageDatasets,
@@ -202,7 +250,7 @@ export function mapSessionResponse(payload: SessionResponseShape): SessionSnapsh
       defaultTaskScope: payload.workspace.default_task_scope,
       allowedActions: mapAllowedActions(payload.workspace.allowed_actions),
     },
-    memberships: payload.memberships.map((membership) => ({
+    memberships: memberships.map((membership) => ({
       workspaceId: membership.id,
       slug: membership.slug,
       displayName: membership.name,
@@ -237,9 +285,45 @@ export function mapWorkspaceSwitchResponse(
   };
 }
 
+export function mapLoginResponse(payload: LoginResponseShape): SessionLoginResult {
+  return {
+    authenticated: payload.authenticated,
+    userId: payload.user.id,
+    username: payload.user.username,
+    role: payload.user.role,
+    isActive: payload.user.is_active,
+    createdAt: payload.user.created_at,
+    lastLoginAt: payload.user.last_login_at,
+  };
+}
+
+export function mapLogoutResponse(payload: LogoutResponseShape): SessionLogoutResult {
+  return {
+    authenticated: payload.authenticated,
+    message: payload.message,
+  };
+}
+
 export async function getSession() {
   const response = await apiRequest<SessionResponseShape>(appSessionKey);
   return mapSessionResponse(response);
+}
+
+export async function loginWithPassword(credentials: SessionLoginCredentials) {
+  const response = await apiRequest<LoginResponseShape>(authLoginPath, {
+    method: "POST",
+    body: credentials,
+  });
+
+  return mapLoginResponse(response);
+}
+
+export async function logoutCurrentSession() {
+  const response = await apiRequest<LogoutResponseShape>(authLogoutPath, {
+    method: "POST",
+  });
+
+  return mapLogoutResponse(response);
 }
 
 export async function patchActiveWorkspace(workspaceId: string) {

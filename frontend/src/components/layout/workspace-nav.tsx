@@ -22,10 +22,9 @@ export function WorkspaceNav({ onNavigate }: WorkspaceNavProps) {
   return (
     <div className="flex h-full flex-col gap-6">
       <div className="px-2 pb-1">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
           Superconducting Circuits
         </p>
-        <p className="mt-2 text-base font-semibold text-foreground">Research Workbench</p>
       </div>
 
       <div className="space-y-6">
