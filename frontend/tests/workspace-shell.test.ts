@@ -36,4 +36,11 @@ describe("workspace shell source contracts", () => {
     expect(statusStripSource).toContain("datasetSummary.value");
     expect(statusStripSource).toContain("datasetSummary.badge");
   });
+
+  it("keeps workspace and dataset switchers inside the shared shell", () => {
+    expect(statusStripSource).toContain("switchWorkspace(");
+    expect(statusStripSource).toContain("Search Datasets");
+    expect(statusStripSource).toContain("handleDatasetSelection(");
+    expect(statusStripSource).toContain("syncRouteDataset(");
+  });
 });

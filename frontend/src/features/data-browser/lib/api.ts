@@ -14,6 +14,17 @@ import type {
 
 export const datasetCatalogKey = "/api/backend/datasets";
 
+function datasetCatalogPageKey(cursor?: string | null, limit?: number | null) {
+  const params = new URLSearchParams();
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  if (typeof limit === "number") {
+    params.set("limit", String(limit));
+  }
+  return withQuery(datasetCatalogKey, params);
+}
+
 export function datasetProfileKey(datasetId: string) {
   return `/api/backend/datasets/${encodeURIComponent(datasetId)}/profile`;
 }
@@ -82,13 +93,26 @@ export function traceDetailKey(datasetId: string, designId: string, traceId: str
 }
 
 export async function listDatasetCatalog(): Promise<PagedRows<DatasetCatalogRow>> {
-  const response = await apiRequestEnvelope<
-    { rows: DatasetCatalogRow[] },
-    PagedRows<DatasetCatalogRow>["meta"]
-  >(datasetCatalogKey);
+  const rows: DatasetCatalogRow[] = [];
+  let cursor: string | null = null;
+  let meta: PagedRows<DatasetCatalogRow>["meta"];
+
+  do {
+    const response: Readonly<{
+      data: { rows: DatasetCatalogRow[] };
+      meta: PagedRows<DatasetCatalogRow>["meta"];
+    }> = await apiRequestEnvelope<
+      { rows: DatasetCatalogRow[] },
+      PagedRows<DatasetCatalogRow>["meta"]
+    >(datasetCatalogPageKey(cursor, 50));
+    rows.push(...response.data.rows);
+    meta = response.meta;
+    cursor = response.meta?.next_cursor ?? null;
+  } while (cursor);
+
   return {
-    rows: response.data.rows,
-    meta: response.meta,
+    rows,
+    meta,
   };
 }
 

@@ -5,10 +5,11 @@ import {
   parseDatasetIdFromSearch,
   resolveActiveDatasetId,
   resolveActiveDatasetSource,
+  resolveSearchWithDatasetId,
   shouldAutoSyncRouteDataset,
 } from "../src/lib/app-state/active-dataset-state";
 import { resolveUrlSnapshot } from "../src/lib/app-state/url-state";
-import { mapSessionResponse } from "../src/lib/api/session";
+import { mapSessionResponse, mapWorkspaceSwitchResponse } from "../src/lib/api/session";
 import { mapTaskSummaryResponse } from "../src/lib/api/tasks";
 import {
   resolveLatestTask,
@@ -21,6 +22,10 @@ describe("active dataset state helpers", () => {
     expect(parseDatasetIdFromSearch("?datasetId=fluxonium-2025-031")).toBe("fluxonium-2025-031");
     expect(parseDatasetIdFromSearch("?datasetId=   ")).toBeNull();
     expect(parseDatasetIdFromSearch("")).toBeNull();
+    expect(resolveSearchWithDatasetId("?taskId=31", "fluxonium-2025-031")).toBe(
+      "?taskId=31&datasetId=fluxonium-2025-031",
+    );
+    expect(resolveSearchWithDatasetId("?taskId=31&datasetId=old", null)).toBe("?taskId=31");
   });
 
   it("prefers route state over preferred in-memory state", () => {
@@ -160,6 +165,18 @@ describe("session contract mapping", () => {
       sessionId: "session-dev-001",
       authState: "authenticated",
       authMode: "local_stub",
+      capabilities: {
+        canSwitchWorkspace: false,
+        canSwitchDataset: true,
+        canInviteMembers: true,
+        canRemoveMembers: true,
+        canTransferWorkspaceOwner: true,
+        canSubmitTasks: true,
+        canManageWorkspaceTasks: true,
+        canManageDefinitions: true,
+        canManageDatasets: true,
+        canViewAuditLogs: false,
+      },
       canSubmitTasks: true,
       canManageDatasets: true,
       user: {
@@ -174,6 +191,13 @@ describe("session contract mapping", () => {
         displayName: "Device Lab",
         role: "owner",
         defaultTaskScope: "workspace",
+        allowedActions: {
+          switchTo: true,
+          activateDataset: true,
+          inviteMembers: true,
+          removeMembers: true,
+          transferOwner: true,
+        },
       },
       memberships: [
         {
@@ -183,6 +207,13 @@ describe("session contract mapping", () => {
           role: "owner",
           defaultTaskScope: "workspace",
           isActive: true,
+          allowedActions: {
+            switchTo: true,
+            activateDataset: true,
+            inviteMembers: true,
+            removeMembers: true,
+            transferOwner: true,
+          },
         },
       ],
       activeDataset: {
@@ -196,6 +227,180 @@ describe("session contract mapping", () => {
         visibilityScope: "workspace",
         lifecycleState: "active",
       },
+    });
+  });
+
+  it("maps workspace switch responses into session plus rebind outcome", () => {
+    expect(
+      mapWorkspaceSwitchResponse({
+        session_id: "session-dev-001",
+        auth: {
+          state: "authenticated",
+          mode: "local_stub",
+        },
+        user: {
+          id: "user-dev-01",
+          display_name: "Device Lab",
+          email: "device-lab@example.com",
+          platform_role: "user",
+        },
+        workspace: {
+          id: "workspace-modeling",
+          slug: "modeling",
+          name: "Modeling",
+          role: "member",
+          default_task_scope: "owned",
+          allowed_actions: {
+            switch_to: true,
+            activate_dataset: true,
+            invite_members: false,
+            remove_members: false,
+            transfer_owner: false,
+          },
+        },
+        memberships: [
+          {
+            id: "workspace-lab",
+            slug: "device-lab",
+            name: "Device Lab",
+            role: "owner",
+            default_task_scope: "workspace",
+            is_active: false,
+            allowed_actions: {
+              switch_to: true,
+              activate_dataset: true,
+              invite_members: true,
+              remove_members: true,
+              transfer_owner: true,
+            },
+          },
+          {
+            id: "workspace-modeling",
+            slug: "modeling",
+            name: "Modeling",
+            role: "member",
+            default_task_scope: "owned",
+            is_active: true,
+            allowed_actions: {
+              switch_to: true,
+              activate_dataset: true,
+              invite_members: false,
+              remove_members: false,
+              transfer_owner: false,
+            },
+          },
+        ],
+        active_dataset: {
+          id: "transmon-coupler-014",
+          name: "Transmon Coupler 014",
+          family: "Transmon",
+          status: "Review",
+          owner_user_id: "user-dev-01",
+          owner_display_name: "Device Lab",
+          workspace_id: "workspace-modeling",
+          visibility_scope: "workspace",
+          lifecycle_state: "active",
+        },
+        capabilities: {
+          can_switch_workspace: true,
+          can_switch_dataset: true,
+          can_invite_members: false,
+          can_remove_members: false,
+          can_transfer_workspace_owner: false,
+          can_submit_tasks: true,
+          can_manage_workspace_tasks: false,
+          can_manage_definitions: true,
+          can_manage_datasets: true,
+          can_view_audit_logs: false,
+        },
+        active_dataset_resolution: "rebound",
+        detached_task_ids: ["task_402"],
+      }),
+    ).toEqual({
+      session: {
+        sessionId: "session-dev-001",
+        authState: "authenticated",
+        authMode: "local_stub",
+        capabilities: {
+          canSwitchWorkspace: true,
+          canSwitchDataset: true,
+          canInviteMembers: false,
+          canRemoveMembers: false,
+          canTransferWorkspaceOwner: false,
+          canSubmitTasks: true,
+          canManageWorkspaceTasks: false,
+          canManageDefinitions: true,
+          canManageDatasets: true,
+          canViewAuditLogs: false,
+        },
+        canSubmitTasks: true,
+        canManageDatasets: true,
+        user: {
+          userId: "user-dev-01",
+          displayName: "Device Lab",
+          email: "device-lab@example.com",
+          platformRole: "user",
+        },
+        workspace: {
+          workspaceId: "workspace-modeling",
+          slug: "modeling",
+          displayName: "Modeling",
+          role: "member",
+          defaultTaskScope: "owned",
+          allowedActions: {
+            switchTo: true,
+            activateDataset: true,
+            inviteMembers: false,
+            removeMembers: false,
+            transferOwner: false,
+          },
+        },
+        memberships: [
+          {
+            workspaceId: "workspace-lab",
+            slug: "device-lab",
+            displayName: "Device Lab",
+            role: "owner",
+            defaultTaskScope: "workspace",
+            isActive: false,
+            allowedActions: {
+              switchTo: true,
+              activateDataset: true,
+              inviteMembers: true,
+              removeMembers: true,
+              transferOwner: true,
+            },
+          },
+          {
+            workspaceId: "workspace-modeling",
+            slug: "modeling",
+            displayName: "Modeling",
+            role: "member",
+            defaultTaskScope: "owned",
+            isActive: true,
+            allowedActions: {
+              switchTo: true,
+              activateDataset: true,
+              inviteMembers: false,
+              removeMembers: false,
+              transferOwner: false,
+            },
+          },
+        ],
+        activeDataset: {
+          datasetId: "transmon-coupler-014",
+          name: "Transmon Coupler 014",
+          family: "Transmon",
+          status: "Review",
+          ownerUserId: "user-dev-01",
+          owner: "Device Lab",
+          workspaceId: "workspace-modeling",
+          visibilityScope: "workspace",
+          lifecycleState: "active",
+        },
+      },
+      activeDatasetResolution: "rebound",
+      detachedTaskIds: ["task_402"],
     });
   });
 });

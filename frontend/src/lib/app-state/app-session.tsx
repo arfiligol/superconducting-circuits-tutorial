@@ -6,7 +6,9 @@ import useSWR from "swr";
 import {
   appSessionKey,
   getSession,
+  patchActiveWorkspace,
   type SessionSnapshot,
+  type WorkspaceSwitchResult,
 } from "@/lib/api/session";
 
 export type AppSessionStatus = "loading" | "ready" | "error" | "refreshing";
@@ -22,6 +24,7 @@ type AppSessionContextValue = Readonly<{
   isAuthenticated: boolean;
   refreshSession: () => Promise<SessionSnapshot | undefined>;
   replaceSession: (nextSession: SessionSnapshot) => Promise<SessionSnapshot | undefined>;
+  switchWorkspace: (workspaceId: string) => Promise<WorkspaceSwitchResult>;
 }>;
 
 const AppSessionContext = createContext<AppSessionContextValue | null>(null);
@@ -57,6 +60,11 @@ export function AppSessionProvider({ children }: AppSessionProviderProps) {
         },
         async replaceSession(nextSession) {
           return sessionQuery.mutate(nextSession, { revalidate: false });
+        },
+        async switchWorkspace(workspaceId) {
+          const result = await patchActiveWorkspace(workspaceId);
+          await sessionQuery.mutate(result.session, { revalidate: false });
+          return result;
         },
       }}
     >

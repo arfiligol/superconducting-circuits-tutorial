@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  filterShellDatasets,
   resolveShellActiveDatasetSummary,
   resolveShellTaskHref,
   resolveShellTaskLabel,
   resolveShellUserInitials,
   resolveShellWorkerSummary,
+  resolveShellWorkspaceMemberships,
+  resolveWorkspaceSwitchNotice,
 } from "../src/components/layout/workspace-shell-contract";
 
 describe("workspace shell contract helpers", () => {
@@ -45,6 +48,13 @@ describe("workspace shell contract helpers", () => {
         displayName: "Lab A",
         role: "owner",
         defaultTaskScope: "workspace",
+        allowedActions: {
+          switchTo: true,
+          activateDataset: true,
+          inviteMembers: true,
+          removeMembers: true,
+          transferOwner: true,
+        },
       }),
     ).toEqual({
       label: "Worker Summary",
@@ -88,5 +98,138 @@ describe("workspace shell contract helpers", () => {
       detail: "Select one from Raw Data to attach it to the session.",
       badge: null,
     });
+  });
+
+  it("derives switchable memberships and searchable dataset rows for shell switchers", () => {
+    expect(
+      resolveShellWorkspaceMemberships([
+        {
+          workspaceId: "ws-modeling",
+          slug: "modeling",
+          displayName: "Modeling",
+          role: "member",
+          defaultTaskScope: "owned",
+          isActive: false,
+          allowedActions: {
+            switchTo: true,
+            activateDataset: true,
+            inviteMembers: false,
+            removeMembers: false,
+            transferOwner: false,
+          },
+        },
+        {
+          workspaceId: "ws-lab",
+          slug: "lab",
+          displayName: "Device Lab",
+          role: "owner",
+          defaultTaskScope: "workspace",
+          isActive: true,
+          allowedActions: {
+            switchTo: true,
+            activateDataset: true,
+            inviteMembers: true,
+            removeMembers: true,
+            transferOwner: true,
+          },
+        },
+      ]).map((membership) => membership.workspaceId),
+    ).toEqual(["ws-lab", "ws-modeling"]);
+
+    expect(
+      filterShellDatasets(
+        [
+          {
+            dataset_id: "resonator-chip-002",
+            name: "Resonator chip 002",
+            visibility_scope: "workspace",
+            lifecycle_state: "active",
+            device_type: "Resonator",
+            updated_at: "2026-03-14T10:20:00Z",
+            allowed_actions: {
+              select: true,
+              update_profile: true,
+              publish: false,
+              archive: false,
+            },
+            family: "Resonator",
+            owner_display_name: "Modeling",
+          },
+          {
+            dataset_id: "fluxonium-2025-031",
+            name: "Fluxonium sweep 031",
+            visibility_scope: "workspace",
+            lifecycle_state: "active",
+            device_type: "Fluxonium",
+            updated_at: "2026-03-14T10:20:00Z",
+            allowed_actions: {
+              select: true,
+              update_profile: true,
+              publish: true,
+              archive: true,
+            },
+            family: "Fluxonium",
+            owner_display_name: "Device Lab",
+          },
+        ],
+        "flux",
+        "resonator-chip-002",
+      ).map((row) => row.dataset_id),
+    ).toEqual(["fluxonium-2025-031"]);
+  });
+
+  it("formats workspace switch notices from backend rebind outcomes", () => {
+    expect(
+      resolveWorkspaceSwitchNotice({
+        session: {
+          sessionId: "session-dev-001",
+          authState: "authenticated",
+          authMode: "local_stub",
+          capabilities: {
+            canSwitchWorkspace: true,
+            canSwitchDataset: true,
+            canInviteMembers: false,
+            canRemoveMembers: false,
+            canTransferWorkspaceOwner: false,
+            canSubmitTasks: true,
+            canManageWorkspaceTasks: false,
+            canManageDefinitions: true,
+            canManageDatasets: true,
+            canViewAuditLogs: false,
+          },
+          canSubmitTasks: true,
+          canManageDatasets: true,
+          user: null,
+          workspace: {
+            workspaceId: "ws-modeling",
+            slug: "modeling",
+            displayName: "Modeling",
+            role: "member",
+            defaultTaskScope: "owned",
+            allowedActions: {
+              switchTo: true,
+              activateDataset: true,
+              inviteMembers: false,
+              removeMembers: false,
+              transferOwner: false,
+            },
+          },
+          memberships: [],
+          activeDataset: {
+            datasetId: "transmon-coupler-014",
+            name: "Transmon Coupler 014",
+            family: "Transmon",
+            status: "Review",
+            ownerUserId: "user-dev-01",
+            owner: "Device Lab",
+            workspaceId: "ws-modeling",
+            visibilityScope: "workspace",
+            lifecycleState: "active",
+          },
+        },
+        activeDatasetResolution: "rebound",
+        detachedTaskIds: ["task_402"],
+      }).message,
+    ).toContain("rebound to Transmon Coupler 014");
   });
 });

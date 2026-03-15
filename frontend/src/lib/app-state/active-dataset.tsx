@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useEffectEvent, useState } from "react";
+import { createContext, useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 import useSWR from "swr";
 
 import {
@@ -11,6 +11,7 @@ import { patchActiveDataset } from "@/lib/api/session";
 import {
   canRetryRouteDatasetSync,
   parseDatasetIdFromSearch,
+  resolveSearchWithDatasetId,
   resolveActiveDatasetId,
   resolveActiveDatasetSource,
   shouldAutoSyncRouteDataset,
@@ -47,6 +48,7 @@ type ActiveDatasetContextValue = Readonly<{
   retryRouteSync: () => Promise<void>;
   setActiveDataset: (datasetId: string | null) => Promise<void>;
   clearActiveDataset: () => Promise<void>;
+  syncRouteDataset: (datasetId: string | null) => void;
 }>;
 
 const ActiveDatasetContext = createContext<ActiveDatasetContextValue | null>(null);
@@ -71,6 +73,7 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
     targetDatasetId: null,
     status: "idle",
   });
+  const previousWorkspaceIdRef = useRef<string | null>(session?.workspace.workspaceId ?? null);
   const routeDatasetId = parseDatasetIdFromSearch(urlState.search);
   const sessionDatasetId = session?.activeDataset?.datasetId ?? null;
   const resolvedDatasetId = resolveActiveDatasetId(routeDatasetId, sessionDatasetId);
@@ -85,6 +88,20 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
     sessionDatasetId,
     routeSyncState,
   );
+
+  function syncRouteDatasetSelection(datasetId: string | null) {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const nextSearch = resolveSearchWithDatasetId(window.location.search, datasetId);
+    if (nextSearch === window.location.search) {
+      return;
+    }
+
+    const nextUrl = `${window.location.pathname}${nextSearch}${window.location.hash}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+  }
 
   async function syncActiveDataset(
     datasetId: string | null,
@@ -107,6 +124,7 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
     try {
       const nextSession = await patchActiveDataset(datasetId);
       await replaceSession(nextSession);
+      syncRouteDatasetSelection(targetDatasetId);
 
       if (isRouteSync) {
         setRouteSyncState({
@@ -159,6 +177,22 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
       });
     }
   }, [routeDatasetId, sessionDatasetId]);
+
+  useEffect(() => {
+    const currentWorkspaceId = session?.workspace.workspaceId ?? null;
+    const previousWorkspaceId = previousWorkspaceIdRef.current;
+
+    if (
+      previousWorkspaceId &&
+      currentWorkspaceId &&
+      previousWorkspaceId !== currentWorkspaceId &&
+      routeDatasetId !== sessionDatasetId
+    ) {
+      syncRouteDatasetSelection(sessionDatasetId);
+    }
+
+    previousWorkspaceIdRef.current = currentWorkspaceId;
+  }, [routeDatasetId, sessionDatasetId, session?.workspace.workspaceId]);
 
   useEffect(() => {
     if (
@@ -239,6 +273,9 @@ export function ActiveDatasetProvider({ children }: ActiveDatasetProviderProps) 
         },
         async clearActiveDataset() {
           await syncActiveDataset(null);
+        },
+        syncRouteDataset(datasetId) {
+          syncRouteDatasetSelection(datasetId);
         },
       }}
     >

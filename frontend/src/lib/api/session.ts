@@ -1,5 +1,13 @@
 import { apiRequest } from "@/lib/api/client";
 
+type AllowedActionsResponseShape = Readonly<{
+  switch_to: boolean;
+  activate_dataset: boolean;
+  invite_members: boolean;
+  remove_members: boolean;
+  transfer_owner: boolean;
+}>;
+
 type SessionResponseShape = Readonly<{
   session_id: string;
   auth: Readonly<{
@@ -20,13 +28,7 @@ type SessionResponseShape = Readonly<{
     name: string;
     role: "owner" | "member" | "viewer";
     default_task_scope: "workspace" | "owned";
-    allowed_actions: Readonly<{
-      switch_to: boolean;
-      activate_dataset: boolean;
-      invite_members: boolean;
-      remove_members: boolean;
-      transfer_owner: boolean;
-    }>;
+    allowed_actions: AllowedActionsResponseShape;
   }>;
   memberships: ReadonlyArray<
     Readonly<{
@@ -36,13 +38,7 @@ type SessionResponseShape = Readonly<{
       role: "owner" | "member" | "viewer";
       default_task_scope: "workspace" | "owned";
       is_active: boolean;
-      allowed_actions: Readonly<{
-        switch_to: boolean;
-        activate_dataset: boolean;
-        invite_members: boolean;
-        remove_members: boolean;
-        transfer_owner: boolean;
-      }>;
+      allowed_actions: AllowedActionsResponseShape;
     }>
   >;
   active_dataset:
@@ -72,10 +68,38 @@ type SessionResponseShape = Readonly<{
   }>;
 }>;
 
+type WorkspaceSwitchResponseShape = SessionResponseShape &
+  Readonly<{
+    active_dataset_resolution: "preserved" | "rebound" | "cleared";
+    detached_task_ids: readonly string[];
+  }>;
+
+export type SessionAllowedActions = Readonly<{
+  switchTo: boolean;
+  activateDataset: boolean;
+  inviteMembers: boolean;
+  removeMembers: boolean;
+  transferOwner: boolean;
+}>;
+
+export type SessionCapabilities = Readonly<{
+  canSwitchWorkspace: boolean;
+  canSwitchDataset: boolean;
+  canInviteMembers: boolean;
+  canRemoveMembers: boolean;
+  canTransferWorkspaceOwner: boolean;
+  canSubmitTasks: boolean;
+  canManageWorkspaceTasks: boolean;
+  canManageDefinitions: boolean;
+  canManageDatasets: boolean;
+  canViewAuditLogs: boolean;
+}>;
+
 export type SessionSnapshot = Readonly<{
   sessionId: string;
   authState: "authenticated" | "anonymous";
   authMode: "local_stub";
+  capabilities: SessionCapabilities;
   canSubmitTasks: boolean;
   canManageDatasets: boolean;
   user:
@@ -92,6 +116,7 @@ export type SessionSnapshot = Readonly<{
     displayName: string;
     role: "owner" | "member" | "viewer";
     defaultTaskScope: "workspace" | "owned";
+    allowedActions: SessionAllowedActions;
   }>;
   memberships: ReadonlyArray<
     Readonly<{
@@ -101,6 +126,7 @@ export type SessionSnapshot = Readonly<{
       role: "owner" | "member" | "viewer";
       defaultTaskScope: "workspace" | "owned";
       isActive: boolean;
+      allowedActions: SessionAllowedActions;
     }>
   >;
   activeDataset:
@@ -118,15 +144,45 @@ export type SessionSnapshot = Readonly<{
     | null;
 }>;
 
+export type WorkspaceSwitchResult = Readonly<{
+  session: SessionSnapshot;
+  activeDatasetResolution: "preserved" | "rebound" | "cleared";
+  detachedTaskIds: readonly string[];
+}>;
+
 export const appSessionKey = "/api/backend/session";
 
+function mapAllowedActions(payload: AllowedActionsResponseShape): SessionAllowedActions {
+  return {
+    switchTo: payload.switch_to,
+    activateDataset: payload.activate_dataset,
+    inviteMembers: payload.invite_members,
+    removeMembers: payload.remove_members,
+    transferOwner: payload.transfer_owner,
+  };
+}
+
 export function mapSessionResponse(payload: SessionResponseShape): SessionSnapshot {
+  const capabilities: SessionCapabilities = {
+    canSwitchWorkspace: payload.capabilities.can_switch_workspace,
+    canSwitchDataset: payload.capabilities.can_switch_dataset,
+    canInviteMembers: payload.capabilities.can_invite_members,
+    canRemoveMembers: payload.capabilities.can_remove_members,
+    canTransferWorkspaceOwner: payload.capabilities.can_transfer_workspace_owner,
+    canSubmitTasks: payload.capabilities.can_submit_tasks,
+    canManageWorkspaceTasks: payload.capabilities.can_manage_workspace_tasks,
+    canManageDefinitions: payload.capabilities.can_manage_definitions,
+    canManageDatasets: payload.capabilities.can_manage_datasets,
+    canViewAuditLogs: payload.capabilities.can_view_audit_logs,
+  };
+
   return {
     sessionId: payload.session_id,
     authState: payload.auth.state,
     authMode: payload.auth.mode,
-    canSubmitTasks: payload.capabilities.can_submit_tasks,
-    canManageDatasets: payload.capabilities.can_manage_datasets,
+    capabilities,
+    canSubmitTasks: capabilities.canSubmitTasks,
+    canManageDatasets: capabilities.canManageDatasets,
     user: payload.user
       ? {
           userId: payload.user.id,
@@ -141,6 +197,7 @@ export function mapSessionResponse(payload: SessionResponseShape): SessionSnapsh
       displayName: payload.workspace.name,
       role: payload.workspace.role,
       defaultTaskScope: payload.workspace.default_task_scope,
+      allowedActions: mapAllowedActions(payload.workspace.allowed_actions),
     },
     memberships: payload.memberships.map((membership) => ({
       workspaceId: membership.id,
@@ -149,6 +206,7 @@ export function mapSessionResponse(payload: SessionResponseShape): SessionSnapsh
       role: membership.role,
       defaultTaskScope: membership.default_task_scope,
       isActive: membership.is_active,
+      allowedActions: mapAllowedActions(membership.allowed_actions),
     })),
     activeDataset: payload.active_dataset
       ? {
@@ -166,9 +224,31 @@ export function mapSessionResponse(payload: SessionResponseShape): SessionSnapsh
   };
 }
 
+export function mapWorkspaceSwitchResponse(
+  payload: WorkspaceSwitchResponseShape,
+): WorkspaceSwitchResult {
+  return {
+    session: mapSessionResponse(payload),
+    activeDatasetResolution: payload.active_dataset_resolution,
+    detachedTaskIds: [...payload.detached_task_ids],
+  };
+}
+
 export async function getSession() {
   const response = await apiRequest<SessionResponseShape>(appSessionKey);
   return mapSessionResponse(response);
+}
+
+export async function patchActiveWorkspace(workspaceId: string) {
+  const response = await apiRequest<WorkspaceSwitchResponseShape>(
+    `${appSessionKey}/active-workspace`,
+    {
+      method: "PATCH",
+      body: { workspace_id: workspaceId },
+    },
+  );
+
+  return mapWorkspaceSwitchResponse(response);
 }
 
 export async function patchActiveDataset(datasetId: string | null) {

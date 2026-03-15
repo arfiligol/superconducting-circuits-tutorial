@@ -1,6 +1,10 @@
 "use client";
 
-import type { SessionSnapshot } from "@/lib/api/session";
+import type {
+  SessionSnapshot,
+  WorkspaceSwitchResult,
+} from "@/lib/api/session";
+import type { DatasetCatalogRow } from "@/features/data-browser/lib/contracts";
 import type { TaskSummary } from "@/lib/api/tasks";
 import type {
   ActiveDatasetSnapshot,
@@ -99,5 +103,76 @@ export function resolveShellActiveDatasetSummary(
     badge:
       dataset.status ??
       (options.source === "url" ? "Attached" : options.source === "session" ? "Session" : null),
+  } as const;
+}
+
+export function resolveShellWorkspaceMemberships(
+  memberships: SessionSnapshot["memberships"] | undefined,
+) {
+  if (!memberships) {
+    return [];
+  }
+
+  const switchableMemberships = memberships.filter(
+    (membership) => membership.allowedActions.switchTo || membership.isActive,
+  );
+
+  return [...switchableMemberships].sort((left, right) => {
+    if (left.isActive === right.isActive) {
+      return left.displayName.localeCompare(right.displayName);
+    }
+    return left.isActive ? -1 : 1;
+  });
+}
+
+export function filterShellDatasets(
+  rows: readonly DatasetCatalogRow[],
+  query: string,
+  activeDatasetId: string | null,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows =
+    normalizedQuery.length === 0
+      ? rows
+      : rows.filter((row) =>
+          [row.name, row.dataset_id, row.family, row.owner_display_name, row.device_type]
+            .filter(Boolean)
+            .some((value) => value.toLowerCase().includes(normalizedQuery)),
+        );
+
+  return [...filteredRows].sort((left, right) => {
+    const leftActive = left.dataset_id === activeDatasetId;
+    const rightActive = right.dataset_id === activeDatasetId;
+    if (leftActive === rightActive) {
+      return left.name.localeCompare(right.name);
+    }
+    return leftActive ? -1 : 1;
+  });
+}
+
+export function resolveWorkspaceSwitchNotice(result: WorkspaceSwitchResult) {
+  const detachedCount = result.detachedTaskIds.length;
+  const detachedSuffix =
+    detachedCount > 0
+      ? ` ${detachedCount} task${detachedCount === 1 ? "" : "s"} detached from queue visibility.`
+      : "";
+
+  if (result.activeDatasetResolution === "preserved" && result.session.activeDataset) {
+    return {
+      tone: "success",
+      message: `Workspace switched. Active dataset stayed on ${result.session.activeDataset.name}.${detachedSuffix}`,
+    } as const;
+  }
+
+  if (result.activeDatasetResolution === "rebound" && result.session.activeDataset) {
+    return {
+      tone: "primary",
+      message: `Workspace switched. Active dataset rebound to ${result.session.activeDataset.name}.${detachedSuffix}`,
+    } as const;
+  }
+
+  return {
+    tone: "warning",
+    message: `Workspace switched. Active dataset was cleared for this workspace.${detachedSuffix}`,
   } as const;
 }

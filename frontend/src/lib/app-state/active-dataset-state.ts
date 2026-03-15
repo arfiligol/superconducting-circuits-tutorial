@@ -4,6 +4,19 @@ export function parseDatasetIdFromSearch(search: string): string | null {
   return datasetId ? datasetId : null;
 }
 
+export function resolveSearchWithDatasetId(search: string, datasetId: string | null) {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+
+  if (datasetId) {
+    params.set("datasetId", datasetId);
+  } else {
+    params.delete("datasetId");
+  }
+
+  const nextSearch = params.toString();
+  return nextSearch ? `?${nextSearch}` : "";
+}
+
 export function resolveActiveDatasetId(
   routeDatasetId: string | null,
   sessionDatasetId: string | null,

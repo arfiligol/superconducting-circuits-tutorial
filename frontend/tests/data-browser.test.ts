@@ -25,6 +25,16 @@ const rawDataWorkspaceSource = readFileSync(
   ),
   "utf8",
 );
+const dashboardDataHookSource = readFileSync(
+  fileURLToPath(new URL("../src/features/data-browser/hooks/use-dashboard-data.ts", import.meta.url)),
+  "utf8",
+);
+const rawDataHookSource = readFileSync(
+  fileURLToPath(
+    new URL("../src/features/data-browser/hooks/use-raw-data-browser-data.ts", import.meta.url),
+  ),
+  "utf8",
+);
 
 describe("data browser api keys", () => {
   it("keeps stable dashboard and raw-data endpoints", () => {
@@ -135,6 +145,16 @@ describe("page-boundary source contracts", () => {
     expect(rawDataWorkspaceSource).toContain("metadata-only until one row is selected for preview");
     expect(rawDataWorkspaceSource).toContain("Single Trace Preview");
     expect(rawDataWorkspaceSource).not.toContain("setActiveDataset(");
+  });
+
+  it("keeps dashboard and raw-data hooks bound to the shared active dataset", () => {
+    expect(dashboardDataHookSource).toContain("const activeDatasetId = activeDatasetState.activeDataset?.datasetId ?? null");
+    expect(dashboardDataHookSource).toContain("activeDatasetId ? datasetProfileKey(activeDatasetId) : null");
+    expect(dashboardDataHookSource).toContain("activeDatasetId ? datasetMetricsKey(activeDatasetId) : null");
+    expect(rawDataHookSource).toContain("const activeDatasetId = activeDatasetState.activeDataset?.datasetId ?? null");
+    expect(rawDataHookSource).toContain("setSelectedDesignId(null);");
+    expect(rawDataHookSource).toContain("setSelectedTraceId(null);");
+    expect(rawDataHookSource).toContain("}, [activeDatasetId]);");
   });
 });
 
