@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: Next.js frontend 與 Electron desktop shell 的 UI/UX 品質規範索引。
-version: v2.2.0
-last_updated: 2026-03-14
+version: v2.3.0
+last_updated: 2026-03-15
 updated_by: codex
 ---
 
@@ -25,6 +25,10 @@ updated_by: codex
 !!! info "Use this section for frontend decisions"
     這裡負責 Next.js frontend 與 Electron shell 的互動品質，不負責 backend authority 或 page business contract。
     若問題在問 layout、state、form、theme、routing、a11y，先從這裡開始。
+
+!!! warning "No browser-default product UI"
+    使用者可見的產品互動 surface，不可直接退化成 browser 預設外觀。
+    正式 app UI 必須經過我們的 component system 或 feature wrapper 呈現；若平台原生控制不可避免，也必須包在我們自己的 trigger、label、error state 與 surrounding layout 內。
 
 ## Frontend Stack
 
@@ -59,6 +63,8 @@ updated_by: codex
 - Use Next.js App Router for the frontend.
 - Electron desktop packaging must preserve the same frontend UI/UX rules instead of inventing a separate desktop-only UI system.
 - Use Radix UI + shadcn/ui for interactive components.
+- Do not expose browser-default interactive controls as the final product UI surface.
+- If a platform-native control is unavoidable, wrap it in app-owned components and keep labels, state, and error handling in the product surface.
 - Use next-themes for theme switching.
 - Use semantic design tokens; avoid hardcoded colors.
 - Use SWR for server state and React Hook Form + Zod for forms.

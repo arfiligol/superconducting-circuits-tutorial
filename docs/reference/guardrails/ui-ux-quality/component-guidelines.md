@@ -11,9 +11,9 @@ status: stable
 owner: docs-team
 audience: contributor
 scope: frontend component 選型、表單、dialog 與資料表格規範。
-version: v2.1.0
-last_updated: 2026-03-14
-updated_by: docs-team
+version: v2.2.0
+last_updated: 2026-03-15
+updated_by: codex
 ---
 
 # Component Guidelines
@@ -30,6 +30,20 @@ updated_by: docs-team
 | 基礎 UI primitives | `@/components/ui/*`（shadcn/ui） |
 | feature-specific UI | `frontend/src/features/<feature>/components/*` |
 | app-wide layout | `frontend/src/components/layout/*` |
+
+## Visible Surface Rule
+
+- 所有使用者可見的互動 UI，必須以 `@/components/ui/*` 或 feature-local wrapper 呈現
+- 不可把 browser 預設樣式的 `button`、`input`、`select`、`textarea`、`dialog` 直接當成最終產品 UI
+- 若平台原生控制不可避免，必須用自家 trigger / label / helper text / error state / surrounding layout 包起來
+- 例外必須屬於 platform bridge 類型，例如：
+  - `input[type=file]` 觸發檔案選擇
+  - browser / OS 提供的 picker surface
+  - 無法完全自繪的安全權限 prompt
+
+!!! warning "Native controls are implementation detail, not product surface"
+    原生控制可以是橋接機制，但不應直接成為使用者看到的最終互動樣式。
+    若不得不用原生控制，產品仍必須提供一致的外框、標籤、狀態提示、錯誤訊息與操作入口。
 
 ## Interaction Rules
 
@@ -55,6 +69,8 @@ updated_by: docs-team
 ## Component Guidelines
 - Prefer components from `@/components/ui/` for interactive primitives.
 - Put feature-specific UI in `frontend/src/features/<feature>/components/`.
+- Do not expose browser-default styled controls as the final product UI.
+- If a platform-native control is unavoidable, wrap it with app-owned trigger, labels, helper text, and error handling.
 - Do not use `alert()`, `confirm()`, or `prompt()` for product interactions.
 - Destructive actions require an explicit confirmation flow.
 - Forms need labels, validation, and visible error states.
