@@ -4,7 +4,7 @@ from typing import Any, cast
 
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import ParameterDesignation
+from core.shared.persistence.models import ParameterDesignation, ensure_scope_ids
 
 
 class ParameterDesignationRepository:
@@ -78,7 +78,7 @@ class ParameterDesignationRepository:
 
     def add(self, designation: ParameterDesignation) -> ParameterDesignation:
         """Add one designation."""
-        designation.ensure_scope_ids()
+        ensure_scope_ids(designation)
         self._session.add(designation)
         return designation
 

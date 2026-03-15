@@ -8,7 +8,12 @@ from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import DesignRecord, TraceBatchTraceLink, TraceRecord
+from core.shared.persistence.models import (
+    DesignRecord,
+    TraceBatchTraceLink,
+    TraceRecord,
+    ensure_scope_ids,
+)
 from core.shared.persistence.repositories.query_objects import TraceIndexPageQuery
 
 
@@ -409,7 +414,7 @@ class TraceRepository:
 
     def add(self, trace: TraceRecord) -> TraceRecord:
         """Add a new trace."""
-        trace.ensure_scope_ids()
+        ensure_scope_ids(trace)
         self._session.add(trace)
         return trace
 

@@ -6,12 +6,21 @@ schema migration workstream lands.
 """
 
 from datetime import datetime
+from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
 from sqlmodel import JSON, Column, Field, Relationship, SQLModel
 
 ALLOWED_USER_ROLES = frozenset({"admin", "user"})
+
+
+@dataclass(frozen=True)
+class PersistedScopeIds:
+    """Normalized dataset/design scope pair for persisted research records."""
+
+    dataset_id: int
+    design_id: int
 
 
 def normalize_user_role(role: str) -> str:
@@ -21,6 +30,35 @@ def normalize_user_role(role: str) -> str:
         allowed = ", ".join(sorted(ALLOWED_USER_ROLES))
         raise ValueError(f"Unsupported user role '{role}'. Expected one of: {allowed}.")
     return normalized
+
+
+def require_explicit_scope_ids(record: object) -> PersistedScopeIds:
+    """Return explicit persisted scope ids or raise when either side is missing."""
+    raw_dataset_id = getattr(record, "dataset_id", None)
+    raw_design_id = getattr(record, "design_id", None)
+    if raw_dataset_id is None:
+        raise ValueError("Explicit dataset_id is required for canonical persistence writes.")
+    if raw_design_id is None:
+        raise ValueError("Explicit design_id is required for canonical persistence writes.")
+    return PersistedScopeIds(
+        dataset_id=int(raw_dataset_id),
+        design_id=int(raw_design_id),
+    )
+
+
+def ensure_scope_ids(record: object) -> PersistedScopeIds:
+    """Apply the temporary write-time compatibility shim for missing design scope."""
+    raw_dataset_id = getattr(record, "dataset_id", None)
+    if raw_dataset_id is None:
+        raise ValueError("Explicit dataset_id is required before applying scope compatibility.")
+    raw_design_id = getattr(record, "design_id", None)
+    scope_ids = PersistedScopeIds(
+        dataset_id=int(raw_dataset_id),
+        design_id=int(raw_dataset_id if raw_design_id is None else raw_design_id),
+    )
+    setattr(record, "dataset_id", scope_ids.dataset_id)
+    setattr(record, "design_id", scope_ids.design_id)
+    return scope_ids
 
 
 class DeviceType(str, Enum):
@@ -129,14 +167,6 @@ class TraceRecord(SQLModel, table=True):
         link_model=TraceBatchTraceLink,
     )
 
-    def ensure_scope_ids(self) -> None:
-        """Apply the temporary legacy shim for records missing explicit design scope."""
-        self.dataset_id = int(self.dataset_id)
-        if self.design_id is None:
-            self.design_id = int(self.dataset_id)
-        else:
-            self.design_id = int(self.design_id)
-
     @property
     def family(self) -> str:
         """Canonical alias for the observable family."""
@@ -215,14 +245,6 @@ class TraceBatchRecord(SQLModel, table=True):
         link_model=TraceBatchTraceLink,
     )
 
-    def ensure_scope_ids(self) -> None:
-        """Apply the temporary legacy shim for batches missing explicit design scope."""
-        self.dataset_id = int(self.dataset_id)
-        if self.design_id is None:
-            self.design_id = int(self.dataset_id)
-        else:
-            self.design_id = int(self.design_id)
-
     @property
     def provenance_payload(self) -> dict:
         """Canonical alias for provenance metadata."""
@@ -293,14 +315,6 @@ class AnalysisRunRecord(SQLModel, table=False):
     summary_payload: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
-
-    def ensure_scope_ids(self) -> None:
-        """Apply the temporary legacy shim for logical runs missing dataset scope."""
-        self.design_id = int(self.design_id)
-        if self.dataset_id is None:
-            self.dataset_id = int(self.design_id)
-        else:
-            self.dataset_id = int(self.dataset_id)
 
 
 class UserRecord(SQLModel, table=True):
@@ -383,14 +397,6 @@ class DerivedParameter(SQLModel, table=True):
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="derived_params")
 
-    def ensure_scope_ids(self) -> None:
-        """Apply the temporary legacy shim for rows missing explicit design scope."""
-        self.dataset_id = int(self.dataset_id)
-        if self.design_id is None:
-            self.design_id = int(self.dataset_id)
-        else:
-            self.design_id = int(self.design_id)
-
 
 class ParameterDesignation(SQLModel, table=True):
     """Semantic designation for an extracted parameter."""
@@ -407,14 +413,6 @@ class ParameterDesignation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="designations")
-
-    def ensure_scope_ids(self) -> None:
-        """Apply the temporary legacy shim for rows missing explicit design scope."""
-        self.dataset_id = int(self.dataset_id)
-        if self.design_id is None:
-            self.design_id = int(self.dataset_id)
-        else:
-            self.design_id = int(self.design_id)
 
 
 class CircuitRecord(SQLModel, table=True):

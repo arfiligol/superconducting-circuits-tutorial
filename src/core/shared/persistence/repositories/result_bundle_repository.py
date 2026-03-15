@@ -14,7 +14,13 @@ from sqlalchemy import cast as sa_cast
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import TraceBatchRecord, TraceBatchTraceLink, TraceRecord
+from core.shared.persistence.models import (
+    TraceBatchRecord,
+    TraceBatchTraceLink,
+    TraceRecord,
+    ensure_scope_ids,
+    require_explicit_scope_ids,
+)
 from core.shared.persistence.repositories.analysis_run_repository import AnalysisRunRepository
 from core.shared.persistence.repositories.contracts import (
     AnalysisRunSummary,
@@ -89,6 +95,7 @@ class TraceBatchRepository:
             return None
         if str(batch.status) != "completed":
             return None
+        scope_ids = require_explicit_scope_ids(batch)
         lifecycle_payload = TraceBatchLifecyclePayload.from_persisted_batch(
             bundle_type=str(batch.bundle_type),
             role=str(batch.role),
@@ -100,8 +107,8 @@ class TraceBatchRepository:
             TraceBatchSnapshot,
             {
                 "id": int(batch.id),
-                "dataset_id": int(batch.dataset_id),
-                "design_id": int(batch.design_id),
+                "dataset_id": scope_ids.dataset_id,
+                "design_id": scope_ids.design_id,
                 "status": str(batch.status),
                 "parent_batch_id": batch.parent_batch_id,
                 **lifecycle_payload.to_snapshot_payload(),
@@ -115,10 +122,11 @@ class TraceBatchRepository:
             return None
         if str(batch.status) != "completed":
             return None
+        scope_ids = require_explicit_scope_ids(batch)
         return {
             "id": int(batch.id),
-            "dataset_id": int(batch.dataset_id),
-            "design_id": int(batch.design_id),
+            "dataset_id": scope_ids.dataset_id,
+            "design_id": scope_ids.design_id,
             "bundle_type": str(batch.bundle_type),
             "role": str(batch.role),
             "status": str(batch.status),
@@ -137,7 +145,7 @@ class TraceBatchRepository:
 
     def add(self, batch: TraceBatchRecord) -> TraceBatchRecord:
         """Add a new trace batch."""
-        batch.ensure_scope_ids()
+        ensure_scope_ids(batch)
         self._session.add(batch)
         return batch
 

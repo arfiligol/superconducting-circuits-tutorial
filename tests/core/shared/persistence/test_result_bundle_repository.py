@@ -926,3 +926,43 @@ def test_trace_repository_returns_canonical_trace_index_rows() -> None:
                 "representation": "imaginary",
             }
         ]
+
+
+def test_trace_repository_legacy_write_path_round_trips_explicit_scope_columns() -> None:
+    with _memory_session() as session:
+        design = DesignRepository(session).add(
+            DesignRecord(name="Legacy Trace Write Design", source_meta={}, parameters={})
+        )
+        session.flush()
+        assert design.id is not None
+
+        trace_repo = TraceRepository(session)
+        trace_repo.add(
+            TraceRecord(
+                dataset_id=design.id,
+                data_type="y_parameters",
+                parameter="Y21",
+                representation="real",
+                axes=[],
+                values=[],
+            )
+        )
+        session.commit()
+
+        persisted = trace_repo.get(1)
+        assert persisted is not None
+        assert persisted.dataset_id == design.id
+        assert persisted.design_id == design.id
+
+        summary_rows = trace_repo.list_summary_by_design(design.id)
+        assert summary_rows == [
+            {
+                "id": 1,
+                "dataset_id": design.id,
+                "design_id": design.id,
+                "family": "y_parameters",
+                "parameter": "Y21",
+                "representation": "real",
+                "created_at": None,
+            }
+        ]

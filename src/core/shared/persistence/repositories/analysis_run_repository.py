@@ -8,7 +8,12 @@ from typing import Any, cast
 from sc_core.storage import AnalysisRunProvenance
 from sqlmodel import Session, select
 
-from core.shared.persistence.models import AnalysisRunRecord, TraceBatchRecord
+from core.shared.persistence.models import (
+    AnalysisRunRecord,
+    TraceBatchRecord,
+    ensure_scope_ids,
+    require_explicit_scope_ids,
+)
 from core.shared.persistence.repositories.contracts import AnalysisRunSummary
 
 _ANALYSIS_BUNDLE_TYPE = "characterization"
@@ -49,7 +54,7 @@ def is_analysis_run_batch(batch: TraceBatchRecord | None) -> bool:
 
 def analysis_run_record_from_batch(batch: TraceBatchRecord) -> AnalysisRunRecord:
     """Project one characterization TraceBatch row into the logical run contract."""
-    batch.ensure_scope_ids()
+    scope_ids = require_explicit_scope_ids(batch)
     source_meta = dict(batch.source_meta) if isinstance(batch.source_meta, dict) else {}
     config_snapshot = dict(batch.config_snapshot) if isinstance(batch.config_snapshot, dict) else {}
     result_payload = dict(batch.result_payload) if isinstance(batch.result_payload, dict) else {}
@@ -73,8 +78,8 @@ def analysis_run_record_from_batch(batch: TraceBatchRecord) -> AnalysisRunRecord
 
     return AnalysisRunRecord(
         id=int(batch.id) if batch.id is not None else None,
-        dataset_id=int(batch.dataset_id),
-        design_id=int(batch.design_id),
+        dataset_id=scope_ids.dataset_id,
+        design_id=scope_ids.design_id,
         analysis_id=provenance.analysis_id,
         analysis_label=provenance.analysis_label,
         run_id=provenance.run_id,
@@ -92,7 +97,7 @@ def analysis_run_record_from_batch(batch: TraceBatchRecord) -> AnalysisRunRecord
 
 def analysis_run_batch_from_record(record: AnalysisRunRecord) -> TraceBatchRecord:
     """Materialize one logical analysis run into the existing batch-backed storage row."""
-    record.ensure_scope_ids()
+    scope_ids = require_explicit_scope_ids(record)
     provenance = AnalysisRunProvenance(
         analysis_id=record.analysis_id,
         analysis_label=record.analysis_label or record.analysis_id,
@@ -105,8 +110,8 @@ def analysis_run_batch_from_record(record: AnalysisRunRecord) -> TraceBatchRecor
 
     return TraceBatchRecord(
         id=record.id,
-        dataset_id=record.dataset_id,
-        design_id=record.design_id,
+        dataset_id=scope_ids.dataset_id,
+        design_id=scope_ids.design_id,
         bundle_type=_ANALYSIS_BUNDLE_TYPE,
         role=_ANALYSIS_ROLE,
         status=record.status,
@@ -126,6 +131,8 @@ class AnalysisRunRepository:
 
     def add(self, analysis_run: AnalysisRunRecord) -> AnalysisRunRecord:
         """Persist one logical analysis run using the batch-backed storage row."""
+        if analysis_run.dataset_id is None:
+            ensure_scope_ids(analysis_run)
         batch = analysis_run_batch_from_record(analysis_run)
         self._session.add(batch)
         self._session.flush()

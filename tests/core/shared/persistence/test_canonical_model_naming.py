@@ -6,6 +6,8 @@ from core.shared.persistence.models import (
     ParameterDesignation,
     TraceBatchRecord,
     TraceRecord,
+    ensure_scope_ids,
+    require_explicit_scope_ids,
 )
 
 
@@ -58,6 +60,25 @@ def test_design_scoped_records_keep_dataset_and_design_scope_distinct() -> None:
     assert designation.design_id == 104
 
 
+def test_canonical_scope_write_requires_explicit_dataset_and_design_ids() -> None:
+    trace = TraceRecord(
+        dataset_id=21,
+        data_type="y_parameters",
+        parameter="Y11",
+        representation="imaginary",
+        axes=[],
+        values=[],
+        store_ref={},
+    )
+
+    try:
+        require_explicit_scope_ids(trace)
+    except ValueError as exc:
+        assert str(exc) == "Explicit design_id is required for canonical persistence writes."
+    else:
+        raise AssertionError("Expected canonical write validation to reject missing design_id.")
+
+
 def test_design_scoped_records_apply_explicit_legacy_scope_shim_when_design_id_missing() -> None:
     trace = TraceRecord(
         dataset_id=21,
@@ -69,7 +90,9 @@ def test_design_scoped_records_apply_explicit_legacy_scope_shim_when_design_id_m
         store_ref={},
     )
 
-    trace.ensure_scope_ids()
+    scope_ids = ensure_scope_ids(trace)
 
     assert trace.dataset_id == 21
     assert trace.design_id == 21
+    assert scope_ids.dataset_id == 21
+    assert scope_ids.design_id == 21
