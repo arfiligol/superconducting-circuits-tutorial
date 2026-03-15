@@ -17,6 +17,7 @@ from sc_cli.local_circuit_definitions import (
     build_local_circuit_definition_inspection,
     build_local_circuit_definition_summary,
 )
+from sc_cli.local_store import record_bundle_receipt
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import (
     render_circuit_definition_delete_result,
@@ -272,12 +273,16 @@ def export_bundle_command(
         bundle_file.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
     except OSError as error:
         exit_with_runtime_error(f"Could not write {bundle_file}: {error}")
-    typer.echo(
-        render_definition_bundle_export_receipt(
-            LocalDefinitionBundleExportReceipt(bundle_file=str(bundle_file), bundle=bundle),
-            output=output,
+    receipt = LocalDefinitionBundleExportReceipt(bundle_file=str(bundle_file), bundle=bundle)
+    try:
+        record_bundle_receipt(
+            bundle_family="definition_bundle",
+            operation="export",
+            receipt=receipt,
         )
-    )
+    except OSError as error:
+        exit_with_runtime_error(f"Could not record bundle receipt for {bundle_file}: {error}")
+    typer.echo(render_definition_bundle_export_receipt(receipt, output=output))
 
 
 @app.command("import-bundle")
@@ -305,13 +310,17 @@ def import_bundle_command(
         imported_definition = import_definition_bundle(bundle)
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
-    typer.echo(
-        render_definition_bundle_import_receipt(
-            LocalDefinitionBundleImportReceipt(
-                bundle_file=str(bundle_file),
-                bundle=bundle,
-                imported_definition=imported_definition,
-            ),
-            output=output,
-        )
+    receipt = LocalDefinitionBundleImportReceipt(
+        bundle_file=str(bundle_file),
+        bundle=bundle,
+        imported_definition=imported_definition,
     )
+    try:
+        record_bundle_receipt(
+            bundle_family="definition_bundle",
+            operation="import",
+            receipt=receipt,
+        )
+    except OSError as error:
+        exit_with_runtime_error(f"Could not record bundle receipt for {bundle_file}: {error}")
+    typer.echo(render_definition_bundle_import_receipt(receipt, output=output))

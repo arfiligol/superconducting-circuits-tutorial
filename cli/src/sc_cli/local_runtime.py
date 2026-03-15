@@ -1,4 +1,4 @@
-"""Standalone local runtime models and in-memory state."""
+"""Standalone local runtime models and persisted local state."""
 
 from __future__ import annotations
 
@@ -7,6 +7,16 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 from sc_backend import ApiErrorBodyResponse, BackendContractError
+
+from sc_cli.local_store import (
+    read_json,
+    session_state_path,
+    task_events_path,
+    task_registry_path,
+    task_results_path,
+    write_json,
+    write_model,
+)
 
 if TYPE_CHECKING:
     from sc_cli.local_interchange import LocalResultBundle
@@ -170,6 +180,12 @@ class LocalTaskDetail(LocalTaskSummary):
     dispatch: LocalTaskDispatch
     events: list[LocalTaskEvent] = Field(default_factory=list)
     result_refs: LocalTaskResultRefs = Field(default_factory=LocalTaskResultRefs)
+
+
+class _PersistedTaskRegistry(BaseModel):
+    session: LocalSession
+    next_task_id: int
+    tasks: list[LocalTaskDetail]
 
 
 LOCAL_DATASETS: dict[str, LocalSessionDataset] = {
@@ -569,12 +585,78 @@ def _seed_state() -> _LocalRuntimeState:
     )
 
 
-_STATE = _seed_state()
+def _strip_task_runtime_payloads(task: LocalTaskDetail) -> LocalTaskDetail:
+    return task.model_copy(
+        deep=True,
+        update={
+            "events": [],
+            "result_refs": LocalTaskResultRefs(),
+        },
+    )
+
+
+def _persist_task_state(state: _LocalRuntimeState) -> None:
+    write_model(session_state_path(), state.session)
+    registry = _PersistedTaskRegistry(
+        session=state.session,
+        next_task_id=state.next_task_id,
+        tasks=[_strip_task_runtime_payloads(task) for task in state.tasks.values()],
+    )
+    write_model(task_registry_path(), registry)
+    for task in state.tasks.values():
+        write_json(
+            task_events_path(task.task_id),
+            [event.model_dump(mode="json") for event in task.events],
+        )
+        write_model(task_results_path(task.task_id), task.result_refs)
+
+
+def _load_persisted_task_state() -> _LocalRuntimeState | None:
+    payload = read_json(task_registry_path())
+    if not isinstance(payload, dict):
+        return None
+    registry = _PersistedTaskRegistry.model_validate(payload)
+    tasks: dict[int, LocalTaskDetail] = {}
+    for task in registry.tasks:
+        hydrated_task = task.model_copy(deep=True)
+        events_payload = read_json(task_events_path(task.task_id))
+        if isinstance(events_payload, list):
+            hydrated_task.events = [
+                LocalTaskEvent.model_validate(event_payload)
+                for event_payload in events_payload
+            ]
+        results_payload = read_json(task_results_path(task.task_id))
+        if isinstance(results_payload, dict):
+            hydrated_task.result_refs = LocalTaskResultRefs.model_validate(results_payload)
+        tasks[hydrated_task.task_id] = hydrated_task
+    return _LocalRuntimeState(
+        session=registry.session.model_copy(deep=True),
+        tasks=tasks,
+        next_task_id=registry.next_task_id,
+    )
+
+
+def _load_or_seed_state() -> _LocalRuntimeState:
+    persisted_state = _load_persisted_task_state()
+    if persisted_state is not None:
+        return persisted_state
+    seeded_state = _seed_state()
+    _persist_task_state(seeded_state)
+    return seeded_state
+
+
+_STATE = _load_or_seed_state()
 
 
 def reset_runtime_state() -> None:
     global _STATE
     _STATE = _seed_state()
+    _persist_task_state(_STATE)
+
+
+def reload_runtime_state() -> None:
+    global _STATE
+    _STATE = _load_or_seed_state()
 
 
 def get_session() -> LocalSession:
@@ -590,6 +672,7 @@ def set_active_dataset(dataset_id: str | None) -> LocalSession:
             status=404,
         )
     _STATE.session = _session_with_active_dataset(dataset_id)
+    _persist_task_state(_STATE)
     return get_session()
 
 
@@ -724,6 +807,7 @@ def submit_task(
         ],
     )
     _STATE.tasks[task_id] = task
+    _persist_task_state(_STATE)
     return task.model_copy(deep=True)
 
 
@@ -836,4 +920,5 @@ def import_task_result_bundle(bundle: LocalResultBundle) -> LocalTaskDetail:
         result_refs=imported_result_refs,
     )
     _STATE.tasks[task_id] = imported_task
+    _persist_task_state(_STATE)
     return imported_task.model_copy(deep=True)

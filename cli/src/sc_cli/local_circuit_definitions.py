@@ -1,4 +1,4 @@
-"""CLI-local standalone circuit-definition contracts and in-memory catalog."""
+"""CLI-local standalone circuit-definition contracts and persisted catalog."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel
 from sc_backend import ApiErrorBodyResponse, BackendContractError
 from sc_core import inspect_circuit_definition_source
+
+from sc_cli.local_store import definition_catalog_path, read_json, write_model
 
 LocalValidationLevel = Literal["ok", "warning", "invalid"]
 LocalCircuitDefinitionSortBy = Literal["created_at", "name", "element_count"]
@@ -95,6 +97,11 @@ class LocalDefinitionBundleImportReceipt(BaseModel):
 class _CatalogState:
     definitions: dict[int, LocalCircuitDefinitionDetail] = field(default_factory=dict)
     next_definition_id: int = 19
+
+
+class _PersistedDefinitionCatalog(BaseModel):
+    next_definition_id: int
+    definitions: list[LocalCircuitDefinitionDetail]
 
 
 def _backend_error(
@@ -356,12 +363,54 @@ def _seed_catalog_state() -> _CatalogState:
     return _CatalogState(definitions=definitions, next_definition_id=19)
 
 
-_STATE = _seed_catalog_state()
+def _persist_catalog_state(state: _CatalogState) -> None:
+    write_model(
+        definition_catalog_path(),
+        _PersistedDefinitionCatalog(
+            next_definition_id=state.next_definition_id,
+            definitions=[
+                definition.model_copy(deep=True)
+                for definition in state.definitions.values()
+            ],
+        ),
+    )
+
+
+def _load_persisted_catalog_state() -> _CatalogState | None:
+    payload = read_json(definition_catalog_path())
+    if not isinstance(payload, dict):
+        return None
+    catalog = _PersistedDefinitionCatalog.model_validate(payload)
+    return _CatalogState(
+        definitions={
+            definition.definition_id: definition.model_copy(deep=True)
+            for definition in catalog.definitions
+        },
+        next_definition_id=catalog.next_definition_id,
+    )
+
+
+def _load_or_seed_catalog_state() -> _CatalogState:
+    persisted_state = _load_persisted_catalog_state()
+    if persisted_state is not None:
+        return persisted_state
+    seeded_state = _seed_catalog_state()
+    _persist_catalog_state(seeded_state)
+    return seeded_state
+
+
+_STATE = _load_or_seed_catalog_state()
 
 
 def reset_local_circuit_definition_state() -> None:
     global _STATE
     _STATE = _seed_catalog_state()
+    _persist_catalog_state(_STATE)
+
+
+def reload_local_circuit_definition_state() -> None:
+    global _STATE
+    _STATE = _load_or_seed_catalog_state()
 
 
 def list_local_circuit_definitions(
@@ -417,6 +466,7 @@ def create_local_circuit_definition(
         source_text=source_text,
     )
     _STATE.definitions[definition_id] = definition
+    _persist_catalog_state(_STATE)
     return definition.model_copy(deep=True)
 
 
@@ -435,6 +485,7 @@ def update_local_circuit_definition(
         lineage=existing_definition.lineage,
     )
     _STATE.definitions[definition_id] = updated_definition
+    _persist_catalog_state(_STATE)
     return updated_definition.model_copy(deep=True)
 
 
@@ -447,6 +498,7 @@ def delete_local_circuit_definition(definition_id: int) -> None:
             status=404,
         )
     del _STATE.definitions[definition_id]
+    _persist_catalog_state(_STATE)
 
 
 def export_definition_bundle(definition_id: int) -> LocalDefinitionBundle:
@@ -484,4 +536,5 @@ def import_definition_bundle(bundle: LocalDefinitionBundle) -> LocalCircuitDefin
         lineage=imported_lineage,
     )
     _STATE.definitions[definition_id] = imported_definition
+    _persist_catalog_state(_STATE)
     return imported_definition.model_copy(deep=True)

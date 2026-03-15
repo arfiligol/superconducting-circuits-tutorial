@@ -13,6 +13,7 @@ from sc_cli.local_interchange import (
     LocalResultBundleImportReceipt,
 )
 from sc_cli.local_runtime import LocalTaskDetail
+from sc_cli.local_store import record_bundle_receipt
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import (
     render_result_bundle_export_receipt,
@@ -87,12 +88,16 @@ def export_bundle_command(
         bundle_file.write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
     except OSError as error:
         exit_with_runtime_error(f"Could not write {bundle_file}: {error}")
-    typer.echo(
-        render_result_bundle_export_receipt(
-            LocalResultBundleExportReceipt(bundle_file=str(bundle_file), bundle=bundle),
-            output=output,
+    receipt = LocalResultBundleExportReceipt(bundle_file=str(bundle_file), bundle=bundle)
+    try:
+        record_bundle_receipt(
+            bundle_family="result_bundle",
+            operation="export",
+            receipt=receipt,
         )
-    )
+    except OSError as error:
+        exit_with_runtime_error(f"Could not record bundle receipt for {bundle_file}: {error}")
+    typer.echo(render_result_bundle_export_receipt(receipt, output=output))
 
 
 @app.command("import-bundle")
@@ -120,16 +125,20 @@ def import_bundle_command(
         imported_task = import_task_result_bundle(bundle)
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
-    typer.echo(
-        render_result_bundle_import_receipt(
-            LocalResultBundleImportReceipt(
-                bundle_file=str(bundle_file),
-                bundle=bundle,
-                imported_task=imported_task,
-            ),
-            output=output,
-        )
+    receipt = LocalResultBundleImportReceipt(
+        bundle_file=str(bundle_file),
+        bundle=bundle,
+        imported_task=imported_task,
     )
+    try:
+        record_bundle_receipt(
+            bundle_family="result_bundle",
+            operation="import",
+            receipt=receipt,
+        )
+    except OSError as error:
+        exit_with_runtime_error(f"Could not record bundle receipt for {bundle_file}: {error}")
+    typer.echo(render_result_bundle_import_receipt(receipt, output=output))
 
 
 def _get_task_or_exit(
