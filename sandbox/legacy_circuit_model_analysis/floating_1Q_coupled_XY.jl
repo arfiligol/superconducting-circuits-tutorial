@@ -16,6 +16,8 @@ const GHz = 1e9
 const fF = 1e-15
 
 const CAP_MATRIX_PATH = joinpath(@__DIR__, "PF6FQ_Q3D_C_Matrix.csv")
+const LQ_SWEEP_SUMMARY_CSV_PATH =
+    joinpath(@__DIR__, "floating_1Q_coupled_XY_Lq_sweep_summary.csv")
 const TARGET_QUBIT = "q5"
 
 
@@ -79,11 +81,12 @@ function build_floating_qubit_coupled_xy_circuit(; include_qubit_inductor, port3
     push!(circuit, ("C_23", "2", "3", C_23))
 
     # Differential probe ports:
-    # Port 1 / Port 2 用非常大的電阻接地，近似理想量測 port 而不額外載入系統。
+    # Port 1 / Port 2 明確接 50 Ohm termination。
+    # 後處理時再對這兩個 measurement ports 做 PTC，把人工載入扣掉。
     push!(circuit, ("P1", "1", "0", 1))
-    push!(circuit, ("R_P1", "1", "0", R_Big))
+    push!(circuit, ("R_P1", "1", "0", R50))
     push!(circuit, ("P2", "2", "0", 2))
-    push!(circuit, ("R_P2", "2", "0", R_Big))
+    push!(circuit, ("R_P2", "2", "0", R50))
 
     # XY line port:
     # Port 3 是外部控制線；可接真實 50 Ohm，也可用超大電阻近似開路。
@@ -277,14 +280,46 @@ function differential_mode_input_admittance(y_cube, component_values)
 end
 
 """
-    effective_capacitance_from_yin(yin_dm, freqs_ghz)
+    extract_resonance_from_yin(freqs_ghz, yin_dm)
 
-當網路中不含 Josephson 電感與 50 Ohm 終端時，
-Im(Yin)/omega 可以視為差模看到的有效電容。
+用 `Im(Yin_dm)` 過零來估計共振頻率，並在線性插值後讀出同一點的 `Re(Yin_dm)`。
+若掃頻範圍內沒有過零點，則退回 `argmin(abs.(Im(Yin_dm)))`。
 """
-function effective_capacitance_from_yin(yin_dm, freqs_ghz)
-    omega = 2π .* freqs_ghz .* GHz
-    return imag.(yin_dm) ./ omega
+function extract_resonance_from_yin(freqs_ghz, yin_dm)
+    imag_y = imag.(yin_dm)
+    real_y = real.(yin_dm)
+    crossing_pairs = Tuple{Int,Int}[]
+
+    for k in 1:(length(freqs_ghz) - 1)
+        imag_y[k] == 0 && return (frequency_ghz=freqs_ghz[k], re_y=real_y[k], crossed=true)
+        imag_y[k] * imag_y[k + 1] < 0 && push!(crossing_pairs, (k, k + 1))
+    end
+
+    if !isempty(crossing_pairs)
+        scores = [abs(imag_y[i]) + abs(imag_y[j]) for (i, j) in crossing_pairs]
+        k1, k2 = crossing_pairs[argmin(scores)]
+
+        f1 = freqs_ghz[k1]
+        f2 = freqs_ghz[k2]
+        im1 = imag_y[k1]
+        im2 = imag_y[k2]
+        re1 = real_y[k1]
+        re2 = real_y[k2]
+        t = -im1 / (im2 - im1)
+
+        return (
+            frequency_ghz=f1 + t * (f2 - f1),
+            re_y=re1 + t * (re2 - re1),
+            crossed=true,
+        )
+    end
+
+    idx = argmin(abs.(imag_y))
+    return (
+        frequency_ghz=freqs_ghz[idx],
+        re_y=real_y[idx],
+        crossed=false,
+    )
 end
 
 """
@@ -321,50 +356,42 @@ qubit_cap_table = load_qubit_capacitance_table(CAP_MATRIX_PATH, TARGET_QUBIT)
 # 4. Define circuit symbols and parameter values
 # =============================================================================
 # 這裡先宣告 JosephsonCircuits 會用到的符號參數，
-# 再準備兩組 parameter dictionary：
-# - 第一組: 真正的 qubit + XY 50 Ohm 負載
-# - 第二組: 拿掉 Lq 並把 XY 負載改成近似開路，只保留電容網路
+# 再準備 sweep 會用到的參數：
+# - 三個 ports 都保留 50 Ohm termination
+# - Lq 則在 sweep loop 中逐個代入
 
-@variables R_Big R50 C_01 C_02 C_12 Lq C_13 C_23
+@variables R50 C_01 C_02 C_12 Lq C_13 C_23
+const LQ_SWEEP_VALUES = collect(10.0:1.0:30.0) .* nH
 
 component_values = build_component_values(qubit_cap_table)
 
-circuitdefs = merge(
+base_circuitdefs = merge(
     component_values,
     Dict(
-        R_Big => 1e100,
         R50 => 50.0,
-        Lq => 12.34nH,
     ),
 )
 
-circuitdefs_open = merge(
-    component_values,
-    Dict(
-        R_Big => 1e100,
-        R50 => 1e100,
-        Lq => 12.34nH,
-    ),
-)
+# 原本 Ceff 的做法有兩條：
+# 1. 用純電容 reference 網路做 `Ceff_dm = Im(Yin_dm) / omega`
+# 2. 用這個解析式當作 constant Ceff estimate
+effective_capacitance_estimate =
+    component_values[C_12] +
+    (component_values[C_01] * component_values[C_02]) /
+    (component_values[C_01] + component_values[C_02]) +
+    (component_values[C_13] * component_values[C_23]) /
+    (component_values[C_13] + component_values[C_23])
 
 
 # =============================================================================
-# 5. Build the two circuits used in this study
+# 5. Build the circuit used in this study
 # =============================================================================
-# 這個分析會跑兩個版本的模型：
-# - full_circuit: 真正有 qubit inductance，且 XY line 接 50 Ohm
-# - capacitive_reference_circuit: 去掉 Lq，並把 XY line 視為開路
-#
-# 第二個模型的用途不是找 qubit 頻率，而是抽「純電容視角」的 Ceff。
+# 這個分析只跑一個版本的模型：
+# - full_circuit: 真正有 qubit inductance，且三個 ports 都保留 50 Ohm termination
 
 full_circuit = build_floating_qubit_coupled_xy_circuit(
     include_qubit_inductor=true,
     port3_resistance_symbol=R50,
-)
-
-capacitive_reference_circuit = build_floating_qubit_coupled_xy_circuit(
-    include_qubit_inductor=false,
-    port3_resistance_symbol=R_Big,
 )
 
 
@@ -383,137 +410,99 @@ Nmodulationharmonics = (10,)
 
 
 # =============================================================================
-# 7. Run the two simulations
+# 7. Run the simulation
 # =============================================================================
-# - 第一個解: 用來抽含 50 Ohm XY 線載入時的 Yin_dm、G、T1
-# - 第二個解: 用來抽純電容網路下的 Ceff
+# 這裡對 Lq 做 sweep。
+# 每一個 Lq 都會跑：
+# hbsolve -> Z to Y -> PTC -> CT -> Kron -> Yin_dm -> f_res -> ReY(f_res) -> T1
 
-@time single_FQ_with_XY = hbsolve(
-    ws,
-    wp,
-    sources,
-    Nmodulationharmonics,
-    Npumpharmonics,
-    full_circuit,
-    circuitdefs;
-    returnZ=true,
+sweep_summary = DataFrame(
+    Lq_nH=Float64[],
+    qubit_frequency_GHz=Float64[],
+    ReY_at_resonance_S=Float64[],
+    T1_s=Float64[],
+    crossed_zero=Bool[],
 )
 
-@time single_FQ_no_Lq_R50 = hbsolve(
-    ws,
-    wp,
-    sources,
-    Nmodulationharmonics,
-    Npumpharmonics,
-    capacitive_reference_circuit,
-    circuitdefs_open;
-    returnZ=true,
-)
+for lq_value in LQ_SWEEP_VALUES
+    circuitdefs = merge(base_circuitdefs, Dict(Lq => lq_value))
 
+    @time single_FQ = hbsolve(
+        ws,
+        wp,
+        sources,
+        Nmodulationharmonics,
+        Npumpharmonics,
+        full_circuit,
+        circuitdefs;
+        returnZ=true,
+    )
 
-# =============================================================================
-# 8. Convert solver outputs into differential-mode admittance
-# =============================================================================
-# 這一步是整支腳本最核心的物理後處理：
-# 1. 先把 hbsolve 輸出的 Z(ω) 轉成 Y(ω)
-# 2. 對 port 1 / port 2 做 PTC，移除 solver-artificial 50 Ohm termination
-# 3. 用 PTC 後的 Y 做 differential/common-mode 座標轉換
-# 4. 再做 Kron reduction，最後抽出 qubit 差模看到的 Yin_dm
+    current_freqs = single_FQ.linearized.w ./ (2π .* GHz)
+    y_cube_raw = z_to_y_cube(single_FQ)
+    y_cube_ptc = apply_port_termination_compensation(
+        y_cube_raw;
+        resistance_ohm_by_port=Dict(1 => 50.0, 2 => 50.0),
+    )
+    dm_result = differential_mode_input_admittance(y_cube_ptc, circuitdefs)
+    yin_dm = dm_result.Yin_dm
 
-freqs = single_FQ_with_XY.linearized.w ./ (2π .* GHz)
+    lq_nh = lq_value / nH
+    resonance = extract_resonance_from_yin(current_freqs, yin_dm)
+    qubit_frequency = resonance.frequency_ghz
+    G0 = resonance.re_y
+    T1 = G0 > 0 ? effective_capacitance_estimate / G0 : NaN
 
-y_cube_full_raw = z_to_y_cube(single_FQ_with_XY)
-y_cube_full_ptc = apply_port_termination_compensation(
-    y_cube_full_raw;
-    resistance_ohm_by_port=Dict(1 => 50.0, 2 => 50.0),
-)
-dm_result_full = differential_mode_input_admittance(y_cube_full_ptc, circuitdefs)
-Yin_dm = dm_result_full.Yin_dm
-G_dm = real.(Yin_dm)
-
-y_cube_open_raw = z_to_y_cube(single_FQ_no_Lq_R50)
-y_cube_open_ptc = apply_port_termination_compensation(
-    y_cube_open_raw;
-    resistance_ohm_by_port=Dict(1 => 50.0, 2 => 50.0),
-)
-dm_result_open = differential_mode_input_admittance(y_cube_open_ptc, circuitdefs_open)
-Ceff_dm = effective_capacitance_from_yin(dm_result_open.Yin_dm, freqs)
-
-
-# =============================================================================
-# 9. Plot the effective capacitance and input admittance
-# =============================================================================
-# 這裡只做視覺化：
-# - C_eff_plot: 純電容網路推得的等效差模電容
-# - Y_m_eff_plot: 真實 qubit 模型在差模下的輸入導納
-
-C_eff_plot = build_plot(
-    [
-        scatter(
-            mode="lines+markers",
-            x=freqs,
-            y=Ceff_dm,
-            name="Ceff_dm",
+    push!(
+        sweep_summary,
+        (
+            Lq_nH=lq_nh,
+            qubit_frequency_GHz=qubit_frequency,
+            ReY_at_resonance_S=G0,
+            T1_s=T1,
+            crossed_zero=resonance.crossed,
         ),
-    ],
-    "Single Floating Qubit Differential Mode Effective Capacitance",
-    "Frequency (GHz)",
-    "Capacitance (F)",
-    legend_title="Legend",
-)
-
-Y_m_eff_plot = build_plot(
-    [
-        scatter(
-            mode="lines+markers",
-            x=freqs,
-            y=imag.(Yin_dm),
-            name="Im Yin_dm",
-        ),
-        scatter(
-            mode="lines+markers",
-            x=freqs,
-            y=real.(Yin_dm),
-            name="Re Yin_dm",
-        ),
-    ],
-    "Single Floating Qubit Differential Mode Input Admittance",
-    "Frequency (GHz)",
-    "Admittance (S)",
-    legend_title="Legend",
-)
-
-
-# =============================================================================
-# 10. Extract resonance point and estimate T1
-# =============================================================================
-# 這裡把前面抽到的差模輸入導納轉成幾個更直觀的物理量：
-# - qubit_frequency: 用 |Yin_dm| 最小的位置當作共振附近點
-# - Ceff0: 該頻點的有效差模電容
-# - G0:   該頻點的實部導納，視作損耗通道
-# - T1:   以 Ceff / G 估算能量衰減時間
-
-idx = argmin(abs.(Yin_dm))
-qubit_frequency = freqs[idx] # GHz
-
-idx_4_3GHz = argmin(abs.(freqs .- 4.3))
-
-Ceff0 = Ceff_dm[idx]
-analytical_differential_mode_effective_c =
-    circuitdefs[C_12] +
-    (circuitdefs[C_01] * circuitdefs[C_02]) / (circuitdefs[C_01] + circuitdefs[C_02]) +
-    (circuitdefs[C_13] * circuitdefs[C_23]) / (circuitdefs[C_13] + circuitdefs[C_23])
-
-Yin0 = Yin_dm[idx]
-G0 = real(Yin0)
-
-if G0 <= 0
-    @warn "Re(Y_in) ≤ 0 at f ≈ $qubit_frequency GHz → 無有限 T1（近乎無損或模型需檢查）"
-else
-    T1 = Ceff0 / G0
-    println("f≈$(qubit_frequency) GHz:  Ceff=$(Ceff0) F,  ReY=$(G0) S,  T1=$(T1) s")
-
-    ω0 = 2π * qubit_frequency * GHz
-    Q = ω0 * Ceff0 / G0
-    println("Q=$(Q)")
+    )
 end
+
+
+# =============================================================================
+# 8. Plot the T1 sweep
+# =============================================================================
+# 你要的圖：
+# - x 軸：Lq
+# - y 軸：T1
+# - 顏色：共振頻率
+
+T1_vs_Lq_scatter_plot = build_plot(
+    [
+        scatter(
+            mode="markers",
+            x=sweep_summary.Lq_nH,
+            y=sweep_summary.T1_s,
+            text=[
+                "f=$(round(f, digits=4)) GHz, ReY=$(g) S, crossed=$(crossed)"
+                for (f, g, crossed) in zip(
+                    sweep_summary.qubit_frequency_GHz,
+                    sweep_summary.ReY_at_resonance_S,
+                    sweep_summary.crossed_zero,
+                )
+            ],
+            marker=attr(
+                size=12,
+                color=sweep_summary.qubit_frequency_GHz,
+                colorscale="Viridis",
+                colorbar=attr(title="Frequency (GHz)"),
+                showscale=true,
+            ),
+            name="T1",
+        ),
+    ],
+    "Floating Qubit T1 vs Lq Sweep",
+    "Lq (nH)",
+    "T1 (s)",
+    legend_title="Metric",
+)
+
+CSV.write(LQ_SWEEP_SUMMARY_CSV_PATH, sweep_summary)
+println("Wrote sweep summary CSV to $(LQ_SWEEP_SUMMARY_CSV_PATH)")
