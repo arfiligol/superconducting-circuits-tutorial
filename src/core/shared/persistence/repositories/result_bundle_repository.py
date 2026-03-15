@@ -100,6 +100,7 @@ class TraceBatchRepository:
             TraceBatchSnapshot,
             {
                 "id": int(batch.id),
+                "dataset_id": int(batch.dataset_id),
                 "design_id": int(batch.design_id),
                 "status": str(batch.status),
                 "parent_batch_id": batch.parent_batch_id,
@@ -116,7 +117,8 @@ class TraceBatchRepository:
             return None
         return {
             "id": int(batch.id),
-            "dataset_id": int(batch.design_id),
+            "dataset_id": int(batch.dataset_id),
+            "design_id": int(batch.design_id),
             "bundle_type": str(batch.bundle_type),
             "role": str(batch.role),
             "status": str(batch.status),
@@ -135,6 +137,7 @@ class TraceBatchRepository:
 
     def add(self, batch: TraceBatchRecord) -> TraceBatchRecord:
         """Add a new trace batch."""
+        batch.ensure_scope_ids()
         self._session.add(batch)
         return batch
 
@@ -220,15 +223,17 @@ class TraceBatchRepository:
             )
         self._session.delete(batch)
 
-    def _dataset_statement(
+    def _scope_statement(
         self,
         *,
-        dataset_id: int,
+        scope_name: str,
+        scope_id: int,
         bundle_type: str | None = None,
         role: str | None = None,
         include_cache: bool = True,
     ):
-        statement = select(TraceBatchRecord).where(TraceBatchRecord.dataset_id == dataset_id)
+        scope_column = cast(Any, getattr(TraceBatchRecord, scope_name))
+        statement = select(TraceBatchRecord).where(scope_column == scope_id)
         if bundle_type:
             statement = statement.where(TraceBatchRecord.bundle_type == bundle_type)
         if role:
@@ -239,17 +244,22 @@ class TraceBatchRepository:
 
     def list_by_design(self, design_id: int) -> list[TraceBatchRecord]:
         """List all trace batches under one design."""
-        return self.list_by_dataset(design_id)
+        statement = self._scope_statement(scope_name="design_id", scope_id=design_id).order_by(
+            TraceBatchRecord.id
+        )  # type: ignore[arg-type]
+        return list(self._session.exec(statement).all())
 
     def list_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List all result bundles under one dataset."""
-        statement = self._dataset_statement(dataset_id=dataset_id).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        statement = self._scope_statement(scope_name="dataset_id", scope_id=dataset_id).order_by(
+            TraceBatchRecord.id
+        )  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
 
     def list_incomplete_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List non-completed batches under one dataset."""
         statement = (
-            self._dataset_statement(dataset_id=dataset_id)
+            self._scope_statement(scope_name="dataset_id", scope_id=dataset_id)
             .where(TraceBatchRecord.status != "completed")
             .order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         )
@@ -257,24 +267,36 @@ class TraceBatchRepository:
 
     def list_cache_by_design(self, design_id: int) -> list[TraceBatchRecord]:
         """List cache-role batches under one design."""
-        return self.list_cache_by_dataset(design_id)
+        statement = self._scope_statement(
+            scope_name="design_id",
+            scope_id=design_id,
+            role="cache",
+        ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        return list(self._session.exec(statement).all())
 
     def list_cache_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List cache-role bundles under one dataset."""
-        statement = self._dataset_statement(
-            dataset_id=dataset_id,
+        statement = self._scope_statement(
+            scope_name="dataset_id",
+            scope_id=dataset_id,
             role="cache",
         ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
 
     def list_provenance_by_design(self, design_id: int) -> list[TraceBatchRecord]:
         """List non-cache provenance batches under one design."""
-        return self.list_provenance_by_dataset(design_id)
+        statement = self._scope_statement(
+            scope_name="design_id",
+            scope_id=design_id,
+            include_cache=False,
+        ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
+        return list(self._session.exec(statement).all())
 
     def list_provenance_by_dataset(self, dataset_id: int) -> list[TraceBatchRecord]:
         """List non-cache provenance bundles under one dataset."""
-        statement = self._dataset_statement(
-            dataset_id=dataset_id,
+        statement = self._scope_statement(
+            scope_name="dataset_id",
+            scope_id=dataset_id,
             include_cache=False,
         ).order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
         return list(self._session.exec(statement).all())
@@ -306,12 +328,15 @@ class TraceBatchRepository:
         include_cache: bool = True,
     ) -> int:
         """Count batches under one design with optional semantic filters."""
-        return self.count_by_dataset(
-            design_id,
+        statement = self._scope_statement(
+            scope_name="design_id",
+            scope_id=design_id,
             bundle_type=bundle_type,
             role=role,
             include_cache=include_cache,
         )
+        count_statement = sa_select(func.count()).select_from(statement.subquery())
+        return int(self._session.execute(count_statement).scalar_one())
 
     def count_by_dataset(
         self,
@@ -322,8 +347,9 @@ class TraceBatchRepository:
         include_cache: bool = True,
     ) -> int:
         """Count bundles under one dataset with optional semantic filters."""
-        statement = self._dataset_statement(
-            dataset_id=dataset_id,
+        statement = self._scope_statement(
+            scope_name="dataset_id",
+            scope_id=dataset_id,
             bundle_type=bundle_type,
             role=role,
             include_cache=include_cache,
@@ -340,11 +366,23 @@ class TraceBatchRepository:
         dataset_id: int,
     ) -> list[ResultBundleAnalysisRunSummary]:
         """List primitive-only summaries for characterization analysis runs."""
-        canonical_rows = self.analysis_runs.list_summaries_by_design(dataset_id)
+        canonical_rows = [
+            {
+                "analysis_run_id": int(run.id),
+                "dataset_id": int(run.dataset_id),
+                "design_id": int(run.design_id),
+                "analysis_id": str(run.analysis_id),
+                "analysis_label": str(run.analysis_label or run.analysis_id),
+                "status": str(run.status),
+            }
+            for run in self.analysis_runs.list_by_dataset(dataset_id)
+            if run.id is not None and run.dataset_id is not None and run.analysis_id
+        ]
         return [
             {
                 "bundle_id": int(row["analysis_run_id"]),
-                "dataset_id": int(row["design_id"]),
+                "dataset_id": int(row["dataset_id"]),
+                "design_id": int(row["design_id"]),
                 "analysis_id": str(row["analysis_id"]),
                 "analysis_label": str(row["analysis_label"]),
                 "status": str(row["status"]),
@@ -360,11 +398,17 @@ class TraceBatchRepository:
         simulation_setup_hash: str,
     ) -> TraceBatchRecord | None:
         """Find one completed circuit-simulation batch by formal identity."""
-        return self.find_simulation_cache(
-            dataset_id=design_id,
-            schema_source_hash=schema_source_hash,
-            simulation_setup_hash=simulation_setup_hash,
+        statement = (
+            select(TraceBatchRecord)
+            .where(TraceBatchRecord.design_id == design_id)
+            .where(TraceBatchRecord.bundle_type == "circuit_simulation")
+            .where(TraceBatchRecord.role == "cache")
+            .where(TraceBatchRecord.status == "completed")
+            .where(TraceBatchRecord.schema_source_hash == schema_source_hash)
+            .where(TraceBatchRecord.simulation_setup_hash == simulation_setup_hash)
+            .order_by(TraceBatchRecord.id.desc())  # type: ignore[union-attr]
         )
+        return self._session.exec(statement).first()
 
     def find_simulation_cache(
         self,

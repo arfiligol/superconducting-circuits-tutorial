@@ -22,7 +22,11 @@ _EXECUTION_CONFIG_KEYS = {
 }
 
 
-def _analysis_run_batch_query(*, design_id: int | None = None):
+def _analysis_run_batch_query(
+    *,
+    design_id: int | None = None,
+    dataset_id: int | None = None,
+):
     """Build the canonical characterization-analysis-run batch query."""
     statement = (
         select(TraceBatchRecord)
@@ -30,7 +34,9 @@ def _analysis_run_batch_query(*, design_id: int | None = None):
         .where(TraceBatchRecord.role == _ANALYSIS_ROLE)
     )
     if design_id is not None:
-        statement = statement.where(TraceBatchRecord.dataset_id == design_id)
+        statement = statement.where(TraceBatchRecord.design_id == design_id)
+    if dataset_id is not None:
+        statement = statement.where(TraceBatchRecord.dataset_id == dataset_id)
     return statement.order_by(TraceBatchRecord.id)  # type: ignore[arg-type]
 
 
@@ -43,6 +49,7 @@ def is_analysis_run_batch(batch: TraceBatchRecord | None) -> bool:
 
 def analysis_run_record_from_batch(batch: TraceBatchRecord) -> AnalysisRunRecord:
     """Project one characterization TraceBatch row into the logical run contract."""
+    batch.ensure_scope_ids()
     source_meta = dict(batch.source_meta) if isinstance(batch.source_meta, dict) else {}
     config_snapshot = dict(batch.config_snapshot) if isinstance(batch.config_snapshot, dict) else {}
     result_payload = dict(batch.result_payload) if isinstance(batch.result_payload, dict) else {}
@@ -66,7 +73,8 @@ def analysis_run_record_from_batch(batch: TraceBatchRecord) -> AnalysisRunRecord
 
     return AnalysisRunRecord(
         id=int(batch.id) if batch.id is not None else None,
-        design_id=int(batch.dataset_id),
+        dataset_id=int(batch.dataset_id),
+        design_id=int(batch.design_id),
         analysis_id=provenance.analysis_id,
         analysis_label=provenance.analysis_label,
         run_id=provenance.run_id,
@@ -84,6 +92,7 @@ def analysis_run_record_from_batch(batch: TraceBatchRecord) -> AnalysisRunRecord
 
 def analysis_run_batch_from_record(record: AnalysisRunRecord) -> TraceBatchRecord:
     """Materialize one logical analysis run into the existing batch-backed storage row."""
+    record.ensure_scope_ids()
     provenance = AnalysisRunProvenance(
         analysis_id=record.analysis_id,
         analysis_label=record.analysis_label or record.analysis_id,
@@ -96,7 +105,8 @@ def analysis_run_batch_from_record(record: AnalysisRunRecord) -> TraceBatchRecor
 
     return TraceBatchRecord(
         id=record.id,
-        dataset_id=record.design_id,
+        dataset_id=record.dataset_id,
+        design_id=record.design_id,
         bundle_type=_ANALYSIS_BUNDLE_TYPE,
         role=_ANALYSIS_ROLE,
         status=record.status,
@@ -132,6 +142,7 @@ class AnalysisRunRepository:
 
         updated = analysis_run_batch_from_record(analysis_run)
         batch.dataset_id = updated.dataset_id
+        batch.design_id = updated.design_id
         batch.bundle_type = updated.bundle_type
         batch.role = updated.role
         batch.status = updated.status
@@ -156,6 +167,11 @@ class AnalysisRunRepository:
         batches = self._session.exec(_analysis_run_batch_query(design_id=design_id)).all()
         return [analysis_run_record_from_batch(batch) for batch in batches]
 
+    def list_by_dataset(self, dataset_id: int) -> list[AnalysisRunRecord]:
+        """List all logical analysis runs under one dataset authority."""
+        batches = self._session.exec(_analysis_run_batch_query(dataset_id=dataset_id)).all()
+        return [analysis_run_record_from_batch(batch) for batch in batches]
+
     def list_summaries_by_design(self, design_id: int) -> list[AnalysisRunSummary]:
         """List primitive analysis-run summaries for design-scoped UI history."""
         runs = self.list_by_design(design_id)
@@ -166,6 +182,7 @@ class AnalysisRunRepository:
             summaries.append(
                 {
                     "analysis_run_id": int(run.id),
+                    "dataset_id": int(run.dataset_id),
                     "design_id": int(run.design_id),
                     "analysis_id": str(run.analysis_id),
                     "analysis_label": str(run.analysis_label or run.analysis_id),

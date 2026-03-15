@@ -113,6 +113,7 @@ class TraceRecord(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+    design_id: int | None = Field(default=None, index=True)
 
     data_type: str
     parameter: str
@@ -128,14 +129,13 @@ class TraceRecord(SQLModel, table=True):
         link_model=TraceBatchTraceLink,
     )
 
-    @property
-    def design_id(self) -> int:
-        """Return the canonical dataset-local design scope identifier."""
-        return int(self.dataset_id)
-
-    @design_id.setter
-    def design_id(self, value: int) -> None:
-        self.dataset_id = int(value)
+    def ensure_scope_ids(self) -> None:
+        """Apply the temporary legacy shim for records missing explicit design scope."""
+        self.dataset_id = int(self.dataset_id)
+        if self.design_id is None:
+            self.design_id = int(self.dataset_id)
+        else:
+            self.design_id = int(self.design_id)
 
     @property
     def family(self) -> str:
@@ -188,6 +188,7 @@ class TraceBatchRecord(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+    design_id: int | None = Field(default=None, index=True)
     parent_batch_id: int | None = Field(
         default=None,
         foreign_key="result_bundle_records.id",
@@ -214,14 +215,13 @@ class TraceBatchRecord(SQLModel, table=True):
         link_model=TraceBatchTraceLink,
     )
 
-    @property
-    def design_id(self) -> int:
-        """Return the canonical dataset-local design scope identifier."""
-        return int(self.dataset_id)
-
-    @design_id.setter
-    def design_id(self, value: int) -> None:
-        self.dataset_id = int(value)
+    def ensure_scope_ids(self) -> None:
+        """Apply the temporary legacy shim for batches missing explicit design scope."""
+        self.dataset_id = int(self.dataset_id)
+        if self.design_id is None:
+            self.design_id = int(self.dataset_id)
+        else:
+            self.design_id = int(self.design_id)
 
     @property
     def provenance_payload(self) -> dict:
@@ -279,6 +279,7 @@ class AnalysisRunRecord(SQLModel, table=False):
     """Canonical analysis-run contract backed by characterization TraceBatch rows."""
 
     id: int | None = None
+    dataset_id: int | None = None
     design_id: int
     analysis_id: str
     analysis_label: str = ""
@@ -292,6 +293,14 @@ class AnalysisRunRecord(SQLModel, table=False):
     summary_payload: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: datetime | None = None
+
+    def ensure_scope_ids(self) -> None:
+        """Apply the temporary legacy shim for logical runs missing dataset scope."""
+        self.design_id = int(self.design_id)
+        if self.dataset_id is None:
+            self.dataset_id = int(self.design_id)
+        else:
+            self.dataset_id = int(self.dataset_id)
 
 
 class UserRecord(SQLModel, table=True):
@@ -362,6 +371,7 @@ class DerivedParameter(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+    design_id: int | None = Field(default=None, index=True)
 
     device_type: DeviceType
     name: str
@@ -373,14 +383,13 @@ class DerivedParameter(SQLModel, table=True):
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="derived_params")
 
-    @property
-    def design_id(self) -> int:
-        """Return the canonical dataset-local design scope identifier."""
-        return int(self.dataset_id)
-
-    @design_id.setter
-    def design_id(self, value: int) -> None:
-        self.dataset_id = int(value)
+    def ensure_scope_ids(self) -> None:
+        """Apply the temporary legacy shim for rows missing explicit design scope."""
+        self.dataset_id = int(self.dataset_id)
+        if self.design_id is None:
+            self.design_id = int(self.dataset_id)
+        else:
+            self.design_id = int(self.design_id)
 
 
 class ParameterDesignation(SQLModel, table=True):
@@ -390,6 +399,7 @@ class ParameterDesignation(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     dataset_id: int = Field(foreign_key="dataset_records.id", index=True)
+    design_id: int | None = Field(default=None, index=True)
 
     designated_name: str = Field(index=True)
     source_analysis_type: str
@@ -398,14 +408,13 @@ class ParameterDesignation(SQLModel, table=True):
 
     dataset: Optional["DesignRecord"] = Relationship(back_populates="designations")
 
-    @property
-    def design_id(self) -> int:
-        """Return the canonical dataset-local design scope identifier."""
-        return int(self.dataset_id)
-
-    @design_id.setter
-    def design_id(self, value: int) -> None:
-        self.dataset_id = int(value)
+    def ensure_scope_ids(self) -> None:
+        """Apply the temporary legacy shim for rows missing explicit design scope."""
+        self.dataset_id = int(self.dataset_id)
+        if self.design_id is None:
+            self.design_id = int(self.dataset_id)
+        else:
+            self.design_id = int(self.design_id)
 
 
 class CircuitRecord(SQLModel, table=True):

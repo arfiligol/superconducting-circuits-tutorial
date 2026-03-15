@@ -145,14 +145,29 @@ class DesignRepository:
             .values(dataset_id=new_id)
         )
         self._session.exec(
+            update(TraceRecord)
+            .where(TraceRecord.design_id == old_id)  # type: ignore[arg-type]
+            .values(design_id=new_id)
+        )
+        self._session.exec(
             update(DerivedParameter)
             .where(DerivedParameter.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
         )
         self._session.exec(
+            update(DerivedParameter)
+            .where(DerivedParameter.design_id == old_id)  # type: ignore[arg-type]
+            .values(design_id=new_id)
+        )
+        self._session.exec(
             update(TraceBatchRecord)
             .where(TraceBatchRecord.dataset_id == old_id)  # type: ignore[arg-type]
             .values(dataset_id=new_id)
+        )
+        self._session.exec(
+            update(TraceBatchRecord)
+            .where(TraceBatchRecord.design_id == old_id)  # type: ignore[arg-type]
+            .values(design_id=new_id)
         )
         self._session.exec(
             update(DesignTagLink)

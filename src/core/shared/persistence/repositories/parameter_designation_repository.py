@@ -17,14 +17,19 @@ class ParameterDesignationRepository:
         """List all designations for one design scope."""
         statement = (
             select(ParameterDesignation)
-            .where(ParameterDesignation.dataset_id == design_id)
+            .where(ParameterDesignation.design_id == design_id)
             .order_by(cast(Any, ParameterDesignation.id))
         )
         return list(self._session.exec(statement).all())
 
     def list_by_dataset(self, dataset_id: int) -> list[ParameterDesignation]:
         """Legacy dataset-scoped wrapper."""
-        return self.list_by_design(dataset_id)
+        statement = (
+            select(ParameterDesignation)
+            .where(ParameterDesignation.dataset_id == dataset_id)
+            .order_by(cast(Any, ParameterDesignation.id))
+        )
+        return list(self._session.exec(statement).all())
 
     def list_all(self) -> list[ParameterDesignation]:
         """List all designations."""
@@ -42,7 +47,7 @@ class ParameterDesignationRepository:
     ) -> ParameterDesignation | None:
         """Find one designation by its logical uniqueness key."""
         statement = select(ParameterDesignation).where(
-            ParameterDesignation.dataset_id == design_id,
+            ParameterDesignation.design_id == design_id,
             ParameterDesignation.designated_name == designated_name,
             ParameterDesignation.source_analysis_type == source_analysis_type,
             ParameterDesignation.source_parameter_name == source_parameter_name,
@@ -61,16 +66,19 @@ class ParameterDesignationRepository:
         exclude_id: int | None = None,
     ) -> ParameterDesignation | None:
         """Legacy dataset-scoped wrapper."""
-        return self.find_unique_by_design(
-            design_id=dataset_id,
-            designated_name=designated_name,
-            source_analysis_type=source_analysis_type,
-            source_parameter_name=source_parameter_name,
-            exclude_id=exclude_id,
+        statement = select(ParameterDesignation).where(
+            ParameterDesignation.dataset_id == dataset_id,
+            ParameterDesignation.designated_name == designated_name,
+            ParameterDesignation.source_analysis_type == source_analysis_type,
+            ParameterDesignation.source_parameter_name == source_parameter_name,
         )
+        if exclude_id is not None:
+            statement = statement.where(ParameterDesignation.id != exclude_id)
+        return self._session.exec(statement).first()
 
     def add(self, designation: ParameterDesignation) -> ParameterDesignation:
         """Add one designation."""
+        designation.ensure_scope_ids()
         self._session.add(designation)
         return designation
 

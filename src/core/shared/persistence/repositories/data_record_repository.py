@@ -51,17 +51,39 @@ class TraceRepository:
 
     def list_by_design(self, design_id: int) -> list[TraceRecord]:
         """List all traces for one design."""
-        statement = select(TraceRecord).where(TraceRecord.dataset_id == design_id)
+        statement = select(TraceRecord).where(TraceRecord.design_id == design_id)
         return list(self._session.exec(statement).all())
 
     def list_by_dataset(self, dataset_id: int) -> list[TraceRecord]:
         """Legacy dataset-scoped wrapper."""
-        return self.list_by_design(dataset_id)
+        statement = select(TraceRecord).where(TraceRecord.dataset_id == dataset_id)
+        return list(self._session.exec(statement).all())
 
     def list_index_by_design(self, design_id: int) -> list[dict[str, str | int]]:
         """List lightweight trace metadata for one design."""
-        legacy_rows = self.list_index_by_dataset(design_id)
-        return [_canonical_trace_row(row) for row in legacy_rows]
+        statement = (
+            select(
+                TraceRecord.id,
+                TraceRecord.data_type,
+                TraceRecord.parameter,
+                TraceRecord.representation,
+            )
+            .where(TraceRecord.design_id == design_id)
+            .order_by(TraceRecord.id)  # type: ignore[arg-type]
+        )
+        rows = self._session.execute(statement).all()
+        return [
+            _canonical_trace_row(
+                {
+                    "id": int(record_id),
+                    "data_type": str(data_type),
+                    "parameter": str(parameter),
+                    "representation": str(representation),
+                }
+            )
+            for record_id, data_type, parameter, representation in rows
+            if record_id is not None
+        ]
 
     def list_index_by_dataset(self, dataset_id: int) -> list[dict[str, str | int]]:
         """List lightweight record metadata for one dataset."""
@@ -89,7 +111,9 @@ class TraceRepository:
 
     def count_by_design(self, design_id: int) -> int:
         """Count all traces under one design."""
-        return self.count_by_dataset(design_id)
+        design_id_col = cast(Any, TraceRecord.design_id)
+        statement = sa_select(func.count()).where(design_id_col == design_id)
+        return int(self._session.execute(statement).scalar_one())
 
     def count_by_dataset(self, dataset_id: int) -> int:
         """Count all records under one dataset."""
@@ -99,12 +123,12 @@ class TraceRepository:
 
     def list_distinct_index_for_profile(self, design_id: int) -> list[dict[str, str]]:
         """List distinct (family, parameter) pairs for profile inference."""
-        dataset_id_col = cast(Any, TraceRecord.dataset_id)
+        design_id_col = cast(Any, TraceRecord.design_id)
         data_type_col = cast(Any, TraceRecord.data_type)
         parameter_col = cast(Any, TraceRecord.parameter)
         statement = (
             sa_select(data_type_col, parameter_col)
-            .where(dataset_id_col == design_id)
+            .where(design_id_col == design_id)
             .distinct()
             .order_by(data_type_col, parameter_col)
         )
@@ -126,7 +150,12 @@ class TraceRepository:
         **kwargs: object,
     ) -> tuple[list[dict[str, str | int]], int]:
         """List one page of canonical trace metadata rows for a design."""
-        rows, total = cast(Any, self.list_index_page_by_dataset)(design_id, query=query, **kwargs)
+        rows, total = self._list_index_page_by_scope(
+            scope_name="design_id",
+            scope_id=design_id,
+            query=query,
+            **kwargs,
+        )
         return ([_canonical_trace_row(row) for row in rows], total)
 
     def list_index_page_by_dataset(
@@ -147,6 +176,42 @@ class TraceRepository:
         offset: int = 0,
     ) -> tuple[list[dict[str, str | int]], int]:
         """List one page of lightweight metadata rows for a dataset."""
+        return self._list_index_page_by_scope(
+            scope_name="dataset_id",
+            scope_id=dataset_id,
+            query=query,
+            search=search,
+            sort_by=sort_by,
+            descending=descending,
+            data_type=data_type,
+            data_types=data_types,
+            parameters=parameters,
+            representation=representation,
+            mode_filter=mode_filter,
+            ids=ids,
+            limit=limit,
+            offset=offset,
+        )
+
+    def _list_index_page_by_scope(
+        self,
+        *,
+        scope_name: str,
+        scope_id: int,
+        query: TraceIndexPageQuery | None = None,
+        search: str = "",
+        sort_by: str = "id",
+        descending: bool = False,
+        data_type: str = "",
+        data_types: Sequence[str] | None = None,
+        parameters: Sequence[str] | None = None,
+        representation: str = "",
+        mode_filter: str = "all",
+        ids: Sequence[int] | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, str | int]], int]:
+        """List one page of lightweight metadata rows for one explicit scope column."""
         if query is not None:
             search = query.search
             sort_by = query.sort_by
@@ -164,14 +229,14 @@ class TraceRepository:
         data_type_col = cast(Any, TraceRecord.data_type)
         parameter_col = cast(Any, TraceRecord.parameter)
         representation_col = cast(Any, TraceRecord.representation)
-        dataset_id_col = cast(Any, TraceRecord.dataset_id)
+        scope_col = cast(Any, getattr(TraceRecord, scope_name))
 
         statement = sa_select(
             id_col,
             data_type_col,
             parameter_col,
             representation_col,
-        ).where(dataset_id_col == dataset_id)
+        ).where(scope_col == scope_id)
 
         sideband_predicate = _sideband_parameter_predicate(parameter_col)
 
@@ -258,22 +323,9 @@ class TraceRepository:
 
     def list_summary_by_design(self, design_id: int) -> list[dict[str, object]]:
         """List summary rows for one design without loading large axes/value payloads."""
-        return [
-            {
-                "id": row["id"],
-                "design_id": row["dataset_id"],
-                "family": row["data_type"],
-                "parameter": row["parameter"],
-                "representation": row["representation"],
-                "created_at": row["created_at"],
-            }
-            for row in self.list_summary_by_dataset(design_id)
-        ]
-
-    def list_summary_by_dataset(self, dataset_id: int) -> list[dict[str, object]]:
-        """List summary rows for one dataset without loading large axes/value payloads."""
         id_col = cast(Any, TraceRecord.id)
         dataset_id_col = cast(Any, TraceRecord.dataset_id)
+        design_id_col = cast(Any, TraceRecord.design_id)
         data_type_col = cast(Any, TraceRecord.data_type)
         parameter_col = cast(Any, TraceRecord.parameter)
         representation_col = cast(Any, TraceRecord.representation)
@@ -282,6 +334,50 @@ class TraceRepository:
             sa_select(
                 id_col,
                 dataset_id_col,
+                design_id_col,
+                data_type_col,
+                parameter_col,
+                representation_col,
+            )
+            .where(design_id_col == design_id)
+            .order_by(id_col)
+        )
+        rows = self._session.execute(statement).all()
+        return [
+            {
+                "id": int(record_id),
+                "dataset_id": int(row_dataset_id),
+                "design_id": int(row_design_id),
+                "family": str(data_type),
+                "parameter": str(parameter),
+                "representation": str(representation),
+                "created_at": None,
+            }
+            for (
+                record_id,
+                row_dataset_id,
+                row_design_id,
+                data_type,
+                parameter,
+                representation,
+            ) in rows
+            if record_id is not None and row_dataset_id is not None and row_design_id is not None
+        ]
+
+    def list_summary_by_dataset(self, dataset_id: int) -> list[dict[str, object]]:
+        """List summary rows for one dataset without loading large axes/value payloads."""
+        id_col = cast(Any, TraceRecord.id)
+        dataset_id_col = cast(Any, TraceRecord.dataset_id)
+        design_id_col = cast(Any, TraceRecord.design_id)
+        data_type_col = cast(Any, TraceRecord.data_type)
+        parameter_col = cast(Any, TraceRecord.parameter)
+        representation_col = cast(Any, TraceRecord.representation)
+
+        statement = (
+            sa_select(
+                id_col,
+                dataset_id_col,
+                design_id_col,
                 data_type_col,
                 parameter_col,
                 representation_col,
@@ -294,6 +390,7 @@ class TraceRepository:
             {
                 "id": int(record_id),
                 "dataset_id": int(row_dataset_id),
+                "design_id": int(row_design_id),
                 "data_type": str(data_type),
                 "parameter": str(parameter),
                 "representation": str(representation),
@@ -302,15 +399,17 @@ class TraceRepository:
             for (
                 record_id,
                 row_dataset_id,
+                row_design_id,
                 data_type,
                 parameter,
                 representation,
             ) in rows
-            if record_id is not None
+            if record_id is not None and row_design_id is not None
         ]
 
     def add(self, trace: TraceRecord) -> TraceRecord:
         """Add a new trace."""
+        trace.ensure_scope_ids()
         self._session.add(trace)
         return trace
 
@@ -323,14 +422,18 @@ class TraceRepository:
         if not records:
             return []
 
-        design_ids = {record.design_id for record in records}
+        design_ids = {int(record.design_id) for record in records if record.design_id is not None}
         hidden_design_ids = {
             design.id
             for design in self._session.exec(select(DesignRecord)).all()
             if design.id is not None and design.source_meta.get("system_hidden")
             if design.id in design_ids
         }
-        return [record for record in records if record.design_id not in hidden_design_ids]
+        return [
+            record
+            for record in records
+            if record.design_id is not None and record.design_id not in hidden_design_ids
+        ]
 
     def delete(self, trace: TraceRecord) -> None:
         """Delete a trace."""

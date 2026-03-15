@@ -23,6 +23,7 @@ class AnalysisRunSummary(TypedDict):
     """Primitive-only summary row for one analysis run."""
 
     analysis_run_id: int
+    dataset_id: int
     design_id: int
     analysis_id: str
     analysis_label: str
@@ -167,6 +168,7 @@ class TraceBatchSnapshot(TypedDict):
     """Canonical trace-batch snapshot DTO for lineage/provenance lookups."""
 
     id: int
+    dataset_id: int
     design_id: int
     source_kind: str
     stage_kind: str
@@ -184,6 +186,7 @@ class ResultBundleAnalysisRunSummary(TypedDict):
 
     bundle_id: int
     dataset_id: int
+    design_id: int
     analysis_id: str
     analysis_label: str
     status: str
@@ -194,6 +197,7 @@ class ResultBundleSnapshot(TypedDict):
 
     id: int
     dataset_id: int
+    design_id: int
     bundle_type: str
     role: str
     status: str

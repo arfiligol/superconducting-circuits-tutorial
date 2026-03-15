@@ -698,6 +698,7 @@ def test_result_bundle_repository_lists_primitive_analysis_run_summaries() -> No
             {
                 "bundle_id": 1,
                 "dataset_id": dataset.id,
+                "design_id": dataset.id,
                 "analysis_id": "squid_fitting",
                 "analysis_label": "SQUID Fitting",
                 "status": "completed",
@@ -705,6 +706,7 @@ def test_result_bundle_repository_lists_primitive_analysis_run_summaries() -> No
             {
                 "bundle_id": 2,
                 "dataset_id": dataset.id,
+                "design_id": dataset.id,
                 "analysis_id": "y11_fit",
                 "analysis_label": "Y11 Response Fit",
                 "status": "failed",
@@ -723,6 +725,7 @@ def test_result_bundle_repository_analysis_runs_round_trip_via_logical_contract(
         bundle_repo = ResultBundleRepository(session)
         persisted = bundle_repo.analysis_runs.add(
             AnalysisRunRecord(
+                dataset_id=design.id,
                 design_id=design.id,
                 analysis_id="squid_fitting",
                 analysis_label="SQUID Fitting",
@@ -752,6 +755,7 @@ def test_result_bundle_repository_analysis_runs_round_trip_via_logical_contract(
 
         loaded = bundle_repo.analysis_runs.get(persisted.id)
         assert loaded is not None
+        assert loaded.dataset_id == design.id
         assert loaded.design_id == design.id
         assert loaded.analysis_id == "squid_fitting"
         assert loaded.analysis_label == "SQUID Fitting"
@@ -767,6 +771,7 @@ def test_result_bundle_repository_analysis_runs_round_trip_via_logical_contract(
         assert summaries == [
             {
                 "analysis_run_id": int(persisted.id),
+                "dataset_id": design.id,
                 "design_id": design.id,
                 "analysis_id": "squid_fitting",
                 "analysis_label": "SQUID Fitting",
@@ -879,6 +884,7 @@ def test_design_trace_batch_repository_exposes_canonical_snapshot_and_lineage() 
 
         snapshot = batch_repo.get_trace_batch_snapshot(child.id)
         assert snapshot is not None
+        assert snapshot["dataset_id"] == design.id
         assert snapshot["design_id"] == design.id
         assert snapshot["parent_batch_id"] == parent.id
         assert snapshot["source_kind"] == "circuit_simulation"

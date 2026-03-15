@@ -27,6 +27,7 @@ def _seed_large_design(session: Session, *, total: int) -> DesignRecord:
     rows = [
         TraceRecord(
             dataset_id=design.id,
+            design_id=design.id,
             data_type="y_parameters",
             parameter=f"Y11 [om=(0,), im=({index % 5},)]" if index % 3 == 0 else "Y11",
             representation="imaginary",

@@ -15,29 +15,35 @@ class DerivedParameterRepository:
 
     def list_by_design(self, design_id: int) -> list[DerivedParameter]:
         """List all derived parameters for one design scope."""
-        statement = select(DerivedParameter).where(DerivedParameter.dataset_id == design_id)
+        statement = select(DerivedParameter).where(DerivedParameter.design_id == design_id)
         return list(self._session.exec(statement).all())
 
     def list_by_dataset(self, dataset_id: int) -> list[DerivedParameter]:
         """Legacy dataset-scoped wrapper."""
-        return self.list_by_design(dataset_id)
+        statement = select(DerivedParameter).where(DerivedParameter.dataset_id == dataset_id)
+        return list(self._session.exec(statement).all())
 
     def add(self, param: DerivedParameter) -> DerivedParameter:
         """Add a new derived parameter."""
+        param.ensure_scope_ids()
         self._session.add(param)
         return param
 
     def get_by_design_and_name(self, design_id: int, name: str) -> DerivedParameter | None:
         """Get the first parameter with exact design/name."""
         statement = select(DerivedParameter).where(
-            DerivedParameter.dataset_id == design_id,
+            DerivedParameter.design_id == design_id,
             DerivedParameter.name == name,
         )
         return self._session.exec(statement).first()
 
     def get_by_dataset_and_name(self, dataset_id: int, name: str) -> DerivedParameter | None:
         """Legacy dataset-scoped wrapper."""
-        return self.get_by_design_and_name(dataset_id, name)
+        statement = select(DerivedParameter).where(
+            DerivedParameter.dataset_id == dataset_id,
+            DerivedParameter.name == name,
+        )
+        return self._session.exec(statement).first()
 
     def get_by_design_method_and_name(
         self,
@@ -47,7 +53,7 @@ class DerivedParameterRepository:
     ) -> DerivedParameter | None:
         """Get the first parameter with exact design/method/name."""
         statement = select(DerivedParameter).where(
-            DerivedParameter.dataset_id == design_id,
+            DerivedParameter.design_id == design_id,
             DerivedParameter.method == method,
             DerivedParameter.name == name,
         )
@@ -60,7 +66,12 @@ class DerivedParameterRepository:
         name: str,
     ) -> DerivedParameter | None:
         """Legacy dataset-scoped wrapper."""
-        return self.get_by_design_method_and_name(dataset_id, method, name)
+        statement = select(DerivedParameter).where(
+            DerivedParameter.dataset_id == dataset_id,
+            DerivedParameter.method == method,
+            DerivedParameter.name == name,
+        )
+        return self._session.exec(statement).first()
 
     def get_first_by_design_method_name_prefix(
         self,
@@ -72,7 +83,7 @@ class DerivedParameterRepository:
         statement = (
             select(DerivedParameter)
             .where(
-                DerivedParameter.dataset_id == design_id,
+                DerivedParameter.design_id == design_id,
                 DerivedParameter.method == method,
                 cast(Any, DerivedParameter.name).like(f"{name_prefix}%"),
             )
@@ -87,7 +98,16 @@ class DerivedParameterRepository:
         name_prefix: str,
     ) -> DerivedParameter | None:
         """Legacy dataset-scoped wrapper."""
-        return self.get_first_by_design_method_name_prefix(dataset_id, method, name_prefix)
+        statement = (
+            select(DerivedParameter)
+            .where(
+                DerivedParameter.dataset_id == dataset_id,
+                DerivedParameter.method == method,
+                cast(Any, DerivedParameter.name).like(f"{name_prefix}%"),
+            )
+            .order_by(cast(Any, DerivedParameter.id))
+        )
+        return self._session.exec(statement).first()
 
     def list_all(self) -> list[DerivedParameter]:
         """List all derived parameters."""

@@ -28,6 +28,7 @@ def test_task_repository_lifecycle_roundtrips_payloads_and_links() -> None:
         design = DesignRecord(name="Task Design", source_meta={}, parameters={})
         raw_batch = TraceBatchRecord(
             dataset_id=1,
+            design_id=1,
             bundle_type="circuit_simulation",
             role="cache",
             status="completed",
@@ -37,6 +38,7 @@ def test_task_repository_lifecycle_roundtrips_payloads_and_links() -> None:
         )
         analysis_run = TraceBatchRecord(
             dataset_id=1,
+            design_id=1,
             bundle_type="characterization",
             role="analysis_run",
             status="completed",
@@ -251,3 +253,43 @@ def test_audit_log_repository_appends_and_filters_actor_logs() -> None:
         assert [log.id for log in repo.list_logs()] == [second.id, first.id]
         assert [log.id for log in repo.list_logs_by_actor(alice.id)] == [first.id]
         assert repo.list_logs_by_actor(9999) == []
+
+
+def test_audit_log_repository_redacts_secret_and_raw_numeric_payloads() -> None:
+    with _memory_session() as session:
+        repo = AuditLogRepository(session)
+        payload = {
+            "requested_by": "ui",
+            "password_hash": "secret-hash",
+            "token": "secret-token",
+            "values": [1.0, 2.0, 3.0],
+            "nested": {
+                "authorization": "Bearer abc",
+                "trace_values": [9.0],
+                "safe": {"trace_batch_id": 7},
+            },
+        }
+
+        log = repo.append_log(
+            actor_id=None,
+            action_kind="task.retry",
+            resource_kind="task",
+            resource_id=9,
+            summary="Retried task 9",
+            payload=payload,
+        )
+        session.commit()
+
+        payload["nested"]["safe"]["trace_batch_id"] = 99
+
+        assert log.payload == {
+            "requested_by": "ui",
+            "password_hash": "[REDACTED]",
+            "token": "[REDACTED]",
+            "values": "[OMITTED]",
+            "nested": {
+                "authorization": "[REDACTED]",
+                "trace_values": "[OMITTED]",
+                "safe": {"trace_batch_id": 7},
+            },
+        }

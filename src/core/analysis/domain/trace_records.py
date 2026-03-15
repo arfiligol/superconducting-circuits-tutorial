@@ -60,11 +60,7 @@ class NormalizedTraceRecord:
     axes: list[dict[str, Any]]
     values: object
     store_ref: Mapping[str, Any] | None = None
-
-    @property
-    def design_id(self) -> int | None:
-        """Return the canonical dataset-local design scope identifier."""
-        return self.dataset_id
+    design_id: int | None = None
 
     def trace_shape(self) -> tuple[int, ...]:
         """Return shape metadata without requiring inline values to be populated."""
@@ -220,13 +216,16 @@ def trace_record_representation(record: object) -> str:
 
 
 def trace_record_dataset_id(record: object) -> int | None:
-    """Legacy compatibility wrapper for the canonical design identifier."""
-    return trace_record_design_id(record)
+    """Return the persisted dataset authority identifier for one trace-like object."""
+    raw_value = _field(record, "dataset_id")
+    if raw_value is None:
+        return None
+    return int(raw_value) if isinstance(raw_value, int | str) else None
 
 
 def trace_record_design_id(record: object) -> int | None:
     """Return the canonical dataset-local design scope identifier."""
-    raw_value = _field(record, "design_id", "dataset_id")
+    raw_value = _field(record, "design_id")
     if raw_value is None:
         return None
     return int(raw_value) if isinstance(raw_value, int | str) else None
@@ -249,7 +248,8 @@ def normalize_trace_record(record: object) -> NormalizedTraceRecord:
     raw_store_ref = _field(record, "store_ref")
     return NormalizedTraceRecord(
         id=int(raw_id) if isinstance(raw_id, int | str) else None,
-        dataset_id=trace_record_design_id(record),
+        dataset_id=trace_record_dataset_id(record),
+        design_id=trace_record_design_id(record),
         data_type=trace_record_data_type(record),
         parameter=trace_record_parameter(record),
         representation=trace_record_representation(record),
