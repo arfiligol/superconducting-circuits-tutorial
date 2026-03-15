@@ -14,7 +14,6 @@ import {
   deleteCircuitDefinition,
   getCircuitDefinition,
   listCircuitDefinitionsCatalog,
-  listCircuitDefinitions,
   publishCircuitDefinition,
   updateCircuitDefinition,
 } from "@/features/circuit-definition-editor/lib/api";

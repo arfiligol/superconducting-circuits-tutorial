@@ -1,3 +1,5 @@
+import type { components } from "@/lib/api/generated/schema";
+
 export type CircuitDefinitionAllowedActions = Readonly<{
   update: boolean;
   delete: boolean;
@@ -8,13 +10,73 @@ export type CircuitDefinitionAllowedActions = Readonly<{
 export type CircuitDefinitionVisibilityScope = "private" | "workspace";
 export type CircuitDefinitionLifecycleState = "active" | "archived" | "deleted";
 export type CircuitDefinitionValidationStatus = "valid" | "warning" | "invalid" | "ok";
-export type CircuitDefinitionCompatibilityValidationStatus = "ok" | "warning";
+export type CircuitDefinitionCompatibilityValidationStatus =
+  components["schemas"]["CircuitDefinitionSummaryResponse"]["validation_status"];
+
+type GeneratedCircuitDefinitionCreateRequest =
+  components["schemas"]["CircuitDefinitionCreateRequest"];
+type GeneratedCircuitDefinitionUpdateRequest =
+  components["schemas"]["CircuitDefinitionUpdateRequest"];
+type GeneratedCircuitDefinitionSummaryResponse =
+  components["schemas"]["CircuitDefinitionSummaryResponse"];
+type GeneratedCircuitDefinitionDetailResponse =
+  components["schemas"]["CircuitDefinitionDetailResponse"];
+type GeneratedValidationNoticeResponse = components["schemas"]["ValidationNoticeResponse"];
+type GeneratedValidationSummaryResponse =
+  components["schemas"]["CircuitDefinitionValidationSummaryResponse"];
+
+export type CircuitDefinitionSummaryResponse = GeneratedCircuitDefinitionSummaryResponse &
+  Readonly<{
+    visibility_scope: CircuitDefinitionVisibilityScope;
+    owner_display_name: string;
+    allowed_actions: CircuitDefinitionAllowedActions;
+  }>;
+
+export type DefinitionValidationNoticeResponse = Omit<
+  GeneratedValidationNoticeResponse,
+  never
+> &
+  Readonly<{
+    severity: "error" | "warning" | "info";
+    code: string;
+    source: string;
+    blocking: boolean;
+  }>;
+
+export type CircuitDefinitionValidationSummaryResponse = Omit<
+  GeneratedValidationSummaryResponse,
+  "status"
+> &
+  Readonly<{
+    status: CircuitDefinitionValidationStatus;
+    blocking_notice_count?: number;
+  }>;
+
+export type CircuitDefinitionDetailResponse = Omit<
+  GeneratedCircuitDefinitionDetailResponse,
+  "validation_notices" | "validation_summary" | "preview_artifacts"
+> &
+  Readonly<{
+    workspace_id: string;
+    visibility_scope: CircuitDefinitionVisibilityScope;
+    lifecycle_state: CircuitDefinitionLifecycleState;
+    owner_user_id: string;
+    owner_display_name: string;
+    updated_at: string;
+    concurrency_token: string;
+    source_hash: string;
+    allowed_actions: CircuitDefinitionAllowedActions;
+    validation_notices: readonly DefinitionValidationNoticeResponse[];
+    validation_summary: CircuitDefinitionValidationSummaryResponse;
+    preview_artifacts: readonly string[];
+    lineage_parent_id: number | null;
+  }>;
 
 export type DefinitionValidationNotice = Readonly<{
-  severity?: "error" | "warning" | "info";
-  level?: "ok" | "warning";
-  code?: string;
+  level?: GeneratedValidationNoticeResponse["level"];
   message: string;
+  severity?: DefinitionValidationNoticeResponse["severity"];
+  code?: string;
   source?: string;
   blocking?: boolean;
 }>;
@@ -26,19 +88,12 @@ export type CircuitDefinitionValidationSummary = Readonly<{
   blocking_notice_count?: number;
 }>;
 
-export type CircuitDefinitionSummary = Readonly<{
-  definition_id: number;
-  name: string;
-  created_at: string;
-  visibility_scope?: CircuitDefinitionVisibilityScope;
-  owner_display_name?: string;
-  allowed_actions?: CircuitDefinitionAllowedActions;
-  // Compatibility fields used by existing read-first consumers that still depend on the
-  // older summary contract. Catalog/editor surfaces should prefer canonical fields above.
-  element_count: number;
-  validation_status: CircuitDefinitionCompatibilityValidationStatus;
-  preview_artifact_count: number;
-}>;
+export type CircuitDefinitionSummary = GeneratedCircuitDefinitionSummaryResponse &
+  Readonly<{
+    visibility_scope?: CircuitDefinitionVisibilityScope;
+    owner_display_name?: string;
+    allowed_actions?: CircuitDefinitionAllowedActions;
+  }>;
 
 export type CircuitDefinitionDetail = CircuitDefinitionSummary &
   Readonly<{
@@ -56,15 +111,27 @@ export type CircuitDefinitionDetail = CircuitDefinitionSummary &
     lineage_parent_id?: number | null;
   }>;
 
-export type CircuitDefinitionCreateDraft = Readonly<{
-  name: string;
-  source_text: string;
-  visibility_scope?: CircuitDefinitionVisibilityScope;
-}>;
+export type CircuitDefinitionPersistedPreview = Pick<
+  CircuitDefinitionDetail,
+  | "definition_id"
+  | "visibility_scope"
+  | "updated_at"
+  | "normalized_output"
+  | "validation_notices"
+  | "validation_summary"
+  | "preview_artifacts"
+  | "preview_artifact_count"
+  | "lineage_parent_id"
+>;
+
+export type CircuitDefinitionCreateDraft = GeneratedCircuitDefinitionCreateRequest &
+  Readonly<{
+    visibility_scope?: CircuitDefinitionVisibilityScope;
+  }>;
 
 export type CircuitDefinitionUpdateDraft = Readonly<{
-  name?: string;
-  source_text: string;
+  source_text: GeneratedCircuitDefinitionUpdateRequest["source_text"];
+  name?: GeneratedCircuitDefinitionUpdateRequest["name"];
   concurrency_token?: string;
 }>;
 
@@ -85,6 +152,11 @@ export type CircuitDefinitionMutationResponse = Readonly<{
   definition: CircuitDefinitionDetail;
 }>;
 
+export type CircuitDefinitionMutationEnvelopeResponse = Readonly<{
+  operation: CircuitDefinitionMutationOperation;
+  definition: CircuitDefinitionDetailResponse;
+}>;
+
 export type CircuitDefinitionDeleteResponse = Readonly<{
   operation: "deleted";
   definition_id: number;
@@ -92,6 +164,11 @@ export type CircuitDefinitionDeleteResponse = Readonly<{
 
 export type CircuitDefinitionCatalogResponse = Readonly<{
   rows: readonly CircuitDefinitionSummary[];
+  total_count: number;
+}>;
+
+export type CircuitDefinitionCatalogEnvelopeResponse = Readonly<{
+  rows: readonly CircuitDefinitionSummaryResponse[];
   total_count: number;
 }>;
 

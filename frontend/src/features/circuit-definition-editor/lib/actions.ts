@@ -60,11 +60,11 @@ export function summarizeEditorDefinitionActionState(input: Readonly<{
   selectedDefinitionId: number | "new" | null;
   activeDefinition: CircuitDefinitionDetail | undefined;
   isDirty: boolean;
-  isSubmitting: boolean;
+  isMutationPending: boolean;
   isNavigating: boolean;
   hasBlockingLocalDiagnostics: boolean;
 }>): CircuitDefinitionEditorActionState {
-  const isBusy = input.isSubmitting || input.isNavigating;
+  const isBusy = input.isMutationPending || input.isNavigating;
 
   const format = isBusy
     ? blocked("Format waits until the current save or route transition finishes.")

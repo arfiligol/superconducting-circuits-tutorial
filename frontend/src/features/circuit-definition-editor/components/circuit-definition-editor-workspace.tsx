@@ -36,16 +36,16 @@ import {
 import {
   buildCircuitDefinitionDraft,
   formatCircuitNetlistSource,
-  parseCircuitNetlistSource,
-  summarizeCircuitDefinitionSerializerBoundary,
-  summarizeCircuitNetlistDocument,
 } from "@/features/circuit-definition-editor/lib/netlist";
 import {
-  buildNormalizedOutputPreview,
-  partitionValidationNotices,
-  resolvePersistedPreviewState,
-} from "@/features/circuit-definition-editor/lib/preview";
+  buildCircuitDefinitionDraftSurface,
+  buildCircuitDefinitionPersistedPreviewSurface,
+  isCircuitDefinitionMutationPending,
+} from "@/features/circuit-definition-editor/lib/editor-state";
+import { ConfirmActionDialog } from "@/lib/confirm-action-dialog";
 import { cx } from "@/features/shared/components/surface-kit";
+
+import type { CircuitDefinitionDetail } from "@/features/circuit-definition-editor/lib/contracts";
 
 const quickReferenceRows = [
   ["Port", "P*", "-", '["P1", "1", "0", 1]'],
@@ -96,12 +96,25 @@ function definitionSearchHref(pathname: string, searchParamsValue: string, defin
   return `${pathname}?${params.toString()}`;
 }
 
+type PendingEditorIntent =
+  | Readonly<{
+      kind: "delete";
+      definition: Pick<CircuitDefinitionDetail, "definition_id" | "name">;
+      discardDraft: boolean;
+    }>
+  | Readonly<{
+      kind: "switch-definition";
+      nextDefinitionId: string;
+    }>
+  | null;
+
 export function CircuitDefinitionEditorWorkspace() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [isNavigating, startTransition] = useTransition();
   const [catalogQuery, setCatalogQuery] = useState("");
+  const [pendingIntent, setPendingIntent] = useState<PendingEditorIntent>(null);
 
   const selectedDefinitionId = parseDefinitionIdParam(searchParams.get("definitionId"));
   const {
@@ -170,20 +183,16 @@ export function CircuitDefinitionEditorWorkspace() {
 
   const definitionName = form.watch("name");
   const sourceText = form.watch("source_text");
-  const parsedNetlist = useMemo(() => parseCircuitNetlistSource(sourceText), [sourceText]);
-  const localSummary = summarizeCircuitNetlistDocument(parsedNetlist.document);
-  const localDiagnostics = parsedNetlist.diagnostics;
-  const blockingLocalDiagnostics = localDiagnostics.filter(
-    (diagnostic) => diagnostic.severity === "error",
-  );
-  const serializerBoundary = useMemo(
+  const draftSurface = useMemo(
     () =>
-      summarizeCircuitDefinitionSerializerBoundary({
+      buildCircuitDefinitionDraftSurface({
         name: definitionName,
         sourceText,
       }),
     [definitionName, sourceText],
   );
+  const isMutationPending = isCircuitDefinitionMutationPending(mutationStatus.state);
+  const isIdentityTransitionLocked = isMutationPending || isNavigating;
   const filteredDefinitions = (definitions ?? []).filter((definition) => {
     const normalizedQuery = catalogQuery.trim().toLowerCase();
     if (!normalizedQuery) {
@@ -195,26 +204,23 @@ export function CircuitDefinitionEditorWorkspace() {
       String(definition.definition_id).includes(normalizedQuery)
     );
   });
-
-  const normalizedOutput = activeDefinition?.normalized_output ?? "{\n  \"circuit\": \"pending\"\n}";
-  const validationNotices = activeDefinition?.validation_notices ?? [];
-  const validationSummary = activeDefinition?.validation_summary ?? null;
-  const previewArtifacts = activeDefinition?.preview_artifacts ?? [];
-  const persistedPreviewState = resolvePersistedPreviewState({
-    selectedDefinitionId,
-    isDirty: form.formState.isDirty,
-    isSaving: form.formState.isSubmitting,
-    activeDefinition,
-  });
-  const normalizedPreview = buildNormalizedOutputPreview(normalizedOutput);
-  const validationGroups = partitionValidationNotices(validationNotices);
+  const persistedPreviewSurface = useMemo(
+    () =>
+      buildCircuitDefinitionPersistedPreviewSurface({
+        selectedDefinitionId,
+        isDirty: form.formState.isDirty,
+        mutationPhase: mutationStatus.state,
+        activeDefinition,
+      }),
+    [activeDefinition, form.formState.isDirty, mutationStatus.state, selectedDefinitionId],
+  );
   const editorActionState = summarizeEditorDefinitionActionState({
     selectedDefinitionId,
     activeDefinition,
     isDirty: form.formState.isDirty,
-    isSubmitting: form.formState.isSubmitting,
+    isMutationPending,
     isNavigating,
-    hasBlockingLocalDiagnostics: blockingLocalDiagnostics.length > 0,
+    hasBlockingLocalDiagnostics: draftSurface.blockingLocalDiagnostics.length > 0,
   });
 
   const activeDefinitionLabel =
@@ -245,23 +251,26 @@ export function CircuitDefinitionEditorWorkspace() {
     });
   }
 
-  async function handleDelete(definitionId: number) {
-    const confirmed = window.confirm(
-      form.formState.isDirty
-        ? "Delete this persisted definition and discard the local draft changes?"
-        : "Delete this circuit definition?",
-    );
-    if (!confirmed) {
+  async function handleConfirmedIntent() {
+    if (!pendingIntent) {
       return;
     }
 
-    await removeDefinition(definitionId);
+    if (pendingIntent.kind === "switch-definition") {
+      clearMutationStatus();
+      replaceDefinitionId(pendingIntent.nextDefinitionId);
+      setPendingIntent(null);
+      return;
+    }
+
+    await removeDefinition(pendingIntent.definition.definition_id);
     const remainingDefinitions = (definitions ?? []).filter(
-      (definition) => definition.definition_id !== definitionId,
+      (definition) => definition.definition_id !== pendingIntent.definition.definition_id,
     );
     const fallbackSelection = remainingDefinitions[0]
       ? String(remainingDefinitions[0].definition_id)
       : "new";
+    setPendingIntent(null);
     replaceDefinitionId(fallbackSelection);
   }
 
@@ -290,10 +299,11 @@ export function CircuitDefinitionEditorWorkspace() {
     }
 
     if (form.formState.isDirty) {
-      const confirmed = window.confirm("You have unsaved changes. Discard them?");
-      if (!confirmed) {
-        return;
-      }
+      setPendingIntent({
+        kind: "switch-definition",
+        nextDefinitionId: nextId,
+      });
+      return;
     }
 
     clearMutationStatus();
@@ -343,6 +353,14 @@ export function CircuitDefinitionEditorWorkspace() {
       source_text: formatCircuitNetlistSource(detail.source_text, {
         canonicalName: detail.name,
       }).formattedSource,
+    });
+  }
+
+  function requestDelete(definition: Pick<CircuitDefinitionDetail, "definition_id" | "name">) {
+    setPendingIntent({
+      kind: "delete",
+      definition,
+      discardDraft: form.formState.isDirty,
     });
   }
 
@@ -460,8 +478,14 @@ export function CircuitDefinitionEditorWorkspace() {
                 onClick={() => {
                   handleReplaceDefinitionIdRequest("new");
                 }}
+                disabled={isIdentityTransitionLocked}
+                title={
+                  isIdentityTransitionLocked
+                    ? "Wait for the current route transition or mutation to finish."
+                    : "Create a new draft in the single editor workspace."
+                }
                 className={cx(
-                  "w-full rounded-[0.9rem] border px-4 py-4 text-left transition",
+                  "w-full rounded-[0.9rem] border px-4 py-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
                   selectedDefinitionId === "new"
                     ? "border-primary/40 bg-primary/10"
                     : "border-border bg-surface hover:border-primary/30 hover:bg-primary/5",
@@ -480,8 +504,14 @@ export function CircuitDefinitionEditorWorkspace() {
                   onClick={() => {
                     handleReplaceDefinitionIdRequest(String(definition.definition_id));
                   }}
+                  disabled={isIdentityTransitionLocked}
+                  title={
+                    isIdentityTransitionLocked
+                      ? "Wait for the current route transition or mutation to finish."
+                      : "Rebind the editor to this persisted definition."
+                  }
                   className={cx(
-                    "w-full rounded-[0.9rem] border px-4 py-4 text-left transition",
+                    "w-full rounded-[0.9rem] border px-4 py-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
                     definition.definition_id === selectedDefinitionId
                       ? "border-primary/40 bg-primary/10"
                       : "border-border bg-surface hover:border-primary/30 hover:bg-primary/5",
@@ -589,13 +619,13 @@ export function CircuitDefinitionEditorWorkspace() {
                     </>
                   ) : null}
                   <span className="rounded-full bg-surface px-3 py-1">
-                    {localSummary.componentCount} components
+                    {draftSurface.localSummary.componentCount} components
                   </span>
                   <span className="rounded-full bg-surface px-3 py-1">
-                    {localSummary.topologyCount} topology rows
+                    {draftSurface.localSummary.topologyCount} topology rows
                   </span>
                   <span className="rounded-full bg-surface px-3 py-1">
-                    {localSummary.parameterCount} parameters
+                    {draftSurface.localSummary.parameterCount} parameters
                   </span>
                   {typeof activeDefinition?.lineage_parent_id === "number" ? (
                     <span className="rounded-full bg-surface px-3 py-1">
@@ -609,10 +639,17 @@ export function CircuitDefinitionEditorWorkspace() {
                   <button
                     type="button"
                     onClick={() => {
-                      void handleDelete(selectedDefinitionId);
+                      requestDelete({
+                        definition_id: selectedDefinitionId,
+                        name: activeDefinition?.name ?? activeDefinitionLabel,
+                      });
                     }}
-                    disabled={!editorActionState.delete.enabled}
-                    title={editorActionState.delete.reason}
+                    disabled={isMutationPending || !editorActionState.delete.enabled}
+                    title={
+                      isMutationPending
+                        ? "Wait for the current definition mutation to finish."
+                        : editorActionState.delete.reason
+                    }
                     className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-rose-500/30 px-3 py-2 text-sm text-rose-200 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -625,8 +662,12 @@ export function CircuitDefinitionEditorWorkspace() {
                     onClick={() => {
                       void handlePublish();
                     }}
-                    disabled={!editorActionState.publish.enabled}
-                    title={editorActionState.publish.reason}
+                    disabled={isMutationPending || !editorActionState.publish.enabled}
+                    title={
+                      isMutationPending
+                        ? "Wait for the current definition mutation to finish."
+                        : editorActionState.publish.reason
+                    }
                     className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Globe className="h-4 w-4" />
@@ -639,8 +680,12 @@ export function CircuitDefinitionEditorWorkspace() {
                     onClick={() => {
                       void handleClone();
                     }}
-                    disabled={!editorActionState.clone.enabled}
-                    title={editorActionState.clone.reason}
+                    disabled={isMutationPending || !editorActionState.clone.enabled}
+                    title={
+                      isMutationPending
+                        ? "Wait for the current definition mutation to finish."
+                        : editorActionState.clone.reason
+                    }
                     className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Copy className="h-4 w-4" />
@@ -708,7 +753,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   Local Contract
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {blockingLocalDiagnostics.length > 0 ? "Needs fixes" : "Aligned"}
+                  {draftSurface.blockingLocalDiagnostics.length > 0 ? "Needs fixes" : "Aligned"}
                 </p>
               </div>
               <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
@@ -716,7 +761,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   Local Diagnostics
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {localDiagnostics.length}
+                  {draftSurface.localDiagnostics.length}
                 </p>
               </div>
               <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
@@ -724,7 +769,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   Persisted Notices
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {validationSummary?.notice_count ?? 0}
+                  {persistedPreviewSurface.validationSummary?.notice_count ?? 0}
                 </p>
               </div>
               <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
@@ -732,7 +777,8 @@ export function CircuitDefinitionEditorWorkspace() {
                   Preview Artifacts
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {activeDefinition?.preview_artifact_count ?? previewArtifacts.length}
+                  {activeDefinition?.preview_artifact_count ??
+                    persistedPreviewSurface.previewArtifacts.length}
                 </p>
               </div>
             </div>
@@ -815,7 +861,7 @@ export function CircuitDefinitionEditorWorkspace() {
                       Definition Identity
                     </p>
                     <p className="mt-2 font-medium text-foreground">
-                      {serializerBoundary.definitionName}
+                      {draftSurface.serializerBoundary.definitionName}
                     </p>
                   </div>
                   <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3">
@@ -823,7 +869,7 @@ export function CircuitDefinitionEditorWorkspace() {
                       Source Document Name
                     </p>
                     <p className="mt-2 font-medium text-foreground">
-                      {serializerBoundary.sourceDocumentName ?? "Unavailable"}
+                      {draftSurface.serializerBoundary.sourceDocumentName ?? "Unavailable"}
                     </p>
                   </div>
                   <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3">
@@ -838,12 +884,12 @@ export function CircuitDefinitionEditorWorkspace() {
                 <p
                   className={cx(
                     "mt-3",
-                    serializerBoundary.willRewriteSourceName
+                    draftSurface.serializerBoundary.willRewriteSourceName
                       ? "text-amber-200"
                       : "text-muted-foreground",
                   )}
                 >
-                  {serializerBoundary.detail}
+                  {draftSurface.serializerBoundary.detail}
                 </p>
               </div>
             </section>
@@ -861,13 +907,13 @@ export function CircuitDefinitionEditorWorkspace() {
                 </p>
               </div>
               <div className="rounded-full bg-surface px-3 py-1 text-xs text-muted-foreground">
-                {localDiagnostics.length} items
+                {draftSurface.localDiagnostics.length} items
               </div>
             </div>
 
-            {localDiagnostics.length > 0 ? (
+            {draftSurface.localDiagnostics.length > 0 ? (
               <div className="mt-4 space-y-3">
-                {localDiagnostics.map((diagnostic) => (
+                {draftSurface.localDiagnostics.map((diagnostic) => (
                   <div
                     key={`${diagnostic.path}-${diagnostic.message}`}
                     className={cx(
@@ -903,29 +949,29 @@ export function CircuitDefinitionEditorWorkspace() {
               <div
                 className={cx(
                   "rounded-full px-3 py-1 text-xs font-medium",
-                  persistedPreviewState.tone === "warning"
+                  persistedPreviewSurface.persistedPreviewState.tone === "warning"
                     ? "bg-amber-500/12 text-amber-300"
-                    : persistedPreviewState.tone === "accent"
+                    : persistedPreviewSurface.persistedPreviewState.tone === "accent"
                       ? "bg-primary/10 text-primary"
                       : "bg-surface text-muted-foreground",
                 )}
               >
                 <FileCode2 className="mr-1 inline-block h-4 w-4" />
-                {persistedPreviewState.label}
+                {persistedPreviewSurface.persistedPreviewState.label}
               </div>
             </div>
 
             <div
               className={cx(
                 "mt-4 rounded-[0.8rem] border px-4 py-3 text-sm",
-                persistedPreviewState.tone === "warning"
+                persistedPreviewSurface.persistedPreviewState.tone === "warning"
                   ? "border-amber-500/20 bg-amber-500/8 text-amber-100"
-                  : persistedPreviewState.tone === "accent"
+                  : persistedPreviewSurface.persistedPreviewState.tone === "accent"
                     ? "border-primary/20 bg-primary/8 text-foreground"
                     : "border-border bg-surface text-muted-foreground",
               )}
             >
-              {persistedPreviewState.detail}
+              {persistedPreviewSurface.persistedPreviewState.detail}
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -934,10 +980,10 @@ export function CircuitDefinitionEditorWorkspace() {
                   Validation Status
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {validationSummary
-                    ? validationSummary.status === "invalid"
+                  {persistedPreviewSurface.validationSummary
+                    ? persistedPreviewSurface.validationSummary.status === "invalid"
                       ? "Invalid"
-                      : validationSummary.status === "warning"
+                      : persistedPreviewSurface.validationSummary.status === "warning"
                       ? "Warnings Present"
                       : "Ready"
                     : "Pending Save"}
@@ -948,7 +994,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   Notice Count
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {validationSummary?.notice_count ?? 0}
+                  {persistedPreviewSurface.validationSummary?.notice_count ?? 0}
                 </p>
               </div>
               <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
@@ -956,7 +1002,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   Warning Count
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {validationSummary?.warning_count ?? 0}
+                  {persistedPreviewSurface.validationSummary?.warning_count ?? 0}
                 </p>
               </div>
               <div className="rounded-[0.8rem] border border-border bg-surface px-4 py-3">
@@ -964,7 +1010,7 @@ export function CircuitDefinitionEditorWorkspace() {
                   Preview Fields
                 </p>
                 <p className="mt-2 text-lg font-semibold text-foreground">
-                  {normalizedPreview.fieldCount}
+                  {persistedPreviewSurface.normalizedPreview.fieldCount}
                 </p>
               </div>
             </div>
@@ -979,15 +1025,15 @@ export function CircuitDefinitionEditorWorkspace() {
                     </p>
                   </div>
                   <div className="rounded-full bg-background px-3 py-1 text-xs text-muted-foreground">
-                    {validationSummary?.status === "invalid"
+                    {persistedPreviewSurface.validationSummary?.status === "invalid"
                       ? "Blocking"
-                      : validationSummary?.status === "warning"
+                      : persistedPreviewSurface.validationSummary?.status === "warning"
                         ? "Needs review"
                         : "Ready"}
                   </div>
                 </div>
 
-                {validationNotices.length === 0 ? (
+                {persistedPreviewSurface.validationNotices.length === 0 ? (
                   <div className="mt-4 rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
                     {selectedDefinitionId === "new"
                       ? "Save the draft to generate persisted backend validation notices."
@@ -1002,12 +1048,12 @@ export function CircuitDefinitionEditorWorkspace() {
                         <AlertTriangle className="h-4 w-4" />
                         Blocking
                       </div>
-                      {validationGroups.blocking.length === 0 ? (
+                      {persistedPreviewSurface.validationGroups.blocking.length === 0 ? (
                         <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
                           No blocking persisted notices were recorded.
                         </div>
                       ) : (
-                        validationGroups.blocking.map((notice) => (
+                        persistedPreviewSurface.validationGroups.blocking.map((notice) => (
                           <div
                             key={`blocking-${notice.code}-${notice.message}`}
                             className="rounded-[0.8rem] border border-rose-500/20 bg-rose-500/8 px-4 py-3 text-sm text-rose-100"
@@ -1026,12 +1072,12 @@ export function CircuitDefinitionEditorWorkspace() {
                         <AlertTriangle className="h-4 w-4" />
                         Warnings
                       </div>
-                      {validationGroups.warnings.length === 0 ? (
+                      {persistedPreviewSurface.validationGroups.warnings.length === 0 ? (
                         <div className="rounded-[0.8rem] border border-emerald-500/20 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-100">
                           No persisted warnings were recorded.
                         </div>
                       ) : (
-                        validationGroups.warnings.map((notice) => (
+                        persistedPreviewSurface.validationGroups.warnings.map((notice) => (
                           <div
                             key={`warning-${notice.code}-${notice.message}`}
                             className="rounded-[0.8rem] border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100"
@@ -1050,12 +1096,12 @@ export function CircuitDefinitionEditorWorkspace() {
                         <BadgeCheck className="h-4 w-4" />
                         Checks
                       </div>
-                      {validationGroups.checks.length === 0 ? (
+                      {persistedPreviewSurface.validationGroups.checks.length === 0 ? (
                         <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
                           No passing notices were recorded yet.
                         </div>
                       ) : (
-                        validationGroups.checks.map((notice) => (
+                        persistedPreviewSurface.validationGroups.checks.map((notice) => (
                           <div
                             key={`check-${notice.code}-${notice.message}`}
                             className="rounded-[0.8rem] border border-emerald-500/20 bg-emerald-500/8 px-4 py-3 text-sm text-emerald-100"
@@ -1081,12 +1127,12 @@ export function CircuitDefinitionEditorWorkspace() {
                     </p>
                   </div>
                   <div className="rounded-full bg-background px-3 py-1 text-xs text-muted-foreground">
-                    {normalizedPreview.isStructured ? "Structured" : "Raw"}
+                    {persistedPreviewSurface.normalizedPreview.isStructured ? "Structured" : "Raw"}
                   </div>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {normalizedPreview.fields.map((field) => (
+                  {persistedPreviewSurface.normalizedPreview.fields.map((field) => (
                     <div
                       key={field.key}
                       className="rounded-[0.8rem] border border-border bg-background px-4 py-3"
@@ -1101,16 +1147,16 @@ export function CircuitDefinitionEditorWorkspace() {
 
                 <div className="mt-4 rounded-[0.8rem] border border-border bg-background px-4 py-4">
                   <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs leading-6 text-muted-foreground">
-                    {normalizedPreview.formattedOutput}
+                    {persistedPreviewSurface.normalizedPreview.formattedOutput}
                   </pre>
                 </div>
 
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-                    Preview artifacts: {previewArtifacts.length}
+                    Preview artifacts: {persistedPreviewSurface.previewArtifacts.length}
                   </div>
                   <div className="rounded-[0.8rem] border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-                    Output lines: {normalizedPreview.lineCount}
+                    Output lines: {persistedPreviewSurface.normalizedPreview.lineCount}
                   </div>
                 </div>
               </section>
@@ -1118,6 +1164,33 @@ export function CircuitDefinitionEditorWorkspace() {
           </section>
         </div>
       </section>
+
+      <ConfirmActionDialog
+        open={pendingIntent !== null}
+        title={
+          pendingIntent?.kind === "delete"
+            ? "Delete persisted definition?"
+            : "Discard local draft changes?"
+        }
+        description={
+          pendingIntent?.kind === "delete"
+            ? pendingIntent.discardDraft
+              ? `Delete "${pendingIntent.definition.name}" and discard the current unsaved draft. This action cannot be undone.`
+              : `Delete "${pendingIntent.definition.name}" from persisted storage. This action cannot be undone.`
+            : "Switching definitions will discard the current unsaved draft and rebind the editor to the selected persisted identity."
+        }
+        confirmLabel={
+          pendingIntent?.kind === "delete" ? "Delete definition" : "Discard and switch"
+        }
+        tone={pendingIntent?.kind === "delete" ? "destructive" : "default"}
+        isPending={mutationStatus.state === "deleting"}
+        onCancel={() => {
+          setPendingIntent(null);
+        }}
+        onConfirm={() => {
+          void handleConfirmedIntent();
+        }}
+      />
     </div>
   );
 }

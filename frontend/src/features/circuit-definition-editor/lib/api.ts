@@ -1,6 +1,7 @@
 import { apiRequest, apiRequestEnvelope } from "@/lib/api/client";
 
 import type {
+  CircuitDefinitionCatalogEnvelopeResponse,
   CircuitDefinitionCatalogMeta,
   CircuitDefinitionCatalogResponse,
   CircuitDefinitionCloneDraft,
@@ -8,72 +9,20 @@ import type {
   CircuitDefinitionCreateDraft,
   CircuitDefinitionDeleteResponse,
   CircuitDefinitionDetail,
+  CircuitDefinitionDetailResponse,
   CircuitDefinitionMutationResponse,
+  CircuitDefinitionMutationEnvelopeResponse,
   CircuitDefinitionSummary,
+  CircuitDefinitionSummaryResponse,
   CircuitDefinitionUpdateDraft,
   DefinitionValidationNotice,
+  DefinitionValidationNoticeResponse,
 } from "@/features/circuit-definition-editor/lib/contracts";
-import { parseCircuitNetlistSource } from "@/features/circuit-definition-editor/lib/netlist";
-
-type CircuitDefinitionAllowedActionsResponse = Readonly<{
-  update: boolean;
-  delete: boolean;
-  publish: boolean;
-  clone: boolean;
-}>;
-
-type DefinitionValidationNoticeResponse = Readonly<{
-  severity: "error" | "warning" | "info";
-  code: string;
-  message: string;
-  source: string;
-  blocking: boolean;
-}>;
-
-type CircuitDefinitionSummaryResponse = Readonly<{
-  definition_id: number;
-  name: string;
-  created_at: string;
-  visibility_scope: "private" | "workspace";
-  owner_display_name: string;
-  allowed_actions: CircuitDefinitionAllowedActionsResponse;
-}>;
-
-type CircuitDefinitionDetailResponse = CircuitDefinitionSummaryResponse &
-  Readonly<{
-    workspace_id: string;
-    lifecycle_state: "active" | "archived" | "deleted";
-    owner_user_id: string;
-    updated_at: string;
-    concurrency_token: string;
-    source_hash: string;
-    source_text: string;
-    normalized_output: string;
-    validation_notices: readonly DefinitionValidationNoticeResponse[];
-    validation_summary: Readonly<{
-      status: "valid" | "warning" | "invalid";
-      notice_count: number;
-      warning_count: number;
-      blocking_notice_count: number;
-    }>;
-    preview_artifacts: readonly string[];
-    lineage_parent_id: number | null;
-  }>;
-
-type CircuitDefinitionMutationEnvelope = Readonly<{
-  operation: "created" | "updated" | "published" | "cloned";
-  definition: CircuitDefinitionDetailResponse;
-}>;
-
-type CircuitDefinitionCatalogEnvelope = Readonly<{
-  rows: readonly CircuitDefinitionSummaryResponse[];
-  total_count: number;
-}>;
 
 function toCompatibilityValidationStatus(
-  status: "valid" | "warning" | "invalid",
+  status: CircuitDefinitionDetailResponse["validation_summary"]["status"],
 ): CircuitDefinitionCompatibilityValidationStatus {
-  return status === "valid" ? "ok" : "warning";
+  return status === "warning" || status === "invalid" ? "warning" : "ok";
 }
 
 function mapValidationNotice(
@@ -89,12 +38,7 @@ function mapValidationNotice(
   };
 }
 
-function inferDefinitionElementCount(sourceText: string) {
-  const parsed = parseCircuitNetlistSource(sourceText);
-  return parsed.document?.components.length ?? 0;
-}
-
-function mapDefinitionSummaryResponse(
+export function mapCircuitDefinitionSummaryResponse(
   response: CircuitDefinitionSummaryResponse,
 ): CircuitDefinitionSummary {
   return {
@@ -109,10 +53,9 @@ function mapDefinitionSummaryResponse(
       publish: response.allowed_actions.publish,
       clone: response.allowed_actions.clone,
     },
-    // Compatibility placeholders for older read-only consumers. Detail reads provide real values.
-    element_count: 0,
-    validation_status: "ok",
-    preview_artifact_count: 0,
+    element_count: response.element_count,
+    validation_status: response.validation_status,
+    preview_artifact_count: response.preview_artifact_count,
   };
 }
 
@@ -120,7 +63,7 @@ export function mapCircuitDefinitionDetailResponse(
   response: CircuitDefinitionDetailResponse,
 ): CircuitDefinitionDetail {
   return {
-    ...mapDefinitionSummaryResponse(response),
+    ...mapCircuitDefinitionSummaryResponse(response),
     workspace_id: response.workspace_id,
     lifecycle_state: response.lifecycle_state,
     owner_user_id: response.owner_user_id,
@@ -138,9 +81,7 @@ export function mapCircuitDefinitionDetailResponse(
     },
     preview_artifacts: [...response.preview_artifacts],
     lineage_parent_id: response.lineage_parent_id,
-    element_count: inferDefinitionElementCount(response.source_text),
     validation_status: toCompatibilityValidationStatus(response.validation_summary.status),
-    preview_artifact_count: response.preview_artifacts.length,
   };
 }
 
@@ -172,13 +113,13 @@ export async function listCircuitDefinitionsCatalog(): Promise<
   }>
 > {
   const response = await apiRequestEnvelope<
-    CircuitDefinitionCatalogEnvelope,
+    CircuitDefinitionCatalogEnvelopeResponse,
     CircuitDefinitionCatalogMeta
   >(circuitDefinitionsListKey);
 
   return {
     catalog: {
-      rows: response.data.rows.map(mapDefinitionSummaryResponse),
+      rows: response.data.rows.map(mapCircuitDefinitionSummaryResponse),
       total_count: response.data.total_count,
     },
     meta: response.meta,
@@ -198,10 +139,13 @@ export async function getCircuitDefinition(definitionId: number) {
 }
 
 export async function createCircuitDefinition(payload: CircuitDefinitionCreateDraft) {
-  const response = await apiRequest<CircuitDefinitionMutationEnvelope>(circuitDefinitionsListKey, {
-    method: "POST",
-    body: payload,
-  });
+  const response = await apiRequest<CircuitDefinitionMutationEnvelopeResponse>(
+    circuitDefinitionsListKey,
+    {
+      method: "POST",
+      body: payload,
+    },
+  );
 
   return unwrapCircuitDefinitionMutation({
     operation: response.operation,
@@ -213,7 +157,7 @@ export async function updateCircuitDefinition(
   definitionId: number,
   payload: CircuitDefinitionUpdateDraft,
 ) {
-  const response = await apiRequest<CircuitDefinitionMutationEnvelope>(
+  const response = await apiRequest<CircuitDefinitionMutationEnvelopeResponse>(
     circuitDefinitionDetailKey(definitionId),
     {
       method: "PUT",
@@ -228,7 +172,7 @@ export async function updateCircuitDefinition(
 }
 
 export async function publishCircuitDefinition(definitionId: number) {
-  const response = await apiRequest<CircuitDefinitionMutationEnvelope>(
+  const response = await apiRequest<CircuitDefinitionMutationEnvelopeResponse>(
     circuitDefinitionPublishKey(definitionId),
     {
       method: "POST",
@@ -245,7 +189,7 @@ export async function cloneCircuitDefinition(
   definitionId: number,
   payload?: CircuitDefinitionCloneDraft,
 ) {
-  const response = await apiRequest<CircuitDefinitionMutationEnvelope>(
+  const response = await apiRequest<CircuitDefinitionMutationEnvelopeResponse>(
     circuitDefinitionCloneKey(definitionId),
     {
       method: "POST",

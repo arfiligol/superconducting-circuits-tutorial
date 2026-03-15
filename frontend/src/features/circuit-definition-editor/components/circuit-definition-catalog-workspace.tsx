@@ -19,8 +19,18 @@ import {
   filterCircuitDefinitionCatalog,
   type CircuitDefinitionCatalogSort,
 } from "@/features/circuit-definition-editor/lib/catalog";
+import { isCircuitDefinitionMutationPending } from "@/features/circuit-definition-editor/lib/editor-state";
 import { buildCircuitDefinitionEditorHref } from "@/features/circuit-definition-editor/lib/routes";
 import { cx } from "@/features/shared/components/surface-kit";
+import { ConfirmActionDialog } from "@/lib/confirm-action-dialog";
+
+type PendingCatalogAction =
+  | Readonly<{
+      kind: "delete";
+      definitionId: number;
+      definitionName: string;
+    }>
+  | null;
 
 function visibilityTone(scope: "private" | "workspace" | undefined) {
   return scope === "workspace"
@@ -33,6 +43,7 @@ export function CircuitDefinitionCatalogWorkspace() {
   const [, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortMode, setSortMode] = useState<CircuitDefinitionCatalogSort>("recent");
+  const [pendingAction, setPendingAction] = useState<PendingCatalogAction>(null);
   const {
     definitions,
     definitionsTotalCount,
@@ -43,6 +54,7 @@ export function CircuitDefinitionCatalogWorkspace() {
     cloneDefinition,
     mutationStatus,
   } = useCircuitDefinitionEditorData(null);
+  const isMutationPending = isCircuitDefinitionMutationPending(mutationStatus.state);
 
   const visibleDefinitions = useMemo(
     () => filterCircuitDefinitionCatalog(definitions, searchQuery, sortMode),
@@ -55,25 +67,16 @@ export function CircuitDefinitionCatalogWorkspace() {
     });
   }
 
-  async function handleDelete(definitionId: number, definitionName: string) {
-    const confirmed = window.confirm(
-      `Delete persisted definition "${definitionName}"? This action cannot be undone.`,
-    );
-    if (!confirmed) {
+  async function handleDelete() {
+    if (!pendingAction || pendingAction.kind !== "delete") {
       return;
     }
 
-    await removeDefinition(definitionId);
+    await removeDefinition(pendingAction.definitionId);
+    setPendingAction(null);
   }
 
-  async function handlePublish(definitionId: number, definitionName: string) {
-    const confirmed = window.confirm(
-      `Publish "${definitionName}" to workspace visibility?`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
+  async function handlePublish(definitionId: number) {
     await publishDefinition(definitionId);
   }
 
@@ -97,6 +100,7 @@ export function CircuitDefinitionCatalogWorkspace() {
           onClick={() => {
             openEditor("new");
           }}
+          disabled={isMutationPending}
           className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90"
         >
           <Plus className="h-4 w-4" />
@@ -243,8 +247,9 @@ export function CircuitDefinitionCatalogWorkspace() {
                         onClick={() => {
                           openEditor(definition.definition_id);
                         }}
+                        disabled={isMutationPending}
                         title={actionState.open.reason}
-                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
+                        className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <ArrowRight className="h-4 w-4" />
                         Open
@@ -254,8 +259,12 @@ export function CircuitDefinitionCatalogWorkspace() {
                         onClick={() => {
                           void handleClone(definition.definition_id);
                         }}
-                        disabled={!actionState.clone.enabled}
-                        title={actionState.clone.reason}
+                        disabled={isMutationPending || !actionState.clone.enabled}
+                        title={
+                          isMutationPending
+                            ? "Wait for the current catalog mutation to finish."
+                            : actionState.clone.reason
+                        }
                         className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Copy className="h-4 w-4" />
@@ -264,10 +273,14 @@ export function CircuitDefinitionCatalogWorkspace() {
                       <button
                         type="button"
                         onClick={() => {
-                          void handlePublish(definition.definition_id, definition.name);
+                          void handlePublish(definition.definition_id);
                         }}
-                        disabled={!actionState.publish.enabled}
-                        title={actionState.publish.reason}
+                        disabled={isMutationPending || !actionState.publish.enabled}
+                        title={
+                          isMutationPending
+                            ? "Wait for the current catalog mutation to finish."
+                            : actionState.publish.reason
+                        }
                         className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Globe className="h-4 w-4" />
@@ -277,10 +290,18 @@ export function CircuitDefinitionCatalogWorkspace() {
                         type="button"
                         aria-label={`Delete ${definition.name}`}
                         onClick={() => {
-                          void handleDelete(definition.definition_id, definition.name);
+                          setPendingAction({
+                            kind: "delete",
+                            definitionId: definition.definition_id,
+                            definitionName: definition.name,
+                          });
                         }}
-                        disabled={!actionState.delete.enabled}
-                        title={actionState.delete.reason}
+                        disabled={isMutationPending || !actionState.delete.enabled}
+                        title={
+                          isMutationPending
+                            ? "Wait for the current catalog mutation to finish."
+                            : actionState.delete.reason
+                        }
                         className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-rose-500/30 text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -299,6 +320,25 @@ export function CircuitDefinitionCatalogWorkspace() {
           </div>
         ) : null}
       </section>
+
+      <ConfirmActionDialog
+        open={pendingAction?.kind === "delete"}
+        title="Delete persisted definition?"
+        description={
+          pendingAction?.kind === "delete"
+            ? `Delete "${pendingAction.definitionName}" from the persisted catalog. This action cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete definition"
+        tone="destructive"
+        isPending={mutationStatus.state === "deleting"}
+        onCancel={() => {
+          setPendingAction(null);
+        }}
+        onConfirm={() => {
+          void handleDelete();
+        }}
+      />
     </div>
   );
 }

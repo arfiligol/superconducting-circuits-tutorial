@@ -1,5 +1,5 @@
 import type {
-  CircuitDefinitionDetail,
+  CircuitDefinitionPersistedPreview,
   DefinitionValidationNotice,
 } from "@/features/circuit-definition-editor/lib/contracts";
 
@@ -33,7 +33,7 @@ type PreviewStateInput = Readonly<{
   selectedDefinitionId: number | "new" | null;
   isDirty: boolean;
   isSaving: boolean;
-  activeDefinition: CircuitDefinitionDetail | undefined;
+  activeDefinition: CircuitDefinitionPersistedPreview | undefined;
 }>;
 
 export function resolvePersistedPreviewState({
@@ -68,7 +68,7 @@ export function resolvePersistedPreviewState({
 
   if (activeDefinition) {
     const lineageLabel =
-      activeDefinition.lineage_parent_id !== null
+      typeof activeDefinition.lineage_parent_id === "number"
         ? ` Derived from definition #${activeDefinition.lineage_parent_id}.`
         : "";
     return {
