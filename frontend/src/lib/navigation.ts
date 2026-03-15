@@ -70,7 +70,6 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     aliases: ["/analysis"],
   },
 ] as const;
-
 export type WorkspaceNavigationGroup = Readonly<{
   id: WorkspaceNavigationItem["group"];
   label: string;

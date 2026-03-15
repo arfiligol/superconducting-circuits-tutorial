@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { resolveWorkspaceNavigationMatch, workspaceNavigationGroups } from "@/lib/navigation";
+import {
+  isWorkspaceNavigationItemActive,
+  resolveWorkspaceNavigationMatch,
+  workspaceNavigationGroups,
+} from "@/lib/navigation";
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -55,10 +59,7 @@ export function WorkspaceNav({ onNavigate }: WorkspaceNavProps) {
 
             <nav className="mt-4 space-y-2">
               {group.items.map((item) => {
-                const activePaths = [item.href, ...(item.aliases ?? [])];
-                const active = activePaths.some(
-                  (path) => pathname === path || pathname.startsWith(`${path}/`),
-                );
+                const active = isWorkspaceNavigationItemActive(item, pathname);
                 const Icon = item.icon;
 
                 return (
