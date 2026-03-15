@@ -40,11 +40,10 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
   {
     href: "/schemas",
     label: "Schemas",
-    pageTitle: "Schema Editor",
-    summary: "Edit canonical circuit definitions with validation-ready structure.",
+    pageTitle: "Schemas",
+    summary: "Browse, sort, and open canonical circuit definitions.",
     group: "circuit-workbench",
     icon: FilePenLine,
-    aliases: ["/circuit-definition-editor"],
   },
   {
     href: "/circuit-schemdraw",
@@ -101,19 +100,80 @@ export type WorkspaceNavigationMatch = Readonly<{
   group: WorkspaceNavigationGroup;
 }>;
 
+type WorkspacePageIdentity = Readonly<{
+  href: string;
+  sectionLabel: string;
+  pageTitle: string;
+}>;
+
+const workspacePageIdentities: readonly WorkspacePageIdentity[] = [
+  {
+    href: "/dashboard",
+    sectionLabel: "Dashboard",
+    pageTitle: "Dashboard",
+  },
+  {
+    href: "/raw-data",
+    sectionLabel: "Pipeline",
+    pageTitle: "Raw Data Browser",
+  },
+  {
+    href: "/data-browser",
+    sectionLabel: "Pipeline",
+    pageTitle: "Raw Data Browser",
+  },
+  {
+    href: "/schemas",
+    sectionLabel: "Circuit Simulation",
+    pageTitle: "Schemas",
+  },
+  {
+    href: "/circuit-definition-editor",
+    sectionLabel: "Circuit Simulation",
+    pageTitle: "Schema Editor",
+  },
+  {
+    href: "/circuit-schemdraw",
+    sectionLabel: "Circuit Simulation",
+    pageTitle: "Schemdraw",
+  },
+  {
+    href: "/circuit-simulation",
+    sectionLabel: "Circuit Simulation",
+    pageTitle: "Circuit Simulation",
+  },
+  {
+    href: "/characterization",
+    sectionLabel: "Pipeline",
+    pageTitle: "Characterization",
+  },
+] as const;
+
 function matchesWorkspacePath(pathname: string, path: string) {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
 
+export function isWorkspaceNavigationItemActive(
+  item: WorkspaceNavigationItem,
+  pathname: string | null | undefined,
+) {
+  if (!pathname) {
+    return false;
+  }
+
+  return [item.href, ...(item.aliases ?? [])].some((path) => matchesWorkspacePath(pathname, path));
+}
+
 export function resolveWorkspaceNavigationMatch(
-  pathname: string,
+  pathname: string | null | undefined,
 ): WorkspaceNavigationMatch | null {
+  if (!pathname) {
+    return null;
+  }
+
   const item =
-    workspaceNavigation.find((candidate) =>
-      [candidate.href, ...(candidate.aliases ?? [])].some((path) =>
-        matchesWorkspacePath(pathname, path),
-      ),
-    ) ?? null;
+    workspaceNavigation.find((candidate) => isWorkspaceNavigationItemActive(candidate, pathname)) ??
+    null;
 
   if (!item) {
     return null;
@@ -132,7 +192,23 @@ export function resolveWorkspaceNavigationMatch(
   };
 }
 
-export function resolveWorkspacePageIdentity(pathname: string) {
+export function resolveWorkspacePageIdentity(pathname: string | null | undefined) {
+  if (!pathname) {
+    return {
+      sectionLabel: "Workspace",
+      pageTitle: "Research Workbench",
+    } as const;
+  }
+
+  const directMatch =
+    workspacePageIdentities.find((item) => matchesWorkspacePath(pathname, item.href)) ?? null;
+  if (directMatch) {
+    return {
+      sectionLabel: directMatch.sectionLabel,
+      pageTitle: directMatch.pageTitle,
+    } as const;
+  }
+
   const match = resolveWorkspaceNavigationMatch(pathname);
   if (!match) {
     return {

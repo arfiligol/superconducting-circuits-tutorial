@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -12,6 +14,10 @@ import {
   parseDefinitionIdParam,
   resolveSelectedDefinitionId,
 } from "../src/features/circuit-definition-editor/lib/definition-id";
+import {
+  buildCircuitDefinitionCatalogHref,
+  buildCircuitDefinitionEditorHref,
+} from "../src/features/circuit-definition-editor/lib/routes";
 import {
   buildCircuitDefinitionDraft,
   formatCircuitNetlistSource,
@@ -65,6 +71,16 @@ describe("circuit definition editor routing helpers", () => {
         (definition) => definition.definition_id,
       ),
     ).toEqual([12]);
+  });
+
+  it("routes new and existing catalog selections into the editor page", () => {
+    expect(buildCircuitDefinitionCatalogHref()).toBe("/schemas");
+    expect(buildCircuitDefinitionEditorHref("new")).toBe(
+      "/circuit-definition-editor?definitionId=new",
+    );
+    expect(buildCircuitDefinitionEditorHref(18)).toBe(
+      "/circuit-definition-editor?definitionId=18",
+    );
   });
 });
 
@@ -210,6 +226,48 @@ describe("circuit definition preview helpers", () => {
     });
   });
 
+  it("keeps explicit format separate from persisted preview authority", () => {
+    const formatted = formatCircuitNetlistSource(`{
+      "name": "FloatingQubitWithXYLine",
+      "components": [
+        {"name": "R1", "default": 50, "unit": "Ohm"}
+      ],
+      "topology": [
+        ["P1", "1", "0", 1],
+        ["R1", "1", "0", "R1"]
+      ]
+    }`);
+
+    expect(formatted.diagnostics).toEqual([]);
+    expect(
+      resolvePersistedPreviewState({
+        selectedDefinitionId: 18,
+        isDirty: true,
+        isSaving: false,
+        activeDefinition: {
+          definition_id: 18,
+          name: "FloatingQubitWithXYLine",
+          created_at: "2026-03-08 18:19:42",
+          element_count: 2,
+          validation_status: "ok",
+          preview_artifact_count: 1,
+          source_text: '{\n  "name": "FloatingQubitWithXYLine"\n}',
+          normalized_output: "{\n  \"circuit\": \"floating_xy\"\n}",
+          validation_notices: [],
+          validation_summary: {
+            status: "ok",
+            notice_count: 0,
+            warning_count: 0,
+          },
+          preview_artifacts: ["definition.normalized.json"],
+        },
+      }),
+    ).toMatchObject({
+      label: "Preview Out Of Date",
+      detail: "Panels below still show the last persisted definition. Save to refresh them.",
+    });
+  });
+
   it("partitions validation notices and extracts structured normalized output fields", () => {
     expect(
       partitionValidationNotices([
@@ -238,5 +296,50 @@ describe("circuit definition preview helpers", () => {
         { key: "schemdraw_ready", label: "Schemdraw Ready", value: "true" },
       ],
     });
+  });
+});
+
+describe("circuit definition workspace boundaries", () => {
+  const catalogWorkspaceSource = readFileSync(
+    new URL(
+      "../src/features/circuit-definition-editor/components/circuit-definition-catalog-workspace.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const editorWorkspaceSource = readFileSync(
+    new URL(
+      "../src/features/circuit-definition-editor/components/circuit-definition-editor-workspace.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const schemasPageSource = readFileSync(
+    new URL("../src/app/(workspace)/schemas/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const editorPageSource = readFileSync(
+    new URL("../src/app/(workspace)/circuit-definition-editor/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("keeps the schemas route mounted on the catalog workspace only", () => {
+    expect(schemasPageSource).toContain("CircuitDefinitionCatalogWorkspace");
+    expect(schemasPageSource).not.toContain("CircuitDefinitionEditorWorkspace");
+    expect(catalogWorkspaceSource).toContain("New Circuit");
+    expect(catalogWorkspaceSource).toContain("Open Editor");
+    expect(catalogWorkspaceSource).not.toContain("CodeMirror");
+    expect(catalogWorkspaceSource).not.toContain("Validation & Preview");
+    expect(catalogWorkspaceSource).not.toContain("Open Schemdraw");
+  });
+
+  it("keeps the editor route responsible for source editing and persisted preview", () => {
+    expect(editorPageSource).toContain("CircuitDefinitionEditorWorkspace");
+    expect(editorPageSource).not.toContain("CircuitDefinitionCatalogWorkspace");
+    expect(editorWorkspaceSource).toContain("Format");
+    expect(editorWorkspaceSource).toContain("Save");
+    expect(editorWorkspaceSource).toContain("Discard");
+    expect(editorWorkspaceSource).toContain("Validation & Preview");
+    expect(editorWorkspaceSource).toContain("does not save");
   });
 });

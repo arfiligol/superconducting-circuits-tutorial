@@ -25,6 +25,10 @@ import {
   resolveSelectedDefinitionId,
 } from "@/features/circuit-definition-editor/lib/definition-id";
 import {
+  buildCircuitDefinitionCatalogHref,
+  buildCircuitSchemdrawHref,
+} from "@/features/circuit-definition-editor/lib/routes";
+import {
   buildCircuitDefinitionDraft,
   formatCircuitNetlistSource,
   parseCircuitNetlistSource,
@@ -298,18 +302,18 @@ export function CircuitDefinitionEditorWorkspace() {
           <button
             type="button"
             onClick={() => {
-              router.push("/schemas");
+              router.push(buildCircuitDefinitionCatalogHref());
             }}
             className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Catalog
+            Back to Schemas
           </button>
           {typeof selectedDefinitionId === "number" ? (
             <button
               type="button"
               onClick={() => {
-                router.push(`/circuit-schemdraw?definitionId=${selectedDefinitionId}`);
+                router.push(buildCircuitSchemdrawHref(selectedDefinitionId));
               }}
               className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-4 py-2.5 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
             >

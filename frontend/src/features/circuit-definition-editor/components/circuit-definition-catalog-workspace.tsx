@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Plus,
   Search,
-  Shapes,
   Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -15,6 +14,7 @@ import {
   filterCircuitDefinitionCatalog,
   type CircuitDefinitionCatalogSort,
 } from "@/features/circuit-definition-editor/lib/catalog";
+import { buildCircuitDefinitionEditorHref } from "@/features/circuit-definition-editor/lib/routes";
 import { cx } from "@/features/shared/components/surface-kit";
 
 export function CircuitDefinitionCatalogWorkspace() {
@@ -36,18 +36,8 @@ export function CircuitDefinitionCatalogWorkspace() {
   );
 
   function openEditor(definitionId: number | "new") {
-    const target =
-      definitionId === "new"
-        ? "/circuit-definition-editor?definitionId=new"
-        : `/circuit-definition-editor?definitionId=${definitionId}`;
     startTransition(() => {
-      router.push(target);
-    });
-  }
-
-  function openSchemdraw(definitionId: number) {
-    startTransition(() => {
-      router.push(`/circuit-schemdraw?definitionId=${definitionId}`);
+      router.push(buildCircuitDefinitionEditorHref(definitionId));
     });
   }
 
@@ -66,8 +56,8 @@ export function CircuitDefinitionCatalogWorkspace() {
         <div>
           <h1 className="text-[2.05rem] font-semibold tracking-tight text-foreground">Schemas</h1>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-muted-foreground">
-            Browse canonical circuit schemas, start a new authoring flow, or jump into the editor
-            and Schemdraw assist surfaces.
+            Browse saved circuit definitions, search and sort the catalog, then open a single
+            schema in the editor flow.
           </p>
         </div>
         <button
@@ -160,9 +150,15 @@ export function CircuitDefinitionCatalogWorkspace() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="truncate text-base font-semibold text-foreground">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openEditor(definition.definition_id);
+                        }}
+                        className="truncate text-left text-base font-semibold text-foreground transition hover:text-primary"
+                      >
                         {definition.name}
-                      </h2>
+                      </button>
                       <span
                         className={cx(
                           "rounded-full px-3 py-1 text-[11px] font-medium",
@@ -200,16 +196,6 @@ export function CircuitDefinitionCatalogWorkspace() {
                     >
                       <ArrowRight className="h-4 w-4" />
                       Open Editor
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        openSchemdraw(definition.definition_id);
-                      }}
-                      className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground transition hover:border-primary/40 hover:bg-primary/10"
-                    >
-                      <Shapes className="h-4 w-4" />
-                      Schemdraw
                     </button>
                     <button
                       type="button"

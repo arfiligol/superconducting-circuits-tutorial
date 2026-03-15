@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isWorkspaceNavigationItemActive,
   resolveWorkspacePageIdentity,
   workspaceNavigation,
   workspaceNavigationGroups,
@@ -45,6 +46,10 @@ describe("workspaceNavigation", () => {
       sectionLabel: "Dashboard",
       pageTitle: "Dashboard",
     });
+    expect(resolveWorkspacePageIdentity("/schemas")).toEqual({
+      sectionLabel: "Circuit Simulation",
+      pageTitle: "Schemas",
+    });
     expect(resolveWorkspacePageIdentity("/circuit-definition-editor")).toEqual({
       sectionLabel: "Circuit Simulation",
       pageTitle: "Schema Editor",
@@ -53,5 +58,16 @@ describe("workspaceNavigation", () => {
       sectionLabel: "Pipeline",
       pageTitle: "Raw Data Browser",
     });
+  });
+
+  it("does not treat the schema editor route as an active alias of the schemas nav item", () => {
+    const schemasNavItem = workspaceNavigation.find((item) => item.href === "/schemas");
+
+    expect(schemasNavItem).toBeDefined();
+    expect(schemasNavItem?.aliases ?? []).not.toContain("/circuit-definition-editor");
+    expect(isWorkspaceNavigationItemActive(schemasNavItem!, "/schemas")).toBe(true);
+    expect(isWorkspaceNavigationItemActive(schemasNavItem!, "/circuit-definition-editor")).toBe(
+      false,
+    );
   });
 });
