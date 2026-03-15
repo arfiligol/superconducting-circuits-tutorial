@@ -10,7 +10,7 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Planning & Reviewing / Implementation / Test Agents 的標準交接格式"
-version: v2.2.0
+version: v2.3.0
 last_updated: 2026-03-15
 updated_by: codex
 ---
@@ -29,7 +29,7 @@ updated_by: codex
 | handoff type | owner | 主要用途 |
 | --- | --- | --- |
 | Plan Artifact v1 | Planning & Reviewing Agent | 定義 slice、test backlog、verification |
-| Delivery Report v1 | Implementation Agent / Test Agent | 回報 commits、changed files、測試、風險 |
+| Delivery Report v1 | Frontend / Backend / Core / CLI Agent / Test Agent | 回報 commits、changed files、測試、風險 |
 | Review Merge Report v1 | Planning & Reviewing Agent | 整合 accepted inputs、驗證結果、主線狀態 |
 
 ## Plan Artifact v1
@@ -60,12 +60,16 @@ updated_by: codex
   - <gap-2>
 
 ### 4) Implementation Slices
-- Slice 1:
-  - Area: <frontend|backend|core|cli|cross-layer>
+- Frontend:
   - Allowed Files: <summary>
   - Goal: <slice goal>
-- Slice 2:
-  - Area: <frontend|backend|core|cli|cross-layer>
+- Backend:
+  - Allowed Files: <summary>
+  - Goal: <slice goal>
+- Core:
+  - Allowed Files: <summary>
+  - Goal: <slice goal>
+- CLI:
   - Allowed Files: <summary>
   - Goal: <slice goal>
 
@@ -97,11 +101,11 @@ updated_by: codex
 
 ### 0) 任務資訊
 - Agent: <name>
-- Role: <implementation|test>
+- Role: <frontend|backend|core|cli|test>
 - Task ID / Topic: <id-or-title>
 - Branch / Worktree: <branch-or-path>
 - Scope (Allowed Files): <summary>
-- Assigned Area / Slice: <frontend|backend|core|cli|cross-layer|test-scenario>
+- Assigned Slice: <slice-id-or-title>
 - 狀態: <done|blocked|needs-review>
 
 ### 1) Summary
@@ -207,7 +211,7 @@ updated_by: codex
 - Planning & Reviewing Agents MUST summarize integration and verification using `Review Merge Report v1`.
 - Delivery reports MUST include:
     - assigned branch/worktree
-    - assigned area/slice
+    - assigned slice
     - commit hashes
     - changed files with reason
     - test commands and results
