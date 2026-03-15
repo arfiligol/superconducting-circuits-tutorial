@@ -384,6 +384,8 @@ def _to_task_events(
         )
         for row in event_rows
     )
+
+
 def _to_task_detail(
     row: RewriteTaskRecord,
     dispatch_row: RewriteTaskDispatchRecord,
@@ -418,7 +420,7 @@ def _to_task_detail(
             updated_at=row.progress_updated_at,
         ),
         result_refs=result_refs or _empty_result_refs(),
-        control_state=resolve_task_control_state(events),
+        control_state=resolve_task_control_state(cast(TaskStatus, row.status), events),
         retry_of_task_id=resolve_retry_of_task_id(events),
         dispatch=_to_task_dispatch(dispatch_row),
         events=events,

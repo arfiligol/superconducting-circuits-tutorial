@@ -7,6 +7,7 @@ from sqlalchemy import update
 from src.app.domain.tasks import (
     TaskEventHistoryQuery,
     TaskLifecycleUpdate,
+    TaskListQuery,
     TaskResultRefs,
     TaskSubmissionDraft,
 )
@@ -19,6 +20,7 @@ from src.app.infrastructure.runtime import (
     get_rewrite_app_state_repository,
     get_rewrite_task_repository,
     get_storage_metadata_repository,
+    get_task_audit_repository,
     get_task_execution_runtime,
     get_task_service,
     get_task_snapshot_repository,
@@ -670,3 +672,136 @@ def test_runtime_reset_keeps_submitted_task_row_and_storage_refs() -> None:
     assert reloaded_task.dataset_id == "fluxonium-2025-031"
     assert reloaded_task.result_refs.result_handles == submitted_task.result_refs.result_handles
     assert get_rewrite_task_repository().get_task(submitted_task.task_id) is not None
+
+
+def test_execution_runtime_consumes_cancellation_request_and_persists_terminal_cancelled_state() -> None:
+    service = get_task_service()
+    runtime = get_task_execution_runtime()
+
+    requested_task = service.cancel_task(301)
+
+    assert requested_task.status == "cancellation_requested"
+    assert requested_task.events[-1].event_type == "task_cancel_requested"
+
+    cancelling_task = runtime.consume_control_request(
+        301,
+        recorded_at=datetime(2026, 3, 12, 12, 20, 0),
+        worker_pid=5511,
+    )
+
+    assert cancelling_task.status == "cancelling"
+    assert cancelling_task.control_state == "cancellation_requested"
+    assert cancelling_task.events[-1].event_type == "task_cancel_requested"
+    assert cancelling_task.events[-1].metadata["audit_action"] == (
+        "worker.task_cancellation_acknowledged"
+    )
+
+    queue = service.get_queue_view(TaskListQuery(limit=20))
+    simulation_summary = next(
+        summary for summary in queue.worker_summary if summary.lane == "simulation"
+    )
+    assert simulation_summary.draining_processors == 1
+    assert simulation_summary.busy_processors == 0
+
+    cancelled_task = runtime.finalize_cancelled(
+        301,
+        recorded_at=datetime(2026, 3, 12, 12, 23, 0),
+    )
+
+    assert cancelled_task.status == "cancelled"
+    assert cancelled_task.control_state == "none"
+    assert cancelled_task.events[-1].event_type == "task_cancel_requested"
+    assert cancelled_task.events[-1].metadata["audit_action"] == "worker.task_cancelled"
+
+    audit_records = get_task_audit_repository().list_records_for_resource(
+        resource_kind="task",
+        resource_id="301",
+    )
+    assert {record.action_kind for record in audit_records} == {
+        "worker.task_cancelled",
+        "worker.task_cancellation_acknowledged",
+        "task.cancel_requested",
+    }
+
+    with pytest.raises(ServiceError) as exc_info:
+        runtime.finalize_terminated(
+            301,
+            recorded_at=datetime(2026, 3, 12, 12, 24, 0),
+        )
+    assert exc_info.value.code == "task_execution_transition_invalid"
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(301)
+    assert reloaded_task.status == "cancelled"
+    assert reloaded_task.control_state == "none"
+
+    reloaded_queue = get_task_service().get_queue_view(TaskListQuery(limit=20))
+    reloaded_simulation_summary = next(
+        summary for summary in reloaded_queue.worker_summary if summary.lane == "simulation"
+    )
+    assert reloaded_simulation_summary.healthy_processors == 2
+    assert reloaded_simulation_summary.draining_processors == 0
+
+
+def test_execution_runtime_consumes_termination_request_and_persists_terminated_state() -> None:
+    service = get_task_service()
+    runtime = get_task_execution_runtime()
+
+    requested_task = service.terminate_task(301)
+
+    assert requested_task.status == "termination_requested"
+    assert requested_task.events[-1].event_type == "task_terminate_requested"
+
+    acknowledged_task = runtime.consume_control_request(
+        301,
+        recorded_at=datetime(2026, 3, 12, 12, 30, 0),
+        worker_pid=6611,
+    )
+
+    assert acknowledged_task.status == "termination_requested"
+    assert acknowledged_task.control_state == "termination_requested"
+    assert acknowledged_task.events[-1].event_type == "task_terminate_requested"
+    assert acknowledged_task.events[-1].metadata["audit_action"] == (
+        "worker.task_termination_acknowledged"
+    )
+
+    queue = service.get_queue_view(TaskListQuery(limit=20))
+    simulation_summary = next(
+        summary for summary in queue.worker_summary if summary.lane == "simulation"
+    )
+    assert simulation_summary.degraded_processors == 1
+    assert simulation_summary.busy_processors == 0
+
+    terminated_task = runtime.finalize_terminated(
+        301,
+        recorded_at=datetime(2026, 3, 12, 12, 33, 0),
+    )
+
+    assert terminated_task.status == "terminated"
+    assert terminated_task.control_state == "none"
+    assert terminated_task.events[-1].event_type == "task_terminate_requested"
+    assert terminated_task.events[-1].metadata["audit_action"] == "worker.task_terminated"
+
+    audit_records = get_task_audit_repository().list_records_for_resource(
+        resource_kind="task",
+        resource_id="301",
+    )
+    assert {record.action_kind for record in audit_records} == {
+        "worker.task_terminated",
+        "worker.task_termination_acknowledged",
+        "task.terminate_requested",
+    }
+
+    reset_runtime_state()
+
+    reloaded_task = get_task_service().get_task(301)
+    assert reloaded_task.status == "terminated"
+    assert reloaded_task.control_state == "none"
+
+    reloaded_queue = get_task_service().get_queue_view(TaskListQuery(limit=20))
+    reloaded_simulation_summary = next(
+        summary for summary in reloaded_queue.worker_summary if summary.lane == "simulation"
+    )
+    assert reloaded_simulation_summary.healthy_processors == 2
+    assert reloaded_simulation_summary.degraded_processors == 0

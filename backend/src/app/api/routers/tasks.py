@@ -408,12 +408,27 @@ def _optional_string(value: object, *, field_name: str) -> str | None:
 def _parse_status_filter(value: str | None) -> TaskStatus | None:
     if value is None:
         return None
-    if value not in {"queued", "running", "completed", "failed"}:
+    if value not in {
+        "queued",
+        "dispatching",
+        "running",
+        "cancellation_requested",
+        "cancelling",
+        "cancelled",
+        "termination_requested",
+        "terminated",
+        "completed",
+        "failed",
+    }:
         raise service_error(
             400,
             code="request_validation_failed",
             category="validation_error",
-            message="status must be one of queued, running, completed, failed.",
+            message=(
+                "status must be one of queued, dispatching, running, "
+                "cancellation_requested, cancelling, cancelled, "
+                "termination_requested, terminated, completed, failed."
+            ),
         )
     return value
 

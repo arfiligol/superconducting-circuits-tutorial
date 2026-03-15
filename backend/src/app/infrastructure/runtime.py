@@ -7,6 +7,9 @@ from src.app.infrastructure.persistence import (
     create_metadata_session_factory,
 )
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
+from src.app.infrastructure.rewrite_processor_runtime_repository import (
+    InMemoryProcessorRuntimeRepository,
+)
 from src.app.infrastructure.rewrite_task_audit_repository import InMemoryTaskAuditRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 from src.app.infrastructure.rewrite_execution_runtime import RewriteExecutionRuntime
@@ -64,6 +67,11 @@ def get_task_audit_repository() -> InMemoryTaskAuditRepository:
     return InMemoryTaskAuditRepository()
 
 
+@lru_cache(maxsize=1)
+def get_processor_runtime_repository() -> InMemoryProcessorRuntimeRepository:
+    return InMemoryProcessorRuntimeRepository(get_rewrite_task_repository())
+
+
 def get_health_service() -> HealthService:
     settings = get_settings()
     return HealthService(
@@ -117,6 +125,7 @@ def get_task_service() -> TaskService:
     return TaskService(
         repository=get_rewrite_task_repository(),
         audit_repository=get_task_audit_repository(),
+        processor_summary_repository=get_processor_runtime_repository(),
         session_repository=get_rewrite_app_state_repository(),
         dataset_repository=get_rewrite_catalog_repository(),
         circuit_definition_repository=get_rewrite_catalog_repository(),
@@ -128,6 +137,8 @@ def get_task_execution_runtime() -> RewriteExecutionRuntime:
     return RewriteExecutionRuntime(
         task_service=get_task_service(),
         task_repository=get_rewrite_task_repository(),
+        audit_repository=get_task_audit_repository(),
+        processor_runtime_repository=get_processor_runtime_repository(),
     )
 
 
@@ -139,6 +150,7 @@ def reset_runtime_state() -> None:
     get_task_snapshot_repository.cache_clear()
     get_rewrite_task_repository.cache_clear()
     get_task_audit_repository.cache_clear()
+    get_processor_runtime_repository.cache_clear()
     get_dataset_service.cache_clear()
     get_circuit_definition_service.cache_clear()
     get_schemdraw_render_service.cache_clear()

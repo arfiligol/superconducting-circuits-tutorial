@@ -275,7 +275,10 @@ class InMemoryRewriteAppStateRepository:
             return
         updated_task = replace(
             current_task,
-            control_state=resolve_task_control_state((*current_task.events, event)),
+            control_state=resolve_task_control_state(
+                current_task.status,
+                (*current_task.events, event),
+            ),
             retry_of_task_id=resolve_retry_of_task_id((*current_task.events, event)),
             events=(*current_task.events, event),
         )

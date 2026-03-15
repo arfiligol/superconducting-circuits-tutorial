@@ -239,6 +239,7 @@ def test_cancel_task_persists_control_state_and_emits_audit() -> None:
     assert payload["ok"] is True
     task = payload["data"]["task"]
     assert payload["data"]["operation"] == "cancel_requested"
+    assert task["status"] == "cancellation_requested"
     assert task["control_state"] == "cancellation_requested"
     assert task["allowed_actions"] == {
         "attach": True,
@@ -247,7 +248,7 @@ def test_cancel_task_persists_control_state_and_emits_audit() -> None:
         "retry": False,
         "rejection_reason": "cancellation_requested",
     }
-    assert task["events"][-1]["event_type"] == "task_cancellation_requested"
+    assert task["events"][-1]["event_type"] == "task_cancel_requested"
     assert task["events"][-1]["metadata"]["audit_action"] == "task.cancel_requested"
 
     records = get_task_audit_repository().list_records_for_resource(
@@ -259,8 +260,9 @@ def test_cancel_task_persists_control_state_and_emits_audit() -> None:
     reset_runtime_state()
 
     reloaded = client.get("/tasks/301").json()["data"]
+    assert reloaded["status"] == "cancellation_requested"
     assert reloaded["control_state"] == "cancellation_requested"
-    assert reloaded["events"][-1]["event_type"] == "task_cancellation_requested"
+    assert reloaded["events"][-1]["event_type"] == "task_cancel_requested"
 
 
 def test_terminate_task_persists_control_state_and_blocks_repeat_cancel() -> None:
@@ -268,8 +270,9 @@ def test_terminate_task_persists_control_state_and_blocks_repeat_cancel() -> Non
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["data"]["task"]["status"] == "termination_requested"
     assert payload["data"]["task"]["control_state"] == "termination_requested"
-    assert payload["data"]["task"]["events"][-1]["event_type"] == "task_termination_requested"
+    assert payload["data"]["task"]["events"][-1]["event_type"] == "task_terminate_requested"
 
     cancelled_response = client.post("/tasks/301/cancel")
     assert cancelled_response.status_code == 409

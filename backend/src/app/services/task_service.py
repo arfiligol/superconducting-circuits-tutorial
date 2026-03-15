@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Protocol
 
-from sc_core.tasking import resolve_worker_task_route
+from sc_core.tasking import evaluate_task_control_action, resolve_worker_task_route
 
 from src.app.domain.audit import AuditRecord
 from src.app.domain.datasets import DatasetDetail
@@ -26,7 +26,6 @@ from src.app.domain.tasks import (
     TaskResultHandoff,
     TaskSubmissionDraft,
     WorkerLaneSummary,
-    build_task_control_event,
     build_task_dispatch,
     build_task_retry_event,
     task_submission_source_for,
@@ -77,6 +76,10 @@ class TaskAuditRepository(Protocol):
     def append(self, record: AuditRecord) -> None: ...
 
 
+class TaskProcessorSummaryRepository(Protocol):
+    def list_lane_summaries(self, workspace_id: str) -> Sequence[WorkerLaneSummary]: ...
+
+
 class TaskService:
     def __init__(
         self,
@@ -85,12 +88,14 @@ class TaskService:
         dataset_repository: TaskDatasetRepository,
         circuit_definition_repository: TaskCircuitDefinitionRepository,
         audit_repository: TaskAuditRepository | None = None,
+        processor_summary_repository: TaskProcessorSummaryRepository | None = None,
     ) -> None:
         self._repository = repository
         self._session_repository = session_repository
         self._dataset_repository = dataset_repository
         self._circuit_definition_repository = circuit_definition_repository
         self._audit_repository = audit_repository
+        self._processor_summary_repository = processor_summary_repository
 
     def list_tasks(self, query: TaskListQuery) -> list[TaskDetail]:
         tasks = [
@@ -108,18 +113,26 @@ class TaskService:
         ]
         sorted_tasks = _sort_tasks(visible_tasks)
         rows = tuple(_build_queue_row(task) for task in sorted_tasks[: query.limit])
+        visible_workspace_tasks = [
+            self._normalize_task(task)
+            for task in self._repository.list_tasks()
+            if self._is_visible(
+                task,
+                self._session_repository.get_session_state(),
+                scope="workspace",
+            )
+        ]
         return TaskQueueView(
             rows=rows,
             worker_summary=_build_worker_summary(
-                visible_tasks=[
-                    self._normalize_task(task)
-                    for task in self._repository.list_tasks()
-                    if self._is_visible(
-                        task,
-                        self._session_repository.get_session_state(),
-                        scope="workspace",
+                visible_tasks=visible_workspace_tasks,
+                processor_summaries=(
+                    self._processor_summary_repository.list_lane_summaries(
+                        self._session_repository.get_session_state().workspace_id
                     )
-                ]
+                    if self._processor_summary_repository is not None
+                    else ()
+                ),
             ),
             total_count=len(sorted_tasks),
             next_cursor=str(rows[-1].task_id) if len(sorted_tasks) > query.limit and len(rows) > 0 else None,
@@ -240,21 +253,42 @@ class TaskService:
 
     def cancel_task(self, task_id: int) -> TaskDetail:
         task = self.get_task(task_id)
-        allowed_actions = _build_allowed_actions(task)
-        if not allowed_actions.cancel:
+        decision = evaluate_task_control_action("cancel", current_state=task.status)
+        if not decision.accepted or decision.requested_state is None:
             raise service_error(
                 409,
-                code="task_not_cancellable",
+                code=decision.rejection_reason or "task_not_cancellable",
                 category="conflict",
                 message="The task cannot be cancelled in its current state.",
             )
-        event = build_task_control_event(
-            task=task,
-            control_state="cancellation_requested",
-            occurred_at=_generated_at(),
-            actor_user_id=_session_user_id(self._session_repository.get_session_state()),
+        occurred_at = _generated_at()
+        updated_task = self.update_task_lifecycle(
+            TaskLifecycleUpdate(
+                task_id=task_id,
+                status=decision.requested_state,
+                progress_percent_complete=(
+                    100 if decision.requested_state == "cancelled" else task.progress.percent_complete
+                ),
+                progress_summary=(
+                    "Task was cancelled before execution started."
+                    if decision.requested_state == "cancelled"
+                    else "Cancellation was requested for the task."
+                ),
+                progress_updated_at=occurred_at,
+                summary=(
+                    "Task was cancelled before execution started."
+                    if decision.requested_state == "cancelled"
+                    else task.summary
+                ),
+            )
         )
-        self._repository.append_task_event(task_id, event)
+        self._merge_lifecycle_audit_metadata(
+            updated_task=updated_task,
+            metadata={
+                "audit_action": "task.cancel_requested",
+                **decision.to_payload(),
+            },
+        )
         self._append_audit_record(
             action_kind="task.cancel_requested",
             resource_id=str(task_id),
@@ -262,27 +296,39 @@ class TaskService:
             payload={
                 "task_status": task.status,
                 "lane": task.lane,
+                **decision.to_payload(),
             },
         )
         return self.get_task(task_id)
 
     def terminate_task(self, task_id: int) -> TaskDetail:
         task = self.get_task(task_id)
-        allowed_actions = _build_allowed_actions(task)
-        if not allowed_actions.terminate:
+        decision = evaluate_task_control_action("terminate", current_state=task.status)
+        if not decision.accepted or decision.requested_state is None:
             raise service_error(
                 409,
-                code="task_not_terminable",
+                code=decision.rejection_reason or "task_not_terminable",
                 category="conflict",
                 message="The task cannot be force terminated in its current state.",
             )
-        event = build_task_control_event(
-            task=task,
-            control_state="termination_requested",
-            occurred_at=_generated_at(),
-            actor_user_id=_session_user_id(self._session_repository.get_session_state()),
+        occurred_at = _generated_at()
+        updated_task = self.update_task_lifecycle(
+            TaskLifecycleUpdate(
+                task_id=task_id,
+                status=decision.requested_state,
+                progress_percent_complete=task.progress.percent_complete,
+                progress_summary="Force termination was requested for the task.",
+                progress_updated_at=occurred_at,
+                summary=task.summary,
+            )
         )
-        self._repository.append_task_event(task_id, event)
+        self._merge_lifecycle_audit_metadata(
+            updated_task=updated_task,
+            metadata={
+                "audit_action": "task.terminate_requested",
+                **decision.to_payload(),
+            },
+        )
         self._append_audit_record(
             action_kind="task.terminate_requested",
             resource_id=str(task_id),
@@ -290,6 +336,7 @@ class TaskService:
             payload={
                 "task_status": task.status,
                 "lane": task.lane,
+                **decision.to_payload(),
             },
         )
         return self.get_task(task_id)
@@ -517,6 +564,20 @@ class TaskService:
             {"audit_action": "task.submitted"},
         )
 
+    def _merge_lifecycle_audit_metadata(
+        self,
+        *,
+        updated_task: TaskDetail,
+        metadata: dict[str, object],
+    ) -> None:
+        if len(updated_task.events) == 0:
+            return
+        self._repository.merge_task_event_metadata(
+            updated_task.task_id,
+            updated_task.events[-1].event_key,
+            metadata,
+        )
+
     def _append_audit_record(
         self,
         *,
@@ -581,11 +642,18 @@ def _validate_task_lifecycle_update(
                 message="Queued tasks must report 0 percent_complete.",
             )
         )
-    if update.status == "running" and update.progress_percent_complete == 100:
+    if update.status == "dispatching" and update.progress_percent_complete != 0:
         field_errors.append(
             ServiceFieldError(
                 field="progress_percent_complete",
-                message="Running tasks cannot report 100 percent_complete.",
+                message="Dispatching tasks must report 0 percent_complete.",
+            )
+        )
+    if update.status in {"running", "cancellation_requested", "cancelling", "termination_requested"} and update.progress_percent_complete == 100:
+        field_errors.append(
+            ServiceFieldError(
+                field="progress_percent_complete",
+                message="Active runtime tasks cannot report 100 percent_complete.",
             )
         )
     if update.status == "completed" and update.progress_percent_complete != 100:
@@ -661,7 +729,14 @@ def _sort_tasks(tasks: Sequence[TaskDetail]) -> list[TaskDetail]:
 
 
 def _task_priority(task: TaskDetail) -> int:
-    if task.status in {"running", "queued"}:
+    if task.status in {
+        "dispatching",
+        "running",
+        "cancellation_requested",
+        "cancelling",
+        "termination_requested",
+        "queued",
+    }:
         return 2
     if task.control_state != "none":
         return 1
@@ -685,7 +760,7 @@ def _build_queue_row(task: TaskDetail) -> TaskQueueRow:
 
 
 def _build_allowed_actions(task: TaskDetail) -> TaskAllowedActions:
-    if task.status in {"completed", "failed"}:
+    if task.status in {"completed", "failed", "cancelled", "terminated"}:
         return TaskAllowedActions(
             attach=True,
             cancel=False,
@@ -701,6 +776,14 @@ def _build_allowed_actions(task: TaskDetail) -> TaskAllowedActions:
             retry=False,
             rejection_reason="termination_requested",
         )
+    if task.status == "cancelling":
+        return TaskAllowedActions(
+            attach=True,
+            cancel=False,
+            terminate=True,
+            retry=False,
+            rejection_reason="cancellation_in_progress",
+        )
     if task.control_state == "cancellation_requested":
         return TaskAllowedActions(
             attach=True,
@@ -714,6 +797,13 @@ def _build_allowed_actions(task: TaskDetail) -> TaskAllowedActions:
             attach=True,
             cancel=True,
             terminate=True,
+            retry=False,
+        )
+    if task.status == "dispatching":
+        return TaskAllowedActions(
+            attach=True,
+            cancel=True,
+            terminate=False,
             retry=False,
         )
     return TaskAllowedActions(
@@ -740,7 +830,7 @@ def _result_availability_for(task: TaskDetail) -> TaskResultAvailability:
         return "ready"
     if any(handle.status == "materialized" for handle in task.result_refs.result_handles):
         return "ready"
-    if task.status in {"completed", "failed"}:
+    if task.status in {"completed", "failed", "cancelled", "terminated"}:
         return "none"
     return "pending"
 
@@ -748,19 +838,25 @@ def _result_availability_for(task: TaskDetail) -> TaskResultAvailability:
 def _build_worker_summary(
     *,
     visible_tasks: Sequence[TaskDetail],
+    processor_summaries: Sequence[WorkerLaneSummary],
 ) -> tuple[WorkerLaneSummary, ...]:
+    if len(processor_summaries) > 0:
+        return tuple(processor_summaries)
     summaries: list[WorkerLaneSummary] = []
     for lane in ("simulation", "characterization"):
         lane_tasks = [task for task in visible_tasks if task.lane == lane]
-        busy_processors = sum(1 for task in lane_tasks if task.status == "running")
-        degraded_processors = sum(1 for task in lane_tasks if task.control_state != "none")
+        busy_processors = sum(1 for task in lane_tasks if task.status in {"dispatching", "running"})
+        degraded_processors = sum(1 for task in lane_tasks if task.status == "termination_requested")
+        draining_processors = sum(
+            1 for task in lane_tasks if task.status in {"cancellation_requested", "cancelling"}
+        )
         summaries.append(
             WorkerLaneSummary(
                 lane=lane,
-                healthy_processors=max(1 - min(degraded_processors, 1), 0),
+                healthy_processors=max(1 - min(busy_processors + degraded_processors + draining_processors, 1), 0),
                 busy_processors=busy_processors,
                 degraded_processors=degraded_processors,
-                draining_processors=0,
+                draining_processors=draining_processors,
                 offline_processors=0,
             )
         )

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
+from dataclasses import replace
+from datetime import UTC, datetime
+from typing import Protocol
 
 from sc_core.execution import (
     TaskExecutionResult,
@@ -16,15 +18,50 @@ from sc_core.execution import (
     build_worker_running_transition,
 )
 
-from src.app.domain.tasks import (
-    TaskDetail,
-    TaskLifecycleUpdate,
-    TaskResultRefs,
-    build_task_lifecycle_event,
-)
+from src.app.domain.audit import AuditRecord
+from src.app.domain.tasks import TaskDetail, TaskLifecycleUpdate, TaskResultRefs, build_task_lifecycle_event
 from src.app.infrastructure.rewrite_task_repository import PersistedRewriteTaskRepository
 from src.app.services.service_errors import service_error
 from src.app.services.task_service import TaskService
+
+
+class TaskAuditRepository(Protocol):
+    def append(self, record: AuditRecord) -> None: ...
+
+
+class ProcessorRuntimeRepository(Protocol):
+    def mark_task_running(
+        self,
+        task: TaskDetail,
+        *,
+        recorded_at: datetime,
+        worker_pid: int | None = None,
+        stale_after_seconds: int | None = None,
+    ) -> None: ...
+
+    def acknowledge_cancellation(
+        self,
+        task: TaskDetail,
+        *,
+        recorded_at: datetime,
+        worker_pid: int | None = None,
+    ) -> None: ...
+
+    def acknowledge_termination(
+        self,
+        task: TaskDetail,
+        *,
+        recorded_at: datetime,
+        worker_pid: int | None = None,
+    ) -> None: ...
+
+    def mark_task_terminal(
+        self,
+        task: TaskDetail,
+        *,
+        recorded_at: datetime,
+        terminal_status: str,
+    ) -> None: ...
 
 
 class RewriteExecutionRuntime:
@@ -33,9 +70,13 @@ class RewriteExecutionRuntime:
         *,
         task_service: TaskService,
         task_repository: PersistedRewriteTaskRepository,
+        audit_repository: TaskAuditRepository,
+        processor_runtime_repository: ProcessorRuntimeRepository,
     ) -> None:
         self._task_service = task_service
         self._task_repository = task_repository
+        self._audit_repository = audit_repository
+        self._processor_runtime_repository = processor_runtime_repository
 
     def start_task(
         self,
@@ -57,11 +98,28 @@ class RewriteExecutionRuntime:
             ),
             stale_after_seconds=stale_after_seconds,
         )
-        return self._apply_transition(
+        updated_task = self._apply_transition(
             task,
             transition,
             progress_percent_complete=max(task.progress.percent_complete, 5),
         )
+        self._processor_runtime_repository.mark_task_running(
+            updated_task,
+            recorded_at=recorded_at,
+            worker_pid=worker_pid,
+            stale_after_seconds=stale_after_seconds,
+        )
+        self._append_runtime_audit(
+            task=updated_task,
+            action_kind="worker.task_started",
+            outcome="accepted",
+            recorded_at=recorded_at,
+            payload={
+                "worker_pid": worker_pid,
+                "stale_after_seconds": stale_after_seconds,
+            },
+        )
+        return self._task_service.get_task(updated_task.task_id)
 
     def heartbeat_task(
         self,
@@ -94,7 +152,7 @@ class RewriteExecutionRuntime:
                 extra_payload=extra_payload,
             ),
         )
-        return self._apply_transition(
+        updated_task = self._apply_transition(
             task,
             transition,
             progress_percent_complete=_resolve_running_percent_complete(
@@ -104,6 +162,12 @@ class RewriteExecutionRuntime:
                 total_steps=total_steps,
             ),
         )
+        self._processor_runtime_repository.mark_task_running(
+            updated_task,
+            recorded_at=recorded_at,
+            stale_after_seconds=stale_after_seconds,
+        )
+        return self._task_service.get_task(updated_task.task_id)
 
     def complete_task(
         self,
@@ -124,12 +188,25 @@ class RewriteExecutionRuntime:
             ),
             result=result,
         )
-        return self._apply_transition(
+        updated_task = self._apply_transition(
             task,
             transition,
             progress_percent_complete=100,
             result_refs=result_refs,
         )
+        self._processor_runtime_repository.mark_task_terminal(
+            updated_task,
+            recorded_at=recorded_at,
+            terminal_status="completed",
+        )
+        self._append_runtime_audit(
+            task=updated_task,
+            action_kind="worker.task_completed",
+            outcome="completed",
+            recorded_at=recorded_at,
+            payload={"result_ready": updated_task.result_refs.trace_payload is not None},
+        )
+        return self._task_service.get_task(updated_task.task_id)
 
     def fail_task(
         self,
@@ -153,11 +230,24 @@ class RewriteExecutionRuntime:
             exc_type=exc_type,
             message=message,
         )
-        return self._apply_transition(
+        updated_task = self._apply_transition(
             task,
             transition,
             progress_percent_complete=task.progress.percent_complete,
         )
+        self._processor_runtime_repository.mark_task_terminal(
+            updated_task,
+            recorded_at=recorded_at,
+            terminal_status="failed",
+        )
+        self._append_runtime_audit(
+            task=updated_task,
+            action_kind="worker.task_failed",
+            outcome="failed",
+            recorded_at=recorded_at,
+            payload={"exc_type": exc_type},
+        )
+        return self._task_service.get_task(updated_task.task_id)
 
     def reconcile_stale_task(
         self,
@@ -173,11 +263,183 @@ class RewriteExecutionRuntime:
             recorded_at=recorded_at,
             stale_before=stale_before,
         )
-        return self._apply_transition(
+        updated_task = self._apply_transition(
             task,
             transition,
             progress_percent_complete=task.progress.percent_complete,
         )
+        self._processor_runtime_repository.mark_task_terminal(
+            updated_task,
+            recorded_at=recorded_at,
+            terminal_status="failed",
+        )
+        self._append_runtime_audit(
+            task=updated_task,
+            action_kind="reconcile.task_failed",
+            outcome="failed",
+            recorded_at=recorded_at,
+            payload={"stale_before": stale_before.isoformat()},
+        )
+        return self._task_service.get_task(updated_task.task_id)
+
+    def consume_control_request(
+        self,
+        task_id: int,
+        *,
+        recorded_at: datetime,
+        worker_pid: int | None = None,
+    ) -> TaskDetail:
+        task = self._get_task(task_id)
+        if task.status == "cancellation_requested":
+            updated_task = self._task_service.update_task_lifecycle(
+                TaskLifecycleUpdate(
+                    task_id=task.task_id,
+                    status="cancelling",
+                    progress_percent_complete=task.progress.percent_complete,
+                    progress_summary="Runtime acknowledged the cancellation request.",
+                    progress_updated_at=recorded_at.isoformat(),
+                    summary=task.summary,
+                )
+            )
+            self._processor_runtime_repository.acknowledge_cancellation(
+                updated_task,
+                recorded_at=recorded_at,
+                worker_pid=worker_pid,
+            )
+            self._merge_runtime_event_metadata(
+                updated_task,
+                {
+                    "audit_action": "worker.task_cancellation_acknowledged",
+                    "worker_pid": worker_pid,
+                    "control_state": "cancelling",
+                },
+            )
+            self._append_runtime_audit(
+                task=updated_task,
+                action_kind="worker.task_cancellation_acknowledged",
+                outcome="accepted",
+                recorded_at=recorded_at,
+                payload={"worker_pid": worker_pid},
+            )
+            return self._task_service.get_task(updated_task.task_id)
+
+        if task.status == "termination_requested":
+            updated_task = self._task_service.update_task_lifecycle(
+                TaskLifecycleUpdate(
+                    task_id=task.task_id,
+                    status="termination_requested",
+                    progress_percent_complete=task.progress.percent_complete,
+                    progress_summary="Runtime acknowledged the terminate request.",
+                    progress_updated_at=recorded_at.isoformat(),
+                    summary=task.summary,
+                )
+            )
+            self._processor_runtime_repository.acknowledge_termination(
+                updated_task,
+                recorded_at=recorded_at,
+                worker_pid=worker_pid,
+            )
+            self._merge_runtime_event_metadata(
+                updated_task,
+                {
+                    "audit_action": "worker.task_termination_acknowledged",
+                    "worker_pid": worker_pid,
+                    "control_state": "termination_requested",
+                },
+            )
+            self._append_runtime_audit(
+                task=updated_task,
+                action_kind="worker.task_termination_acknowledged",
+                outcome="accepted",
+                recorded_at=recorded_at,
+                payload={"worker_pid": worker_pid},
+            )
+            return self._task_service.get_task(updated_task.task_id)
+
+        raise service_error(
+            409,
+            code="task_control_request_not_pending",
+            category="conflict",
+            message=f"Task {task.task_id} has no pending control request to consume.",
+        )
+
+    def finalize_cancelled(
+        self,
+        task_id: int,
+        *,
+        recorded_at: datetime,
+        summary: str | None = None,
+    ) -> TaskDetail:
+        task = self._get_task(task_id)
+        _ensure_task_status(
+            task,
+            allowed_statuses=("cancellation_requested", "cancelling"),
+            action="cancel",
+        )
+        updated_task = self._task_service.update_task_lifecycle(
+            TaskLifecycleUpdate(
+                task_id=task.task_id,
+                status="cancelled",
+                progress_percent_complete=task.progress.percent_complete,
+                progress_summary=summary or "Task cancellation completed in the runtime.",
+                progress_updated_at=recorded_at.isoformat(),
+                summary=summary or "Task cancellation completed in the runtime.",
+            )
+        )
+        self._processor_runtime_repository.mark_task_terminal(
+            updated_task,
+            recorded_at=recorded_at,
+            terminal_status="cancelled",
+        )
+        self._merge_runtime_event_metadata(
+            updated_task,
+            {"audit_action": "worker.task_cancelled"},
+        )
+        self._append_runtime_audit(
+            task=updated_task,
+            action_kind="worker.task_cancelled",
+            outcome="completed",
+            recorded_at=recorded_at,
+            payload={},
+        )
+        return self._task_service.get_task(updated_task.task_id)
+
+    def finalize_terminated(
+        self,
+        task_id: int,
+        *,
+        recorded_at: datetime,
+        summary: str | None = None,
+    ) -> TaskDetail:
+        task = self._get_task(task_id)
+        _ensure_task_status(task, allowed_statuses=("termination_requested",), action="terminate")
+        updated_task = self._task_service.update_task_lifecycle(
+            TaskLifecycleUpdate(
+                task_id=task.task_id,
+                status="terminated",
+                progress_percent_complete=task.progress.percent_complete,
+                progress_summary=summary or "Task was force terminated by the runtime.",
+                progress_updated_at=recorded_at.isoformat(),
+                summary=summary or "Task was force terminated by the runtime.",
+            )
+        )
+        self._processor_runtime_repository.mark_task_terminal(
+            updated_task,
+            recorded_at=recorded_at,
+            terminal_status="terminated",
+        )
+        self._merge_runtime_event_metadata(
+            updated_task,
+            {"audit_action": "worker.task_terminated"},
+        )
+        self._append_runtime_audit(
+            task=updated_task,
+            action_kind="worker.task_terminated",
+            outcome="completed",
+            recorded_at=recorded_at,
+            payload={},
+        )
+        return self._task_service.get_task(updated_task.task_id)
 
     def _apply_transition(
         self,
@@ -221,6 +483,51 @@ class RewriteExecutionRuntime:
             _build_transition_event_metadata(transition),
         )
         return self._task_service.get_task(updated_task.task_id)
+
+    def _merge_runtime_event_metadata(
+        self,
+        task: TaskDetail,
+        metadata: dict[str, object],
+    ) -> None:
+        if len(task.events) == 0:
+            return
+        self._task_repository.merge_task_event_metadata(
+            task.task_id,
+            task.events[-1].event_key,
+            metadata,
+        )
+
+    def _append_runtime_audit(
+        self,
+        *,
+        task: TaskDetail,
+        action_kind: str,
+        outcome: str,
+        recorded_at: datetime,
+        payload: dict[str, object],
+    ) -> None:
+        audit_suffix = recorded_at.isoformat().replace(":", "-").replace("+", "z")
+        self._audit_repository.append(
+            AuditRecord(
+                audit_id=f"audit:{action_kind}:{task.task_id}:{audit_suffix}",
+                occurred_at=recorded_at.isoformat(),
+                actor_user_id=f"runtime:{task.lane}",
+                actor_display_name="Rewrite Execution Runtime",
+                session_id=f"runtime-session:{task.workspace_id}",
+                correlation_id=f"corr:{action_kind}:{task.task_id}",
+                workspace_id=task.workspace_id,
+                action_kind=action_kind,
+                resource_kind="task",
+                resource_id=str(task.task_id),
+                outcome=outcome,
+                payload={
+                    "task_status": task.status,
+                    "lane": task.lane,
+                    **payload,
+                },
+                debug_ref=f"debug:{action_kind}:{task.task_id}",
+            )
+        )
 
     def _get_task(self, task_id: int) -> TaskDetail:
         return self._task_service.get_task(task_id)
@@ -291,7 +598,7 @@ def _resolve_task_summary(
     next_status: str,
     progress_summary: str,
 ) -> str:
-    if next_status in {"completed", "failed"}:
+    if next_status in {"completed", "failed", "cancelled", "terminated"}:
         return progress_summary
     return current_task.summary
 

@@ -33,7 +33,18 @@ from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayl
 
 TaskKind = Literal["simulation", "post_processing", "characterization"]
 TaskLane = Literal["simulation", "characterization"]
-TaskStatus = Literal["queued", "running", "completed", "failed"]
+TaskStatus = Literal[
+    "queued",
+    "dispatching",
+    "running",
+    "cancellation_requested",
+    "cancelling",
+    "cancelled",
+    "termination_requested",
+    "terminated",
+    "completed",
+    "failed",
+]
 TaskControlState = Literal["none", "cancellation_requested", "termination_requested"]
 TaskQueueBackend = Literal["in_memory_scaffold"]
 TaskVisibilityScope = Literal["workspace", "owned"]
@@ -43,8 +54,8 @@ TaskEventType = Literal[
     "task_running",
     "task_completed",
     "task_failed",
-    "task_cancellation_requested",
-    "task_termination_requested",
+    "task_cancel_requested",
+    "task_terminate_requested",
     "task_retried",
 ]
 TaskEventLevel = TaskExecutionHistoryLevel
@@ -307,11 +318,11 @@ def build_task_control_event(
     message: str
     audit_action: str
     if control_state == "cancellation_requested":
-        event_type = "task_cancellation_requested"
+        event_type = "task_cancel_requested"
         message = "Cancellation was requested for the task."
         audit_action = "task.cancel_requested"
     else:
-        event_type = "task_termination_requested"
+        event_type = "task_terminate_requested"
         message = "Force termination was requested for the task."
         audit_action = "task.terminate_requested"
     return TaskEvent(
@@ -355,13 +366,22 @@ def build_task_retry_event(
     )
 
 
-def resolve_task_control_state(events: Sequence[TaskEvent]) -> TaskControlState:
+def resolve_task_control_state(
+    status: TaskStatus,
+    events: Sequence[TaskEvent],
+) -> TaskControlState:
+    if status in {"cancellation_requested", "cancelling"}:
+        return "cancellation_requested"
+    if status == "termination_requested":
+        return "termination_requested"
+    if status in {"cancelled", "terminated", "completed", "failed"}:
+        return "none"
     for event in reversed(tuple(events)):
         if event.event_type in {"task_completed", "task_failed"}:
             return "none"
-        if event.event_type == "task_termination_requested":
+        if event.event_type == "task_terminate_requested":
             return "termination_requested"
-        if event.event_type == "task_cancellation_requested":
+        if event.event_type == "task_cancel_requested":
             return "cancellation_requested"
     return "none"
 
