@@ -4,17 +4,24 @@ from datetime import UTC, datetime, timedelta
 
 from sc_core.execution import (
     TaskExecutionHistoryEvent,
+    build_task_execution_history_context,
+    build_task_control_history_metadata,
     build_task_control_audit_payload,
     build_task_control_event_log,
     build_task_control_history_pair,
     build_task_control_history_event,
+    build_task_lifecycle_history_metadata,
+    build_task_submission_history_metadata,
+    normalize_task_history_event_metadata,
     project_task_control_transition,
     project_task_runtime_state_from_history,
+    validate_task_history_event_metadata,
 )
 from sc_core.tasking import (
     REDACTED_RUNTIME_METADATA_VALUE,
     TERMINAL_TASK_STATES,
     allowed_task_runtime_transitions,
+    build_task_dispatch_record,
     build_lane_processor_summaries,
     build_lane_processor_summaries_from_snapshots,
     build_processor_heartbeat,
@@ -233,6 +240,8 @@ def test_task_control_audit_and_history_payloads_are_redaction_safe() -> None:
     assert history_event.event_type == "task_retried"
     assert history_event.level == "info"
     assert history_event.metadata["creates_new_task_lineage"] is True
+    assert history_event.metadata["retry_source_task_id"] == 91
+    assert history_event.metadata["retry_attempt"] == 1
 
     history_pair = build_task_control_history_pair(
         task_id=91,
@@ -246,6 +255,80 @@ def test_task_control_audit_and_history_payloads_are_redaction_safe() -> None:
     assert history_pair.event_log.payload["runtime_metadata"] == {
         "host": REDACTED_RUNTIME_METADATA_VALUE,
     }
+
+
+def test_task_event_metadata_builders_are_canonical_and_complete() -> None:
+    context = _task_history_context(task_status="cancelled")
+
+    submission_metadata = build_task_submission_history_metadata(context)
+    assert validate_task_history_event_metadata("task_submitted", submission_metadata) == submission_metadata
+
+    lifecycle_metadata = build_task_lifecycle_history_metadata(context)
+    assert lifecycle_metadata["control_action"] == "cancel"
+    assert lifecycle_metadata["control_phase"] == "terminal"
+    assert lifecycle_metadata["terminal_state"] == "cancelled"
+    assert validate_task_history_event_metadata("task_cancel_requested", lifecycle_metadata) == lifecycle_metadata
+
+    retry_lineage = build_task_retry_lineage(
+        source_task_id=91,
+        source_task_state="terminated",
+        prior_retry_attempt=0,
+    )
+    retry_metadata = build_task_control_history_metadata(
+        decision=evaluate_task_control_action("retry", current_state="terminated"),
+        lineage=retry_lineage,
+    )
+    assert retry_metadata["control_action"] == "retry"
+    assert retry_metadata["retry_root_task_id"] == 91
+    assert validate_task_history_event_metadata("task_retried", retry_metadata) == retry_metadata
+
+
+def test_incomplete_task_event_metadata_has_stable_normalization_or_failure() -> None:
+    normalized_submission = normalize_task_history_event_metadata(
+        "task_submitted",
+        {
+            "dispatch_status": "queued",
+            "dispatch_key": "dispatch:1:simulation_run_task",
+            "submission_source": "api",
+            "worker_task_name": "simulation_run_task",
+        },
+    )
+    assert normalized_submission.metadata["task_status"] == "queued"
+    assert normalized_submission.missing_fields == ()
+    assert "task_status" in normalized_submission.normalized_fields
+
+    normalized_cancel = normalize_task_history_event_metadata(
+        "task_cancel_requested",
+        {
+            "task_status": "cancelling",
+        },
+    )
+    assert normalized_cancel.metadata["control_action"] == "cancel"
+    assert normalized_cancel.metadata["requested_state"] == "cancellation_requested"
+    assert normalized_cancel.metadata["control_phase"] == "acknowledged"
+    assert normalized_cancel.is_complete is True
+
+    incomplete_retry = normalize_task_history_event_metadata(
+        "task_retried",
+        {
+            "control_action": "retry",
+        },
+    )
+    assert incomplete_retry.is_complete is False
+    assert incomplete_retry.missing_fields == (
+        "retry_attempt",
+        "retry_parent_task_id",
+        "retry_root_task_id",
+        "retry_source_task_id",
+        "retry_source_terminal_state",
+    )
+
+    try:
+        validate_task_history_event_metadata("task_retried", {"control_action": "retry"})
+    except ValueError as exc:
+        assert "retry_source_task_id" in str(exc)
+    else:
+        raise AssertionError("Expected retry metadata validation to fail.")
 
 
 def test_task_history_projection_recovers_control_runtime_states() -> None:
@@ -375,3 +458,26 @@ def test_processor_snapshot_projection_preserves_lane_scope() -> None:
     )
     assert [summary.lane for summary in summaries] == ["post_processing", "simulation"]
     assert summaries[1].busy_processors == 1
+
+
+def _task_history_context(*, task_status: str) -> object:
+    return build_task_execution_history_context(
+        task_status=task_status,  # type: ignore[arg-type]
+        submitted_at=_utc(2026, 3, 16, 8, 0).isoformat(),
+        progress_updated_at=_utc(2026, 3, 16, 8, 5).isoformat(),
+        progress_percent_complete=100,
+        dispatch=build_task_dispatch_record(
+            task_id=1,
+            worker_task_name="simulation_run_task",
+            task_status="queued",
+            submitted_from_active_dataset=False,
+            dataset_id="dataset-1",
+            accepted_at=_utc(2026, 3, 16, 8, 0).isoformat(),
+            last_updated_at=_utc(2026, 3, 16, 8, 5).isoformat(),
+            submission_source="api",
+        ),
+        worker_task_name="simulation_run_task",
+        dataset_id="dataset-1",
+        definition_id=7,
+        result_handle_ids=("result:1",),
+    )

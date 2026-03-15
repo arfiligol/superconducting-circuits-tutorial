@@ -75,6 +75,7 @@ TaskExecutionAuditActionKind = Literal[
     "reconcile.task_failed",
 ]
 ExecutionAuditOutcome = Literal["accepted", "rejected", "completed", "failed"]
+TaskHistoryControlPhase = Literal["requested", "acknowledged", "terminal"]
 
 EXECUTION_CONTRACT_VERSION = "sc_execution.v1"
 WORKER_TASK_FAILED_ERROR_CODE = "worker_task_failed"
@@ -227,6 +228,23 @@ class TaskControlHistoryPair:
 
     history_event: TaskExecutionHistoryEvent
     event_log: ExecutionEventLog
+
+
+@dataclass(frozen=True)
+class TaskHistoryEventMetadataNormalization:
+    """Canonical normalization result for one task-history metadata payload."""
+
+    metadata: dict[str, TaskExecutionHistoryMetadataValue]
+    missing_fields: tuple[str, ...] = ()
+    normalized_fields: tuple[str, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.missing_fields
+
+    @property
+    def is_canonical(self) -> bool:
+        return self.is_complete and not self.normalized_fields
 
 
 @dataclass(frozen=True)
@@ -875,6 +893,69 @@ def coerce_task_execution_history_metadata(
     return coerced
 
 
+def build_task_submission_history_metadata(
+    context: TaskExecutionHistoryContext,
+) -> dict[str, TaskExecutionHistoryMetadataValue]:
+    """Build canonical metadata for one task submission event."""
+    return {
+        "task_status": "queued",
+        "dispatch_status": context.dispatch_status,
+        "dispatch_key": context.dispatch_key,
+        "submission_source": context.submission_source,
+        "worker_task_name": context.worker_task_name,
+        "dataset_id": context.dataset_id,
+        "definition_id": context.definition_id,
+    }
+
+
+def build_task_lifecycle_history_metadata(
+    context: TaskExecutionHistoryContext,
+) -> dict[str, TaskExecutionHistoryMetadataValue]:
+    """Build canonical metadata for one lifecycle projection event."""
+    metadata: dict[str, TaskExecutionHistoryMetadataValue] = {
+        "task_status": context.task_status,
+        "dispatch_status": context.dispatch_status,
+        "dispatch_key": context.dispatch_key,
+        "progress_percent_complete": context.progress_percent_complete,
+        "worker_task_name": context.worker_task_name,
+        "result_handle_ids": list(context.result_handle_ids),
+    }
+    if context.task_status in {"cancellation_requested", "cancelling", "cancelled"}:
+        metadata["control_action"] = "cancel"
+        metadata["requested_state"] = "cancellation_requested"
+        metadata["control_phase"] = _control_phase_for_state(context.task_status)
+        if context.task_status == "cancelled":
+            metadata["terminal_state"] = "cancelled"
+    elif context.task_status in {"termination_requested", "terminated"}:
+        metadata["control_action"] = "terminate"
+        metadata["requested_state"] = "termination_requested"
+        metadata["control_phase"] = _control_phase_for_state(context.task_status)
+        if context.task_status == "terminated":
+            metadata["terminal_state"] = "terminated"
+    return metadata
+
+
+def build_task_control_history_metadata(
+    *,
+    decision: TaskControlDecision,
+    lineage: TaskRetryLineage | None = None,
+) -> dict[str, TaskExecutionHistoryMetadataValue]:
+    """Build canonical metadata for one task control request event."""
+    metadata = coerce_task_execution_history_metadata(decision.to_payload())
+    metadata["control_action"] = decision.action
+    if decision.accepted and decision.action == "cancel":
+        metadata["requested_state"] = "cancellation_requested"
+        metadata["control_phase"] = "requested"
+    elif decision.accepted and decision.action == "terminate":
+        metadata["requested_state"] = "termination_requested"
+        metadata["control_phase"] = "requested"
+    elif decision.accepted and decision.action == "retry":
+        metadata["control_phase"] = "requested"
+    if lineage is not None:
+        metadata.update(_build_retry_lineage_history_metadata(lineage))
+    return metadata
+
+
 def build_task_submission_history_event(
     context: TaskExecutionHistoryContext,
 ) -> TaskExecutionHistoryEvent:
@@ -885,15 +966,7 @@ def build_task_submission_history_event(
         level="info",
         occurred_at=context.submitted_at,
         message="Task submission accepted by rewrite runtime.",
-        metadata={
-            "task_status": "queued",
-            "dispatch_status": context.dispatch_status,
-            "dispatch_key": context.dispatch_key,
-            "submission_source": context.submission_source,
-            "worker_task_name": context.worker_task_name,
-            "dataset_id": context.dataset_id,
-            "definition_id": context.definition_id,
-        },
+        metadata=build_task_submission_history_metadata(context),
     )
 
 
@@ -955,14 +1028,7 @@ def build_task_lifecycle_history_event(
         level=level,
         occurred_at=context.progress_updated_at,
         message=message,
-        metadata={
-            "task_status": context.task_status,
-            "dispatch_status": context.dispatch_status,
-            "dispatch_key": context.dispatch_key,
-            "progress_percent_complete": context.progress_percent_complete,
-            "worker_task_name": context.worker_task_name,
-            "result_handle_ids": list(context.result_handle_ids),
-        },
+        metadata=build_task_lifecycle_history_metadata(context),
     )
 
 
@@ -977,6 +1043,132 @@ def build_task_execution_history(
     return tuple(events)
 
 
+def normalize_task_history_event_metadata(
+    event_type: TaskExecutionHistoryEventType,
+    metadata: Mapping[str, object] | None,
+) -> TaskHistoryEventMetadataNormalization:
+    """Normalize one task-history metadata payload into the canonical core shape."""
+    normalized = coerce_task_execution_history_metadata(metadata)
+    missing_fields: list[str] = []
+    normalized_fields: list[str] = []
+
+    if event_type == "task_submitted":
+        _normalize_history_field(
+            normalized,
+            "task_status",
+            fallback="queued",
+            normalized_fields=normalized_fields,
+        )
+        _extend_missing_fields(
+            normalized,
+            missing_fields,
+            "dispatch_status",
+            "dispatch_key",
+            "submission_source",
+            "worker_task_name",
+        )
+    elif event_type in {"task_running", "task_completed", "task_failed"}:
+        _normalize_history_field(
+            normalized,
+            "task_status",
+            fallback=_task_status_for_history_event_type(event_type),
+            normalized_fields=normalized_fields,
+        )
+        _normalize_history_field(
+            normalized,
+            "result_handle_ids",
+            fallback=[],
+            normalized_fields=normalized_fields,
+        )
+        _extend_missing_fields(
+            normalized,
+            missing_fields,
+            "dispatch_status",
+            "dispatch_key",
+            "progress_percent_complete",
+            "worker_task_name",
+        )
+    elif event_type in {"task_cancel_requested", "task_terminate_requested"}:
+        action = "cancel" if event_type == "task_cancel_requested" else "terminate"
+        requested_state = (
+            "cancellation_requested"
+            if action == "cancel"
+            else "termination_requested"
+        )
+        _normalize_history_field(
+            normalized,
+            "control_action",
+            fallback=action,
+            normalized_fields=normalized_fields,
+        )
+        _normalize_history_field(
+            normalized,
+            "requested_state",
+            fallback=requested_state,
+            normalized_fields=normalized_fields,
+        )
+        inferred_phase = _infer_control_phase_from_history_metadata(
+            event_type=event_type,
+            metadata=normalized,
+        )
+        if inferred_phase is not None and "control_phase" not in normalized:
+            normalized["control_phase"] = inferred_phase
+            normalized_fields.append("control_phase")
+        if normalized.get("task_status") in {"cancelled", "terminated"} and "terminal_state" not in normalized:
+            normalized["terminal_state"] = normalized["task_status"]
+            normalized_fields.append("terminal_state")
+        if "control_phase" not in normalized:
+            missing_fields.append("control_phase")
+    elif event_type == "task_retried":
+        _normalize_history_field(
+            normalized,
+            "control_action",
+            fallback="retry",
+            normalized_fields=normalized_fields,
+        )
+        _normalize_history_field(
+            normalized,
+            "creates_new_task_lineage",
+            fallback=True,
+            normalized_fields=normalized_fields,
+        )
+        _normalize_history_field(
+            normalized,
+            "control_phase",
+            fallback="requested",
+            normalized_fields=normalized_fields,
+        )
+        _extend_missing_fields(
+            normalized,
+            missing_fields,
+            "retry_source_task_id",
+            "retry_root_task_id",
+            "retry_parent_task_id",
+            "retry_attempt",
+            "retry_source_terminal_state",
+        )
+
+    return TaskHistoryEventMetadataNormalization(
+        metadata=normalized,
+        missing_fields=tuple(sorted(set(missing_fields))),
+        normalized_fields=tuple(sorted(set(normalized_fields))),
+    )
+
+
+def validate_task_history_event_metadata(
+    event_type: TaskExecutionHistoryEventType,
+    metadata: Mapping[str, object] | None,
+) -> dict[str, TaskExecutionHistoryMetadataValue]:
+    """Validate one task-history metadata payload and return its canonical form."""
+    normalized = normalize_task_history_event_metadata(event_type, metadata)
+    if not normalized.is_complete:
+        missing = ", ".join(normalized.missing_fields)
+        raise ValueError(
+            f"Task history metadata for '{event_type}' is missing required fields: {missing}"
+        )
+    return dict(normalized.metadata)
+
+
 def project_task_runtime_state_from_history(
     history_events: Sequence[TaskExecutionHistoryEvent],
     *,
@@ -985,7 +1177,11 @@ def project_task_runtime_state_from_history(
     """Project the canonical runtime state from persisted task-history events."""
     projected_state = initial_state
     for event in _sort_task_history_events(history_events):
-        next_state = _task_runtime_state_from_history_event(event)
+        normalized = normalize_task_history_event_metadata(event.event_type, event.metadata)
+        next_state = _task_runtime_state_from_normalized_metadata(
+            event_type=event.event_type,
+            metadata=normalized.metadata,
+        )
         if next_state is None:
             continue
         if is_terminal_task_state(projected_state) and next_state != projected_state:
@@ -1014,9 +1210,11 @@ def project_task_control_transition(
             "task_retried",
         }:
             continue
-        if _optional_task_control_outcome(event.metadata.get("outcome")) == "accepted" and (
+        normalized_event = normalize_task_history_event_metadata(event.event_type, event.metadata)
+        if _optional_task_control_outcome(normalized_event.metadata.get("outcome")) == "accepted" and (
             _control_event_matches_runtime_state(
-                event,
+                event_type=event.event_type,
+                metadata=normalized_event.metadata,
                 runtime_state=projected_runtime_state,
             )
         ):
@@ -1025,9 +1223,16 @@ def project_task_control_transition(
     if accepted_control_event is None:
         return None
 
-    action = _control_action_from_history_event(accepted_control_event)
-    requested_state = _requested_state_from_history_event(
-        accepted_control_event,
+    normalized_control_event = normalize_task_history_event_metadata(
+        accepted_control_event.event_type,
+        accepted_control_event.metadata,
+    )
+    action = _control_action_from_normalized_metadata(
+        event_type=accepted_control_event.event_type,
+        metadata=normalized_control_event.metadata,
+    )
+    requested_state = _requested_state_from_normalized_metadata(
+        metadata=normalized_control_event.metadata,
         action=action,
     )
 
@@ -1036,7 +1241,11 @@ def project_task_control_transition(
     for event in ordered_events:
         if _event_precedes(event, accepted_control_event):
             continue
-        event_state = _task_runtime_state_from_history_event(event)
+        normalized_event = normalize_task_history_event_metadata(event.event_type, event.metadata)
+        event_state = _task_runtime_state_from_normalized_metadata(
+            event_type=event.event_type,
+            metadata=normalized_event.metadata,
+        )
         if event_state is None:
             continue
         if action == "cancel":
@@ -1071,7 +1280,7 @@ def project_task_control_transition(
         acknowledged_at=acknowledged_at,
         terminal_at=terminal_at,
         creates_new_task_lineage=bool(
-            accepted_control_event.metadata.get("creates_new_task_lineage", False)
+            normalized_control_event.metadata.get("creates_new_task_lineage", False)
         ),
     )
 
@@ -1103,19 +1312,16 @@ def build_task_control_history_event(
         event_type = "task_retried"
         message = "Task retry accepted." if decision.accepted else "Task retry rejected."
 
-    metadata = {
-        **coerce_task_execution_history_metadata(decision.to_payload()),
-    }
-    if lineage is not None:
-        metadata["retry_lineage"] = str(lineage.to_payload())
-
     return TaskExecutionHistoryEvent(
         event_key=f"{event_type}:{occurred_at.isoformat()}",
         event_type=event_type,
         level="info" if decision.accepted else "warning",
         occurred_at=occurred_at.isoformat(),
         message=message,
-        metadata=metadata,
+        metadata=build_task_control_history_metadata(
+            decision=decision,
+            lineage=lineage,
+        ),
     )
 
 
@@ -1420,6 +1626,86 @@ def _copy_payload(payload: Mapping[str, object] | None) -> dict[str, object] | N
     return dict(payload)
 
 
+def _build_retry_lineage_history_metadata(
+    lineage: TaskRetryLineage,
+) -> dict[str, TaskExecutionHistoryMetadataValue]:
+    return {
+        "retry_source_task_id": lineage.source_task_id,
+        "retry_root_task_id": lineage.root_task_id,
+        "retry_parent_task_id": lineage.parent_task_id,
+        "retry_attempt": lineage.retry_attempt,
+        "retry_source_terminal_state": lineage.source_terminal_state,
+    }
+
+
+def _control_phase_for_state(state: TaskRuntimeState) -> TaskHistoryControlPhase:
+    if state in {"cancellation_requested", "termination_requested"}:
+        return "requested"
+    if state == "cancelling":
+        return "acknowledged"
+    return "terminal"
+
+
+def _infer_control_phase_from_history_metadata(
+    *,
+    event_type: TaskExecutionHistoryEventType,
+    metadata: Mapping[str, TaskExecutionHistoryMetadataValue],
+) -> TaskHistoryControlPhase | None:
+    task_status = metadata.get("task_status")
+    if task_status in {
+        "cancellation_requested",
+        "cancelling",
+        "cancelled",
+        "termination_requested",
+        "terminated",
+    }:
+        return _control_phase_for_state(task_status)
+    if _optional_task_control_outcome(metadata.get("outcome")) == "accepted" and event_type in {
+        "task_cancel_requested",
+        "task_terminate_requested",
+        "task_retried",
+    }:
+        return "requested"
+    return None
+
+
+def _normalize_history_field(
+    metadata: dict[str, TaskExecutionHistoryMetadataValue],
+    field_name: str,
+    *,
+    fallback: TaskExecutionHistoryMetadataValue,
+    normalized_fields: list[str],
+) -> None:
+    if field_name in metadata:
+        return
+    metadata[field_name] = fallback
+    normalized_fields.append(field_name)
+
+
+def _extend_missing_fields(
+    metadata: Mapping[str, TaskExecutionHistoryMetadataValue],
+    missing_fields: list[str],
+    *field_names: str,
+) -> None:
+    for field_name in field_names:
+        if field_name not in metadata:
+            missing_fields.append(field_name)
+
+
+def _task_status_for_history_event_type(
+    event_type: TaskExecutionHistoryEventType,
+) -> TaskRuntimeState:
+    if event_type == "task_submitted":
+        return "queued"
+    if event_type == "task_running":
+        return "running"
+    if event_type == "task_completed":
+        return "completed"
+    if event_type == "task_failed":
+        return "failed"
+    raise ValueError(f"Event type '{event_type}' does not map to one task status.")
+
+
 def _sort_task_history_events(
     history_events: Sequence[TaskExecutionHistoryEvent],
 ) -> tuple[TaskExecutionHistoryEvent, ...]:
@@ -1433,10 +1719,12 @@ def _event_precedes(
     return (event.occurred_at, event.event_key) < (anchor.occurred_at, anchor.event_key)
 
 
-def _task_runtime_state_from_history_event(
-    event: TaskExecutionHistoryEvent,
+def _task_runtime_state_from_normalized_metadata(
+    *,
+    event_type: TaskExecutionHistoryEventType,
+    metadata: Mapping[str, object],
 ) -> TaskRuntimeState | None:
-    task_status = event.metadata.get("task_status")
+    task_status = metadata.get("task_status")
     if task_status in {
         "queued",
         "dispatching",
@@ -1450,7 +1738,7 @@ def _task_runtime_state_from_history_event(
         "failed",
     }:
         return task_status
-    requested_state = event.metadata.get("requested_state")
+    requested_state = metadata.get("requested_state")
     if requested_state in {
         "queued",
         "dispatching",
@@ -1464,13 +1752,13 @@ def _task_runtime_state_from_history_event(
         "failed",
     }:
         return requested_state
-    if event.event_type == "task_submitted":
+    if event_type == "task_submitted":
         return "queued"
-    if event.event_type == "task_running":
+    if event_type == "task_running":
         return "running"
-    if event.event_type == "task_completed":
+    if event_type == "task_completed":
         return "completed"
-    if event.event_type == "task_failed":
+    if event_type == "task_failed":
         return "failed"
     return None
 
@@ -1481,22 +1769,27 @@ def _optional_task_control_outcome(value: object) -> TaskControlOutcome | None:
     return None
 
 
-def _control_action_from_history_event(
-    event: TaskExecutionHistoryEvent,
+def _control_action_from_normalized_metadata(
+    *,
+    event_type: TaskExecutionHistoryEventType,
+    metadata: Mapping[str, object],
 ) -> TaskControlAction:
-    if event.event_type == "task_cancel_requested":
+    control_action = metadata.get("control_action")
+    if control_action in {"cancel", "terminate", "retry"}:
+        return control_action
+    if event_type == "task_cancel_requested":
         return "cancel"
-    if event.event_type == "task_terminate_requested":
+    if event_type == "task_terminate_requested":
         return "terminate"
     return "retry"
 
 
-def _requested_state_from_history_event(
-    event: TaskExecutionHistoryEvent,
+def _requested_state_from_normalized_metadata(
     *,
+    metadata: Mapping[str, object],
     action: TaskControlAction,
 ) -> TaskRuntimeState | None:
-    requested_state = event.metadata.get("requested_state")
+    requested_state = metadata.get("requested_state")
     if requested_state in {
         "queued",
         "dispatching",
@@ -1518,11 +1811,15 @@ def _requested_state_from_history_event(
 
 
 def _control_event_matches_runtime_state(
-    event: TaskExecutionHistoryEvent,
     *,
+    event_type: TaskExecutionHistoryEventType,
+    metadata: Mapping[str, object],
     runtime_state: TaskRuntimeState,
 ) -> bool:
-    action = _control_action_from_history_event(event)
+    action = _control_action_from_normalized_metadata(
+        event_type=event_type,
+        metadata=metadata,
+    )
     if action == "cancel":
         return runtime_state in {"cancellation_requested", "cancelling", "cancelled"}
     if action == "terminate":
