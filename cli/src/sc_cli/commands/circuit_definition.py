@@ -6,9 +6,14 @@ from typing import Annotated, cast
 
 import typer
 from sc_backend import BackendContractError, CircuitDefinitionSortBy, SortOrder
-from sc_core import inspect_circuit_definition_source
+from sc_core import DEFAULT_PREVIEW_ARTIFACTS, inspect_circuit_definition_source
 
 from sc_cli.errors import exit_for_backend_error, exit_with_runtime_error, exit_with_usage_error
+from sc_cli.local_circuit_definitions import (
+    build_local_circuit_definition_detail,
+    build_local_circuit_definition_inspection,
+    build_local_circuit_definition_summary,
+)
 from sc_cli.output import OutputMode, OutputOption
 from sc_cli.presenters import (
     render_circuit_definition_delete_result,
@@ -63,7 +68,12 @@ def list_command(
         )
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
-    typer.echo(render_circuit_definition_summaries(definitions, output=output))
+    typer.echo(
+        render_circuit_definition_summaries(
+            [build_local_circuit_definition_summary(definition) for definition in definitions],
+            output=output,
+        )
+    )
 
 
 @app.command("inspect")
@@ -97,7 +107,12 @@ def inspect_command(
             definition = get_circuit_definition(definition_id)
         except BackendContractError as error:
             exit_for_backend_error(error, output=output)
-        typer.echo(render_circuit_definition_detail(definition, output=output))
+        typer.echo(
+            render_circuit_definition_detail(
+                build_local_circuit_definition_detail(definition),
+                output=output,
+            )
+        )
         return
 
     assert source_file is not None
@@ -106,7 +121,16 @@ def inspect_command(
     except OSError as error:
         exit_with_runtime_error(f"Could not read {source_file}: {error}")
     inspection = inspect_circuit_definition_source(source_text)
-    typer.echo(render_circuit_definition_inspection(source_file, inspection, output=output))
+    typer.echo(
+        render_circuit_definition_inspection(
+            build_local_circuit_definition_inspection(
+                source_file=str(source_file),
+                inspection=inspection,
+                preview_artifacts=DEFAULT_PREVIEW_ARTIFACTS,
+            ),
+            output=output,
+        )
+    )
 
 
 @app.command("create")
@@ -137,7 +161,12 @@ def create_command(
         definition = create_circuit_definition(name=name, source_text=source_text)
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
-    typer.echo(render_circuit_definition_detail(definition, output=output))
+    typer.echo(
+        render_circuit_definition_detail(
+            build_local_circuit_definition_detail(definition),
+            output=output,
+        )
+    )
 
 
 @app.command("update")
@@ -176,7 +205,12 @@ def update_command(
         )
     except BackendContractError as error:
         exit_for_backend_error(error, output=output)
-    typer.echo(render_circuit_definition_detail(definition, output=output))
+    typer.echo(
+        render_circuit_definition_detail(
+            build_local_circuit_definition_detail(definition),
+            output=output,
+        )
+    )
 
 
 @app.command("delete")
