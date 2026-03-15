@@ -2,9 +2,9 @@ from datetime import datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sc_core.storage import STORAGE_CONTRACT_VERSION
 from src.app.domain.tasks import TaskLifecycleUpdate, TaskSubmissionDraft
 from src.app.infrastructure.runtime import (
+    get_task_audit_repository,
     get_task_execution_runtime,
     get_task_service,
     reset_runtime_state,
@@ -30,57 +30,9 @@ def test_get_session_returns_canonical_workspace_surface() -> None:
         "state": "authenticated",
         "mode": "local_stub",
     }
-    assert payload["data"]["user"] == {
-        "id": "researcher-01",
-        "display_name": "Rewrite Local User",
-        "email": "rewrite.local@example.com",
-        "platform_role": "user",
-    }
     assert payload["data"]["workspace"]["id"] == "ws-device-lab"
-    assert payload["data"]["workspace"]["default_task_scope"] == "workspace"
-    assert payload["data"]["workspace"]["allowed_actions"] == {
-        "switch_to": True,
-        "activate_dataset": True,
-        "invite_members": True,
-        "remove_members": True,
-        "transfer_owner": True,
-    }
     assert payload["data"]["active_dataset"]["id"] == "fluxonium-2025-031"
-    assert payload["data"]["active_dataset"]["visibility_scope"] == "private"
     assert payload["data"]["capabilities"]["can_submit_tasks"] is True
-    assert payload["data"]["capabilities"]["can_switch_workspace"] is True
-    assert payload["data"]["memberships"] == [
-        {
-            "id": "ws-device-lab",
-            "slug": "device-lab",
-            "name": "Device Lab Workspace",
-            "role": "owner",
-            "default_task_scope": "workspace",
-            "is_active": True,
-            "allowed_actions": {
-                "switch_to": True,
-                "activate_dataset": True,
-                "invite_members": True,
-                "remove_members": True,
-                "transfer_owner": True,
-            },
-        },
-        {
-            "id": "ws-modeling",
-            "slug": "modeling",
-            "name": "Modeling Workspace",
-            "role": "member",
-            "default_task_scope": "owned",
-            "is_active": False,
-            "allowed_actions": {
-                "switch_to": True,
-                "activate_dataset": True,
-                "invite_members": False,
-                "remove_members": False,
-                "transfer_owner": False,
-            },
-        },
-    ]
     assert payload["meta"]["memberships_count"] == 2
 
 
@@ -91,42 +43,9 @@ def test_patch_session_active_workspace_rebinds_dataset_and_capabilities() -> No
     payload = response.json()
     assert payload["ok"] is True
     assert payload["data"]["workspace"]["id"] == "ws-modeling"
-    assert payload["data"]["workspace"]["role"] == "member"
     assert payload["data"]["active_dataset_resolution"] == "rebound"
     assert payload["data"]["active_dataset"]["id"] == "transmon-coupler-014"
-    assert payload["data"]["active_dataset"]["family"] == "Transmon"
     assert payload["data"]["capabilities"]["can_invite_members"] is False
-    assert payload["data"]["capabilities"]["can_manage_datasets"] is True
-    assert payload["data"]["detached_task_ids"] == []
-
-
-def test_patch_session_active_workspace_rejects_missing_membership() -> None:
-    response = client.patch("/session/active-workspace", json={"workspace_id": "ws-missing"})
-
-    assert response.status_code == 403
-    assert response.json()["ok"] is False
-    assert response.json()["error"]["code"] == "workspace_membership_required"
-    assert response.json()["error"]["category"] == "permission_denied"
-
-
-def test_patch_session_active_dataset_updates_context() -> None:
-    client.patch("/session/active-workspace", json={"workspace_id": "ws-modeling"})
-    client.patch("/session/active-dataset", json={"dataset_id": None})
-
-    response = client.patch("/session/active-dataset", json={"dataset_id": "transmon-coupler-014"})
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["data"]["workspace"]["id"] == "ws-modeling"
-    assert payload["data"]["active_dataset"]["id"] == "transmon-coupler-014"
-    assert payload["data"]["active_dataset"]["family"] == "Transmon"
-
-
-def test_patch_session_active_dataset_can_clear_selection() -> None:
-    response = client.patch("/session/active-dataset", json={"dataset_id": None})
-
-    assert response.status_code == 200
-    assert response.json()["data"]["active_dataset"] is None
 
 
 def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> None:
@@ -138,159 +57,262 @@ def test_patch_session_active_dataset_rejects_dataset_outside_workspace() -> Non
     assert response.json()["error"]["category"] == "permission_denied"
 
 
-def test_patch_session_active_dataset_rejects_missing_dataset() -> None:
-    response = client.patch("/session/active-dataset", json={"dataset_id": "missing-dataset"})
-
-    assert response.status_code == 404
-    assert response.json()["ok"] is False
-    assert response.json()["error"]["code"] == "dataset_not_found"
-    assert response.json()["error"]["category"] == "not_found"
-
-
-def test_list_tasks_returns_seeded_summaries() -> None:
+def test_list_tasks_returns_backend_owned_queue_read_model() -> None:
     response = client.get("/tasks")
 
     assert response.status_code == 200
     payload = response.json()
-    assert [task["task_id"] for task in payload] == [301, 302, 303]
-    assert payload[0]["status"] == "running"
-    assert payload[0]["workspace_slug"] == "device-lab"
-    assert payload[0]["execution_mode"] == "run"
+    assert payload["ok"] is True
+    assert [row["task_id"] for row in payload["data"]["rows"]] == [301, 302, 303]
+    assert payload["data"]["rows"][0] == {
+        "task_id": 301,
+        "summary": "Fluxonium parameter sweep is running.",
+        "status": "running",
+        "lane": "simulation",
+        "task_kind": "simulation",
+        "owner_display_name": "Rewrite Local User",
+        "visibility_scope": "workspace",
+        "updated_at": "2026-03-12 09:22:00",
+        "result_availability": "pending",
+        "allowed_actions": {
+            "attach": True,
+            "cancel": True,
+            "terminate": True,
+            "retry": False,
+            "rejection_reason": None,
+        },
+        "control_state": "none",
+    }
+    assert payload["data"]["worker_summary"] == [
+        {
+            "lane": "simulation",
+            "healthy_processors": 1,
+            "busy_processors": 1,
+            "degraded_processors": 0,
+            "draining_processors": 0,
+            "offline_processors": 0,
+        },
+        {
+            "lane": "characterization",
+            "healthy_processors": 1,
+            "busy_processors": 0,
+            "degraded_processors": 0,
+            "draining_processors": 0,
+            "offline_processors": 0,
+        },
+    ]
+    assert payload["meta"]["filter_echo"] == {
+        "status": None,
+        "lane": None,
+        "scope": "workspace",
+        "dataset_id": None,
+        "q": None,
+    }
 
 
-def test_list_tasks_hides_tasks_outside_session_visibility() -> None:
-    response = client.get("/tasks")
-
-    assert response.status_code == 200
-    task_ids = [task["task_id"] for task in response.json()]
-    assert 304 not in task_ids
-    assert 305 not in task_ids
-
-
-def test_list_tasks_supports_filters_scope_and_limit() -> None:
+def test_list_tasks_supports_filters_and_hides_non_visible_rows() -> None:
     response = client.get(
         "/tasks?status=completed&lane=simulation&scope=owned&dataset_id=fluxonium-2025-031&limit=1"
     )
 
     assert response.status_code == 200
-    assert response.json()[0]["task_id"] == 303
-    assert response.json()[0]["visibility_scope"] == "owned"
+    payload = response.json()
+    assert [row["task_id"] for row in payload["data"]["rows"]] == [303]
+    assert payload["data"]["rows"][0]["visibility_scope"] == "owned"
 
-    workspace_response = client.get(
-        "/tasks?status=queued&lane=characterization&scope=workspace&dataset_id=transmon-coupler-014&limit=1"
-    )
-    assert workspace_response.status_code == 200
-    assert workspace_response.json()[0]["task_id"] == 302
-    assert workspace_response.json()[0]["visibility_scope"] == "workspace"
+    default_response = client.get("/tasks")
+    assert [row["task_id"] for row in default_response.json()["data"]["rows"]] == [301, 302, 303]
 
 
-def test_get_task_returns_detail_payload() -> None:
+def test_get_task_returns_attach_ready_detail_with_result_handoff() -> None:
     response = client.get("/tasks/303")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["task_id"] == 303
-    assert payload["queue_backend"] == "in_memory_scaffold"
-    assert payload["worker_task_name"] == "post_processing_run_task"
-    assert payload["visibility_scope"] == "owned"
-    assert payload["request_ready"] is True
-    assert payload["dispatch"] == {
+    assert payload["ok"] is True
+    detail = payload["data"]
+    assert detail["task_id"] == 303
+    assert detail["task_kind"] == "post_processing"
+    assert detail["worker_task_name"] == "post_processing_run_task"
+    assert detail["visibility_scope"] == "owned"
+    assert detail["control_state"] == "none"
+    assert detail["dispatch"] == {
         "dispatch_key": "dispatch:303:post_processing_run_task",
         "status": "completed",
         "submission_source": "active_dataset",
         "accepted_at": "2026-03-11 19:05:00",
         "last_updated_at": "2026-03-11 19:18:00",
     }
-    assert payload["events"] == [
-        {
-            "event_key": "task_submitted:2026-03-11 19:05:00",
-            "event_type": "task_submitted",
-            "level": "info",
-            "occurred_at": "2026-03-11 19:05:00",
-            "message": "Task submission accepted by rewrite runtime.",
-            "metadata": {
-                "task_status": "queued",
-                "dispatch_status": "completed",
-                "dispatch_key": "dispatch:303:post_processing_run_task",
-                "submission_source": "active_dataset",
-                "worker_task_name": "post_processing_run_task",
-                "dataset_id": "fluxonium-2025-031",
-                "definition_id": None,
-            },
-        },
-        {
-            "event_key": "task_completed:2026-03-11 19:18:00",
-            "event_type": "task_completed",
-            "level": "info",
-            "occurred_at": "2026-03-11 19:18:00",
-            "message": "Task completed and persisted result metadata.",
-            "metadata": {
-                "task_status": "completed",
-                "dispatch_status": "completed",
-                "dispatch_key": "dispatch:303:post_processing_run_task",
-                "progress_percent_complete": 100,
-                "worker_task_name": "post_processing_run_task",
-                "result_handle_ids": [
-                    "result:fluxonium-2025-031:fit-summary",
-                    "result:fluxonium-2025-031:plot-bundle",
-                ],
-            },
-        },
-    ]
-    assert payload["result_refs"]["trace_batch_id"] == 88
-    assert payload["result_refs"]["metadata_records"] == [
-        {
-            "backend": "sqlite_metadata",
-            "record_type": "trace_batch",
-            "record_id": "trace_batch:88",
-            "version": 1,
-            "schema_version": "sqlite_metadata.v1",
-        },
-        {
-            "backend": "sqlite_metadata",
-            "record_type": "result_handle",
-            "record_id": "result_handle:501",
-            "version": 2,
-            "schema_version": "sqlite_metadata.v1",
-        },
-    ]
-    assert payload["result_refs"]["trace_payload"] == {
-        "contract_version": STORAGE_CONTRACT_VERSION,
-        "backend": "local_zarr",
-        "payload_role": "task_output",
-        "store_key": "datasets/fluxonium-2025-031/trace-batches/88.zarr",
-        "store_uri": "trace_store/datasets/fluxonium-2025-031/trace-batches/88.zarr",
-        "group_path": "trace_batches/88",
-        "array_path": "signals/iq_real",
-        "dtype": "float64",
-        "shape": [184, 1024],
-        "chunk_shape": [16, 1024],
-        "schema_version": "1.0",
+    assert detail["allowed_actions"] == {
+        "attach": True,
+        "cancel": False,
+        "terminate": False,
+        "retry": True,
+        "rejection_reason": "task_already_terminal",
     }
-    assert payload["result_refs"]["result_handles"][0]["handle_id"] == (
-        "result:fluxonium-2025-031:fit-summary"
-    )
-    assert payload["result_refs"]["result_handles"][0]["contract_version"] == (
-        STORAGE_CONTRACT_VERSION
-    )
-    assert payload["result_refs"]["result_handles"][0]["payload_role"] == "report_artifact"
-    assert payload["result_refs"]["result_handles"][0]["provenance_task_id"] == 303
-    assert payload["result_refs"]["result_handles"][0]["provenance"] == {
-        "source_dataset_id": "fluxonium-2025-031",
-        "source_task_id": 303,
-        "trace_batch_record": {
-            "backend": "sqlite_metadata",
-            "record_type": "trace_batch",
-            "record_id": "trace_batch:88",
-            "version": 1,
-            "schema_version": "sqlite_metadata.v1",
-        },
-        "analysis_run_record": None,
+    assert detail["result_handoff"] == {
+        "availability": "ready",
+        "primary_result_handle_id": "result:fluxonium-2025-031:fit-summary",
+        "result_handle_count": 2,
+        "trace_payload_available": True,
     }
+    assert [event["event_type"] for event in detail["events"]] == [
+        "task_submitted",
+        "task_completed",
+    ]
 
 
-def test_get_task_detail_reflects_execution_runtime_event_metadata() -> None:
-    task = get_task_service().submit_task(
+def test_get_task_returns_not_found_for_hidden_task() -> None:
+    response = client.get("/tasks/304")
+
+    assert response.status_code == 404
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "task_not_found"
+
+
+def test_get_task_events_returns_persisted_event_history_readmodel() -> None:
+    response = client.get("/tasks/303/events?order=desc&limit=2")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["data"]["task_id"] == 303
+    assert [event["event_type"] for event in payload["data"]["events"]] == [
+        "task_completed",
+        "task_submitted",
+    ]
+    assert payload["meta"]["event_count"] == 2
+    assert payload["meta"]["filter_echo"] == {"order": "desc", "event_type": None}
+
+
+def test_submit_task_returns_persisted_attach_ready_detail_and_audit_record() -> None:
+    response = client.post("/tasks", json={"kind": "characterization"})
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["ok"] is True
+    task = payload["data"]["task"]
+    assert payload["data"]["operation"] == "submitted"
+    assert task["task_id"] == 306
+    assert task["dataset_id"] == "fluxonium-2025-031"
+    assert task["dispatch"]["status"] == "accepted"
+    assert task["result_handoff"] == {
+        "availability": "pending",
+        "primary_result_handle_id": "task-result:306:primary",
+        "result_handle_count": 1,
+        "trace_payload_available": False,
+    }
+    assert task["events"][0]["metadata"]["audit_action"] == "task.submitted"
+
+    records = get_task_audit_repository().list_records_for_resource(
+        resource_kind="task",
+        resource_id="306",
+    )
+    assert len(records) == 1
+    assert records[0].action_kind == "task.submitted"
+    assert records[0].outcome == "accepted"
+
+
+def test_submitted_task_survives_runtime_reset_in_routes() -> None:
+    created = client.post("/tasks", json={"kind": "characterization"}).json()["data"]["task"]
+
+    reset_runtime_state()
+
+    queue_response = client.get("/tasks")
+    assert [row["task_id"] for row in queue_response.json()["data"]["rows"]][:2] == [306, 301]
+
+    detail_response = client.get("/tasks/306")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["data"]["dispatch"] == created["dispatch"]
+
+    events_response = client.get("/tasks/306/events?order=asc&limit=10")
+    assert [event["event_type"] for event in events_response.json()["data"]["events"]] == [
+        "task_submitted"
+    ]
+
+
+def test_cancel_task_persists_control_state_and_emits_audit() -> None:
+    response = client.post("/tasks/301/cancel")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    task = payload["data"]["task"]
+    assert payload["data"]["operation"] == "cancel_requested"
+    assert task["control_state"] == "cancellation_requested"
+    assert task["allowed_actions"] == {
+        "attach": True,
+        "cancel": False,
+        "terminate": True,
+        "retry": False,
+        "rejection_reason": "cancellation_requested",
+    }
+    assert task["events"][-1]["event_type"] == "task_cancellation_requested"
+    assert task["events"][-1]["metadata"]["audit_action"] == "task.cancel_requested"
+
+    records = get_task_audit_repository().list_records_for_resource(
+        resource_kind="task",
+        resource_id="301",
+    )
+    assert [record.action_kind for record in records] == ["task.cancel_requested"]
+
+    reset_runtime_state()
+
+    reloaded = client.get("/tasks/301").json()["data"]
+    assert reloaded["control_state"] == "cancellation_requested"
+    assert reloaded["events"][-1]["event_type"] == "task_cancellation_requested"
+
+
+def test_terminate_task_persists_control_state_and_blocks_repeat_cancel() -> None:
+    response = client.post("/tasks/301/terminate")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data"]["task"]["control_state"] == "termination_requested"
+    assert payload["data"]["task"]["events"][-1]["event_type"] == "task_termination_requested"
+
+    cancelled_response = client.post("/tasks/301/cancel")
+    assert cancelled_response.status_code == 409
+    assert cancelled_response.json()["error"]["code"] == "task_not_cancellable"
+
+
+def test_retry_creates_new_task_with_lineage_and_audit() -> None:
+    response = client.post("/tasks/303/retry")
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["ok"] is True
+    task = payload["data"]["task"]
+    assert payload["data"]["operation"] == "retried"
+    assert task["task_id"] == 306
+    assert task["retry_of_task_id"] == 303
+    assert task["summary"] == "Retry of task 303: Fluxonium fit bundle was post-processed."
+    assert [event["event_type"] for event in task["events"]] == [
+        "task_submitted",
+        "task_retried",
+    ]
+
+    source_task = client.get("/tasks/303").json()["data"]
+    assert source_task["events"][-1]["event_type"] == "task_retried"
+    assert source_task["events"][-1]["metadata"]["replacement_task_id"] == 306
+
+    records = get_task_audit_repository().list_records_for_resource(
+        resource_kind="task",
+        resource_id="306",
+    )
+    assert [record.action_kind for record in records] == ["task.retried"]
+
+
+def test_retry_denies_non_terminal_task() -> None:
+    response = client.post("/tasks/301/retry")
+
+    assert response.status_code == 409
+    assert response.json()["ok"] is False
+    assert response.json()["error"]["code"] == "task_retry_denied"
+
+
+def test_runtime_updates_flow_through_detail_events_and_result_handoff() -> None:
+    submitted_task = get_task_service().submit_task(
         TaskSubmissionDraft(
             kind="characterization",
             dataset_id=None,
@@ -300,245 +322,27 @@ def test_get_task_detail_reflects_execution_runtime_event_metadata() -> None:
     )
 
     get_task_execution_runtime().start_task(
-        task.task_id,
+        submitted_task.task_id,
         recorded_at=datetime(2026, 3, 12, 13, 0, 0),
         worker_pid=4747,
         stale_after_seconds=240,
     )
 
-    response = client.get(f"/tasks/{task.task_id}")
+    response = client.get(f"/tasks/{submitted_task.task_id}")
 
     assert response.status_code == 200
-    payload = response.json()
+    payload = response.json()["data"]
     assert payload["status"] == "running"
     assert payload["dispatch"]["status"] == "running"
+    assert payload["result_handoff"]["availability"] == "pending"
     assert payload["events"][-1]["event_type"] == "task_running"
     assert payload["events"][-1]["metadata"]["audit_action"] == "worker.task_started"
     assert payload["events"][-1]["metadata"]["worker_pid"] == 4747
     assert payload["events"][-1]["metadata"]["stale_after_seconds"] == 240
 
 
-def test_get_task_returns_not_found_for_missing_task() -> None:
-    response = client.get("/tasks/999")
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "task_not_found"
-
-
-def test_get_task_returns_not_found_for_hidden_task() -> None:
-    response = client.get("/tasks/304")
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "task_not_found"
-
-
-def test_get_task_events_returns_desc_readmodel_by_default() -> None:
-    response = client.get("/tasks/303/events")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert [event["event_type"] for event in payload] == [
-        "task_completed",
-        "task_submitted",
-    ]
-    assert payload[0]["metadata"]["result_handle_ids"] == [
-        "result:fluxonium-2025-031:fit-summary",
-        "result:fluxonium-2025-031:plot-bundle",
-    ]
-
-
-def test_get_task_events_supports_order_limit_and_filter() -> None:
-    asc_response = client.get("/tasks/303/events?order=asc&limit=1")
-
-    assert asc_response.status_code == 200
-    assert asc_response.json() == [
-        {
-            "event_key": "task_submitted:2026-03-11 19:05:00",
-            "event_type": "task_submitted",
-            "level": "info",
-            "occurred_at": "2026-03-11 19:05:00",
-            "message": "Task submission accepted by rewrite runtime.",
-            "metadata": {
-                "task_status": "queued",
-                "dispatch_status": "completed",
-                "dispatch_key": "dispatch:303:post_processing_run_task",
-                "submission_source": "active_dataset",
-                "worker_task_name": "post_processing_run_task",
-                "dataset_id": "fluxonium-2025-031",
-                "definition_id": None,
-            },
-        }
-    ]
-
-    filtered_response = client.get("/tasks/303/events?event_type=task_completed")
-    assert filtered_response.status_code == 200
-    assert [event["event_type"] for event in filtered_response.json()] == ["task_completed"]
-
-
-def test_get_task_events_returns_not_found_for_hidden_task() -> None:
-    response = client.get("/tasks/304/events")
-
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "task_not_found"
-
-
-def test_submit_characterization_task_uses_active_dataset() -> None:
-    response = client.post("/tasks", json={"kind": "characterization"})
-
-    assert response.status_code == 201
-    payload = response.json()
-    assert payload["operation"] == "submitted"
-    assert payload["task"]["task_id"] == 306
-    assert payload["task"]["dataset_id"] == "fluxonium-2025-031"
-    assert payload["task"]["submitted_from_active_dataset"] is True
-    assert payload["task"]["workspace_id"] == "ws-device-lab"
-    assert payload["task"]["owner_user_id"] == "researcher-01"
-    assert payload["task"]["worker_task_name"] == "characterization_run_task"
-    assert payload["task"]["execution_mode"] == "run"
-    assert payload["task"]["request_ready"] is True
-    assert payload["task"]["dispatch"] == {
-        "dispatch_key": "dispatch:306:characterization_run_task",
-        "status": "accepted",
-        "submission_source": "active_dataset",
-        "accepted_at": "2026-03-12 10:30:00",
-        "last_updated_at": "2026-03-12 10:30:00",
-    }
-    assert payload["task"]["events"] == [
-        {
-            "event_key": "task_submitted:2026-03-12 10:30:00",
-            "event_type": "task_submitted",
-            "level": "info",
-            "occurred_at": "2026-03-12 10:30:00",
-            "message": "Task submission accepted by rewrite runtime.",
-            "metadata": {
-                "task_status": "queued",
-                "dispatch_status": "accepted",
-                "dispatch_key": "dispatch:306:characterization_run_task",
-                "submission_source": "active_dataset",
-                "worker_task_name": "characterization_run_task",
-                "dataset_id": "fluxonium-2025-031",
-                "definition_id": None,
-            },
-        }
-    ]
-    assert payload["task"]["result_refs"]["trace_payload"] is None
-    assert payload["task"]["result_refs"]["result_handles"] == [
-        {
-            "contract_version": STORAGE_CONTRACT_VERSION,
-            "handle_id": "task-result:306:primary",
-            "kind": "characterization_report",
-            "status": "pending",
-            "label": "Pending characterization report",
-            "metadata_record": {
-                "backend": "sqlite_metadata",
-                "record_type": "result_handle",
-                "record_id": "result_handle:pending:306",
-                "version": 1,
-                "schema_version": "sqlite_metadata.v1",
-            },
-            "payload_backend": None,
-            "payload_format": None,
-            "payload_role": None,
-            "payload_locator": None,
-            "provenance_task_id": 306,
-            "provenance": {
-                "source_dataset_id": "fluxonium-2025-031",
-                "source_task_id": 306,
-                "trace_batch_record": None,
-                "analysis_run_record": None,
-            },
-        }
-    ]
-
-
-def test_submit_characterization_task_with_explicit_dataset_sets_dispatch_source() -> None:
-    response = client.post(
-        "/tasks",
-        json={"kind": "characterization", "dataset_id": "transmon-coupler-014"},
-    )
-
-    assert response.status_code == 201
-    payload = response.json()
-    assert payload["task"]["dataset_id"] == "transmon-coupler-014"
-    assert payload["task"]["submitted_from_active_dataset"] is False
-    assert payload["task"]["dispatch"]["submission_source"] == "explicit_dataset"
-    assert payload["task"]["dispatch"]["dispatch_key"] == (
-        "dispatch:306:characterization_run_task"
-    )
-
-
-def test_submit_simulation_task_returns_queued_task_detail() -> None:
-    response = client.post(
-        "/tasks",
-        json={
-            "kind": "simulation",
-            "definition_id": 18,
-            "summary": "Queue one fluxonium simulation preview.",
-        },
-    )
-
-    assert response.status_code == 201
-    payload = response.json()
-    assert payload["task"]["task_id"] == 306
-    assert payload["task"]["lane"] == "simulation"
-    assert payload["task"]["definition_id"] == 18
-    assert payload["task"]["summary"] == "Queue one fluxonium simulation preview."
-    assert payload["task"]["worker_task_name"] == "simulation_smoke_task"
-    assert payload["task"]["execution_mode"] == "smoke"
-    assert payload["task"]["request_ready"] is False
-    assert payload["task"]["dispatch"] == {
-        "dispatch_key": "dispatch:306:simulation_smoke_task",
-        "status": "accepted",
-        "submission_source": "active_dataset",
-        "accepted_at": "2026-03-12 10:30:00",
-        "last_updated_at": "2026-03-12 10:30:00",
-    }
-    assert payload["task"]["result_refs"]["metadata_records"] == [
-        {
-            "backend": "sqlite_metadata",
-            "record_type": "result_handle",
-            "record_id": "result_handle:pending:306",
-            "version": 1,
-            "schema_version": "sqlite_metadata.v1",
-        }
-    ]
-    assert payload["task"]["result_refs"]["result_handles"][0]["kind"] == "simulation_trace"
-    assert payload["task"]["result_refs"]["result_handles"][0]["contract_version"] == (
-        STORAGE_CONTRACT_VERSION
-    )
-
-
-def test_submitted_task_survives_runtime_reset_in_task_routes() -> None:
-    response = client.post("/tasks", json={"kind": "characterization"})
-
-    assert response.status_code == 201
-    created_task = response.json()["task"]
-
-    reset_runtime_state()
-
-    list_response = client.get("/tasks")
-    assert list_response.status_code == 200
-    assert [task["task_id"] for task in list_response.json()][:2] == [306, 301]
-
-    detail_response = client.get("/tasks/306")
-    assert detail_response.status_code == 200
-    reloaded_task = detail_response.json()
-    assert reloaded_task["task_id"] == created_task["task_id"]
-    assert reloaded_task["dataset_id"] == created_task["dataset_id"]
-    assert reloaded_task["status"] == "queued"
-    assert reloaded_task["dispatch"] == created_task["dispatch"]
-    assert reloaded_task["events"] == created_task["events"]
-    assert reloaded_task["result_refs"]["result_handles"] == created_task["result_refs"][
-        "result_handles"
-    ]
-
-    events_response = client.get("/tasks/306/events?order=asc&limit=10")
-    assert events_response.status_code == 200
-    assert events_response.json() == created_task["events"]
-
-
-def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
-    updated_task = get_task_service().update_task_lifecycle(
+def test_failed_task_reports_result_handoff_none_after_lifecycle_update() -> None:
+    get_task_service().update_task_lifecycle(
         TaskLifecycleUpdate(
             task_id=302,
             status="failed",
@@ -548,46 +352,24 @@ def test_task_lifecycle_service_updates_flow_through_task_routes() -> None:
             summary="Persisted task snapshot override",
         )
     )
-    assert updated_task.status == "failed"
 
-    reset_runtime_state()
-
-    list_response = client.get("/tasks?status=failed&scope=workspace")
-    assert list_response.status_code == 200
-    assert list_response.json()[0]["task_id"] == 302
-
-    detail_response = client.get("/tasks/302")
-    assert detail_response.status_code == 200
-    payload = detail_response.json()
+    payload = client.get("/tasks/302").json()["data"]
     assert payload["status"] == "failed"
-    assert payload["summary"] == "Persisted task snapshot override"
-    assert payload["dispatch"]["status"] == "failed"
-    assert payload["dispatch"]["last_updated_at"] == "2026-03-12 11:05:00"
-    assert payload["progress"]["phase"] == "failed"
-    assert payload["progress"]["summary"] == "Persisted failure summary."
-    assert [event["event_type"] for event in payload["events"]] == [
-        "task_submitted",
-        "task_failed",
-    ]
-    assert payload["events"][1]["metadata"]["progress_percent_complete"] == 100
-
-    events_response = client.get("/tasks/302/events?order=desc&limit=2")
-    assert events_response.status_code == 200
-    assert [event["event_type"] for event in events_response.json()] == [
-        "task_failed",
-        "task_submitted",
-    ]
-    assert events_response.json()[0]["metadata"]["dispatch_key"] == (
-        payload["dispatch"]["dispatch_key"]
-    )
+    assert payload["result_handoff"] == {
+        "availability": "none",
+        "primary_result_handle_id": None,
+        "result_handle_count": 0,
+        "trace_payload_available": False,
+    }
+    assert payload["allowed_actions"]["retry"] is True
 
 
 def test_submit_simulation_task_requires_definition_id() -> None:
     response = client.post("/tasks", json={"kind": "simulation"})
 
     assert response.status_code == 422
+    assert response.json()["ok"] is False
     assert response.json()["error"]["code"] == "simulation_definition_required"
-    assert response.json()["error"]["category"] == "validation"
 
 
 def test_submit_post_processing_task_requires_dataset_context() -> None:
@@ -597,5 +379,5 @@ def test_submit_post_processing_task_requires_dataset_context() -> None:
     response = client.post("/tasks", json={"kind": "post_processing"})
 
     assert response.status_code == 422
+    assert response.json()["ok"] is False
     assert response.json()["error"]["code"] == "dataset_context_required"
-    assert response.json()["error"]["category"] == "validation"

@@ -64,6 +64,12 @@ class TaskSnapshotRepository(Protocol):
         metadata: Mapping[str, object],
     ) -> None: ...
 
+    def append_task_event(
+        self,
+        task_id: int,
+        event: TaskEvent,
+    ) -> None: ...
+
 
 class PersistedRewriteTaskRepository:
     def __init__(
@@ -156,6 +162,13 @@ class PersistedRewriteTaskRepository:
             event_key,
             metadata,
         )
+
+    def append_task_event(
+        self,
+        task_id: int,
+        event: TaskEvent,
+    ) -> None:
+        self._task_snapshot_repository.append_task_event(task_id, event)
 
     def _ensure_seed_task_snapshots(self) -> None:
         if self._task_snapshot_repository.has_tasks():

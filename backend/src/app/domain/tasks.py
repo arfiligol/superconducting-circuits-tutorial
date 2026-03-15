@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, cast
 
@@ -33,9 +34,19 @@ from src.app.domain.storage import MetadataRecordRef, ResultHandleRef, TracePayl
 TaskKind = Literal["simulation", "post_processing", "characterization"]
 TaskLane = Literal["simulation", "characterization"]
 TaskStatus = Literal["queued", "running", "completed", "failed"]
+TaskControlState = Literal["none", "cancellation_requested", "termination_requested"]
 TaskQueueBackend = Literal["in_memory_scaffold"]
 TaskVisibilityScope = Literal["workspace", "owned"]
-TaskEventType = TaskExecutionHistoryEventType
+TaskResultAvailability = Literal["pending", "ready", "none"]
+TaskEventType = Literal[
+    "task_submitted",
+    "task_running",
+    "task_completed",
+    "task_failed",
+    "task_cancellation_requested",
+    "task_termination_requested",
+    "task_retried",
+]
 TaskEventLevel = TaskExecutionHistoryLevel
 TaskEventMetadataValue = TaskExecutionHistoryMetadataValue
 TaskEventOrder = Literal["asc", "desc"]
@@ -93,6 +104,58 @@ TaskEvent = TaskExecutionHistoryEvent
 
 
 @dataclass(frozen=True)
+class TaskAllowedActions:
+    attach: bool
+    cancel: bool
+    terminate: bool
+    retry: bool
+    rejection_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class TaskResultHandoff:
+    availability: TaskResultAvailability
+    primary_result_handle_id: str | None
+    result_handle_count: int
+    trace_payload_available: bool
+
+
+@dataclass(frozen=True)
+class WorkerLaneSummary:
+    lane: TaskLane
+    healthy_processors: int
+    busy_processors: int
+    degraded_processors: int
+    draining_processors: int
+    offline_processors: int
+
+
+@dataclass(frozen=True)
+class TaskQueueRow:
+    task_id: int
+    summary: str
+    status: TaskStatus
+    control_state: TaskControlState
+    lane: TaskLane
+    task_kind: TaskKind
+    owner_display_name: str
+    visibility_scope: TaskVisibilityScope
+    updated_at: str
+    result_availability: TaskResultAvailability
+    allowed_actions: TaskAllowedActions
+
+
+@dataclass(frozen=True)
+class TaskQueueView:
+    rows: tuple[TaskQueueRow, ...]
+    worker_summary: tuple[WorkerLaneSummary, ...]
+    total_count: int
+    next_cursor: str | None
+    prev_cursor: str | None
+    has_more: bool
+
+
+@dataclass(frozen=True)
 class TaskDetail(TaskSummary):
     queue_backend: TaskQueueBackend
     worker_task_name: WorkerTaskName
@@ -100,6 +163,8 @@ class TaskDetail(TaskSummary):
     submitted_from_active_dataset: bool
     progress: TaskProgress
     result_refs: TaskResultRefs
+    control_state: TaskControlState = "none"
+    retry_of_task_id: int | None = None
     dispatch: TaskDispatch | None = None
     events: tuple[TaskEvent, ...] = ()
 
@@ -110,6 +175,7 @@ class TaskListQuery:
     lane: TaskLane | None = None
     scope: TaskVisibilityScope = "workspace"
     dataset_id: str | None = None
+    search_query: str | None = None
     limit: int = 20
 
 
@@ -152,6 +218,7 @@ class TaskCreateDraft:
     request_ready: bool
     submitted_from_active_dataset: bool
     submission_source: TaskSubmissionSource
+    retry_of_task_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -227,3 +294,81 @@ def build_task_lifecycle_event(task: TaskDetail) -> TaskEvent | None:
 
 def build_task_event_history(task: TaskDetail) -> tuple[TaskEvent, ...]:
     return build_task_execution_history(_build_task_history_context(task))
+
+
+def build_task_control_event(
+    *,
+    task: TaskDetail,
+    control_state: TaskControlState,
+    occurred_at: str,
+    actor_user_id: str,
+) -> TaskEvent:
+    event_type: TaskEventType
+    message: str
+    audit_action: str
+    if control_state == "cancellation_requested":
+        event_type = "task_cancellation_requested"
+        message = "Cancellation was requested for the task."
+        audit_action = "task.cancel_requested"
+    else:
+        event_type = "task_termination_requested"
+        message = "Force termination was requested for the task."
+        audit_action = "task.terminate_requested"
+    return TaskEvent(
+        event_key=f"{event_type}:{occurred_at}",
+        event_type=cast(TaskExecutionHistoryEventType, event_type),
+        level="warning",
+        occurred_at=occurred_at,
+        message=message,
+        metadata={
+            "task_status": task.status,
+            "dispatch_status": task.dispatch.status if task.dispatch is not None else None,
+            "dispatch_key": task.dispatch.dispatch_key if task.dispatch is not None else None,
+            "worker_task_name": task.worker_task_name,
+            "actor_user_id": actor_user_id,
+            "audit_action": audit_action,
+        },
+    )
+
+
+def build_task_retry_event(
+    *,
+    source_task: TaskDetail,
+    replacement_task_id: int,
+    occurred_at: str,
+    actor_user_id: str,
+) -> TaskEvent:
+    return TaskEvent(
+        event_key=f"task_retried:{occurred_at}",
+        event_type=cast(TaskExecutionHistoryEventType, "task_retried"),
+        level="info",
+        occurred_at=occurred_at,
+        message="A retry task was created from the current task snapshot.",
+        metadata={
+            "task_status": source_task.status,
+            "dispatch_status": source_task.dispatch.status if source_task.dispatch is not None else None,
+            "dispatch_key": source_task.dispatch.dispatch_key if source_task.dispatch is not None else None,
+            "replacement_task_id": replacement_task_id,
+            "actor_user_id": actor_user_id,
+            "audit_action": "task.retried",
+        },
+    )
+
+
+def resolve_task_control_state(events: Sequence[TaskEvent]) -> TaskControlState:
+    for event in reversed(tuple(events)):
+        if event.event_type in {"task_completed", "task_failed"}:
+            return "none"
+        if event.event_type == "task_termination_requested":
+            return "termination_requested"
+        if event.event_type == "task_cancellation_requested":
+            return "cancellation_requested"
+    return "none"
+
+
+def resolve_retry_of_task_id(events: Sequence[TaskEvent]) -> int | None:
+    for event in events:
+        retry_of_task_id = event.metadata.get("retry_of_task_id")
+        if isinstance(retry_of_task_id, int):
+            return retry_of_task_id
+    return None

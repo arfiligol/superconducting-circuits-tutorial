@@ -25,6 +25,8 @@ from src.app.domain.tasks import (
     TaskVisibilityScope,
     build_task_dispatch,
     build_task_event_history,
+    resolve_retry_of_task_id,
+    resolve_task_control_state,
 )
 from src.app.infrastructure.persistence.models import (
     RewriteTaskDispatchRecord,
@@ -231,6 +233,27 @@ class SqliteRewriteTaskSnapshotRepository:
             row.metadata_json = merged_metadata
             session.commit()
 
+    def append_task_event(
+        self,
+        task_id: int,
+        event: TaskEvent,
+    ) -> None:
+        with self._session_factory() as session:
+            existing = session.scalar(
+                select(RewriteTaskEventRecord).where(
+                    RewriteTaskEventRecord.task_id == task_id,
+                    RewriteTaskEventRecord.event_key == event.event_key,
+                )
+            )
+            if existing is not None:
+                _apply_task_event_row(existing, event)
+                session.commit()
+                return
+            row = RewriteTaskEventRecord(task_id=task_id, event_key=event.event_key)
+            _apply_task_event_row(row, event)
+            session.add(row)
+            session.commit()
+
 
 def _upsert_dispatch_row(
     session: Session,
@@ -368,6 +391,7 @@ def _to_task_detail(
     *,
     result_refs: TaskResultRefs | None = None,
 ) -> TaskDetail:
+    events = _to_task_events(event_rows)
     return TaskDetail(
         task_id=row.task_id,
         kind=cast(TaskKind, row.kind),
@@ -394,8 +418,10 @@ def _to_task_detail(
             updated_at=row.progress_updated_at,
         ),
         result_refs=result_refs or _empty_result_refs(),
+        control_state=resolve_task_control_state(events),
+        retry_of_task_id=resolve_retry_of_task_id(events),
         dispatch=_to_task_dispatch(dispatch_row),
-        events=_to_task_events(event_rows),
+        events=events,
     )
 
 

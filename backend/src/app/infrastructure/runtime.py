@@ -7,6 +7,7 @@ from src.app.infrastructure.persistence import (
     create_metadata_session_factory,
 )
 from src.app.infrastructure.rewrite_app_state_repository import InMemoryRewriteAppStateRepository
+from src.app.infrastructure.rewrite_task_audit_repository import InMemoryTaskAuditRepository
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 from src.app.infrastructure.rewrite_execution_runtime import RewriteExecutionRuntime
 from src.app.infrastructure.rewrite_task_repository import PersistedRewriteTaskRepository
@@ -57,6 +58,11 @@ def get_rewrite_task_repository() -> PersistedRewriteTaskRepository:
     )
 
 
+@lru_cache(maxsize=1)
+def get_task_audit_repository() -> InMemoryTaskAuditRepository:
+    return InMemoryTaskAuditRepository()
+
+
 def get_health_service() -> HealthService:
     settings = get_settings()
     return HealthService(
@@ -101,6 +107,7 @@ def get_session_service() -> SessionService:
 def get_task_service() -> TaskService:
     return TaskService(
         repository=get_rewrite_task_repository(),
+        audit_repository=get_task_audit_repository(),
         session_repository=get_rewrite_app_state_repository(),
         dataset_repository=get_rewrite_catalog_repository(),
         circuit_definition_repository=get_rewrite_catalog_repository(),
@@ -122,6 +129,7 @@ def reset_runtime_state() -> None:
     get_storage_metadata_repository.cache_clear()
     get_task_snapshot_repository.cache_clear()
     get_rewrite_task_repository.cache_clear()
+    get_task_audit_repository.cache_clear()
     get_dataset_service.cache_clear()
     get_circuit_definition_service.cache_clear()
     get_schemdraw_render_service.cache_clear()

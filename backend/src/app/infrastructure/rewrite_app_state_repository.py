@@ -23,6 +23,8 @@ from src.app.domain.tasks import (
     TaskLifecycleUpdate,
     TaskProgress,
     TaskResultRefs,
+    resolve_retry_of_task_id,
+    resolve_task_control_state,
 )
 from src.app.infrastructure.storage_reference_factory import (
     build_metadata_record_ref,
@@ -67,6 +69,8 @@ class TaskSnapshotRepository(Protocol):
     def create_task(self, draft: TaskCreateDraft) -> TaskDetail: ...
 
     def save_task_snapshot(self, task: TaskDetail) -> TaskDetail: ...
+
+    def append_task_event(self, task_id: int, event: TaskEvent) -> None: ...
 
 
 class InMemoryRewriteAppStateRepository:
@@ -264,6 +268,24 @@ class InMemoryRewriteAppStateRepository:
         hydrated_task = self._hydrate_task(updated_task)
         self._tasks[update.task_id] = hydrated_task
         return hydrated_task
+
+    def append_task_event(self, task_id: int, event: TaskEvent) -> None:
+        current_task = self.get_task(task_id)
+        if current_task is None:
+            return
+        updated_task = replace(
+            current_task,
+            control_state=resolve_task_control_state((*current_task.events, event)),
+            retry_of_task_id=resolve_retry_of_task_id((*current_task.events, event)),
+            events=(*current_task.events, event),
+        )
+        if self._task_snapshot_repository is not None:
+            self._task_snapshot_repository.append_task_event(task_id, event)
+            persisted_task = self._task_snapshot_repository.get_task(task_id)
+            if persisted_task is not None:
+                self._tasks[task_id] = persisted_task
+            return
+        self._tasks[task_id] = updated_task
 
     def _persist_seed_task_snapshots(self) -> None:
         if self._task_snapshot_repository is None:
