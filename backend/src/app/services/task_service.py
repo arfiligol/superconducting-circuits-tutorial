@@ -528,18 +528,25 @@ class TaskService:
         if self._audit_repository is None:
             return
         session = self._session_repository.get_session_state()
+        occurred_at = _generated_at()
+        actor_display_name = session.user.display_name if session.user is not None else "anonymous"
+        correlation_id = f"corr:{action_kind}:{resource_id}"
+        audit_suffix = occurred_at.replace(":", "-").replace("+", "z")
         self._audit_repository.append(
             AuditRecord(
-                audit_id=f"audit:{action_kind}:{resource_id}:{_generated_at()}",
-                occurred_at=_generated_at(),
+                audit_id=f"audit:{action_kind}:{resource_id}:{audit_suffix}",
+                occurred_at=occurred_at,
                 actor_user_id=_session_user_id(session),
+                actor_display_name=actor_display_name,
                 session_id=session.session_id,
+                correlation_id=correlation_id,
                 workspace_id=session.workspace_id,
                 action_kind=action_kind,
                 resource_kind="task",
                 resource_id=resource_id,
                 outcome=outcome,
                 payload=payload,
+                debug_ref=f"debug:{action_kind}:{resource_id}",
             )
         )
 

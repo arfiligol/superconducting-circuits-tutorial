@@ -11,6 +11,7 @@ from src.app.infrastructure.rewrite_task_audit_repository import InMemoryTaskAud
 from src.app.infrastructure.rewrite_catalog_repository import InMemoryRewriteCatalogRepository
 from src.app.infrastructure.rewrite_execution_runtime import RewriteExecutionRuntime
 from src.app.infrastructure.rewrite_task_repository import PersistedRewriteTaskRepository
+from src.app.services.audit_log_service import AuditLogService
 from src.app.services.circuit_definition_service import CircuitDefinitionService
 from src.app.services.dataset_service import DatasetService
 from src.app.services.health_service import HealthService
@@ -104,6 +105,14 @@ def get_session_service() -> SessionService:
 
 
 @lru_cache(maxsize=1)
+def get_audit_log_service() -> AuditLogService:
+    return AuditLogService(
+        repository=get_task_audit_repository(),
+        session_repository=get_rewrite_app_state_repository(),
+    )
+
+
+@lru_cache(maxsize=1)
 def get_task_service() -> TaskService:
     return TaskService(
         repository=get_rewrite_task_repository(),
@@ -134,5 +143,6 @@ def reset_runtime_state() -> None:
     get_circuit_definition_service.cache_clear()
     get_schemdraw_render_service.cache_clear()
     get_session_service.cache_clear()
+    get_audit_log_service.cache_clear()
     get_task_service.cache_clear()
     get_task_execution_runtime.cache_clear()
