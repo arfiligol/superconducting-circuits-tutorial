@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 from sc_backend import ApiErrorBodyResponse, BackendContractError
+
+if TYPE_CHECKING:
+    from sc_cli.local_interchange import LocalResultBundle
 
 TaskKindValue = Literal["simulation", "post_processing", "characterization"]
 TaskLaneValue = Literal["simulation", "characterization"]
@@ -738,7 +741,7 @@ def export_task_result_bundle(task_id: int):
     return build_result_bundle(task)
 
 
-def import_task_result_bundle(bundle) -> LocalTaskDetail:
+def import_task_result_bundle(bundle: LocalResultBundle) -> LocalTaskDetail:
     task_id = _STATE.next_task_id
     _STATE.next_task_id += 1
     imported_result_refs = bundle.result_refs.model_copy(deep=True)

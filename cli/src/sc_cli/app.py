@@ -38,5 +38,5 @@ app.add_typer(simulation.app, name="simulation", help="Operate on simulation-lan
 app.add_typer(
     circuit_definition.app,
     name="circuit-definition",
-    help="Inspect canonical circuit-definition inputs via sc_core.",
+    help="Inspect and exchange local circuit-definition catalog entries.",
 )

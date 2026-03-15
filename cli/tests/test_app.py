@@ -124,6 +124,33 @@ def _task_without_result_handles_id() -> int:
     )
 
 
+def _canonical_definition_source(name: str) -> str:
+    return "\n".join(
+        [
+            f"name: {name}",
+            "components:",
+            "  - name: R1",
+            "    default: 50.0",
+            "    unit: Ohm",
+            "  - name: C1",
+            "    default: 100.0",
+            "    unit: fF",
+            "  - name: Lj1",
+            "    default: 1000.0",
+            "    unit: pH",
+            "  - name: C2",
+            "    default: 1000.0",
+            "    unit: fF",
+            "topology:",
+            '  - [P1, "1", "0", 1]',
+            '  - [R1, "1", "0", "R1"]',
+            '  - [C1, "1", "2", "C1"]',
+            '  - [Lj1, "2", "0", "Lj1"]',
+            '  - [C2, "2", "0", "C2"]',
+        ]
+    )
+
+
 def _require_backend_catalog_facade() -> None:
     try:
         importlib.import_module("sc_backend.rewrite_cli")
@@ -169,7 +196,6 @@ def test_circuit_definition_inspect_command_delegates_to_sc_core(tmp_path: Path)
 
 
 def test_circuit_definition_inspect_command_supports_definition_id() -> None:
-    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "inspect", "--definition-id", "18"])
@@ -181,7 +207,6 @@ def test_circuit_definition_inspect_command_supports_definition_id() -> None:
 
 
 def test_circuit_definition_list_command_reads_rewrite_state() -> None:
-    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "list"])
@@ -193,7 +218,6 @@ def test_circuit_definition_list_command_reads_rewrite_state() -> None:
 
 
 def test_circuit_definition_list_command_supports_json_output() -> None:
-    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "list", "--output", "json"])
@@ -228,21 +252,9 @@ def test_circuit_definition_inspect_command_supports_json_output(tmp_path: Path)
 
 
 def test_circuit_definition_create_command_persists_local_source(tmp_path: Path) -> None:
-    _require_backend_catalog_facade()
     source_file = tmp_path / "created.circuit.yaml"
     source_file.write_text(
-        "\n".join(
-            [
-                "circuit:",
-                "  name: fluxonium_cli_create",
-                "  family: fluxonium",
-                "  elements:",
-                "    junction:",
-                "      ej_ghz: 8.91",
-                "    capacitance:",
-                "      ec_ghz: 1.17",
-            ]
-        ),
+        _canonical_definition_source("FluxoniumCliCreate"),
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -265,21 +277,9 @@ def test_circuit_definition_create_command_persists_local_source(tmp_path: Path)
 
 
 def test_circuit_definition_create_command_supports_json_output(tmp_path: Path) -> None:
-    _require_backend_catalog_facade()
     source_file = tmp_path / "created-json.circuit.yaml"
     source_file.write_text(
-        "\n".join(
-            [
-                "circuit:",
-                "  name: transmon_cli_create",
-                "  family: transmon",
-                "  elements:",
-                "    coupler:",
-                "      g_mhz: 12.4",
-                "    bus:",
-                "      resonance_ghz: 6.94",
-            ]
-        ),
+        _canonical_definition_source("TransmonCliCreate"),
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -306,7 +306,6 @@ def test_circuit_definition_create_command_supports_json_output(tmp_path: Path) 
 def test_circuit_definition_create_command_uses_structured_validation_error(
     tmp_path: Path,
 ) -> None:
-    _require_backend_catalog_facade()
     source_file = tmp_path / "blank.circuit.yaml"
     source_file.write_text("   \n", encoding="utf-8")
     runner = CliRunner()
@@ -330,23 +329,9 @@ def test_circuit_definition_create_command_uses_structured_validation_error(
 
 
 def test_circuit_definition_update_command_updates_existing_definition(tmp_path: Path) -> None:
-    _require_backend_catalog_facade()
     source_file = tmp_path / "updated.circuit.yaml"
     source_file.write_text(
-        "\n".join(
-            [
-                "circuit:",
-                "  name: floating_qubit_cli_update",
-                "  family: fluxonium",
-                "  elements:",
-                "    junction:",
-                "      ej_ghz: 8.73",
-                "    shunt_inductor:",
-                "      el_ghz: 0.47",
-                "    capacitance:",
-                "      ec_ghz: 1.19",
-            ]
-        ),
+        _canonical_definition_source("FloatingQubitCliUpdate"),
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -370,21 +355,9 @@ def test_circuit_definition_update_command_updates_existing_definition(tmp_path:
 
 
 def test_circuit_definition_update_command_supports_json_output(tmp_path: Path) -> None:
-    _require_backend_catalog_facade()
     source_file = tmp_path / "updated-json.circuit.yaml"
     source_file.write_text(
-        "\n".join(
-            [
-                "circuit:",
-                "  name: readout_chain_cli_update",
-                "  family: fluxonium",
-                "  elements:",
-                "    readout:",
-                "      resonator_ghz: 6.92",
-                "    coupling:",
-                "      chi_mhz: 2.8",
-            ]
-        ),
+        _canonical_definition_source("ReadoutChainCliUpdate"),
         encoding="utf-8",
     )
     runner = CliRunner()
@@ -410,7 +383,6 @@ def test_circuit_definition_update_command_supports_json_output(tmp_path: Path) 
 
 
 def test_circuit_definition_delete_command_deletes_definition() -> None:
-    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "delete", "7", "--yes"])
@@ -421,7 +393,6 @@ def test_circuit_definition_delete_command_deletes_definition() -> None:
 
 
 def test_circuit_definition_delete_command_supports_json_output() -> None:
-    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "delete", "7", "--yes", "--output", "json"])
@@ -432,13 +403,90 @@ def test_circuit_definition_delete_command_supports_json_output() -> None:
 
 
 def test_circuit_definition_delete_command_requires_confirmation() -> None:
-    _require_backend_catalog_facade()
     runner = CliRunner()
 
     result = runner.invoke(app, ["circuit-definition", "delete", "7"])
 
     assert result.exit_code == 2
-    assert "error: Pass --yes to delete a persisted circuit definition." in result.output
+    assert "error: Pass --yes to delete a persisted local circuit definition." in result.output
+
+
+def test_circuit_definition_export_bundle_command_writes_lineage_preserving_bundle(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    bundle_file = tmp_path / "definition-bundle.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "export-bundle",
+            "18",
+            str(bundle_file),
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert bundle_file.exists()
+    stdout_payload = json.loads(result.stdout)
+    bundle_payload = json.loads(bundle_file.read_text(encoding="utf-8"))
+    assert stdout_payload["bundle_file"] == str(bundle_file)
+    assert bundle_payload["metadata"]["bundle_family"] == "definition_bundle"
+    assert bundle_payload["definition"]["definition_id"] == 18
+    assert bundle_payload["definition"]["source_text"].startswith("name:")
+    assert bundle_payload["definition"]["validation_summary"]["status"] == "warning"
+    assert bundle_payload["definition"]["preview_artifact_count"] == 3
+
+
+def test_circuit_definition_import_bundle_command_round_trips_into_local_catalog(
+    tmp_path: Path,
+) -> None:
+    runner = CliRunner()
+    bundle_file = tmp_path / "definition-roundtrip.json"
+
+    export_result = runner.invoke(
+        app,
+        ["circuit-definition", "export-bundle", "18", str(bundle_file)],
+    )
+    assert export_result.exit_code == 0
+
+    import_result = runner.invoke(
+        app,
+        ["circuit-definition", "import-bundle", str(bundle_file), "--output", "json"],
+    )
+
+    assert import_result.exit_code == 0
+    import_payload = json.loads(import_result.stdout)
+    expected_bundle_id = "bundle:definition:18"
+    imported_definition_id = import_payload["imported_definition"]["definition_id"]
+    assert import_payload["bundle"]["metadata"]["bundle_id"] == expected_bundle_id
+    assert imported_definition_id > 18
+    assert (
+        import_payload["imported_definition"]["lineage"]["source_definition_id"] == 18
+    )
+    assert (
+        import_payload["imported_definition"]["lineage"]["imported_from_bundle_id"]
+        == expected_bundle_id
+    )
+
+    show_result = runner.invoke(
+        app,
+        [
+            "circuit-definition",
+            "inspect",
+            "--definition-id",
+            str(imported_definition_id),
+            "--output",
+            "json",
+        ],
+    )
+
+    assert show_result.exit_code == 0
+    assert f'"definition_id": {imported_definition_id}' in show_result.stdout
+    assert f'"imported_from_bundle_id": "{expected_bundle_id}"' in show_result.stdout
 
 
 def test_session_show_command_reads_rewrite_session_state() -> None:

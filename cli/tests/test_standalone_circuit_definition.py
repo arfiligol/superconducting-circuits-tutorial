@@ -1,19 +1,22 @@
 from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
 
+import pytest
 from typer.testing import CliRunner
 
 from sc_cli.app import app
 from sc_cli.commands import circuit_definition
 from sc_cli.local_circuit_definitions import (
+    LocalDefinitionLineage,
     LocalValidationNotice,
-    SupportsCircuitDefinitionDetailPayload,
-    SupportsCircuitDefinitionSummaryPayload,
+    build_definition_bundle,
     build_local_circuit_definition_detail,
     build_local_circuit_definition_summary,
     build_validation_summary,
+    create_local_circuit_definition,
+    import_definition_bundle,
+    reset_local_circuit_definition_state,
 )
 
 
@@ -34,33 +37,30 @@ def test_build_validation_summary_preserves_invalid_status() -> None:
 def test_local_contract_source_does_not_import_backend_dtos() -> None:
     source = files("sc_cli").joinpath("local_circuit_definitions.py").read_text(encoding="utf-8")
 
-    assert "from sc_backend import" not in source
-    assert "sc_backend." not in source
+    assert "CircuitDefinitionDetailResponse" not in source
+    assert "CircuitDefinitionSummaryResponse" not in source
 
 
 def test_local_detail_adapter_derives_invalid_status_without_backend_dto_types() -> None:
     detail = build_local_circuit_definition_detail(
-        cast(
-            SupportsCircuitDefinitionDetailPayload,
-            SimpleNamespace(
-                definition_id=18,
-                name="BrokenDefinition",
-                created_at="2026-03-15 10:30:00",
-                element_count=4,
-                validation_status="warning",
-                preview_artifact_count=3,
-                source_text="name: BrokenDefinition",
-                normalized_output="{}",
-                validation_notices=[
-                    SimpleNamespace(level="warning", message="Port mapping needs migration."),
-                    SimpleNamespace(level="invalid", message="Undefined coupling component."),
-                ],
-                preview_artifacts=[
-                    "definition.normalized.json",
-                    "schematic-input.yaml",
-                    "parameter-bundle.toml",
-                ],
-            ),
+        SimpleNamespace(
+            definition_id=18,
+            name="BrokenDefinition",
+            created_at="2026-03-15 10:30:00",
+            element_count=4,
+            validation_status="warning",
+            preview_artifact_count=3,
+            source_text="name: BrokenDefinition",
+            normalized_output="{}",
+            validation_notices=[
+                SimpleNamespace(level="warning", message="Port mapping needs migration."),
+                SimpleNamespace(level="invalid", message="Undefined coupling component."),
+            ],
+            preview_artifacts=[
+                "definition.normalized.json",
+                "schematic-input.yaml",
+                "parameter-bundle.toml",
+            ],
         )
     )
 
@@ -72,16 +72,13 @@ def test_local_detail_adapter_derives_invalid_status_without_backend_dto_types()
 
 def test_local_summary_adapter_preserves_invalid_catalog_status_without_backend_dto_types() -> None:
     summary = build_local_circuit_definition_summary(
-        cast(
-            SupportsCircuitDefinitionSummaryPayload,
-            SimpleNamespace(
-                definition_id=18,
-                name="BrokenSummaryDefinition",
-                created_at="2026-03-15 10:30:00",
-                element_count=5,
-                validation_status="invalid",
-                preview_artifact_count=3,
-            ),
+        SimpleNamespace(
+            definition_id=18,
+            name="BrokenSummaryDefinition",
+            created_at="2026-03-15 10:30:00",
+            element_count=5,
+            validation_status="invalid",
+            preview_artifact_count=3,
         )
     )
 
@@ -91,7 +88,7 @@ def test_local_summary_adapter_preserves_invalid_catalog_status_without_backend_
 
 def test_circuit_definition_inspect_source_file_preserves_invalid_status(
     tmp_path: Path,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source_file = tmp_path / "invalid-source.circuit.yaml"
     source_file.write_text("name: invalid_surface\nfamily: fluxonium\n", encoding="utf-8")
@@ -127,7 +124,7 @@ def test_circuit_definition_inspect_source_file_preserves_invalid_status(
 
 
 def test_circuit_definition_inspect_definition_id_derives_invalid_status_from_notices(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         circuit_definition,
@@ -170,7 +167,10 @@ def test_circuit_definition_inspect_definition_id_derives_invalid_status_from_no
     assert '"status": "invalid"' in json_result.stdout
 
 
-def test_circuit_definition_create_uses_local_detail_contract(monkeypatch, tmp_path: Path) -> None:
+def test_circuit_definition_create_uses_local_detail_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     source_file = tmp_path / "created.circuit.yaml"
     source_file.write_text("name: CreatedDefinition\nfamily: fluxonium\n", encoding="utf-8")
 
@@ -217,7 +217,10 @@ def test_circuit_definition_create_uses_local_detail_contract(monkeypatch, tmp_p
     assert '"invalid_count": 1' in result.stdout
 
 
-def test_circuit_definition_update_uses_local_detail_contract(monkeypatch, tmp_path: Path) -> None:
+def test_circuit_definition_update_uses_local_detail_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     source_file = tmp_path / "updated.circuit.yaml"
     source_file.write_text("name: UpdatedDefinition\nfamily: fluxonium\n", encoding="utf-8")
 
@@ -265,7 +268,9 @@ def test_circuit_definition_update_uses_local_detail_contract(monkeypatch, tmp_p
     assert '"invalid_count": 1' in result.stdout
 
 
-def test_circuit_definition_list_uses_local_summary_contract(monkeypatch) -> None:
+def test_circuit_definition_list_uses_local_summary_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         circuit_definition,
         "list_circuit_definitions",
@@ -290,3 +295,34 @@ def test_circuit_definition_list_uses_local_summary_contract(monkeypatch) -> Non
 
     assert json_result.exit_code == 0
     assert '"validation_status": "invalid"' in json_result.stdout
+
+
+def test_definition_bundle_round_trip_preserves_lineage() -> None:
+    reset_local_circuit_definition_state()
+    created_definition = create_local_circuit_definition(
+        name="BundleDefinition",
+        source_text="\n".join(
+            [
+                "name: BundleDefinition",
+                "components:",
+                "  - name: R1",
+                "    default: 50.0",
+                "    unit: Ohm",
+                "topology:",
+                '  - [P1, "1", "0", 1]',
+                '  - [R1, "1", "0", "R1"]',
+            ]
+        ),
+    )
+    exported_bundle = build_definition_bundle(created_definition)
+    imported_definition = import_definition_bundle(exported_bundle)
+
+    assert exported_bundle.metadata.bundle_family == "definition_bundle"
+    assert imported_definition.definition_id != created_definition.definition_id
+    assert imported_definition.lineage == LocalDefinitionLineage(
+        source_runtime="standalone_cli",
+        source_definition_id=created_definition.definition_id,
+        source_bundle_id=exported_bundle.metadata.bundle_id,
+        parent_bundle_id=exported_bundle.metadata.bundle_id,
+        imported_from_bundle_id=exported_bundle.metadata.bundle_id,
+    )

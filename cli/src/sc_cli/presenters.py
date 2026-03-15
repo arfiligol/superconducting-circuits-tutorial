@@ -6,19 +6,20 @@ from json import dumps
 from pydantic import BaseModel
 from sc_backend import (
     ApiErrorBodyResponse,
-    CircuitDefinitionDetailResponse,
-    CircuitDefinitionSummaryResponse,
     DatasetDetailResponse,
     DatasetMetadataUpdateResponse,
     DatasetSummaryResponse,
 )
 
-from sc_cli.local_circuit_definitions import LocalCircuitDefinitionInspection
-from sc_cli.local_interchange import (
-    LocalResultBundleExportReceipt,
-    LocalResultBundleImportReceipt,
+from sc_cli.local_circuit_definitions import (
+    LocalCircuitDefinitionDetail,
+    LocalCircuitDefinitionInspection,
+    LocalCircuitDefinitionSummary,
+    LocalDefinitionBundleExportReceipt,
+    LocalDefinitionBundleImportReceipt,
 )
-from sc_cli.local_runtime import LocalSession, LocalTaskDetail, LocalTaskSummary
+from sc_cli.local_interchange import LocalResultBundleExportReceipt, LocalResultBundleImportReceipt
+from sc_cli.local_runtime import LocalSession, LocalTaskDetail, LocalTaskEvent, LocalTaskSummary
 from sc_cli.local_views import (
     build_session_active_dataset_envelope,
     build_session_identity_envelope,
@@ -77,7 +78,7 @@ def render_circuit_definition_inspection(
 
 
 def render_circuit_definition_summaries(
-    definitions: list[CircuitDefinitionSummaryResponse],
+    definitions: list[LocalCircuitDefinitionSummary],
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -511,7 +512,7 @@ def render_task_result_handles(
 def render_task_event_history(
     task: LocalTaskDetail,
     *,
-    events: Sequence[BaseModel],
+    events: Sequence[LocalTaskEvent],
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
@@ -530,7 +531,7 @@ def render_task_event_history(
 def render_task_latest_event(
     task: LocalTaskDetail,
     *,
-    event: BaseModel,
+    event: LocalTaskEvent,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
     if output is OutputMode.JSON:
@@ -597,7 +598,7 @@ def render_result_bundle_import_receipt(
 
 
 def render_circuit_definition_detail(
-    definition: CircuitDefinitionDetailResponse,
+    definition: LocalCircuitDefinitionDetail,
     *,
     output: OutputMode = OutputMode.TEXT,
 ) -> str:
@@ -623,7 +624,91 @@ def render_circuit_definition_detail(
         ]
     )
     lines.extend(f"- [{notice.level}] {notice.message}" for notice in definition.validation_notices)
+    lines.extend(
+        [
+            "validation_summary:",
+            f"status: {definition.validation_summary.status}",
+            f"notice_count: {definition.validation_summary.notice_count}",
+            f"warning_count: {definition.validation_summary.warning_count}",
+            f"invalid_count: {definition.validation_summary.invalid_count}",
+        ]
+    )
+    if definition.lineage is None:
+        lines.append("lineage: none")
+    else:
+        lines.extend(
+            [
+                "lineage:",
+                f"source_runtime: {definition.lineage.source_runtime}",
+                (
+                    "source_definition_id: "
+                    f"{_render_nullable(definition.lineage.source_definition_id)}"
+                ),
+                f"source_bundle_id: {definition.lineage.source_bundle_id or '-'}",
+                f"parent_bundle_id: {definition.lineage.parent_bundle_id or '-'}",
+                (
+                    "imported_from_bundle_id: "
+                    f"{definition.lineage.imported_from_bundle_id or '-'}"
+                ),
+            ]
+        )
     return "\n".join(lines)
+
+
+def render_definition_bundle_export_receipt(
+    receipt: LocalDefinitionBundleExportReceipt,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(receipt)
+    lineage = receipt.bundle.definition.lineage
+    return "\n".join(
+        [
+            "operation: exported",
+            f"bundle_file: {receipt.bundle_file}",
+            f"bundle_id: {receipt.bundle.metadata.bundle_id}",
+            f"bundle_family: {receipt.bundle.metadata.bundle_family}",
+            f"bundle_version: {receipt.bundle.metadata.bundle_version}",
+            f"source_definition_id: {receipt.bundle.definition.definition_id}",
+            f"source_definition_name: {receipt.bundle.definition.name}",
+            (
+                "lineage_source_definition_id: "
+                f"{_render_nullable(None if lineage is None else lineage.source_definition_id)}"
+            ),
+            (
+                "lineage_source_bundle_id: "
+                f"{_render_nullable(None if lineage is None else lineage.source_bundle_id)}"
+            ),
+        ]
+    )
+
+
+def render_definition_bundle_import_receipt(
+    receipt: LocalDefinitionBundleImportReceipt,
+    *,
+    output: OutputMode = OutputMode.TEXT,
+) -> str:
+    if output is OutputMode.JSON:
+        return _render_json_model(receipt)
+    lineage = receipt.imported_definition.lineage
+    return "\n".join(
+        [
+            "operation: imported",
+            f"bundle_file: {receipt.bundle_file}",
+            f"bundle_id: {receipt.bundle.metadata.bundle_id}",
+            f"imported_definition_id: {receipt.imported_definition.definition_id}",
+            f"imported_definition_name: {receipt.imported_definition.name}",
+            (
+                "source_definition_id: "
+                f"{_render_nullable(None if lineage is None else lineage.source_definition_id)}"
+            ),
+            (
+                "imported_from_bundle_id: "
+                f"{_render_nullable(None if lineage is None else lineage.imported_from_bundle_id)}"
+            ),
+        ]
+    )
 
 
 def render_circuit_definition_delete_result(
