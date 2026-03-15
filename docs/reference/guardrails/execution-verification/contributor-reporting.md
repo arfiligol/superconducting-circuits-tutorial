@@ -10,8 +10,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Planning & Reviewing / Implementation / Test Agents 的標準交接格式"
-version: v2.3.0
-last_updated: 2026-03-15
+version: v2.4.0
+last_updated: 2026-03-16
 updated_by: codex
 ---
 
@@ -61,16 +61,20 @@ updated_by: codex
 
 ### 4) Implementation Slices
 - Frontend:
-  - Allowed Files: <summary>
+  - Allowed Area: <summary>
+  - Do Not Touch: <summary>
   - Goal: <slice goal>
 - Backend:
-  - Allowed Files: <summary>
+  - Allowed Area: <summary>
+  - Do Not Touch: <summary>
   - Goal: <slice goal>
 - Core:
-  - Allowed Files: <summary>
+  - Allowed Area: <summary>
+  - Do Not Touch: <summary>
   - Goal: <slice goal>
 - CLI:
-  - Allowed Files: <summary>
+  - Allowed Area: <summary>
+  - Do Not Touch: <summary>
   - Goal: <slice goal>
 
 ### 5) Test Backlog
@@ -104,7 +108,8 @@ updated_by: codex
 - Role: <frontend|backend|core|cli|test>
 - Task ID / Topic: <id-or-title>
 - Branch / Worktree: <branch-or-path>
-- Scope (Allowed Files): <summary>
+- Scope (Allowed Area): <summary>
+- Do Not Touch: <summary>
 - Assigned Slice: <slice-id-or-title>
 - 狀態: <done|blocked|needs-review>
 
@@ -115,7 +120,7 @@ updated_by: codex
 ### 2) Preflight 與邊界遵守
 - 指派的 `Branch / Worktree` 是否存在且專屬: <yes|no + note>
 - 開工前 `git status --porcelain`: <clean|dirty + note>
-- 是否遇到跨界需求: <no|yes + reason>
+- 是否超出 `Allowed Area`: <no|yes + reason>
 - 跨界處理方式: <n/a|handoff-to-planning-and-reviewing>
 
 ### 3) 變更內容
@@ -185,13 +190,23 @@ updated_by: codex
 
 ### 6) Mainline Status
 - <merged|queued|blocked>
+
+### 7) Review Basis
+- SoT pages reread:
+  - <path>
+  - <path>
+- Code context reread:
+  - <path>
+  - <path>
+- Judgement:
+  - <why the implementation does / does not satisfy product need and current SoT>
 ```
 
 ## Required Sections
 
 - Planning handoff 必須包含：`Source of Truth`、`Current Implementation State`、`Implementation Slices`、`Test Backlog`
 - Delivery handoff 必須包含：`Commit(s)`、`Changed Files`、`測試結果`、`Known Risks`、`API / Contract Touched Matrix`
-- Merge handoff 必須包含：`Integrated Commits`、`Final Verification`、`Mainline Status`
+- Merge handoff 必須包含：`Integrated Commits`、`Final Verification`、`Mainline Status`、`Review Basis`
 
 ## Readability Rules
 
@@ -211,12 +226,18 @@ updated_by: codex
 - Planning & Reviewing Agents MUST summarize integration and verification using `Review Merge Report v1`.
 - Delivery reports MUST include:
     - assigned branch/worktree
+    - allowed area
+    - do-not-touch boundary
     - assigned slice
     - commit hashes
     - changed files with reason
     - test commands and results
     - API / contract touched matrix
     - known risks
+- Review merge reports MUST include:
+    - SoT pages reread
+    - code context reread
+    - explicit judgement against current docs and product need
 - Reporting quality rules:
     - lead with conclusion, then evidence
     - summarize logs instead of dumping long raw output

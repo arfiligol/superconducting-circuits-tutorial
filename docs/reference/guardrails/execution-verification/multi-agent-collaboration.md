@@ -10,8 +10,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "Documentation / Planning & Reviewing / Implementation / Test Agents 的責任分工、交接順序與並行協作規範"
-version: v2.3.0
-last_updated: 2026-03-15
+version: v2.4.0
+last_updated: 2026-03-16
 updated_by: codex
 ---
 
@@ -25,6 +25,10 @@ updated_by: codex
 
 !!! info "Document-first execution"
     正式流程是：先收斂文件，再由 `Planning & Reviewing Agent` 產出計劃，再做實作，再補 integration / E2E，最後仍由同一類 agent 做整合與主線回收。
+
+!!! tip "Give Implementation Agents room"
+    `Implementation Agent` 應在明確 SoT、`Allowed Area`、`Do Not Touch` 與驗收條件下自由選擇具體修改點。
+    `Planning & Reviewing Agent` 的工作是之後依結果收斂範圍與補 fixup prompt，不是預先把每輪 prompt 縮成極小檔案清單。
 
 ## Collaboration Map
 
@@ -63,11 +67,14 @@ updated_by: codex
   - 哪些 implementation slices 需要交給前端 / 後端 / core / CLI Agents
   - 哪些功能尚未具備 integration tests / E2E tests
   - 每個 slice 的 verification 與 non-goals
+- prompt 預設應使用 `Allowed Area` 與 `Do Not Touch`，只在必要時補充 `Allowed Files`
 - 不應在沒有 plan artifact 的情況下直接大規模派工。
 - 回收 implementation / test deliverables 時，負責：
   - conflict resolution
   - final verification
   - 主線回收與 regression summary
+  - 重讀 SoT 與實際程式碼脈絡後做實質判斷，而不是只檢查 prompt 是否被逐字遵守
+  - 若實作過寬或仍有缺口，透過新的 fixup prompt 收縮，而不是要求第一輪 prompt 過度窄化
 
 ### Implementation Agents
 
@@ -77,7 +84,7 @@ updated_by: codex
   - `Core Agent`
   - `CLI Agent`
 - 每位 agent 只負責自己被指派 lane 內的 slice 與 unit tests。
-- 若任務超出 prompt 的 `Allowed Files`、lane 邊界或 slice 範圍，必須回交 Planning & Reviewing Agent 重新切分。
+- 若任務超出 prompt 的 `Allowed Area`、`Do Not Touch`、lane 邊界或 slice 範圍，必須回交 Planning & Reviewing Agent 重新切分。
 - 不負責 integration / E2E test。
 
 ### Test Agents
@@ -153,7 +160,8 @@ Planning & Reviewing Agent 產出的 plan artifact 至少必須包含：
 1. 每位 Agent 必須使用獨立 `git worktree` + branch。
 2. 開工前必須執行 `git status --porcelain`。
 3. 若工作樹有非本人任務的 dirty changes，不得直接覆蓋。
-4. `Allowed Files` 必須在 plan 或 merge prompt 中明確列出。
+4. `Allowed Area` 與 `Do Not Touch` 必須在 plan 或 merge prompt 中明確列出。
+5. `Allowed Files` 只有在窄範圍 fixup 或高風險手術式改動時才應額外列出。
 
 ## Escalation Rules
 
@@ -167,11 +175,12 @@ Planning & Reviewing Agent 產出的 plan artifact 至少必須包含：
 ## Forbidden Moves
 
 - Implementation Agent 不得直接宣告 integration / E2E 已完成，除非該工作明確由 Test Agent 交回。
-- Implementation Agent 不得自行擴張 slice 邊界、lane 邊界或跨出 `Allowed Files`。
+- Implementation Agent 不得自行擴張 slice 邊界、lane 邊界或跨出 `Allowed Area` / `Do Not Touch` 邊界。
 - Test Agent 不得順手重寫 feature implementation。
 - Planning & Reviewing Agent 不得在未回收 handoff 的情況下假設某工作已完成。
 - Documentation Agent 不得把未確認的未來功能寫成現況。
 - Planning & Reviewing Agent 不得只給口頭方向而沒有可追蹤的 plan artifact。
+- Planning & Reviewing Agent 不得只以 prompt 字面 compliance 作為驗收依據，而不重新檢查 SoT 與實作上下文。
 
 ## Related
 
@@ -198,13 +207,15 @@ Planning & Reviewing Agent 產出的 plan artifact 至少必須包含：
     - enumerate missing integration/E2E coverage for Test Agents
     - own final verification and mainline integration for the delivery line
     - may edit `Plans/` artifacts only; if SoT must change, hand off to Documentation Agents
+    - define `Allowed Area` + `Do Not Touch` for implementation prompts by default
+    - review implementation against SoT and product need, not prompt literalism alone
 - Implementation Agents:
     - use four implementation lanes:
         - Frontend
         - Backend
         - Core
         - CLI
-    - receive assigned slices via prompt (`Allowed Files` + worktree + verification)
+    - receive assigned slices via prompt (`Allowed Area` + `Do Not Touch` + worktree + verification)
     - own code + unit tests only
     - do not own integration/E2E or final branch integration
 - Test Agents:

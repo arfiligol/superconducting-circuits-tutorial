@@ -11,8 +11,8 @@ status: stable
 owner: docs-team
 audience: team
 scope: "定義 Planning & Reviewing Agents 在多 Agent 協作時使用的 prompt 分級、適用時機與驗收要求"
-version: v1.2.0
-last_updated: 2026-03-15
+version: v1.3.0
+last_updated: 2026-03-16
 updated_by: codex
 ---
 
@@ -29,6 +29,10 @@ updated_by: codex
     發給 `Implementation Agent` 或 `Test Agent` 的 prompt，必須明確指定專屬 `Branch / Worktree`。
     若 prompt 沒有專屬 worktree，agent 不得直接在共享工作樹或 `main` 上開工。
 
+!!! tip "Area-scoped prompts beat file-scoped prompts"
+    對 `L2` 以上的 implementation work，prompt 應優先指定 capability、`Allowed Area` 與 `Do Not Touch`，
+    而不是把 agent 綁死在一小串檔案清單上。只有 `L1 Fixup` 或高風險手術式修改，才應退回 `Allowed Files`。
+
 ## Prompt Map
 
 | level | 適合什麼 | 不該拿來做什麼 |
@@ -44,6 +48,8 @@ updated_by: codex
 - 若共享契約、邊界、驗收條件仍不穩，應降級，不應硬開大任務。
 - 若共享契約、邊界、驗收條件已穩，且 `Planning & Reviewing Agent` 能承擔整合成本，應升級，不要把里程碑拆成大量零碎小修。
 - 新一輪 prompt 只能在前一輪相關 report 已回收、review、整合、驗證完成後再發出。
+- Implementation prompt 應優先按 capability / area 派工，不要過度微操 agent 要碰哪些具體檔案。
+- prompt 的目的，是提供邊界與驗收，不是替 `Implementation Agent` 做檔案層逐步導航。
 
 ## Prompt Levels
 
@@ -126,7 +132,8 @@ Done Definition：
 - `Read first`
 - `Current State`
 - `Goal`
-- `Allowed Files`
+- `Allowed Area`
+- `Do Not Touch`
 - `Non-Goals`
 - `Implementation Requirements`
 - `Verification`
@@ -138,6 +145,12 @@ Done Definition：
 - 不得只寫 branch name 而沒有 worktree path
 - 若 prompt 缺少這個欄位，應視為 prompt 不完整，先補齊再派工
 
+`Allowed Area` 是預設邊界：
+
+- 應以目錄、layer、service area 或 capability area 描述，例如 `backend/ auth + workspace membership`
+- `Do Not Touch` 用於畫出明確排除範圍，例如 `frontend/`、`docs/reference/**`
+- `Allowed Files` 只在 `L1 Fixup` 或高風險改動時作為補充，不應成為一般 milestone prompt 的預設欄位
+
 ## Planning & Reviewing Rules
 
 - 同一 workstream 在同一時間只應有一份 active prompt。
@@ -147,6 +160,9 @@ Done Definition：
   - 尚未回收的輪次
   - 現在要開的是哪個 Prompt Level
 - 若使用者要求加速，優先把 `L1` 與 `L2` 升級成更完整的 `L2` 或 `L3`，不要直接跳到 `L4`。
+- review 時必須重新讀 SoT、delivery report 與實際實作上下文；不得只檢查 agent 是否逐字遵照 prompt。
+- review 允許 `Implementation Agent` 在 `Allowed Area` 內自行選擇具體修改點；判準是結果是否對齊 SoT、產品需求與驗收，而不是是否完全照 prompt 的檔案想像實作。
+- 若實作過寬或仍未達需求，`Planning & Reviewing Agent` 應透過新的 fixup prompt 收斂，而不是預設把第一輪 prompt 寫成過度窄化的檔案清單。
 
 ## Anti-Patterns
 
@@ -155,6 +171,8 @@ Done Definition：
 - 上一輪 report 還沒收回，就先發下一輪 prompt
 - 一份 prompt 同時跨越多個不穩定邊界，導致 `Planning & Reviewing Agent` 無法可靠驗收
 - 把多個不相關的小修補打包成假 `Milestone`
+- 把 milestone 級任務寫成只允許動 2-3 個檔案的過度收縮 prompt
+- 在 review 時只核對 prompt 字面，而不重讀 SoT 與實際程式碼脈絡
 
 ## Related
 
@@ -183,12 +201,19 @@ Done Definition：
 - Worktree rule:
     - every Implementation/Test prompt must assign a dedicated worktree + branch.
     - Implementation/Test Agents must not start work without that assignment.
+- Area rule:
+    - default to `Allowed Area` + `Do Not Touch` for implementation prompts.
+    - use `Allowed Files` only for narrow fixups or high-risk surgical edits.
+- Review rule:
+    - re-read SoT, delivery reports, and implementation context during review.
+    - evaluate outcome against product need and authority docs, not prompt literalism alone.
 - Required prompt fields:
     - Task ID / Topic
     - Prompt Level
     - Current State
     - Goal
-    - Allowed Files
+    - Allowed Area
+    - Do Not Touch
     - Non-Goals
     - Implementation Requirements
     - Verification
