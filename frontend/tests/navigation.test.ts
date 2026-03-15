@@ -36,8 +36,8 @@ describe("workspaceNavigation", () => {
     expect(workspaceNavigationGroups.map((group) => group.items.length)).toEqual([1, 2, 3]);
   });
 
-  it("includes concise summaries and icons for the shell", () => {
-    expect(workspaceNavigation.every((item) => typeof item.summary === "string")).toBe(true);
+  it("keeps the shell navigation title-only while preserving icons", () => {
+    expect(workspaceNavigation.every((item) => "summary" in item)).toBe(false);
     expect(workspaceNavigation.every((item) => Boolean(item.icon))).toBe(true);
   });
 

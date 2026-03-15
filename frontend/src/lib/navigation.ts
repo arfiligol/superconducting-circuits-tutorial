@@ -11,7 +11,6 @@ import {
 export type WorkspaceNavigationItem = Readonly<{
   href: string;
   label: string;
-  summary: string;
   group: "dashboard" | "pipeline" | "circuit-workbench";
   pageTitle?: string;
   icon: LucideIcon;
@@ -23,7 +22,6 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     href: "/dashboard",
     label: "Dashboard",
     pageTitle: "Dashboard",
-    summary: "Review session-backed workspace context before entering a workflow surface.",
     group: "dashboard",
     icon: LayoutDashboard,
     aliases: ["/"],
@@ -32,7 +30,6 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     href: "/raw-data",
     label: "Raw Data",
     pageTitle: "Raw Data Browser",
-    summary: "Browse design scopes and trace summaries inside the session-owned active dataset.",
     group: "pipeline",
     icon: Database,
     aliases: ["/data-browser"],
@@ -41,14 +38,12 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     href: "/schemas",
     label: "Schemas",
     pageTitle: "Schemas",
-    summary: "Browse, sort, and open canonical circuit definitions.",
     group: "circuit-workbench",
     icon: FilePenLine,
   },
   {
     href: "/circuit-schemdraw",
     label: "Schemdraw",
-    summary: "Preview canonical schematics generated from circuit definitions.",
     group: "circuit-workbench",
     icon: CircuitBoard,
   },
@@ -56,15 +51,12 @@ export const workspaceNavigation: readonly WorkspaceNavigationItem[] = [
     href: "/circuit-simulation",
     label: "Simulation",
     pageTitle: "Circuit Simulation",
-    summary: "Stage simulation runs, sweeps, and result inspection workflows.",
     group: "circuit-workbench",
     icon: ActivitySquare,
   },
   {
     href: "/characterization",
     label: "Characterization",
-    summary:
-      "Run shared characterization, post-processing, fitting, and comparison workflows.",
     group: "pipeline",
     icon: Binary,
     aliases: ["/analysis"],

@@ -11,6 +11,10 @@ const headerSource = readFileSync(
   fileURLToPath(new URL("../src/components/layout/workspace-header.tsx", import.meta.url)),
   "utf8",
 );
+const navSource = readFileSync(
+  fileURLToPath(new URL("../src/components/layout/workspace-nav.tsx", import.meta.url)),
+  "utf8",
+);
 const statusStripSource = readFileSync(
   fileURLToPath(new URL("../src/components/layout/workspace-status-strip.tsx", import.meta.url)),
   "utf8",
@@ -29,6 +33,16 @@ describe("workspace shell source contracts", () => {
     expect(headerSource).toContain("identity.sectionLabel");
     expect(headerSource).not.toContain("identity.summary");
     expect(headerSource).not.toContain("WORKSPACE SURFACE");
+  });
+
+  it("keeps the sidebar title-only without intro copy, item summaries, or active badges", () => {
+    expect(navSource).toContain("Research Workbench");
+    expect(navSource).toContain("group.label");
+    expect(navSource).toContain("item.label");
+    expect(navSource).not.toContain("Open dashboard");
+    expect(navSource).not.toContain("item.summary");
+    expect(navSource).not.toContain("active route");
+    expect(navSource).not.toContain("Session-backed landing and shell context.");
   });
 
   it("routes the collapsed active dataset trigger through the compact shell helper", () => {
