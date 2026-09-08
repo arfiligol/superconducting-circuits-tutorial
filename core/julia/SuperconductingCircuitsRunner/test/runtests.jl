@@ -146,6 +146,44 @@ end
     @test occursin("do not match parameter_overrides", message)
 end
 
+@testset "Circuit Workbench shunt capacitor lowers to Core ground and only C" begin
+    payload = Dict{String,Any}(
+        "schema" => SuperconductingCircuitsRunner._CW_PLAN_SCHEMA,
+        "id" => "public_shunt",
+        "components" => Any[Dict{String,Any}(
+            "id" => "shunt",
+            "type_id" => "workbench.shunt_capacitor.v1",
+            "parameters" => Dict("capacitance_f" => 0.4e-12),
+        )],
+        "connections" => Any[],
+        "ports" => Any[],
+    )
+    for (overrides, expected) in (
+        (Dict{String,Any}(), 0.4e-12),
+        (Dict("shunt.capacitance_f" => 0.6e-12), 0.6e-12),
+    )
+        compiled = SuperconductingCircuitsRunner._cw_build_plan(payload; overrides=overrides)
+        @test length(compiled.netlist) == 1
+        element = only(compiled.netlist)
+        @test startswith(element[1], "C")
+        @test (element[2] == "0") != (element[3] == "0")
+        model = SuperconductingCircuitsCore.extract_linear_nodal_ckg_model(compiled)
+        @test eltype(model.capacitance) <: Real
+        @test model.capacitance == reshape([expected], 1, 1)
+        @test iszero(model.inverse_inductance)
+        @test iszero(model.conductance)
+    end
+    for invalid in (0.0, -1.0e-12, NaN, Inf, -Inf, true, "1e-12", nothing)
+        message = thrown_error_message() do
+            SuperconductingCircuitsRunner._cw_build_plan(
+                payload; overrides=Dict("shunt.capacitance_f" => invalid),
+            )
+        end
+        @test message !== nothing
+        @test occursin(r"shunt.capacitance_f must be (positive|finite|numeric)", message)
+    end
+end
+
 @testset "Circuit Workbench separates terminated and nonloading ports" begin
     compiled = SuperconductingCircuitsCore.JosephsonCompiledCircuit(
         netlist=Any[

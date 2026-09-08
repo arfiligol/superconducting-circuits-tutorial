@@ -208,6 +208,25 @@ function _cw_series_capacitor!(plan, component, overrides)
     return nothing
 end
 
+function _cw_shunt_capacitor!(plan, component, overrides)
+    id = _cw_string(get(component, "id", nothing), "component.id")
+    params = _cw_dict(get(component, "parameters", nothing), "component.parameters")
+    capacitance = _cw_number(
+        get(overrides, "$(id).capacitance_f", get(params, "capacitance_f", nothing)),
+        "$(id).capacitance_f",
+    )
+    capacitance > 0 || throw(
+        _CWCandidateNotEvaluable("$(id).capacitance_f must be positive."),
+    )
+    SuperconductingCircuitsCore.shunt_capacitor!(
+        plan;
+        id=id,
+        at=_cw_node(id, "signal"),
+        capacitance=capacitance,
+    )
+    return nothing
+end
+
 function _cw_parameter(params, overrides, id, name)
     return _cw_number(get(overrides, "$(id).$(name)", get(params, name, nothing)), "$(id).$(name)")
 end
@@ -376,6 +395,7 @@ function _cw_build_plan(payload; overrides=Dict{String,Float64}())
         type_id in (
             "workbench.parallel_lc_resonator.v1",
             "workbench.series_capacitor.v1",
+            "workbench.shunt_capacitor.v1",
             "workbench.transmission_line.v1",
             "workbench.intrinsic_interferometric_purcell_filter.v1",
             "workbench.linearized_floating_qubit.v1",
@@ -385,6 +405,7 @@ function _cw_build_plan(payload; overrides=Dict{String,Float64}())
         )
         type_id == "workbench.parallel_lc_resonator.v1" && _cw_parallel_lc!(plan, component, overrides)
         type_id == "workbench.series_capacitor.v1" && _cw_series_capacitor!(plan, component, overrides)
+        type_id == "workbench.shunt_capacitor.v1" && _cw_shunt_capacitor!(plan, component, overrides)
         type_id == "workbench.transmission_line.v1" && _cw_transmission_line!(plan, component, overrides)
         type_id == "workbench.intrinsic_interferometric_purcell_filter.v1" && _cw_intrinsic_interferometric_purcell_filter!(plan, component, overrides)
         type_id == "workbench.linearized_floating_qubit.v1" && _cw_linearized_floating_qubit!(plan, component, overrides)

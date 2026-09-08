@@ -30,6 +30,7 @@ from superconducting_circuits_runtime import (
     resolve_circuit_campaign,
     resolve_circuit_result,
     runtime,
+    shunt_capacitor,
 )
 from superconducting_circuits_runtime.catalog import (
     intrinsic_interferometric_purcell_filter,
@@ -1291,6 +1292,134 @@ def test_response_spec_requires_two_independent_grids() -> None:
             output_port="output",
             pump_frequency_hz=2.0,
         )
+
+
+def test_shunt_capacitor_public_contract_seals_one_signal(tmp_path: Path) -> None:
+    capacitor = shunt_capacitor(id="shunt", capacitance_f=0.4e-12)
+    assert runtime_api.shunt_capacitor is shunt_capacitor
+    plan = CircuitPlan("shunt-contract")
+    plan.add(capacitor)
+    sealed = plan.seal([runtime._BUILTIN_LIBRARY])
+    declaration = next(
+        item for item in sealed["component_types"] if item["type_id"] == capacitor.type_id
+    )
+    assert capacitor.type_id == "workbench.shunt_capacitor.v1"
+    assert declaration["pins"] == ["signal"]
+    assert declaration["coordinates"] == [
+        {"name": "signal", "units": "node_flux", "role": "signal"}
+    ]
+    assert sealed["coordinate_bindings"] == {
+        "shunt.signal": {"component_id": "shunt", "coordinate_name": "signal"}
+    }
+    invalid_values: tuple[Any, ...] = (
+        0.0,
+        -1.0e-12,
+        float("nan"),
+        float("inf"),
+        -float("inf"),
+        True,
+        "1e-12",
+        None,
+    )
+    for invalid in invalid_values:
+        invalid_plan = CircuitPlan("invalid-shunt")
+        invalid_plan.add(shunt_capacitor(id="shunt", capacitance_f=invalid))
+        with pytest.raises(RuntimeContractError, match=r"capacitance_f.*(positive|finite)"):
+            CircuitSim(tmp_path, "invalid", data_classification="public").set_plan(invalid_plan)
+    for invalid_pin in ("a", "b", "ground"):
+        invalid_plan = CircuitPlan("invalid-shunt-pin")
+        invalid_plan.add(capacitor)
+        invalid_plan.add_port("input", capacitor.pin(invalid_pin), role="terminated")
+        with pytest.raises(RuntimeContractError, match="not declared by the sealed Plan"):
+            CircuitSim(tmp_path, "invalid", data_classification="public").set_plan(invalid_plan)
+
+
+def test_three_capacitor_scattering_binds_shunt_override_and_complex_abcd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    series_f, left_f, right_f = 1.2e-12, 0.6e-12, 0.7e-12
+    z0 = 50.0
+    plan = CircuitPlan("three-capacitors")
+    series = plan.add(series_capacitor(id="coupling", capacitance_f=series_f))
+    left = plan.add(shunt_capacitor(id="left", capacitance_f=0.4e-12))
+    right = plan.add(shunt_capacitor(id="right", capacitance_f=right_f))
+    plan.connect(left.pin("signal"), series.pin("a"))
+    plan.connect(right.pin("signal"), series.pin("b"))
+    plan.add_port("input", series.pin("a"), role="terminated", resistance_ohm=z0)
+    plan.add_port("output", series.pin("b"), role="terminated", resistance_ohm=z0)
+    variable = VariableSpec(
+        left.parameter("capacitance_f"), transform="log", lower=0.2e-12, upper=0.8e-12
+    )
+    direct_grid = (1.0e8, 2.0e8, 3.0e8)
+    hb_grid = (1.0e8, 1.5e8, 2.0e8, 2.5e8, 3.0e8)
+    response = ResponseSpec(
+        direct_frequency_hz=direct_grid,
+        hb_frequency_hz=hb_grid,
+        input_port="input",
+        output_port="output",
+        pump_frequency_hz=2.0e8,
+    )
+    candidate = {"left.capacitance_f": left_f}
+    provenance = {"source": "public analytic three-capacitor fixture"}
+    sim = CircuitSim(tmp_path, "three-capacitors", data_classification="public")
+    sim.set_plan(plan)
+    sim.set_variables([variable])
+    sim.set_explicit_candidate(candidate, provenance=provenance)
+    sim.set_responses(response)
+    sealed = sim.evaluate_scattering(action="execute")
+    assert sealed.status == "PASS"
+    assert sealed.receipt["candidate"]["physical_parameters"] == candidate
+    request = json.loads(
+        sealed.path.with_name("circuit-workbench-run-request.v1.json").read_text(encoding="utf-8")
+    )
+    assert request["parameter_overrides"] == candidate
+    assert request["objective"] is None
+    assert request["reduction"] is None
+    assert request["upstream_receipts"] == {}
+    for backend, frequencies in (("direct", direct_grid), ("hb", hb_grid)):
+        columns = runtime._read_numeric_csv(sealed.path.parent / f"{backend}_response.csv")
+        assert tuple(columns["frequency_hz"]) == frequencies
+        for index, frequency in enumerate(frequencies):
+            omega = 2.0 * 3.141592653589793 * frequency
+            # exp(-i*omega*t): multiply shunt(left), series, shunt(right) ABCD matrices.
+            impedance = 1j / (omega * series_f)
+            left_y, right_y = -1j * omega * left_f, -1j * omega * right_f
+            a, b = 1.0 + impedance * right_y, impedance
+            c, d = left_y + right_y + left_y * impedance * right_y, 1.0 + left_y * impedance
+            denominator = a + b / z0 + c * z0 + d
+            expected = ((a + b / z0 - c * z0 - d) / denominator, 2.0 / denominator)
+            for trace, value in zip(("s11", "s21"), expected, strict=True):
+                actual = complex(
+                    columns[f"{backend}_{trace}_real"][index],
+                    columns[f"{backend}_{trace}_imag"][index],
+                )
+                assert actual == pytest.approx(value, rel=1.0e-10, abs=1.0e-12)
+
+    def no_subprocess(*args: object, **kwargs: object) -> object:
+        raise AssertionError("resolve must not start Julia")
+
+    monkeypatch.setattr(runtime.subprocess, "run", no_subprocess)
+    monkeypatch.setattr(runtime.subprocess, "Popen", no_subprocess)
+    resolved = sim.evaluate_scattering(action="resolve")
+    assert resolved.status == "PASS"
+    assert resolved.receipt == sealed.receipt
+    assert resolved.canonical_sha256 == sealed.canonical_sha256
+    missing = CircuitSim(tmp_path, "three-capacitors", data_classification="public")
+    missing.set_responses(response)
+    with pytest.raises(RuntimeContractError, match="requires set_plan first"):
+        missing.evaluate_scattering(action="resolve")
+    missing.set_plan(plan)
+    missing.set_variables([variable])
+    with pytest.raises(RuntimeContractError, match="candidate mismatches"):
+        missing.evaluate_scattering(action="resolve")
+    sim.set_explicit_candidate({"left.capacitance_f": 0.5e-12}, provenance=provenance)
+    with pytest.raises(RuntimeContractError, match="candidate mismatches"):
+        sim.evaluate_scattering(action="resolve")
+    sim.set_explicit_candidate(candidate, provenance=provenance)
+    extra = plan.add(shunt_capacitor(id="extra", capacitance_f=0.1e-12))
+    plan.connect(extra.pin("signal"), series.pin("a"))
+    with pytest.raises(RuntimeContractError, match="stale or mismatched"):
+        sim.evaluate_scattering(action="resolve")
 
 
 def test_standalone_series_capacitor_scattering_matches_exp_minus_iwt(
