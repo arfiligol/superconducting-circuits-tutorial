@@ -8,6 +8,7 @@ from .catalog import (
     linearized_floating_qubit,
     parallel_lc_resonator,
     series_capacitor,
+    shunt_capacitor,
     transmission_line,
 )
 from .runtime import (
@@ -58,5 +59,6 @@ __all__ = [
     "resolve_circuit_campaign",
     "resolve_circuit_result",
     "series_capacitor",
+    "shunt_capacitor",
     "transmission_line",
 ]

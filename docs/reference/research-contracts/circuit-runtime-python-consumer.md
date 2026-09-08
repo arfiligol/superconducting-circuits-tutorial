@@ -71,6 +71,7 @@ from superconducting_circuits_runtime import (
     resolve_circuit_campaign,
     resolve_circuit_result,
     series_capacitor,
+    shunt_capacitor,
 )
 ```
 
@@ -111,6 +112,33 @@ non-finite capacitance fails closed.
 
 An electrical short remains an exact `CircuitPlan.connect(...)` relationship;
 consumers must not approximate a short with a large capacitance.
+
+### CONVERGING Generic Shunt Capacitor
+
+`shunt_capacitor(id=..., capacitance_f=...)` declares one lumped capacitor
+with a single exposed pin and node-flux coordinate named `signal`. Its other
+terminal is Core ground, not a second consumer-wired pin. Capacitance is in
+farads and must be finite and strictly positive; malformed, zero, negative,
+and non-finite values fail closed during Plan validation or Julia lowering,
+including candidate overrides.
+
+The Julia compiler reuses Core `shunt_capacitor!` and its existing capacitor
+lowerer. The component contributes only capacitance to the assembled C matrix,
+with no inductor or conductance approximation. Consumers may connect two such
+instances to the `a` and `b` pins of a `series_capacitor` to author a
+three-capacitor network. Composition and values remain consumer-owned.
+
+Existing selected-candidate, Plan, artifact, and Runtime identities bind this
+component through the existing sealed operations. No new solver, response
+schema, stage, Objective, Reduction, or report dependency is introduced.
+Standalone scattering retains its independent Direct/HB grids and full-complex
+S11/S21 convention `exp(-i*omega*t)`; existing components and pipelines are
+unchanged. Adding the catalog type changes the catalog/source identity, so old
+receipts are not silently treated as current-source results.
+
+This extension is `CONVERGING / NOT_INTEGRATED`, with `no_test_writes` until
+Human acceptance of the exact candidate. Public non-test analytic diagnostics
+are implementation evidence, not scientific-result acceptance.
 
 ## Objective And Artifact Declarations
 

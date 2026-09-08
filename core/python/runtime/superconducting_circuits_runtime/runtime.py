@@ -375,6 +375,13 @@ _BUILTIN_SERIES_CAPACITOR = ComponentType(
     ),
     lowerer="series_capacitor",
 )
+_BUILTIN_SHUNT_CAPACITOR = ComponentType(
+    "workbench.shunt_capacitor.v1",
+    ("signal",),
+    (ParameterDeclaration("capacitance_f", "F", "capacitance"),),
+    (CoordinateDeclaration("signal", "node_flux", "signal"),),
+    lowerer="shunt_capacitor",
+)
 _BUILTIN_TRANSMISSION_LINE = ComponentType(
     "workbench.transmission_line.v1",
     ("head", "tail"),
@@ -468,6 +475,7 @@ _BUILTIN_INTRINSIC_INTERFEROMETRIC_PURCELL_FILTER = ComponentType(
 _BUILTIN_TYPES = (
     _BUILTIN_PARALLEL_LC,
     _BUILTIN_SERIES_CAPACITOR,
+    _BUILTIN_SHUNT_CAPACITOR,
     _BUILTIN_TRANSMISSION_LINE,
     _BUILTIN_LINEARIZED_FLOATING_QUBIT,
     _BUILTIN_INTRINSIC_INTERFEROMETRIC_PURCELL_FILTER,
@@ -3016,7 +3024,7 @@ def _validate_component(component: ComponentInstance, declared: ComponentType) -
                 raise RuntimeContractError(
                     f"Component '{component.id}' conductance_s must be nonnegative."
                 )
-    if declared.lowerer == "series_capacitor":
+    if declared.lowerer in {"series_capacitor", "shunt_capacitor"}:
         _validate_positive_parameters(component, {"capacitance_f"})
     elif declared.lowerer == "transmission_line":
         _validate_positive_parameters(

@@ -7,6 +7,7 @@ __all__ = [
     "linearized_floating_qubit",
     "parallel_lc_resonator",
     "series_capacitor",
+    "shunt_capacitor",
     "transmission_line",
 ]
 
@@ -33,6 +34,16 @@ def series_capacitor(*, id: str, capacitance_f: float) -> ComponentInstance:
     return ComponentInstance(
         id=id,
         type_id="workbench.series_capacitor.v1",
+        parameters={"capacitance_f": capacitance_f},
+    )
+
+
+def shunt_capacitor(*, id: str, capacitance_f: float) -> ComponentInstance:
+    """Declare a positive-finite capacitor from pin ``signal`` to Core ground."""
+
+    return ComponentInstance(
+        id=id,
+        type_id="workbench.shunt_capacitor.v1",
         parameters={"capacitance_f": capacitance_f},
     )
 
