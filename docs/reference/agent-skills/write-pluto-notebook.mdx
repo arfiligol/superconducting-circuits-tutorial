@@ -11,9 +11,9 @@ tags:
 status: draft
 owner: docs-team
 audience: contributor
-scope: Cross-tool Skill template and synchronization rules for Pluto.jl reactive notebook authoring
+scope: Workbench-owned Pluto format, reactivity, presentation, and static-check guidance.
 version: v0.1.0
-last_updated: 2026-05-30
+last_updated: 2026-09-08
 updated_by: codex
 ---
 
@@ -21,19 +21,27 @@ import { Aside } from '@astrojs/starlight/components';
 
 # Write Pluto Notebook
 
-`write-pluto-notebook` is the Pluto.jl notebook authoring Skill for coding agents. It requires agents to treat Pluto notebooks as reactive Julia programs and interactive teaching documents, rather than as Jupyter-style transcripts that rely on manual execution sequences.
+This page owns the existing Workbench Pluto authoring and presentation
+procedure. Read it directly with the [Notebook Roles](../research-contracts/notebook-roles.md)
+contract and the [Pluto Authoring Workflow](../../workflows/reusable-circuit-authoring/pluto-authoring-workflow.mdx).
+It does not require installing or synchronizing an Agent Skill.
 
-This template can be synced to Codex App, Claude Code, Gemini or other tools that support reusable instruction. If the tool supports bundled resources, it should synchronize the Pluto behavior reference, featured notebook pattern reference and duplicate global definition checker; if it does not support it, at least retain the hard rules in the `SKILL.md` template.
+The consumer repository owns Notebook location, editable source, execution
+permission, environment selection, and output retention. Preserve its existing
+Pluto `.jl` format. Workbench owns its API procedures, runtime prerequisites,
+and result interfaces; the host owns research meaning and acceptance.
 
 <Aside type="caution" title="Reactivity, PlutoUI, and Markdown are first-class">
 
-Pluto's dependency graph relies on syntax analysis. The synchronized Skill must retain the "one global owner cell per name" rule, and must also regard PlutoUI, `@bind`, `WideCell`, Markdown admonitions, `details`, `TableOfContents`, `combine`, `confirm`, etc. as core specifications for Pluto notebook authoring, rather than additional style recommendations.
+Treat the Notebook as a reactive Julia program and an interactive explanation.
+Every global name has one owner cell. Keep inputs, controls, derived values,
+explicit execution actions, and rendered results visible to the reader.
 
 </Aside>
 
 ## Source Check
 
-This template is compiled based on Pluto official documents and featured notebook corpus reviewed on 2026-05-30:
+The existing guidance retains the Pluto documentation and featured-notebook source snapshot reviewed on 2026-05-30:
 
 | Topic | Source |
 | --- | --- |
@@ -54,41 +62,10 @@ Corpus pass:
 - `JuliaPluto/featured` commit `a1b1a0f456015eaec6ec49fe39aa65b696c0129c`: all 46 `.jl` notebooks under `src/`.
 - `JuliaPluto/PlutoUI.jl` commit `e1ced3788361555c5684bb4f519a7e851b3ced92`: PlutoUI source/doc notebook patterns, including `WideCell`, `combine`, `confirm`, `details`, and resource helpers.
 
-No Pluto-specific Codex Skill provided by Pluto official or OpenAI officials was found. This template is a project-provided Skill.
-
-## Sync Steps
-
-1. Create a reusable instruction, skill or context entry that is natively supported by the target agent.
-2. Use `write-pluto-notebook` as the canonical name.
-3. Keep the trigger description and ensure that `.jl` Pluto notebook, PlutoUI, `@bind`, Markdown admonitions, teaching callouts, PlotlyJS/`WideCell`, reactivity debugging, package environment setup, Pluto featured notebook style, and featured-notebook-style teaching material will trigger this Skill.
-4. Synchronize the `SKILL.md` template below to the skill body.
-5. If the target tool supports resources, add:
-- `references/pluto-behavior.md`: Pluto official action summary and source link.
-- `references/featured-notebook-patterns.md`: authoring patterns for `JuliaPluto/featured` and `PlutoUI.jl` corpus, including Markdown admonition usage summary.
-- `scripts/check_pluto_reactivity.py`: raw `.jl` Pluto notebook of duplicate global definition and Plotly/WideCell heuristic checker.
-
-## Canonical Template
-
-Synchronize the following content into the native skill of the target agent.
-
-````markdown
----
-name: write-pluto-notebook
-description: Use when creating, editing, converting, or reviewing Pluto.jl notebooks (`.jl` Pluto notebooks), especially Julia tutorial/research notebooks, PlutoUI/@bind controls, Markdown admonitions, teaching callouts, WideCell layout for PlotlyJS/large figures, package-environment setup, Pluto featured notebook style, featured-notebook-style teaching material, or debugging Pluto reactivity problems such as duplicate global definitions, hidden state, stale outputs, side effects, or cells that rely on manual execution order.
----
-
-# Write Pluto Notebook
-
-Use this skill to author Pluto notebooks as reactive Julia programs and
-interactive teaching documents, not as order-dependent Jupyter-style
-transcripts. Reactivity, PlutoUI, and Markdown/admonitions are first-class
-notebook design constraints. The goal is a notebook whose visible code fully
-describes its state, can be re-run cleanly, and presents an interactive story.
-
-Load `references/pluto-behavior.md` for source-backed behavior rules. Load
-`references/featured-notebook-patterns.md` when writing tutorials, examples,
-or rich interactive notebooks. Use `scripts/check_pluto_reactivity.py` as a
-lightweight preflight for raw `.jl` notebook edits.
+The former central Pluto behavior and featured-notebook profiles are covered
+by the reactivity, environment, interactivity, layout, Markdown, and presentation
+sections below. The repository-local
+`scripts/check_pluto_reactivity.py` retains the existing heuristic checker.
 
 ## Workflow
 
@@ -104,8 +81,8 @@ lightweight preflight for raw `.jl` notebook edits.
 5. Plan the teaching flow: frontmatter, title, short sections, interactive
   controls, figures, exercise/check cells, hidden-code helpers, and appendix.
 6. Edit cells so every global name has one owner cell.
-7. Validate with the lightweight script, then run Pluto or the repository's
-  Julia checks when practical.
+7. Run the static checker for raw source edits. Execute Pluto or Julia checks
+  only as permitted by the consumer repository and the current task.
 
 For this repository, Pluto is the direct Julia research cockpit. Pluto notebooks
 belong under `notebooks/pluto/`, may use `SuperconductingCircuitsCore`
@@ -122,6 +99,8 @@ of truth changes.
  notebook state.
 - Prefer pure cells: derive values from inputs and return the display object as
  the last expression. Avoid cells that mutate objects created in another cell.
+- Disabling a cell also disables its dependent cells; do not use a disabled
+ cell to supply a value to active work.
 - Do not depend on manual execution order. Moving cells should not change the
  result except through the dependency graph.
 - Avoid hidden state patterns: global caches, append-only global arrays,
@@ -233,7 +212,7 @@ Prefer the Pluto UI for structural edits. When editing the `.jl` file directly:
 - Run the checker:
 
 ```bash
-python3 /path/to/write-pluto-notebook/scripts/check_pluto_reactivity.py notebooks/pluto/example.jl
+python3 scripts/check_pluto_reactivity.py notebooks/pluto/example.jl
 ```
 
 The checker is heuristic. A clean result does not prove Pluto will run, and a
@@ -253,10 +232,9 @@ Use the smallest validation set that covers the edit:
  clean top-to-bottom story after a fresh notebook process.
 
 Report any skipped validation explicitly.
-````
 
 ## Related
 
-- [Agent Skill Library](index.mdx)
+- [Authoring Reference Index](index.mdx)
 - [Notebook Interface](../notebooks/index.md)
 - [Julia Scientific Core](../core/julia-scientific-core.md)

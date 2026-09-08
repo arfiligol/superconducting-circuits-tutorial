@@ -12,7 +12,7 @@ owner: docs-team
 audience: team
 scope: Contract-level Pluto and Python notebook responsibilities, including the accepted staged Circuit Runtime boundary.
 version: v1.2.0
-last_updated: 2026-08-22
+last_updated: 2026-09-08
 updated_by: codex
 title: Notebook Roles
 description: Defines Pluto and Python notebook responsibilities for circuit execution, external-result analysis, quantum modeling, and pulse simulation.
@@ -24,6 +24,24 @@ sidebar:
 # Notebook Roles
 
 Notebooks are research surfaces, not package ownership surfaces. Each notebook type has a route-specific job.
+
+## Package And Consumer Responsibilities
+
+Read the Workbench documentation matching the installed package revision.
+Package usage does not require SCQ collaboration Skills or a parent checkout.
+Use the host's research contract only when the work needs its design meaning.
+
+The consumer repository owns Notebook placement, the editable source, pairing,
+execution permission, environment, and output retention. Preserve its accepted
+format and Human outputs; do not convert existing Pluto or paired Python
+Notebooks merely for uniformity. Where pairing is used, keep one editable
+source and use that repository's deterministic synchronization procedure.
+
+Workbench owns API usage, prerequisites, result schemas, and generic reporting.
+Its [Python consumer contract](circuit-runtime-python-consumer.md) defines the
+available stages, independent operations, artifact binding, and failure behavior.
+Consumer code declares the plan, controls, and input data; it does not duplicate
+the package's solvers, receipt writers, or report builders.
 
 ## Pluto Notebook
 
@@ -38,6 +56,12 @@ Pluto owns the direct Julia research cockpit:
 
 Pluto may consume normalized external result packages, but it should not become the primary external RF file importer.
 
+The [Pluto authoring and presentation reference](../agent-skills/write-pluto-notebook.mdx)
+owns the retained reactive cell, PlutoUI, Markdown, figure-layout, environment,
+and raw-file conventions. The [Pluto Authoring Workflow](../../workflows/reusable-circuit-authoring/pluto-authoring-workflow.mdx)
+owns the concrete Julia Core procedure. These apply to Workbench Pluto users;
+they do not define another package's Runtime API.
+
 ## Python Notebook
 
 Python notebooks are the routine client for the public circuit runtime
@@ -48,7 +72,8 @@ and also own Python-native research exploration:
   Human-authorized Gates, variables, and optimizer controls
 - explicit `CircuitSim` stages: `optimize`, `refine_winner`,
   `evaluate_responses`, `fit_c11`, `evaluate_t1`, and `build_report`
-- a visible `execute` or `resolve` value beside each stage call
+- an explicit visible `execute` or `resolve` selection, which may be shared
+  across stage calls according to the consumer's Notebook UX
 - pure-Python, read-only result, campaign, and report resolution
 
 - trace table, Touchstone, and Zarr ingestion sketches
@@ -81,6 +106,21 @@ C/K/G, or call Schur helpers. Application execution remains a separate
 persisted service/Julia Runner path. See
 [Circuit Runtime / Python Consumer](circuit-runtime-python-consumer.md) for the
 accepted package, schema, ownership, and failure contract.
+
+## Results And Report Presentation
+
+Use the package's result and report readers for generic tables and plots.
+Present the exact input/source identity, parameters and units, backend,
+frequency grid, and run identity from the existing machine-readable evidence;
+retain CSV/JSON or the repository-native evidence with review figures and HTML
+under the consumer's retention and data-classification rules.
+
+Optimization views should make the request, history, residuals, winner
+parameters, and response evidence inspectable when those stages were requested.
+T1 views must state the admittance definition, capacitance/model assumptions,
+and evaluation frequency supported by the result. A readable report preserves
+missing, failed, or diagnostic states and does not confer scientific acceptance.
+Do not invent missing results, optimization claims, or acceptance thresholds.
 
 ## Related
 

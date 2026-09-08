@@ -1,31 +1,18 @@
 # Circuit Workbench Agent Entry
 
-Circuit Workbench is a tool repository. The host Project or Super Repo owns
-research goals, Design Targets, reusable domain knowledge and conventions,
-Human acceptance, and project decision history.
+Repository: `superconducting-circuits-research-workbench`.
 
-For collaboration or Git work under SCQ_Design, load
-`$scq-collaboration-roles`. Circuit Workbench's delivery-profile identifier is
-`standard-topic-pr`; resolve its current owner and every Git mechanic only
-through that router.
+For SCQ development collaboration or Git work, load
+`$scq-collaboration-roles`; resolve this repository's `develop-main` profile
+and current owner through its registry.
 
-Before project-semantic work, read
-[`docs/project-context.mdx`](docs/project-context.mdx).
+Read only the technical documents needed for the task:
 
-- If the host Project is readable, follow its nearest agent instructions and
-  owner documents before using Workbench APIs, workflows, or artifacts.
-- If the host Project is unavailable, continue context-independent install,
-  API, and diagnostic work. Ask the Human only for research semantics required
-  by the current task, and stop before inventing missing goals, conventions, or
-  acceptance criteria.
-- Keep reusable physics and project decisions in their host owners. Workbench
-  owns its tool behavior, APIs, schemas, Julia Core catalog implementation,
-  and artifact contracts. External Component Libraries and project Plan
-  Builders remain with their declared owners.
-- Load only task-relevant rules from
-  [`docs/reference/guardrails/_agent_catalog.yml`](docs/reference/guardrails/_agent_catalog.yml);
-  `.agent/rules/` contains the extracted Agent Rule mirrors.
-- Preserve the lifecycle state set by the owning contract. Only the Human can
-  accept new semantics.
+- [Project context and research ownership](docs/project-context.mdx).
+- [Circuit Runtime Python consumer contract](docs/reference/research-contracts/circuit-runtime-python-consumer.md).
+- [Notebook roles and consumer procedures](docs/reference/research-contracts/notebook-roles.md).
+- [Pluto authoring and presentation](docs/reference/agent-skills/write-pluto-notebook.mdx).
+- [Repository guardrail catalog](docs/reference/guardrails/_agent_catalog.yml).
 
-SCQ_Design is the current host example, not a required repository layout.
+Package consumers use the documentation for their installed Workbench revision
+and their own repository's Notebook rules.
