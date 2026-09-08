@@ -113,7 +113,7 @@ non-finite capacitance fails closed.
 An electrical short remains an exact `CircuitPlan.connect(...)` relationship;
 consumers must not approximate a short with a large capacitance.
 
-### CONVERGING Generic Shunt Capacitor
+### STABILIZED Generic Shunt Capacitor
 
 `shunt_capacitor(id=..., capacitance_f=...)` declares one lumped capacitor
 with a single exposed pin and node-flux coordinate named `signal`. Its other
@@ -136,9 +136,10 @@ S11/S21 convention `exp(-i*omega*t)`; existing components and pipelines are
 unchanged. Adding the catalog type changes the catalog/source identity, so old
 receipts are not silently treated as current-source results.
 
-This extension is `CONVERGING / NOT_INTEGRATED`, with `no_test_writes` until
-Human acceptance of the exact candidate. Public non-test analytic diagnostics
-are implementation evidence, not scientific-result acceptance.
+This extension is `STABILIZED / NOT_INTEGRATED`, with
+`stabilization_tests_authorized`. Human acceptance binds the exact candidate
+recorded below; implementation diagnostics and consumer previews are not
+scientific-result acceptance.
 
 ## Objective And Artifact Declarations
 
@@ -725,6 +726,35 @@ Generic series-capacitor and standalone-scattering extension:
   complete Python Runtime suite passed with 18 tests; Julia Runner and Julia
   Core suites passed. Source-route, language, App-quarantine, Runtime lint,
   format, type, compile, API-reference, diff, and public-privacy checks passed.
+- Unresolved semantic decisions: none.
+
+Generic shunt-capacitor extension:
+
+- State: `STABILIZED`.
+- Delivery status: Workbench PR #52, `NOT_INTEGRATED`.
+- Test policy: `stabilization_tests_authorized`.
+- Human acceptance: on 2026-09-08 the Human explicitly accepted Generic Shunt
+  Capacitor V1 at head `c3af998aad4e6ccc45187ac5eb2c02069b32ba82`, tree
+  `23f3bd9b79a782ba6967690d22f330e903f2c23f`, and canonical base-to-head
+  full-index binary diff SHA-256
+  `14f32210ae738a1c79b390098e9f952aa31e42e201ba19417142030eb67401a2`.
+- Accepted scope: one positive-finite capacitor with exposed `signal` pin and
+  node-flux coordinate to Core ground, reusing the Core capacitor lowerer,
+  existing solver/sealing and consumer-owned composition with series capacitors.
+  Invalid values fail closed; existing pipelines remain unchanged.
+- Scientific-result acceptance: none.
+- Private or design-specific values: none.
+- Retained compatibility or fallback: none.
+- Stabilization evidence: two durable Python regressions and a Runner testset
+  freeze the signal-only declaration, malformed input/pin rejection, exact
+  ground/C-only stamping, nonbaseline overrides, analytic three-capacitor
+  complex S11/S21, independent grids, pure resolution and stale selection/Plan
+  rejection. The full Python Runtime suite passed all 20 tests and the Runner
+  suite passed all 96 assertions. Runtime lint, format, compile and type checks,
+  docs source/built routes, language, App quarantine, Astro check/build and
+  exact-diff review passed. The unchanged Core source retains the integrated
+  baseline's full Core validation. Production source remains the accepted
+  candidate; stabilization changes only this record and the two test files.
 - Unresolved semantic decisions: none.
 
 ## Related
