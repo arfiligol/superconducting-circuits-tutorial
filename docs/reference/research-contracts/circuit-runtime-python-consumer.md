@@ -32,6 +32,8 @@ identity. The live optimization-progress callback below is a scoped
 plan, compiler, optimizer, staged-result, or receipt contracts.
 The generic series capacitor and independent Direct/HB scattering operation
 are a separately Human-accepted and stabilized extension in Workbench PR #51.
+The HB-only standalone-scattering variant below is a `CONVERGING` extension;
+it does not change the accepted Direct+HB form.
 
 ## Ownership Boundary
 
@@ -268,28 +270,30 @@ identity. The operation accepts no Objective, Optimizer, ReductionSpec, Gate,
 C11, T1, or report declaration and is outside `STAGE_ORDER`. It performs or
 claims no optimization.
 
-Both independent `ResponseSpec` grids are required. The stage reuses the
-existing Direct C/K/G matched-response engine on `direct_frequency_hz` and the
-existing pump-off HB engine on `hb_frequency_hz`. It performs no interpolation
-or pointwise Direct/HB comparison, so a consumer may deliberately choose a
-small Direct grid that is an exact subset of a denser HB grid. The two sealed
-CSV artifacts preserve frequency plus full-complex selected-input `S11` and
-selected-output `S21` values.
+The stabilized Direct+HB form accepts both independent `ResponseSpec` grids.
+The `CONVERGING` HB-only extension also permits
+`direct_frequency_hz=None`. The stage always runs the existing pump-off HB
+engine on `hb_frequency_hz`; it runs the Direct C/K/G matched-response engine
+only when a Direct grid is present. It performs no interpolation or pointwise
+Direct/HB comparison. Each produced CSV artifact preserves frequency plus
+full-complex selected-input `S11` and selected-output `S21` values.
 
 The request, result, and receipt bind the Plan, selected candidate, variable
 and artifact identities, Runtime sources, selected ports, complete terminated-
-port order, reference impedances, independent grids, pump-off state, phasor
-translation, and both produced artifact hashes. `execute` computes and seals
-the operation once. `resolve` is pure read-only: it starts no Julia process and
-performs no recomputation or mutation. Expected Direct or HB numerical
-inability seals `NOT_EVALUABLE` without partial output artifacts. Malformed,
+port order, reference impedances, requested grids, pump-off state, phasor
+translation, and every produced artifact hash. HB-only execution seals only
+the HB grid and `hb_response.csv`; it creates no Direct grid or artifact.
+`execute` computes and seals the operation once. `resolve` is pure read-only:
+it starts no Julia process and performs no recomputation or mutation. Expected
+Direct or HB numerical inability, grid mismatch, or non-finite response seals
+or resolves as `NOT_EVALUABLE` without trusted partial output. Malformed,
 stale, mismatched, failed, or tampered trust boundaries fail closed and retain
 their sealed failure evidence. There is no fallback or compatibility path.
 
 This independent operation does not change `evaluate_responses` or any
 Objective-backed, targetless, C11, T1, or report pipeline.
 
-Both standalone artifacts use the declared `exp(-i*omega*t)` convention.
+Every standalone scattering artifact uses the declared `exp(-i*omega*t)` convention.
 Direct values preserve the Core-native response, while pump-off HB values are
 the complex conjugate of the solver-native response. For one ideal series
 capacitor between two equal reference impedances, the analytic check is
@@ -727,6 +731,29 @@ Generic series-capacitor and standalone-scattering extension:
   Core suites passed. Source-route, language, App-quarantine, Runtime lint,
   format, type, compile, API-reference, diff, and public-privacy checks passed.
 - Unresolved semantic decisions: none.
+
+HB-only standalone-scattering extension:
+
+- State: `CONVERGING`.
+- Delivery route: compatible direct `develop` checkpoint from Workbench
+  `eb71adf2db45c3d9b4d0319086d6fd5c8c08f88c`; exact candidate identity is
+  recorded in the owner handoff.
+- Test policy: `no_test_writes`; existing tests and one-time generic public
+  probes are diagnostic evidence only.
+- Candidate scope: `evaluate_scattering` accepts
+  `ResponseSpec.direct_frequency_hz=None`, runs required pump-off HB on the
+  declared HB grid, and seals full-complex S11/S21 in `hb_response.csv` with
+  its existing request/result/receipt bindings.
+- Existing Direct+HB standalone behavior: unchanged when a Direct grid is
+  supplied.
+- Failure behavior: HB numerical failure seals `NOT_EVALUABLE` without a
+  trusted artifact; missing or mismatched grids, non-finite complex response,
+  stale bindings, and tampered artifacts fail closed during execution or pure
+  resolution.
+- Excluded work: no Direct grid or artifact in HB-only mode; no Objective,
+  Optimizer, Reduction, Gate, C11, T1, report, interpolation, scientific Gate,
+  private data, D3 application source, or SCNSim change.
+- Unresolved item: Human semantic acceptance of the exact candidate.
 
 Generic shunt-capacitor extension:
 

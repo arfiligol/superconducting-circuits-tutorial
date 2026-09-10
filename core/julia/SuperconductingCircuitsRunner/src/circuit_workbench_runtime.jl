@@ -2041,9 +2041,6 @@ function _cw_evaluate_responses(request, stage_dir; standalone=false)
             "Direct response grid must be strictly increasing, positive, and contain at least three points.",
         )
     end
-    standalone && !direct_enabled && error(
-        "Standalone scattering requires a Direct response grid.",
-    )
     plan = _cw_dict(get(request, "plan", nothing), "request.plan")
     input_id = _cw_string(get(spec, "input_port", nothing), "response.input_port")
     output_id = _cw_string(get(spec, "output_port", nothing), "response.output_port")
@@ -2125,6 +2122,14 @@ function _cw_evaluate_responses(request, stage_dir; standalone=false)
                 push!(direct, projected[output_position, input_position])
                 standalone && push!(direct_reflection, projected[input_position, input_position])
             end
+            (!standalone || all(
+                value -> isfinite(real(value)) && isfinite(imag(value)),
+                direct,
+            )) || error("Direct scattering response contains non-finite values.")
+            (!standalone || all(
+                value -> isfinite(real(value)) && isfinite(imag(value)),
+                direct_reflection,
+            )) || error("Direct scattering reflection contains non-finite values.")
         catch exception
             standalone || rethrow()
             throw(_CWScatteringNumericalError(
@@ -2168,6 +2173,14 @@ function _cw_evaluate_responses(request, stage_dir; standalone=false)
                 length(hb_frequencies),
             ))
         end
+        (!standalone || all(
+            value -> isfinite(real(value)) && isfinite(imag(value)),
+            hb,
+        )) || error("Pump-off HB scattering response contains non-finite values.")
+        (!standalone || all(
+            value -> isfinite(real(value)) && isfinite(imag(value)),
+            hb_reflection,
+        )) || error("Pump-off HB scattering reflection contains non-finite values.")
     catch exception
         standalone || rethrow()
         throw(_CWScatteringNumericalError(
